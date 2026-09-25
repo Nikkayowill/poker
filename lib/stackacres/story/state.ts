@@ -211,7 +211,7 @@ export function questReady(
   );
 }
 
-export type TurnInOutcome = "advanced" | "completed" | "not-ready" | "not-met" | "already-done";
+export type TurnInOutcome = "advanced" | "completed" | "not-ready" | "not-met" | "already-done" | "reward-required";
 
 export interface TurnInResult {
   story: StoredStory;
@@ -219,29 +219,49 @@ export interface TurnInResult {
    *  every refusal. */
   inventory: StackAcresInventory;
   outcome: TurnInOutcome;
-  /** The reward item, only on "completed" and only the first time. */
-  granted: StoryItemId | null;
+  /** What this turn-in granted: the quest's own `rewards` (0 or 1 item,
+   *  already resolved from a choice) plus the traveler's line-final keepsake
+   *  when this was the last quest and it wasn't already held. Empty on every
+   *  refusal. Both can land together only on a line's last quest that also
+   *  declares its own `rewards`. */
+  granted: readonly StoryItemId[];
   /** The quest that just turned in, or null on a refusal. */
   quest: StoryQuest | null;
+}
+
+/** Folds `item` into `items` unless it's already held. */
+function addItem(items: readonly StoryItemId[], item: StoryItemId): readonly StoryItemId[] {
+  return items.includes(item) ? items : [...items, item];
 }
 
 /**
  * Handing in the active quest. Refuses before touching anything, so a
  * refused turn-in never costs an item. Debits deliver objectives, moves to
- * the next quest, and on the last one grants the traveler's reward.
+ * the next quest, grants the quest's own reward (if any) on every turn-in,
+ * and on the last quest of the line also grants the traveler's keepsake.
+ *
+ * `chosenReward` is the player's pick when `quest.rewards` has 2+ entries;
+ * ignored otherwise. A turn-in with 2+ rewards and no valid choice refuses
+ * before touching anything, same as an unmet objective.
  */
 export function applyTurnIn(
   story: StoredStory,
   id: TravelerId,
   inventory: StackAcresInventory,
   facts: StoryFacts,
+  chosenReward: StoryItemId | null = null,
 ): TurnInResult {
   const entry = story.travelers[id];
-  const refused = (outcome: TurnInOutcome): TurnInResult => ({ story, inventory, outcome, granted: null, quest: null });
+  const refused = (outcome: TurnInOutcome): TurnInResult => ({ story, inventory, outcome, granted: [], quest: null });
   if (!entry.met) return refused("not-met");
   if (isTravelerDone(entry, id)) return refused("already-done");
   const quest = TRAVELER_QUESTS[id][entry.questIndex];
   if (!questReady(quest, entry.counts, inventory, facts)) return refused("not-ready");
+  const rewardChoices = quest.rewards ?? [];
+  if (rewardChoices.length >= 2 && (chosenReward === null || !rewardChoices.includes(chosenReward))) {
+    return refused("reward-required");
+  }
+  const questGrant: StoryItemId | null = rewardChoices.length === 0 ? null : rewardChoices.length === 1 ? rewardChoices[0] : chosenReward;
 
   const debited: StackAcresInventory = { ...inventory };
   for (const objective of quest.objectives) {
@@ -249,27 +269,34 @@ export function applyTurnIn(
     debited[objective.item] = (inventory[objective.item] ?? 0) - objective.target;
   }
 
+  let items = story.items;
+  const granted: StoryItemId[] = [];
+  if (questGrant !== null) {
+    if (!items.includes(questGrant)) granted.push(questGrant);
+    items = addItem(items, questGrant);
+  }
+
   const questIndex = entry.questIndex + 1;
   const line = TRAVELER_QUESTS[id];
   if (questIndex < line.length) {
     const nextQuest = line[questIndex];
     return {
-      story: withTraveler(story, id, { met: true, questIndex, counts: nextQuest.objectives.map(() => 0) }),
+      story: { ...withTraveler(story, id, { met: true, questIndex, counts: nextQuest.objectives.map(() => 0) }), items },
       inventory: debited,
       outcome: "advanced",
-      granted: null,
+      granted,
       quest,
     };
   }
 
-  const reward = TRAVELER_CATALOGUE[id].reward;
-  const alreadyHeld = story.items.includes(reward);
-  const advanced = withTraveler(story, id, { met: true, questIndex, counts: [] });
+  const keepsake = TRAVELER_CATALOGUE[id].reward;
+  if (!items.includes(keepsake)) granted.push(keepsake);
+  items = addItem(items, keepsake);
   return {
-    story: alreadyHeld ? advanced : { ...advanced, items: [...story.items, reward] },
+    story: { ...withTraveler(story, id, { met: true, questIndex, counts: [] }), items },
     inventory: debited,
     outcome: "completed",
-    granted: alreadyHeld ? null : reward,
+    granted,
     quest,
   };
 }

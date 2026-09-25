@@ -175,7 +175,7 @@ import {
   type StackAcresFriendshipView,
 } from "@/lib/stackacres/friendship";
 import type { StoryEvent } from "@/lib/stackacres/story/events";
-import type { StoryItemId } from "@/lib/stackacres/story/items";
+import { isStoryItemId, type StoryItemId } from "@/lib/stackacres/story/items";
 import {
   activeQuest,
   applyStoryEvent,
@@ -1627,12 +1627,14 @@ export type StackAcresActionResult = StackAcresView & {
   /** Set by `meetStackAcresTraveler`/`turnInStackAcresTravelerQuest` to what
    *  THIS call just did -- never named `story`, which is StackAcresView's
    *  own always-present standing and would collide with it in this
-   *  intersection. `granted` names the keepsake only on the turn-in that
-   *  finished a traveler's whole line, and only the first time. */
+   *  intersection. `granted` lists what this turn-in handed over: the
+   *  quest's own reward (if any) plus the traveler's line keepsake on the
+   *  quest that finished their whole line -- both only the first time each
+   *  item is granted. */
   storyResult?: {
     traveler: TravelerId;
-    outcome: "met" | "already-met" | "advanced" | "completed";
-    granted: StoryItemId | null;
+    outcome: "met" | "already-met" | "advanced" | "completed" | "reward-required";
+    granted: readonly StoryItemId[];
   };
 };
 
@@ -6148,10 +6150,10 @@ export async function meetStackAcresTraveler(
       });
     }
     if (result.outcome === "already-met") {
-      return { ...(await view(profile, now)), storyResult: { traveler, outcome: "already-met", granted: null } };
+      return { ...(await view(profile, now)), storyResult: { traveler, outcome: "already-met", granted: [] } };
     }
     if ((await writeStackAcresStory(profile.id, result.story, current.version)) !== null) {
-      return { ...(await view(profile, now)), storyResult: { traveler, outcome: "met", granted: null } };
+      return { ...(await view(profile, now)), storyResult: { traveler, outcome: "met", granted: [] } };
     }
   }
   throw new StackAcresRequestError(`${name} was mid-sentence. Try again.`, 409, {
@@ -6172,11 +6174,13 @@ export async function meetStackAcresTraveler(
 export async function turnInStackAcresTravelerQuest(
   token: string,
   travelerInput: string,
+  rewardInput: string | undefined,
   now = new Date(),
 ): Promise<StackAcresActionResult> {
   if (!isTravelerId(travelerInput)) throw new StackAcresRequestError("There is nobody there to talk to.", 400);
   const traveler: TravelerId = travelerInput;
   const name = TRAVELER_CATALOGUE[traveler].name;
+  const chosenReward = rewardInput !== undefined && isStoryItemId(rewardInput) ? rewardInput : null;
   const profile = await ensureProfile(token);
 
   for (let attempt = 0; attempt < STORY_WRITE_ATTEMPTS; attempt += 1) {
@@ -6192,13 +6196,19 @@ export async function turnInStackAcresTravelerQuest(
       listOwnedForgeEnchantmentIds(profile.id),
       readStackAcresCrossbreedInventory(profile.id),
     ]);
-    const result = applyTurnIn(current.story, traveler, inventory, {
-      tool,
-      sectorsCleared: cleared.length,
-      soilBeds: soilTiles.length,
-      enchantments: forgeEnchantmentIdsFromOwned(enchantments).length,
-      crossbreeds: Object.values(crossbreeds).reduce((sum, n) => sum + (n ?? 0), 0),
-    });
+    const result = applyTurnIn(
+      current.story,
+      traveler,
+      inventory,
+      {
+        tool,
+        sectorsCleared: cleared.length,
+        soilBeds: soilTiles.length,
+        enchantments: forgeEnchantmentIdsFromOwned(enchantments).length,
+        crossbreeds: Object.values(crossbreeds).reduce((sum, n) => sum + (n ?? 0), 0),
+      },
+      chosenReward,
+    );
     if (result.outcome === "not-met") {
       throw new StackAcresRequestError(`Say hello to ${name} first.`, 409, {
         round: await snapshots(profile.id, now),
@@ -6213,6 +6223,11 @@ export async function turnInStackAcresTravelerQuest(
       const quest = activeQuest(current.story.travelers[traveler], traveler);
       if (quest === null) throw new Error(`${traveler}: not-ready with no active quest`);
       throw new StackAcresRequestError(`${quest.title} is not finished yet.`, 409, {
+        round: await snapshots(profile.id, now),
+      });
+    }
+    if (result.outcome === "reward-required") {
+      throw new StackAcresRequestError("Choose one to take.", 409, {
         round: await snapshots(profile.id, now),
       });
     }

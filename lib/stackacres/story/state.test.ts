@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { StackAcresInventory } from "../inventory";
 import type { StackAcresShopProgress } from "../shop-locks";
 import type { StoryEvent } from "./events";
+import type { StoryItemId } from "./items";
 import { TRAVELER_QUESTS } from "./quests";
 import {
   applyEventToView,
@@ -107,7 +108,8 @@ function finish(story: StoredStory, id: TravelerId, inventory: StackAcresInvento
       }
     }
     next = events(next, feed);
-    const result = applyTurnIn(next, id, stock, facts);
+    const chosenReward = (quest.rewards?.length ?? 0) >= 2 ? (quest.rewards as readonly StoryItemId[])[0] : null;
+    const result = applyTurnIn(next, id, stock, facts, chosenReward);
     expect(result.outcome, `${quest.id}`).not.toBe("not-ready");
     next = result.story;
   }
@@ -250,7 +252,7 @@ describe("applyTurnIn", () => {
     const inventory: StackAcresInventory = { potato: 7, carrot: 5, flour: 2 };
     const result = applyTurnIn(story, "pierre", inventory, TROWEL);
     expect(result.outcome).toBe("advanced");
-    expect(result.granted).toBeNull();
+    expect(result.granted).toEqual([]);
     expect(result.quest?.id).toBe("pierre.q1");
     expect(result.inventory).toEqual({ potato: 2, carrot: 0, flour: 2 });
     expect(inventory).toEqual({ potato: 7, carrot: 5, flour: 2 });
@@ -268,8 +270,26 @@ describe("applyTurnIn", () => {
   it("reads a held tool live rather than waiting for an event", () => {
     const story = met(freshStory(), "brayden");
     expect(applyTurnIn(story, "brayden", {}, TROWEL).outcome).toBe("not-ready");
-    expect(applyTurnIn(story, "brayden", {}, IRON).outcome).toBe("advanced");
-    expect(applyTurnIn(story, "brayden", {}, { tool: "golden-spade", ...BARE }).outcome).toBe("advanced");
+    expect(applyTurnIn(story, "brayden", {}, IRON, "cubic_pickaxe_head").outcome).toBe("advanced");
+    expect(applyTurnIn(story, "brayden", {}, { tool: "golden-spade", ...BARE }, "cubic_pickaxe_head").outcome).toBe("advanced");
+  });
+
+  describe("a quest with 2+ rewards", () => {
+    it("refuses without a chosen reward, touching nothing", () => {
+      const story = met(freshStory(), "brayden");
+      const ready = applyTurnIn(story, "brayden", {}, IRON);
+      expect(ready.outcome).toBe("reward-required");
+      expect(ready.story).toBe(story);
+      expect(applyTurnIn(story, "brayden", {}, IRON, "aegis_plaza_token" as StoryItemId).outcome).toBe("reward-required");
+    });
+
+    it("grants only the chosen reward", () => {
+      const story = met(freshStory(), "brayden");
+      const result = applyTurnIn(story, "brayden", {}, IRON, "sample_bag_of_curved_ore");
+      expect(result.outcome).toBe("advanced");
+      expect(result.granted).toEqual(["sample_bag_of_curved_ore"]);
+      expect(result.story.items).toEqual(["sample_bag_of_curved_ore"]);
+    });
   });
 
   it("grants the reward once, on the last quest", () => {
@@ -289,8 +309,22 @@ describe("applyTurnIn", () => {
     story = applyStoryEvent(story, { kind: "contract-fulfilled" });
     const last = applyTurnIn(story, "ray", {}, TROWEL);
     expect(last.outcome).toBe("completed");
-    expect(last.granted).toBeNull();
+    expect(last.granted).toEqual([]);
     expect(last.story.items).toEqual(["rays_heritage_cap"]);
+  });
+
+  it("grants a quest's own reward on every turn-in, not only the last quest", () => {
+    const story = met(freshStory(), "brayden");
+    const afterQ1 = applyTurnIn(story, "brayden", {}, IRON, "cubic_pickaxe_head");
+    expect(afterQ1.outcome).toBe("advanced");
+    expect(afterQ1.granted).toEqual(["cubic_pickaxe_head"]);
+    expect(afterQ1.story.items).toEqual(["cubic_pickaxe_head"]);
+    // brayden.q2 has no `rewards` of its own, only the line's final keepsake.
+    const forged: StoryFacts = { ...IRON, enchantments: 1 };
+    const afterQ2 = applyTurnIn(afterQ1.story, "brayden", {}, forged);
+    expect(afterQ2.outcome).toBe("completed");
+    expect(afterQ2.granted).toEqual(["glitched_drill_bit"]);
+    expect(afterQ2.story.items).toEqual(["cubic_pickaxe_head", "glitched_drill_bit"]);
   });
 
   it("can finish every line", () => {
@@ -299,7 +333,9 @@ describe("applyTurnIn", () => {
       if (id !== "leo") story = finish(story, id);
     }
     story = finish(story, "leo");
-    expect(story.items).toHaveLength(11);
+    // 11 traveler keepsakes plus brayden.q1's own reward (finish() always
+    // picks the first option when a quest offers a choice).
+    expect(story.items).toHaveLength(12);
   });
 });
 

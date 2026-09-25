@@ -129,11 +129,15 @@ export function useStackAcresStory({ view, submit }: UseStackAcresStoryOptions):
   const choose = useCallback(
     async (choice: StoryChoice) => {
       if (node === null) return;
-      const intent = choice.commits ? node.onComplete : null;
-      if (intent === null) {
+      const base = choice.commits ? node.onComplete : null;
+      if (base === null) {
         setAnchor(null);
         return;
       }
+      // A turn-in offering 2+ rewards puts the reward on the CHOICE, not the
+      // node -- the node's own onComplete can't know which button was
+      // pressed. Every other choice has no `reward`, so this is a no-op.
+      const intent = choice.reward === undefined ? base : { ...base, reward: choice.reward };
       setBusy(true);
       try {
         await submit(intent);

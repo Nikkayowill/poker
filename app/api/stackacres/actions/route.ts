@@ -24,6 +24,7 @@ import { FORGE_ENCHANTMENT_IDS } from "@/lib/stackacres/forge";
 import { STACKACRES_BUYABLE_CUTTERS } from "@/lib/stackacres/cutters";
 import { CROSSBREED_GRID_COLS, CROSSBREED_GRID_ROWS } from "@/lib/stackacres/crossbreeding";
 import { FRIENDSHIP_NPCS, GIFTABLE_ITEMS } from "@/lib/stackacres/friendship";
+import { STORY_ITEM_IDS } from "@/lib/stackacres/story/items";
 import { TRAVELER_IDS } from "@/lib/stackacres/story/travelers";
 import {
   activateStackAcresSynergyPerk,
@@ -503,6 +504,8 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("story-turn-in"),
     traveler: z.enum(TRAVELER_IDS as unknown as [string, ...string[]]),
+    /** Only meaningful when the active quest offers 2+ rewards; ignored otherwise. */
+    reward: z.enum(STORY_ITEM_IDS as unknown as [string, ...string[]]).optional(),
   }),
 ]);
 
@@ -661,7 +664,7 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "story-meet":
       return meetStackAcresTraveler(token, action.traveler, now);
     case "story-turn-in":
-      return turnInStackAcresTravelerQuest(token, action.traveler, now);
+      return turnInStackAcresTravelerQuest(token, action.traveler, action.reward, now);
   }
 }
 

@@ -115,6 +115,8 @@ def write_hoeable(area, ground, data):
     # Where the farmer can walk, before anything a tap opens is fenced off: what the overgrowth is dealt against,
     # so it never walls a stretch of road or yard off from the rest.
     walk_rows = ["".join("0" if (tx, ty) in blocked else "1" for tx in range(area.w)) for ty in range(area.h)]
+    # Squares that walk but are not ground to dig: the terrace's stair.
+    blocked.update(getattr(area, "no_hoe", ()))
     # Ground that already answers a tap keeps its own job. Grass inside the hen
     # pen feeds the hens, and the greenhouse's footing opens the greenhouse; if
     # the hoe could break a bed there, the same tap would start digging instead.

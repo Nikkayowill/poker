@@ -296,7 +296,7 @@ const DOCK_PLANKS = new Phaser.Geom.Rectangle(400, 16, 32, 96);
 /** Where to stand on the Homestead in front of a district's gate while it is still closed. */
 const GATE_APPROACH: Partial<Record<ZoneId, Point>> = {
   wallow: { x: 976, y: 480 },
-  coast: { x: 512, y: 660 },
+  coast: { x: 512, y: 788 },
   oak: { x: 52, y: 320 },
   mine: { x: 976, y: 176 },
   townsquare: { x: 976, y: 320 },

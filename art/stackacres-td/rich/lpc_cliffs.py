@@ -32,8 +32,8 @@ SCALE = 0.5
 COLUMN = (171, 10, 75, 130)        # a grass-domed column: rounded grass top, face, ragged sides
 CAVE = (32, 150, 68, 85)           # a cave mouth under a straight grass lip, with its own face either side
 LIP = (104, 160, 68, 28)           # a straight run of grass lip: the dark edge and the blades over the face
-FACE_SLICE = (184, 60, 48, 78)     # the solid interior of the column's face; its two edges match closely
-FACE_H = 108                       # how tall the face is drawn, pack px: the slice and half of it again, stacked
+FACE_SLICE = (184, 80, 44, 54)     # the column's bare rock under its grass dome; rows above 80 are grass
+FACE_H = 108                       # how tall the face is drawn, pack px: the slice twice, stacked
 FOOT_SHADOW = 12                   # pack px of soft shadow laid on the ground at the foot of the face
 # The sheet's own flat grass, which is NOT this map's grass: everything above the lip's dark edge is
 # cut away so the map's ground shows there instead, and only the edge and the hanging blades stay.
@@ -83,14 +83,19 @@ def _made(hires, base):
 
 
 def _tall_face(piece, height):
-    """The face slice stacked on itself to `height`, the upper copy feathered into the lower over 8px."""
+    """The face slice stacked on itself to `height`, bottom up; every other copy is turned round, and each
+    copy above the first is feathered into the one under it over 8px."""
     out = Image.new("RGBA", (piece.width, height))
-    out.alpha_composite(piece, (0, height - piece.height))
-    upper = np.array(piece.transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT))
-    cut = height - piece.height + 8
-    upper = upper[piece.height - cut:]
-    upper[-8:, :, 3] = (upper[-8:, :, 3] * np.linspace(1, 0.1, 8)[:, None]).astype(np.uint8)
-    out.alpha_composite(Image.fromarray(upper, "RGBA"), (0, 0))
+    turned = piece.transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
+    y, n = height - piece.height, 0
+    while y + piece.height > 0:
+        arr = np.array(turned if n % 2 else piece)
+        if n:
+            arr[-8:, :, 3] = (arr[-8:, :, 3] * np.linspace(1, 0.1, 8)[:, None]).astype(np.uint8)
+        out.alpha_composite(Image.fromarray(arr, "RGBA"), (0, y)) if y >= 0 else out.alpha_composite(
+            Image.fromarray(arr[-y:], "RGBA"), (0, 0))
+        y -= piece.height - 8
+        n += 1
     return out
 
 

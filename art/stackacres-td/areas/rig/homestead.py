@@ -24,9 +24,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import farm_extras  # noqa: E402
 import gable_buildings  # noqa: E402
 import lpc_cliffs  # noqa: E402
+import lpc_terrace  # noqa: E402
 import lpc_trees  # noqa: E402
 
-MW, MH = 64, 44
+MW, MH = 64, 52
 HS = 0                                                  # kept for callers that still offset by the old farmyard shift
 SPAWN = (496, 344)
 
@@ -40,6 +41,12 @@ BORDER = 2                                              # tiles of treeline roun
 HILL_X0, HILL_ROWS = 52, 9
 HILL_FOOT = (HILL_ROWS + 1) * T
 CAVE_X = 976                                            # the middle of the cave mouth: the way to the mine
+
+# The terrace: the yard stands a level above the fields, and the wooden stair between the house and the south
+# gate is the only way between them. Rows of the face, inclusive; its foot is the row under them.
+TERRACE_ROWS = (31, 35)
+TERRACE_FOOT = (TERRACE_ROWS[1] + 1) * T
+STAIRS = (29, 34)                                       # tile columns of the stair, inclusive: under the house
 
 
 def lake_line(x):
@@ -135,7 +142,7 @@ def _flowers(a):
             fx = x + int(kit.hash2(x, y, 21) * 8) - 4
             fy = y + int(kit.hash2(x, y, 22) * 8) - 4
             tx, ty = fx // T, fy // T
-            if not _cleared(tx, ty) or fy < lake_line(fx) + 20:
+            if not _cleared(tx, ty) or fy < lake_line(fx) + 20 or _on_terrace(ty):
                 continue
             near_road = any((tx + dx, ty + dy) in _ROAD for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
             if (tx, ty) in _ROAD:
@@ -163,11 +170,13 @@ def _gates(a):
     a.exit("mine", CAVE_X - 16, HILL_FOOT - 4, 32, 12, (88, 334))
     a.add(props.hedge_overgrown(), 1000, 494, (16, 3), tag="locked:wallow")
     a.exit("fold", 1014, 464, 10, 32, (22, 184))
-    a.add(props.boardwalk_washed(), 512, 690, tag="locked:coast")
-    a.exit("coast", 496, 694, 32, 10, (312, 22))
+    a.add(props.boardwalk_washed(), 512, MH * T - 14, tag="locked:coast")
+    a.exit("coast", 496, MH * T - 10, 32, 10, (312, 22))
+    # The bridge onto the empire district, on the west edge (docs/stackacres-second-map-direction.md 6a).
+    a.exit("empire", 0, 448, 10, 32, (48, 240))
 
 
-GAPS = {"east": [(304, 336), (464, 496)], "west": [(304, 336)], "south": [(496, 528)]}
+GAPS = {"east": [(304, 336), (464, 496)], "west": [(304, 336), (448, 480)], "south": [(496, 528)]}
 
 
 def _hill(a):
@@ -180,6 +189,26 @@ def _hill(a):
     # Kept clear of the cave, so the way in is always in plain sight.
     for i, (x, y) in enumerate(((838, 156), (884, 60), (922, 104), (940, 52), (1010, 46), (868, 20), (990, 12), (850, 70))):
         a.add(lpc_trees.crown(i * 5 + 1), x, y, (12, 4))
+
+
+def _terrace(a):
+    """The stone wall across the whole map with the stair cut into it, walled off either side of the stair.
+    The stair walks but never hoes. A few bushes at the wall's foot and trees along its top break the run."""
+    s0, s1 = STAIRS
+    rows = TERRACE_ROWS[1] - TERRACE_ROWS[0] + 1
+    a.add(lpc_terrace.terrace(MW, s0, s1 - s0 + 1, rows), 0, TERRACE_FOOT, ground=True)
+    a.wall(0, TERRACE_ROWS[0], s0 - 1, TERRACE_ROWS[1])
+    a.wall(s1 + 1, TERRACE_ROWS[0], MW - 1, TERRACE_ROWS[1])
+    a.no_hoe = {(tx, ty) for tx in range(s0, s1 + 1) for ty in range(TERRACE_ROWS[0], TERRACE_ROWS[1] + 2)}
+    for i, tx in enumerate((5, 12, 21, 42, 50, 58)):
+        a.add(kit.bush(i + 60), tx * T + 8, TERRACE_FOOT + 10, (7, 2))
+    for i, tx in enumerate((8, 19, 48, 55)):
+        a.add(lpc_trees.crown(i * 7 + 3), tx * T + 8, TERRACE_ROWS[0] * T - 24, (11, 4))
+
+
+def _on_terrace(ty):
+    """The face, and a row either side of it: the lip above and the shadow at the foot."""
+    return TERRACE_ROWS[0] - 1 <= ty <= TERRACE_ROWS[1] + 1
 
 
 def _treeline(a):
@@ -228,6 +257,8 @@ def _wild(a):
                 continue
             if tx >= HILL_X0 - 1 and ty <= HILL_ROWS + 1:            # the hill and the shadow at its foot
                 continue
+            if _on_terrace(ty):
+                continue
             if any((tx + dx, ty + dy) in _ROAD for dx in (-1, 0, 1) for dy in (-1, 0, 1)):
                 continue
             wild.add((tx, ty))
@@ -237,6 +268,7 @@ def _wild(a):
 def build(for_game=False):
     a = Area("homestead", MW, MH)
     _terrain(a)
+    _terrace(a)
     _ROAD.clear()
     _ROAD.update((x, y) for (x, y) in a.verts["path"])
     _buildings(a)

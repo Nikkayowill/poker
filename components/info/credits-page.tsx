@@ -80,6 +80,13 @@ export function CreditsPage() {
               <a href="/stackacres-td/lpc/Attribution.txt">Attribution.txt</a>{" "}
               and{" "}
               <a href="/stackacres-td/lpc/CREDITS-trees.txt">CREDITS-trees.txt</a>.
+              The Homestead&rsquo;s stone terrace and its stair are from{" "}
+              <a href="https://opengameart.org/content/lpc-mountains">[LPC] Mountains</a>{" "}
+              by bluecarrot16, remixing work by Lanea Zimmerman (Sharm), ElizaWy,
+              Jetrel, Zabin, Hyptosis, Daneeklu, Redshrike, Bertram, Daniel Cook,
+              Saphy, Stephen Challener, George Bailey, Rayane Félix, Buch and
+              others, under CC-BY-SA 3.0/4.0 and the licences listed in{" "}
+              <a href="/stackacres-td/lpc/CREDITS-mountains.txt">CREDITS-mountains.txt</a>.
             </li>
             <li>
               <strong>The people of StackAcres</strong> — the farmer, Ray and

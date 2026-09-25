@@ -57,7 +57,7 @@ def build(for_game=False):
     a.add(kit.reeds(), 40, 60)
     a.character("miles", 250, 196)
     a.character("barnaby", 440, 262)
-    a.exit("homestead", 296, 0, 32, 10, (232, 486))    # back up the shore road
+    a.exit("homestead", 296, 0, 32, 10, (512, 792))    # back up the shore road, to the Homestead's south gate
     a.spawn = (312, 22)
     if not for_game:
         a.character("farmer", 312, 190)

@@ -1359,13 +1359,19 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     // Off the same derived `sectors`, influence and flags Ray's shop locks
     // read (see readShopProgress), so a traveler's "Requires: ..." and the
     // shelf's can never disagree.
-    story: storyView(storedStory.story, { sectors, influence, greenhouseBuilt, cropFieldsUnlocked }, inventory, {
-      tool,
-      sectorsCleared: cleared.length,
-      soilBeds: soilTiles.length,
-      enchantments: forgedEnchantments.length,
-      crossbreeds: Object.values(crossbreedInventory).reduce((sum, n) => sum + (n ?? 0), 0),
-    }),
+    story: storyView(
+      storedStory.story,
+      { sectors, influence, greenhouseBuilt, cropFieldsUnlocked },
+      inventory,
+      {
+        tool,
+        sectorsCleared: cleared.length,
+        soilBeds: soilTiles.length,
+        enchantments: forgedEnchantments.length,
+        crossbreeds: Object.values(crossbreedInventory).reduce((sum, n) => sum + (n ?? 0), 0),
+      },
+      friendshipPointsByNpc(friendship),
+    ),
     woodNodes: WOOD_NODE_IDS.map((id) => woodNodeSnapshot(id, woodNodeStates[id] ?? freshWoodNodeState(), now)),
     stoneNodes: stoneNodeRows.map((row) => stoneNodeSnapshot(row, now)),
     forageNodes: FORAGE_NODE_IDS.map((id) =>
@@ -6109,6 +6115,17 @@ async function recordStoryEvents(profileId: string, events: readonly StoryEvent[
   }
 }
 
+/** The points half of a friendship view, per NPC -- what `questRequirementMet`
+ *  reads for a `{kind: "friendship"}` requirement. Built off the already-read
+ *  `friendship` view rather than a second friendship read. */
+function friendshipPointsByNpc(friendship: Record<NpcId, StackAcresFriendshipView>): Readonly<Partial<Record<NpcId, number>>> {
+  const points = {} as Record<NpcId, number>;
+  FRIENDSHIP_NPCS.forEach((npc) => {
+    points[npc] = friendship[npc].points;
+  });
+  return points;
+}
+
 /**
  * Accepts a traveler's first quest -- what the bubble's "I'll help" sends.
  * Moves no Gold and touches no inventory. The unlock is re-derived here off
@@ -6170,7 +6187,7 @@ export async function turnInStackAcresTravelerQuest(
     // The durable half of `StoryFacts`: work a player can only do once is
     // read off the farm here rather than counted, so doing it before the
     // quest was accepted still counts. See StoryFacts' own header.
-    const [current, inventory, tool, cleared, soilTiles, enchantments, crossbreeds] = await Promise.all([
+    const [current, inventory, tool, cleared, soilTiles, enchantments, crossbreeds, friendshipRows] = await Promise.all([
       readStackAcresStory(profile.id),
       readStackAcresInventory(profile.id),
       readStackAcresToolTier(profile.id),
@@ -6178,14 +6195,25 @@ export async function turnInStackAcresTravelerQuest(
       listStackAcresSoilTiles(profile.id),
       listOwnedForgeEnchantmentIds(profile.id),
       readStackAcresCrossbreedInventory(profile.id),
+      Promise.all(FRIENDSHIP_NPCS.map((npc) => readStackAcresFriendship(profile.id, npc))),
     ]);
-    const result = applyTurnIn(current.story, traveler, inventory, {
-      tool,
-      sectorsCleared: cleared.length,
-      soilBeds: soilTiles.length,
-      enchantments: forgeEnchantmentIdsFromOwned(enchantments).length,
-      crossbreeds: Object.values(crossbreeds).reduce((sum, n) => sum + (n ?? 0), 0),
+    const friendshipPoints = {} as Record<NpcId, number>;
+    FRIENDSHIP_NPCS.forEach((npc, index) => {
+      friendshipPoints[npc] = friendshipRows[index].points;
     });
+    const result = applyTurnIn(
+      current.story,
+      traveler,
+      inventory,
+      {
+        tool,
+        sectorsCleared: cleared.length,
+        soilBeds: soilTiles.length,
+        enchantments: forgeEnchantmentIdsFromOwned(enchantments).length,
+        crossbreeds: Object.values(crossbreeds).reduce((sum, n) => sum + (n ?? 0), 0),
+      },
+      friendshipPoints,
+    );
     if (result.outcome === "not-met") {
       throw new StackAcresRequestError(`Say hello to ${name} first.`, 409, {
         round: await snapshots(profile.id, now),
@@ -6193,6 +6221,13 @@ export async function turnInStackAcresTravelerQuest(
     }
     if (result.outcome === "already-done") {
       throw new StackAcresRequestError(`${name} has already gone home.`, 409, {
+        round: await snapshots(profile.id, now),
+      });
+    }
+    if (result.outcome === "quest-locked") {
+      const quest = activeQuest(current.story.travelers[traveler], traveler);
+      if (quest === null) throw new Error(`${traveler}: quest-locked with no active quest`);
+      throw new StackAcresRequestError(`${quest.title} isn't open to hand in yet.`, 409, {
         round: await snapshots(profile.id, now),
       });
     }

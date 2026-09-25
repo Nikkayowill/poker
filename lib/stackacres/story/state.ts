@@ -17,6 +17,7 @@
  */
 
 import type { StackAcresToolTier } from "../equipment";
+import type { NpcId } from "../friendship";
 import type { StackAcresInventory } from "../inventory";
 import type { StackAcresShopProgress } from "../shop-locks";
 import type { StoryEvent } from "./events";
@@ -27,6 +28,7 @@ import {
   objectiveAdvance,
   objectiveLabel,
   toolMeets,
+  type QuestRequirement,
   type StoryObjective,
   type StoryQuest,
 } from "./quests";
@@ -211,7 +213,24 @@ export function questReady(
   );
 }
 
-export type TurnInOutcome = "advanced" | "completed" | "not-ready" | "not-met" | "already-done";
+/**
+ * Whether `quest`'s own `requires` (if any) is satisfied right now. Derived,
+ * never stored, same posture ./unlocks.ts's `storyUnlockMet` already takes
+ * for a traveler's line-level unlock -- there is no "activation" moment to
+ * miss, since this is re-checked on every view and every turn-in attempt.
+ */
+export function questRequirementMet(
+  quest: StoryQuest,
+  friendshipPoints: Readonly<Partial<Record<NpcId, number>>>,
+  travelersHome: ReadonlySet<TravelerId>,
+): boolean {
+  if (!quest.requires) return true;
+  const met = (req: QuestRequirement): boolean =>
+    req.kind === "friendship" ? (friendshipPoints[req.npc] ?? 0) >= req.points : travelersHome.has(req.traveler);
+  return quest.requires.every(met);
+}
+
+export type TurnInOutcome = "advanced" | "completed" | "not-ready" | "not-met" | "already-done" | "quest-locked";
 
 export interface TurnInResult {
   story: StoredStory;
@@ -235,12 +254,14 @@ export function applyTurnIn(
   id: TravelerId,
   inventory: StackAcresInventory,
   facts: StoryFacts,
+  friendshipPoints: Readonly<Partial<Record<NpcId, number>>> = {},
 ): TurnInResult {
   const entry = story.travelers[id];
   const refused = (outcome: TurnInOutcome): TurnInResult => ({ story, inventory, outcome, granted: null, quest: null });
   if (!entry.met) return refused("not-met");
   if (isTravelerDone(entry, id)) return refused("already-done");
   const quest = TRAVELER_QUESTS[id][entry.questIndex];
+  if (!questRequirementMet(quest, friendshipPoints, travelersHome(story))) return refused("quest-locked");
   if (!questReady(quest, entry.counts, inventory, facts)) return refused("not-ready");
 
   const debited: StackAcresInventory = { ...inventory };
@@ -301,6 +322,10 @@ export interface TravelerStoryView {
   readonly quest: StoryQuestView | null;
   /** Every objective of the active quest is satisfied. */
   readonly ready: boolean;
+  /** The active quest's own `requires` is unmet -- the dialogue shows a
+   *  "not ready yet" line instead of its normal progress beat. Always false
+   *  when the quest has no `requires`, or there is no active quest. */
+  readonly questBlocked: boolean;
 }
 
 /** How close the farm is to Leo's finale gate. Read by Ray's own "home"
@@ -326,6 +351,7 @@ export function storyView(
   progress: StackAcresShopProgress,
   inventory: StackAcresInventory,
   facts: StoryFacts,
+  friendshipPoints: Readonly<Partial<Record<NpcId, number>>> = {},
 ): StackAcresStoryView {
   const full = withProgress(story, progress);
   const travelers = {} as Record<TravelerId, TravelerStoryView>;
@@ -355,6 +381,7 @@ export function storyView(
               })),
             },
       ready: quest !== null && questReady(quest, entry.counts, inventory, facts),
+      questBlocked: quest !== null && !questRequirementMet(quest, friendshipPoints, full.travelersHome),
     };
   }
   return {

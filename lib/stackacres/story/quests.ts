@@ -20,6 +20,7 @@
 
 import { STACKACRES_CATALOGUE, isLivestock, isStackAcresCrop, type StackAcresCrop } from "../catalogue";
 import { STACKACRES_TOOL_TIERS, STACKACRES_TOOL_TIER_DEFS, type StackAcresToolTier } from "../equipment";
+import type { NpcId } from "../friendship";
 import { machineItemLabel, type MachineItemId } from "../machine-items";
 import type { RecipeId } from "../recipes";
 import type { StoryEvent } from "./events";
@@ -154,6 +155,20 @@ export function objectiveLabel(objective: StoryObjective): string {
   }
 }
 
+/**
+ * An extra gate on top of "the previous quest in this line is done" --
+ * checked continuously while the quest is active, not only once at accept
+ * time, so it can name something a player might not have yet when they
+ * reach this quest. `friendship` only names an NPC in `FRIENDSHIP_NPCS`
+ * (../friendship.ts) -- most travelers have no friendship track at all, so
+ * this cannot gate an arbitrary traveler's own quest on itself.
+ * `traveler-done` reads the same `travelersHome` set ./unlocks.ts's
+ * `finale` gate already reads, not a second one.
+ */
+export type QuestRequirement =
+  | { readonly kind: "friendship"; readonly npc: NpcId; readonly points: number }
+  | { readonly kind: "traveler-done"; readonly traveler: TravelerId };
+
 export interface StoryQuest {
   /** Stable, `<traveler>.q<n>`. Dialogue node ids hang off it. */
   readonly id: string;
@@ -161,6 +176,8 @@ export interface StoryQuest {
   readonly objectives: readonly StoryObjective[];
   /** The affirmative button on the turn-in bubble. */
   readonly turnInLabel: string;
+  /** Absent for almost every quest. See `QuestRequirement`. */
+  readonly requires?: readonly QuestRequirement[];
 }
 
 export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>> = {
@@ -193,6 +210,12 @@ export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>
       title: "First Order",
       objectives: [{ kind: "contracts", target: 1 }],
       turnInLabel: "Tell him about the order",
+      // Nine points is his first ladder rung (FRIENDSHIP_LADDER.ray[0]) --
+      // gifting him along the way while working the earlier quests opens
+      // this the moment its own objective clears. A player who never gifts
+      // him still gets there eventually; nothing on the farm waits on his
+      // line finishing (see this file's own header), only his keepsake does.
+      requires: [{ kind: "friendship", npc: "ray", points: 9 }],
     },
   ],
   pierre: [

@@ -416,23 +416,29 @@ export async function leaveHeadsUpTable(token: string, tableId: string): Promise
  * profileId unconditionally (see TournamentState's own comment on why a
  * guest is not excluded here the way an ordinary seat normally would be),
  * so there's no seat-position indirection to resolve.
+ *
+ * Returns the winner's just-credited profile (or null if nothing was paid
+ * here) so the calling route can hand it back to the browser that happens to
+ * be the winner -- without it, the header's Gold balance would not reflect
+ * the payout until some unrelated later request reloaded the profile.
  */
-export async function settleHeadsUpIfFinished(state: GameState): Promise<void> {
+export async function settleHeadsUpIfFinished(state: GameState): Promise<PlayerProfile | null> {
   const winnerId = state.tournament?.winnerProfileId;
-  if (!winnerId) return;
+  if (!winnerId) return null;
 
   try {
     const table = await getHeadsUpTableByGameId(state.id);
-    if (!table || table.status !== "active") return;
+    if (!table || table.status !== "active") return null;
 
     const settled = await settleHeadsUpTable(table, winnerId);
     // Rule 2: a lost race did not happen, so it does not pay. Whoever won
     // that race is settling and paying this same table right now.
-    if (!settled) return;
+    if (!settled) return null;
 
     const pot = table.stake * 2;
+    let profile: PlayerProfile | null = null;
     try {
-      await creditGoldByProfile(winnerId, pot);
+      profile = await creditGoldByProfile(winnerId, pot);
     } catch (error) {
       console.error("heads_up.payout_credit_failed", { tableId: table.id, winnerId, pot, error });
     }
@@ -449,8 +455,10 @@ export async function settleHeadsUpIfFinished(state: GameState): Promise<void> {
     ];
     const winnerSeat = seats.find((seat) => seat.playerId === winnerId)?.seat ?? 0;
     await recordDuelResult("heads-up", orderedPlayerIds, winnerSeat);
+    return profile;
   } catch (error) {
     console.error("heads_up.settle_failed", { gameId: state.id, error });
+    return null;
   }
 }
 

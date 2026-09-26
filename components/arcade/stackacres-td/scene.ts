@@ -140,6 +140,12 @@ import { SunlightLayer } from "./sunlight-layer";
 import { WaterFilm } from "./water-film";
 import { PeopleLife, greeting } from "./people-life";
 import { NpcWalkers, keepsRoutine } from "./npc-walkers";
+import { WorksiteCrew } from "./worksite-crew";
+import { EMPIRE_BUILDINGS, buildingTiles, doorTile, type PlacedEmpireBuilding, type Tile } from "@/lib/stackacres/empire-buildings";
+import type { BuildGhost } from "../stackacres/world-contract";
+import { Worksite, marketLayout, type MarketArea } from "@/lib/stackacres-td/worksite";
+import { STAFF_SPRITES, STORE_SHOPPERS, STORE_STAFF } from "@/lib/stackacres-td/store-cast";
+import { gridRouter } from "@/lib/stackacres-td/work-board";
 import type { AreaSpecForRoutines } from "@/lib/stackacres-td/npc-routine";
 import { WindSway } from "./wind-sway";
 import { SeeThrough } from "./see-through";
@@ -193,6 +199,8 @@ const CROP_FIELDS_GATE = { x: 512, y: 520 } as const;
 const AREAS: TopdownArea[] = [
   "homestead", "fold", "pasture", "coast", "oak", "mine", "townsquare", "barn", "workshop", "farmhouse",
   "empire",
+  // No door leads to the grocery yet (its city isn't built), so players never load it.
+  ...(process.env.NODE_ENV !== "production" ? (["grocery"] as const) : []),
 ];
 /** What the place tag says on arriving somewhere: the map's own names, plus the two rooms.
  *  Exported so the shell (stackacres-farm.tsx) can key its own per-place UI (the empire
@@ -212,6 +220,7 @@ export const AREA_NAMES: Record<TopdownArea, string> = {
   // Provisional name -- docs/stackacres-second-map-direction.md section 6
   // item 4 leaves the empire layer's own name an open question.
   empire: "The Far Field",
+  grocery: "The Grocery",
 };
 /** Walking through a door or a gate: the old view pushes in (or pulls back on the way out) and dissolves. */
 const TRAVEL_MS = 320;
@@ -231,7 +240,11 @@ const SLEEP_BEAT_MS = 450;
 const SLEEP_FADE_MS = 900;
 const SLEEP_FADE_REDUCED_MS = 150;
 const SLEEP_DARK_MS = 700;
-const CHARACTERS = ["farmer", "ray", "pilgrim", "pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
+const CHARACTERS = [
+  "farmer", "ray", "pilgrim", "pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo",
+  // The grocery's staff and shoppers, loaded only where the grocery is (development, for now).
+  ...(process.env.NODE_ENV !== "production" ? [...STAFF_SPRITES, ...STORE_SHOPPERS] : []),
+];
 const TRAVELERS_ON_MAP: readonly TravelerId[] = ["pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
 
 /** A pinned clock (setClock) keeps ticking for the people on their rounds, an hour an hour. */
@@ -462,6 +475,8 @@ export interface TopdownCallbacks {
    *  stands the thumb stick and the Use key down for the duration: they are
    *  refused anyway, and leaving them lit reads as the game having frozen. */
   onInputLocked: (locked: boolean) => void;
+  /** A tap while placing a building: the map square it landed on, in the Far Field. */
+  onBuildTap: (tile: Tile) => void;
 }
 
 /**
@@ -613,6 +628,8 @@ export class TopdownScene extends Phaser.Scene {
   private water!: WaterFilm;
   private people!: PeopleLife;
   private walkers!: NpcWalkers;
+  /** A dev preview of hired hands working a farm and store (startWorksiteDemo), or null. */
+  private worksite: WorksiteCrew | null = null;
   /** A pinned clock (setClock) and when it was pinned: the people on their rounds keep walking from it. */
   private pinnedClock: { hour: number; at: number } | null = null;
   /** prefers-reduced-motion: the wind, smoke and lamp flicker stop; the time of day and walking stay. */
@@ -648,6 +665,13 @@ export class TopdownScene extends Phaser.Scene {
   /** The fence pieces the farm has put up, and what draws them. */
   private fences: FencePiece[] = [];
   private fenceImages: Phaser.GameObjects.Image[] = [];
+  /** The buildings standing on the Far Field, and what draws them there. */
+  private empireBuildings: PlacedEmpireBuilding[] = [];
+  private buildingImages: Phaser.GameObjects.Image[] = [];
+  /** Placing a building: taps pick a square rather than walk. */
+  private buildMode = false;
+  private buildGhost: BuildGhost | null = null;
+  private ghostObjects: Phaser.GameObjects.GameObject[] = [];
   private nextRegrowCheck = 0;
 
   constructor(callbacks: TopdownCallbacks, host: HTMLElement) {
@@ -667,6 +691,7 @@ export class TopdownScene extends Phaser.Scene {
       this.load.atlas(`props:${area}`, `${ASSETS}/areas/${area}/props.png`, `${ASSETS}/areas/${area}/props.json`);
     }
     this.load.atlas("common", `${ASSETS}/common/sprites.png`, `${ASSETS}/common/sprites.json`);
+    this.load.atlas("buildings", `${ASSETS}/common/buildings.png`, `${ASSETS}/common/buildings.json`);
     this.load.image("forest", `${ASSETS}/common/forest.png`);
     this.load.spritesheet("fence", `${ASSETS}/common/fence.png`, { frameWidth: FENCE_FRAME.width, frameHeight: FENCE_FRAME.height });
     this.load.image("waterfall", `${ASSETS}/common/waterfall.png`);
@@ -795,6 +820,7 @@ export class TopdownScene extends Phaser.Scene {
       this.reducedMotion,
     );
     this.seeThrough.update(this.pos, delta, this.reducedMotion);
+    this.worksite?.update(delta, this.reducedMotion);
   }
 
   private walk(delta: number): void {
@@ -1036,9 +1062,14 @@ export class TopdownScene extends Phaser.Scene {
     this.people.clear();
     this.npcSprites.clear();
     this.walkers.clear();
+    this.stopWorksiteDemo();
     this.soilImages.clear();
     for (const image of this.fenceImages) image.destroy();
     this.fenceImages = [];
+    for (const image of this.buildingImages) image.destroy();
+    this.buildingImages = [];
+    for (const object of this.ghostObjects) object.destroy();
+    this.ghostObjects = [];
     this.wetTiles.clear();
     this.unitNodes.clear();
     this.preview = null;
@@ -1164,6 +1195,8 @@ export class TopdownScene extends Phaser.Scene {
     this.applyNpcs();
     this.drawSoil();
     this.drawFences();
+    this.drawBuildings();
+    this.drawGhost();
     this.drawUnits();
   }
 
@@ -1321,6 +1354,12 @@ export class TopdownScene extends Phaser.Scene {
     }
     // A fence piece stands on its square like anything else built there.
     if (this.areaName === "homestead") for (const piece of this.fences) blocked.add(tileKey(piece.tx, piece.ty));
+    // So does a building on the Far Field, over its whole plan.
+    if (this.areaName === "empire") {
+      for (const building of this.empireBuildings) {
+        for (const t of buildingTiles(building.kind, building.tx, building.ty)) blocked.add(tileKey(t.tx, t.ty));
+      }
+    }
     this.grid = { width: this.area.width, height: this.area.height, tile: this.area.tile, blocked };
     this.walkers.setLiveGrid(this.areaName, this.grid);
   }
@@ -1809,6 +1848,15 @@ export class TopdownScene extends Phaser.Scene {
     // gauge has the screen. Once he is holding a catch up, it puts it away.
     if (this.cast) {
       this.castTapped();
+      return;
+    }
+    // Placing a building: the tap picks the square, and the farmer and the camera stay put.
+    if (this.buildMode) {
+      if (this.areaName !== "empire") return;
+      const rect = this.host.getBoundingClientRect();
+      const map = this.cssToMap(clientX - rect.left, clientY - rect.top);
+      const { tile } = this.area;
+      this.callbacks.onBuildTap({ tx: Math.floor(map.x / tile), ty: Math.floor(map.y / tile) });
       return;
     }
     // Whatever this tap turns out to be, it is the farmer's business, so the camera comes back off a pan.
@@ -3194,6 +3242,85 @@ export class TopdownScene extends Phaser.Scene {
     }
   }
 
+  setEmpireBuildings(buildings: readonly PlacedEmpireBuilding[]): void {
+    this.empireBuildings = [...buildings];
+    if (!this.booted) return;
+    this.applyGates();
+    this.drawBuildings();
+  }
+
+  setBuildMode(on: boolean): void {
+    this.buildMode = on;
+  }
+
+  setBuildGhost(ghost: BuildGhost | null): void {
+    this.buildGhost = ghost;
+    if (this.booted) this.drawGhost();
+  }
+
+  /** The map square under the farmer's feet. */
+  farmerTile(): Tile | null {
+    if (!this.booted) return null;
+    const { tile } = this.area;
+    return { tx: Math.floor(this.pos.x / tile), ty: Math.floor(this.pos.y / tile) };
+  }
+
+  /** Where a building's picture stands: the middle of its plan's bottom edge, in map px. */
+  private buildingBase(kind: PlacedEmpireBuilding["kind"], tx: number, ty: number): { x: number; y: number } {
+    const { tile } = this.area;
+    const def = EMPIRE_BUILDINGS[kind];
+    return { x: (tx + def.w / 2) * tile, y: (ty + def.h) * tile };
+  }
+
+  /**
+   * Each building as its full-size drawing shown at half, like the Homestead's, standing on the bottom
+   * edge of its plan, with its shadow on the ground under it. Sorted in with everything else by that edge.
+   */
+  private drawBuildings(): void {
+    for (const image of this.buildingImages) image.destroy();
+    this.buildingImages = [];
+    if (this.areaName !== "empire") return;
+    for (const building of this.empireBuildings) {
+      const base = this.buildingBase(building.kind, building.tx, building.ty);
+      const shadow = this.add.image(base.x, base.y - 2, "buildings", `${building.kind}-shadow`).setScale(0.5).setDepth(-1);
+      const image = this.add.image(base.x, base.y, "buildings", building.kind).setOrigin(0.5, 1).setScale(0.5).setDepth(base.y);
+      this.buildingImages.push(shadow, image);
+    }
+  }
+
+  /** The building being placed: its squares green where it may stand and red where it may not, the square
+   *  in front of its door marked, and the building itself see-through over them. */
+  private drawGhost(): void {
+    for (const object of this.ghostObjects) object.destroy();
+    this.ghostObjects = [];
+    const ghost = this.buildGhost;
+    if (!ghost || this.areaName !== "empire") return;
+    const { tile } = this.area;
+    const colour = ghost.ok ? 0x71ad66 : 0xc84e38;
+    const top = 1_000_000;
+    for (const t of buildingTiles(ghost.kind, ghost.tx, ghost.ty)) {
+      this.ghostObjects.push(
+        this.add
+          .rectangle(t.tx * tile + 0.5, t.ty * tile + 0.5, tile - 1, tile - 1, colour, 0.32)
+          .setOrigin(0)
+          .setStrokeStyle(1, colour, 0.85)
+          .setDepth(top),
+      );
+    }
+    const door = doorTile(ghost.kind, ghost.tx, ghost.ty);
+    this.ghostObjects.push(
+      this.add
+        .rectangle(door.tx * tile + 0.5, door.ty * tile + 0.5, tile - 1, tile - 1, 0xf2cd5a, 0.25)
+        .setOrigin(0)
+        .setStrokeStyle(1, 0xf2cd5a, 0.9)
+        .setDepth(top),
+    );
+    const base = this.buildingBase(ghost.kind, ghost.tx, ghost.ty);
+    this.ghostObjects.push(
+      this.add.image(base.x, base.y, "buildings", ghost.kind).setOrigin(0.5, 1).setScale(0.5).setAlpha(0.72).setDepth(top + 1),
+    );
+  }
+
   setLandObstacles(snapshots: readonly LandObstacleSnapshot[]): void {
     const down = new Set(snapshots.filter((snapshot) => snapshot.cleared).map((snapshot) => snapshot.id));
     const fell = [...down].filter((id) => !this.landDown.has(id));
@@ -3600,6 +3727,32 @@ export class TopdownScene extends Phaser.Scene {
   isBlockedAt(at: Point): boolean {
     const { tile, blocked } = this.grid;
     return blocked.has(tileKey(Math.floor(at.x / tile), Math.floor(at.y / tile)));
+  }
+
+  /**
+   * Dev only (through `__stackacres`): the grocery's staff at work and its customers shopping, in the
+   * grocery room. Nothing is saved or paid. False anywhere but the grocery.
+   */
+  startWorksiteDemo(seed = 1): boolean {
+    if (this.areaName !== "grocery") return false;
+    this.stopWorksiteDemo();
+    const layout = marketLayout(this.area as unknown as MarketArea);
+    const startHour = this.daylight.hour();
+    const site = new Worksite(layout, (from, to, avoid) => gridRouter(this.grid)(from, to, avoid), {
+      seed,
+      customerSprites: STORE_SHOPPERS,
+      // The store keeps the farm clock's hours, rushes and all: the hour it opened on, carried forward by
+      // site time, so the site itself never reads the wall clock.
+      hourAt: (now) => (startHour + now / STACKACRES_HOUR_MS) % 24,
+    });
+    for (const { name, job, post, profile } of STORE_STAFF) site.hire(name, job, name, post, profile);
+    this.worksite = new WorksiteCrew(this, site, this.area.tile, STANDING);
+    return true;
+  }
+
+  stopWorksiteDemo(): void {
+    this.worksite?.destroy();
+    this.worksite = null;
   }
 
   /** Pins the time of day to an hour (0-24) to preview dusk and night, or null for the farm clock. */

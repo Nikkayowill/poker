@@ -80,6 +80,9 @@ import {
   placeStackAcresSoilTile,
   placeStackAcresFencePiece,
   removeStackAcresFencePiece,
+  buyEmpireBuilding,
+  placeOwnedEmpireBuilding,
+  pickUpOwnedEmpireBuilding,
   removeStackAcresSoilTile,
   moveStackAcresSoilTileGroup,
   buyStackAcresSeed,
@@ -452,6 +455,22 @@ const bodySchema = z.discriminatedUnion("action", [
   // Fence pieces, by Homestead map square. Wood only, both ways; no Gold.
   z.object({ action: z.literal("place-fence"), tx: z.number().int().min(0).max(255), ty: z.number().int().min(0).max(255) }),
   z.object({ action: z.literal("remove-fence"), tx: z.number().int().min(0).max(255), ty: z.number().int().min(0).max(255) }),
+  // Far Field buildings, by the top-left map square of their plan
+  // (lib/stackacres/empire-buildings.ts). Buying SPENDS Gold, Wood and Metal,
+  // priced on the server; placing an owned one and picking it up move nothing.
+  z.object({
+    action: z.literal("buy-building"),
+    kind: z.string().max(32),
+    tx: z.number().int().min(0).max(255),
+    ty: z.number().int().min(0).max(255),
+  }),
+  z.object({
+    action: z.literal("place-building"),
+    id: z.string().uuid(),
+    tx: z.number().int().min(0).max(255),
+    ty: z.number().int().min(0).max(255),
+  }),
+  z.object({ action: z.literal("pick-up-building"), id: z.string().uuid() }),
   // Hold-tap lift, tap-to-drop. `(tx, ty)` names the bed picked up (and,
   // through it, the whole contiguous group touching it -- see
   // stackacres-service.ts's `moveStackAcresSoilTileGroup`); `(toTx, toTy)` is
@@ -657,6 +676,12 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return placeStackAcresFencePiece(token, { tx: action.tx, ty: action.ty }, now);
     case "remove-fence":
       return removeStackAcresFencePiece(token, { tx: action.tx, ty: action.ty }, now);
+    case "buy-building":
+      return buyEmpireBuilding(token, { kind: action.kind, tx: action.tx, ty: action.ty }, now);
+    case "place-building":
+      return placeOwnedEmpireBuilding(token, { id: action.id, tx: action.tx, ty: action.ty }, now);
+    case "pick-up-building":
+      return pickUpOwnedEmpireBuilding(token, { id: action.id }, now);
     case "move-soil-tile-group":
       return moveStackAcresSoilTileGroup(
         token,

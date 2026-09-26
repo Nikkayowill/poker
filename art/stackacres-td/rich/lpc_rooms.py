@@ -224,10 +224,12 @@ class Prop:
 
 
 class Room:
-    """A finished room: the flat picture, what stands in it, the sun patches, and its plan."""
+    """A finished room: the flat picture, what stands in it, the sun patches, and its plan. `zones` are named
+    squares for whoever works or shops there, as (tag, tx, ty) in map tiles; `walls` more tiles nobody walks."""
 
-    def __init__(self, plan, props, spawn):
+    def __init__(self, plan, props, spawn, zones=(), walls=()):
         self.plan, self.props, self.spawn = plan, props, spawn
+        self.zones, self.walls = list(zones), list(walls)
 
 
 def band_box():
@@ -497,3 +499,303 @@ def workshop():
     P.append(Prop(piece(F + "Planter.png", 0, 1, 1, 2), 448, 300))
     P.append(Prop(piece(F + "Planter.png", 4, 1, 1, 2), 30, 170))
     return Room(plan, P, (96, 262))
+
+
+# ------------------------------------------------------------------ the city grocery
+
+# The till. The pack has no cash register, so this one is drawn here pixel by pixel in the pack's own
+# counter browns and pewter, lit from the top left like everything else in it: a pewter body, a green
+# readout, brass keys, and a paper receipt curling out of the top. Nothing is shaded by formula.
+REGISTER = [
+    "......kkkk..........",
+    "......kwwk..........",
+    ".....kwwwwk.........",
+    "..kkkkkkkkkkkkkk....",
+    ".kSSSSSSSSSSSSSSk...",
+    ".kSsssssssssssssk...",
+    ".kSskkkkkkkkkksskk..",
+    ".kSskggggggGgkssSk..",
+    ".kSskgGGGGGGgkssSk..",
+    ".kSskkkkkkkkkkssSk..",
+    ".kSsssssssssssssSk..",
+    ".kSsyYsyYsyYsyYsSk..",
+    ".kSsssssssssssssSk..",
+    ".kSsyYsyYsyYsyYsSk..",
+    ".kSssssssssssssszk..",
+    ".kzzzzzzzzzzzzzzzk..",
+    "..kkkkkkkkkkkkkkk...",
+]
+REGISTER_INK = {
+    "k": (43, 30, 34), "w": (238, 232, 214), "S": (186, 188, 196), "s": (150, 152, 164), "z": (104, 104, 118),
+    "g": (38, 74, 52), "G": (124, 224, 150), "y": (232, 190, 88), "Y": (150, 106, 40),
+}
+
+
+def register():
+    img = Image.new("RGBA", (len(REGISTER[0]), len(REGISTER)))
+    for y, row in enumerate(REGISTER):
+        for x, c in enumerate(row):
+            if c in REGISTER_INK:
+                img.putpixel((x, y), (*REGISTER_INK[c], 255))
+    return img
+
+
+def checkout():
+    """A checkout counter running away from the camera: the long island's left column, its top end and its
+    foot with the legs, about two and a half tiles long."""
+    ct = F + "Countertop.png"
+    return over((cut(ct, 6, 0, 26, 40), 0, 0), (cut(ct, 6, 96, 26, 52), 0, 40))
+
+
+def produce_table(back, front=()):
+    """A three-tile market table heaped end to end: a back row of heaps and, in front of it, a second row."""
+    table = cut(F + "Countertop.png", 96, 140, 96, 42)
+    layers = [(table, 0, 16)]
+    for row, (heaps, dy) in enumerate(((back, 14), (front, 22))):
+        n = len(heaps)
+        for i, (sheet_, tx, ty) in enumerate(heaps):
+            heap = piece(sheet_, tx, ty)
+            cx = (i + 0.5) * 96 / n + (6 if row else 0) - (3 if row else 0)
+            layers.append((heap, int(min(96 - heap.width, max(0, cx - heap.width / 2))), 16 + dy - heap.height))
+    return over(*layers)
+
+
+def aisle(n, offset=0):
+    """A run of stocked shelving n tiles long: the pack's two-tile open shelves, full, alternating."""
+    units = [(5, 4), (6, 4)]
+    return over(*[(tiles(F + "Cabinet.png", *units[(i + offset) % 2], 1, 2), i * HT, 0) for i in range(n)])
+
+
+def produce_bin(heap_sheet, tx, ty):
+    """A crate with a heap of one fruit or vegetable on it."""
+    crate = piece(F + "Crate.png", 0, 1)
+    heap = piece(heap_sheet, tx, ty)
+    return over((crate, 0, 12), (heap, (crate.width - heap.width) // 2, 12 + 10 - heap.height))
+
+
+VEG = SI + "Food/Vegetables A.png"
+FRUIT = SI + "Food/Fruit A.png"
+
+
+BREAD = SI + "Food/Bread B.png"
+CHEESE = SI + "Food/Cheese A.png"
+EGGS = SI + "Food/Eggs.png"
+
+
+def counter_run(n):
+    """A shop counter n tiles long, side on to the camera: the countertop's slab with its two ends, over the
+    island's legs."""
+    ct = F + "Countertop.png"
+    left, mid, right = cut(ct, 64, 140, 32, 24), cut(ct, 96, 140, 32, 24), cut(ct, 160, 140, 32, 24)
+    parts = [(left, 0, 0)] + [(mid, 32 * i, 0) for i in range(1, n - 1)] + [(right, 32 * (n - 1), 0)]
+    legs = [(cut(ct, 102 if i == 0 else 128, 160, 26 if i == 0 else 32, 20), 32 * i + (6 if i == 0 else 0), 24) for i in range(n)]
+    return over(*(legs + parts))
+
+
+def grocery():
+    """The city grocery, a market selling the produce shipped in to it.
+
+    The V3 floor plan (art/stackacres-td/rich/grocery-v3/plan.py, the painting guide Kayo works from), in map
+    tiles. The floor is x 1-26, y 3-16:
+
+    - the back wall (y 3): the dairy's fridges, packaged goods on shelving, a mop nook, the stockroom's bay
+      standing two tiles out with its double doors and the delivery crates beside it, the staff's chair, and
+      the pantry's barrels and bins under the windows,
+    - the aisles (left): two runs of shelving with an endcap each, the aisle between them browsed from
+      both sides,
+    - the produce island (middle): tiers of produce at the back, crates and a three-place counter at the
+      front, and a two-row staff floor between them open at both ends. Customers queue along the front
+      and the next one goes to whichever produce clerk is free. A one-row floor with a dead end jammed the
+      clerk and the stocker for minutes in the simulation, which is why it is two rows and open both ends,
+    - the bulk bins down the right wall,
+    - the front: four checkout lanes, each with its own short queue, its belt, and the cashier at the end
+      of it; customers leave out of the bottom of the lane along a corridor two squares wide to the door.
+      The doorway is four squares: the way out on the lanes' side, the way in on the other, so the two
+      streams don't meet. Then the bakery, the carts and the manager's corner.
+
+    Every square someone works or shops from is a zone, so the simulation reads the layout off this room."""
+    W, H = 28, 18
+    plan = Plan(W, H, (12, 15))
+    plan.floor(tiles(ST + "Floor/Wood Floor A.png", 1, 1, 1, 2), stagger=24)
+    plan.wall(siding(0, 0))
+    for x in range(0, W * HT, 4 * HT):
+        plan.put(post(0, 1), x + 124, 0)
+    for x in (20 * HT + 12, 22 * HT + 12, 24 * HT + 12):
+        lattice_window(x, plan)
+    for x in (2 * HT + 8, 6 * HT + 8, 10 * HT + 8):
+        plan.put(piece(WI + "Lighting, Wall.png", 0, 0), x, 22)
+        plan.lights.append((x + 10, 32, "lantern"))
+    plank = piece(F + "Shelf.png", 0, 0, 3, 1)
+    for i, x in enumerate((HT + 16, 5 * HT + 8, 8 * HT + 16)):
+        plan.put(plank, x, 30)
+        for k, (tx, ty) in enumerate(((4, 2), (5, 2), (3, 2), (4, 2))):
+            plan.put(piece(SI + "Kitchen Clutter A.png", tx, ty), x + 6 + k * 22, 12)
+    # A rug under the produce island, the doormat, a mat behind each till and one in the manager's corner.
+    diamond = F + "Rugs/Diamond Rug, tiling.png"
+    plan.put(rug(diamond, 3, 0, 8, 4), 14 * HT, 7 * HT)
+    plan.put(rug(diamond, 9, 0, 4, 1), 12 * HT, 16 * HT + 4)
+    plan.put(rug(diamond, 3, 0, 5, 2), 22 * HT, 15 * HT)
+    plan.wall_foot_shadow(WALL_H)
+    plan.band(band_box())
+
+    # The stockroom's bay stands two tiles out from the back wall: its face is a wall's height tall on the
+    # floor at row 5, its top is the dark of the wall tops, and its double doors open onto the shop.
+    bx0, bx1, foot = 13 * HT, 19 * HT, 5 * HT
+    top = foot - WALL_H
+    arr = np.array(plan.img)
+    arr[0:top, bx0:bx1] = VOID
+    plan.img = Image.fromarray(arr, "RGBA")
+    box = band_box()
+    edge = box.crop((HT, 0, 2 * HT, HT))
+    for x in range(bx0, bx1, HT):
+        plan.put(edge, x, top - 8)
+        plan.put(siding(0, 0), x, top)
+    # Down each side of the bay's top, the band the room's own sides carry, with its lip toward the wall.
+    for part, at in ((box.crop((2 * HT, HT, 3 * HT, 2 * HT)), bx0), (box.crop((0, HT, HT, 2 * HT)), bx1)):
+        side, (sx, _) = trim(part)
+        x = at if at == bx0 else at - side.width
+        for y in range(0, top - 8, HT):
+            plan.put(side.crop((0, 0, side.width, min(HT, top - 8 - y))), x, y)
+    plan.put(post(0, 1), bx0, top)
+    plan.put(post(0, 1), bx1 - 8, top)
+    arr = np.array(plan.img).astype(np.float32)
+    for k in range(6):
+        arr[foot + k, bx0:bx1, :3] *= 1 - 0.4 * (1 - k / 6)
+    plan.img = Image.fromarray(arr.clip(0, 255).astype(np.uint8), "RGBA")
+    plan.put(tiles("Structure/Doors/64x64px Arched Doors/Arched Double Doors A.png", 0, 1, 2, 2), 15 * HT, foot - 64)
+    for x in (14 * HT + 4, 17 * HT + 8):
+        plan.put(piece(WI + "Lighting, Wall.png", 0, 0), x, top + 22)
+        plan.lights.append((x + 10, top + 32, "lantern"))
+
+    P, Z = [], []
+    base = lambda row: row * HT + HT - 2        # the base line of something standing on tile row `row`
+    zone = lambda tag, tx, ty: Z.append((tag, tx, ty))
+    row = lambda xs, y: [(x, y) for x in xs]
+    walls = []
+
+    # -- the back wall, y 3
+    for i in range(4):
+        P.append(Prop(tiles(F + "Fridge.png", i % 3, 0, 1, 2), (1 + i) * HT + 16, base(3)))
+    run = aisle(7)
+    P.append(Prop(run, 5 * HT + run.width // 2, base(3)))
+    for x in range(5, 12):
+        P.append(Prop(piece(SI + "Kitchen Clutter A.png", 4 + (x % 2), 2), x * HT + 16, base(3) + 1, lift=54))
+    P.append(Prop(piece(SI + "Buckets.png", 0, 0), 12 * HT + 16, base(3)))                    # the mop bucket
+    P.append(Prop(piece(F + "Crate.png", 0, 1), 19 * HT + 16, base(4)))                       # the delivery
+    P.append(Prop(piece(F + "Crate.png", 1, 1), 19 * HT + 16, base(4) + 1, lift=24))
+    P.append(Prop(piece(F + "Crate.png", 0, 0), 19 * HT + 16, base(3)))
+    P.append(Prop(piece(F + "Seating/Chair, Dining A.png", 0, 4), 18 * HT + 16, base(5), passable=True))
+    pantry = [piece(F + "Barrel.png", 0, 0), grain_bin(2), piece(F + "Barrel.png", 2, 0), grain_bin(4),
+              piece(SI + "Baskets A.png", 2, 0, 1, 2), grain_bin(6)]
+    for i, img in enumerate(pantry):
+        P.append(Prop(img, (20 + i) * HT + 16, base(3)))
+    P.append(Prop(piece(SI + "Kitchen Clutter A.png", 1, 3), 26 * HT + 12, base(3)))           # sacks of flour
+    walls += row(range(1, 13), 3) + row(range(13, 20), 3) + row(range(13, 20), 4) + row(range(20, 26), 3)
+    for tag, xs in (("dairy", range(1, 5)), ("wall", range(5, 12)), ("pantry", range(20, 26))):
+        for x in xs:
+            zone(f"shelf:{tag}", x, 4)
+    zone("stockroom", 15, 5)
+    zone("stockroom", 16, 5)
+    zone("break", 18, 5)
+    for x in range(14, 19):
+        zone("staff", x, 5)
+
+    # -- the aisles: two runs of shelving on rows 7 and 10, each with an endcap of offers at its east end.
+    # The aisle between them (rows 8 and 9) is browsed from both sides; the front run backs onto the lanes.
+    stock_tops = [(SI + "Baskets A.png", 2, 0), (BREAD, 1, 1), (SI + "Kitchen Clutter A.png", 5, 2), (SI + "Baskets A.png", 0, 0),
+                  (CHEESE, 1, 1), (SI + "Kitchen Clutter A.png", 4, 2), (SI + "Baskets A.png", 1, 0), (EGGS, 0, 0)]
+    for r, (y, north, south) in enumerate(((7, "aisle-a", "aisle-b"), (10, "aisle-c", None))):
+        run = aisle(8, r + 1)
+        P.append(Prop(run, 2 * HT + run.width // 2, base(y)))
+        for i in range(8):
+            sheet_, tx, ty = stock_tops[(i + r * 3) % len(stock_tops)]
+            P.append(Prop(piece(sheet_, tx, ty), (2 + i) * HT + 16, base(y) + 1, lift=54))
+            zone(f"shelf:{north}", 2 + i, y - 1)
+            if south:
+                zone(f"shelf:{south}", 2 + i, y + 1)
+        P.append(Prop(produce_bin(FRUIT, 3, 2) if r == 0 else produce_bin(VEG, 7, 0), 10 * HT + 16, base(y)))
+        P.append(Prop(piece(F + "Crate.png", 1, 0), 10 * HT + 16, base(y) + 1, lift=20))
+        zone(f"shelf:{north}", 11, y)
+        walls += row(range(2, 11), y)
+
+    # -- the produce island: tiers at the back, crates and the counter at the front, the staff floor between
+    tiers = [
+        ([(VEG, 4, 5), (VEG, 10, 4), (FRUIT, 4, 2)], [(VEG, 5, 5), (VEG, 9, 4), (VEG, 1, 0)]),
+        ([(FRUIT, 2, 5), (VEG, 0, 10), (VEG, 9, 10)], [(VEG, 7, 3), (VEG, 8, 10), (FRUIT, 1, 5)]),
+    ]
+    for i, (back, front) in enumerate(tiers):
+        P.append(Prop(produce_table(back, front), (15 + 3 * i) * HT + 48, base(7), solid=20))
+    for x, heap in zip((15, 19, 20), ((VEG, 8, 4), (VEG, 1, 10), (FRUIT, 3, 2))):
+        P.append(Prop(produce_bin(*heap), x * HT + 16, base(10)))
+    counter_ = counter_run(3)
+    P.append(Prop(counter_, 16 * HT + 48, base(10), solid=20))
+    P.append(Prop(piece(SI + "Baskets A.png", 2, 1), 16 * HT + 14, base(10) + 1, lift=22))
+    P.append(Prop(piece(FRUIT, 5, 4), 17 * HT + 16, base(10) + 1, lift=22))
+    P.append(Prop(piece(VEG, 4, 5), 18 * HT + 16, base(10) + 1, lift=22))
+    walls += row(range(15, 21), 7) + row(range(15, 21), 10)
+    zone("produce:table-0", 15, 8)
+    zone("produce:table-0", 16, 8)
+    zone("produce:table-0", 17, 8)
+    for x in range(18, 21):
+        zone("produce:table-1", x, 8)
+    zone("produce:table-2", 15, 9)
+    zone("produce:table-3", 19, 9)
+    zone("produce:table-3", 20, 9)
+    # Three places at the counter, each a clerk behind and a customer in front; one queue along the front.
+    for n, x in ((2, 16), (0, 17), (1, 18)):
+        zone(f"produce:{n}:clerk", x, 9)
+        zone(f"produce:{n}:order", x, 11)
+    for x in range(19, 24):
+        zone("produce:line", x, 11)
+    for y in (8, 9):
+        for x in range(14, 22):
+            zone("staff", x, y)
+
+    # -- the bulk bins down the right wall, browsed from the lane beside them, and a fig in the corner
+    for i, g in enumerate((2, 3, 4, 6, 9)):
+        P.append(Prop(grain_bin(g), 26 * HT + 16, base(6 + i)))
+        zone("shelf:bulk", 25, 6 + i)
+    walls += [(26, y) for y in range(6, 11)]
+    P.append(Prop(piece(F + "Planter.png", 1, 0, 1, 2), 26 * HT + 16, base(12)))
+    walls.append((26, 12))
+
+    # -- the front: four checkout lanes. Each is the lane the customer queues and pays in, the belt running
+    # down beside it with the till at its foot, and the cashier's square at the end with a rack of sweets
+    # above it. Paid, they walk out of the bottom of the lane into the corridor to the door.
+    for k in range(4):
+        lane, belt, clerk = 1 + 3 * k, 2 + 3 * k, 3 + 3 * k
+        P.append(Prop(checkout(), belt * HT + 16, base(14)))
+        P.append(Prop(register(), belt * HT + 16, base(14) + 1, lift=26))
+        P.append(Prop(tiles(F + "Cabinet.png", 5 + k % 2, 4, 1, 2), clerk * HT + 16, base(13)))
+        zone(f"till:{k}:clerk", clerk, 14)
+        zone(f"till:{k}:pay", lane, 14)
+        zone(f"till:{k}:line", lane, 13)
+        zone(f"till:{k}:line", lane, 12)
+        walls += [(belt, 12), (belt, 13), (belt, 14), (clerk, 12), (clerk, 13)]
+    # The bakery, browsed from the row above it.
+    P.append(Prop(produce_table([(BREAD, 0, 2), (BREAD, 2, 2), (BREAD, 4, 2)], [(BREAD, 1, 2), (BREAD, 3, 2), (BREAD, 5, 2)]),
+                  22 * HT + 48, base(14), solid=20))
+    P.append(Prop(piece(SI + "Baskets A.png", 2, 0, 1, 2), 25 * HT + 16, base(14)))
+    P.append(Prop(piece(BREAD, 1, 1), 25 * HT + 16, base(14) + 1, lift=26))
+    walls += row(range(22, 26), 14)
+    for x in range(22, 26):
+        zone("shelf:bakery", x, 13)
+    # Carts by the door.
+    cart = piece("Objects/Moveable/Shopping Cart.png", 0, 0, 1, 2)
+    for i in range(3):
+        P.append(Prop(cart, 17 * HT + 18 + i * 10, base(16) - 2 + i))
+    walls += [(17, 16), (18, 16)]
+    # The manager's corner: a shelf of ledgers, a desk with a lamp, a chair and a fern. The store is bought
+    # through the manager, so this is where that happens one day.
+    P.append(Prop(tiles(F + "Cabinet.png", 5, 4, 1, 2), 22 * HT + 16, base(16)))
+    P.append(Prop(piece(F + "Seating/Chair, Dining A.png", 0, 4), 24 * HT + 16, base(15)))
+    P.append(Prop(piece(F + "Table, Rough Wood.png", 0, 2, 3, 2), 24 * HT + 16, base(16)))
+    P.append(Prop(piece(SI + "Lighting, Table.png", 0, 0), 23 * HT + 16, base(16) + 1, lights=((10, 8, "lamp"),), lift=30))
+    P.append(Prop(piece(F + "Planter.png", 0, 1), 26 * HT + 16, base(16)))
+    walls += row(range(22, 27), 15) + row(range(22, 27), 16)
+    # The way out on the lanes' side of the doorway, the way in on the other.
+    zone("door:out", 12, 16)
+    zone("door:out", 13, 16)
+    zone("door:in", 14, 16)
+    zone("door:in", 15, 16)
+    return Room(plan, P, (15 * HT, 16 * HT + 12), zones=Z, walls=walls)

@@ -170,8 +170,89 @@ def stepped(walk, stand):
 
 
 # Only the player walks the map, and a sheet costs texture memory on a phone, so the eight frame
-# stride is his. Everyone else keeps the 112 frame sheet the game already loads.
-STRIDES = {"farmer"}
+# stride is his. Everyone else keeps the 112 frame sheet the game already loads, except the grocery's
+# people, who walk the shop floor all day and are only loaded where the shop is.
+STORE_PEOPLE = set(cast.STORE_STAFF) | set(cast.STORE_SHOPPERS)
+STRIDES = {"farmer"} | STORE_PEOPLE
+
+# What the grocery's people do, cut from LPC poses (lib/stackacres-td/work-board.ts `Act`): reaching out
+# (stocking a shelf, picking produce, taking something off a shelf) is the thrust with the arm out; handing
+# something over is the spellcast's hands forward; ringing items through is the hands working at the
+# chest; a customer who gives up throws up their hands (emote). Each is (animation, columns, holds).
+STORE_ACTS = {
+    "reach": ("thrust", [0, 2, 3, 3], [120, 120, 260, 300]),
+    "give": ("spellcast", [1, 2, 2, 2], [140, 160, 300, 300]),
+    "scan": ("spellcast", [1, 2, 1, 2], [160, 160, 160, 160]),
+    "despair": ("emote", [1, 2, 2, 1], [150, 260, 360, 200]),
+}
+SIT_MS = [900, 900, 900, 900]
+INTERIOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "interior")
+# Where LPC's upper body ends and the legs begin, in its 64px frame.
+LPC_WAIST = 46
+
+
+def interior_piece(rel, tx, ty, scale=1.0):
+    """A drawing off one of the LPC interior sheets (lpc/interior), trimmed and optionally shrunk."""
+    img = Image.open(os.path.join(INTERIOR, rel)).convert("RGBA").crop((tx * 32, ty * 32, tx * 32 + 32, ty * 32 + 32))
+    img = img.crop(img.getbbox())
+    if scale != 1.0:
+        img = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.LANCZOS)
+    return img
+
+
+def carried(kind):
+    """What a member of staff carries in both arms: a crate of stock, or a basket of picked produce."""
+    if kind == "crate":
+        return interior_piece("Objects/Furniture/Crate.png", 2, 0, 0.8)
+    basket = interior_piece("Objects/Small Items/Baskets A.png", 2, 0, 0.55)
+    heap = interior_piece("Objects/Small Items/Food/Vegetables A.png", 4, 5, 0.45)
+    # The produce sits down in the basket, just its top showing over the rim.
+    rise = max(1, heap.height // 3)
+    out = Image.new("RGBA", (max(basket.width, heap.width), basket.height + rise))
+    out.alpha_composite(heap, ((out.width - heap.width) // 2, 0))
+    out.alpha_composite(basket, ((out.width - basket.width) // 2, out.height - basket.height))
+    return out
+
+
+def held_walk(who, d, thing):
+    """LPC walk frames with the arms held together at the chest (the spellcast's hands) and `thing` in
+    them: in front of the body facing down or sideways, behind it walking away."""
+    walk = who.frames("walk", d)
+    hold = who.frames("spellcast", d)[2]
+    x = {"down": 32, "up": 32, "left": 24, "right": 40}[d]
+    out = []
+    for frame in walk:
+        f = Image.new("RGBA", (lpc.FRAME, lpc.FRAME))
+        at = (x - thing.width // 2, LPC_WAIST - thing.height + 4)
+        if d == "up":
+            f.alpha_composite(thing, at)
+        f.alpha_composite(frame.crop((0, LPC_WAIST, lpc.FRAME, lpc.FRAME)), (0, LPC_WAIST))
+        f.alpha_composite(hold.crop((0, 0, lpc.FRAME, LPC_WAIST)), (0, 0))
+        if d != "up":
+            f.alpha_composite(thing, at)
+        out.append(f)
+    return out
+
+
+def basket_walk(who, d):
+    """A shopper's walk with a hand basket hanging at their side."""
+    basket = interior_piece("Objects/Small Items/Baskets A.png", 0, 0, 0.62)
+    x = {"down": 22, "up": 42, "left": 30, "right": 34}[d]
+    out = []
+    for frame in who.frames("walk", d):
+        f = frame.copy()
+        f.alpha_composite(basket, (x - basket.width // 2, 54 - basket.height))
+        out.append(f)
+    return out
+
+
+def strided(frames64, stand64, d, height):
+    """Eight 64px walk frames as the game's 48px stride: the dip taken out, front and back legs redrawn
+    from the standing pose, and the little hop on every step (see `stepped` and HOP)."""
+    stride = undipped([place(f, height) for f in frames64])
+    if d in ("down", "up"):
+        stride = stepped(stride, place(stand64, height))
+    return [shifted(f, dy) for f, dy in zip(stride, HOP)]
 
 
 def frames_for(name, height):
@@ -191,7 +272,9 @@ def frames_for(name, height):
         stand = dressed([]).frames("idle", d)[0]      # the pose he holds between steps
         pick = [walk[0], stand, walk[4], stand]
         out.append(("walk", d, [place(f, height) for f in pick], [WALK_MS] * 4))
-    for action, how in ACTIONS.items():
+    # The grocery's people never farm, so their sheets skip the farm's actions (the first sixteen frames,
+    # the walk that holds the standing poses the scene names by index, stay where they are).
+    for action, how in ACTIONS.items() if name not in STORE_PEOPLE else ():
         for d in DIRS:
             who = dressed(how["tools"])
             if how.get("poses") == "pick":
@@ -220,10 +303,55 @@ def frames_for(name, height):
                 src = dressed(how["tools"]).custom_frames(how["custom"], d, how.get("edit"))
                 ground = (GROUND[0] + 32, GROUND[1] + 32)
                 out.append((action, d, [place(src[c], height, ground) for c in how["cols"]], SWING_MS))
+    if name in STORE_PEOPLE:
+        who = dressed([])
+        # The apron comes off for a sit down: LPC never drew one seated, and a break is a break.
+        unaproned = lpc.Character([i for i in spec["items"] if not i[0].startswith("torso_aprons_apron")],
+                                  body=spec.get("body", "male"), palette=spec.get("palette"))
+        thing = carried(cast.STORE_STAFF[name]) if cast.STORE_STAFF.get(name) else None
+        for d in DIRS:
+            stand = who.frames("idle", d)[0]
+            if thing is not None:
+                out.append(("carry", d, strided(held_walk(who, d, thing), stand, d, height), [STRIDE_MS] * 8))
+            if name in cast.STORE_SHOPPERS:
+                out.append(("basket", d, strided(basket_walk(who, d), stand, d, height), [STRIDE_MS] * 8))
+            for act, (anim, cols, holds) in STORE_ACTS.items():
+                if act == "scan" and name in cast.STORE_SHOPPERS:
+                    continue                           # only a cashier rings things through
+                src = who.frames(anim, d)
+                out.append((act, d, [place(src[min(c, len(src) - 1)], height) for c in cols], holds))
+            if name in cast.STORE_STAFF:               # shoppers don't take breaks on the staff chair
+                sit = unaproned.frames("sit", d)
+                out.append(("sit", d, [place(sit[0], height)] * 4, SIT_MS))
     if name in HOLDERS:
         src = dressed([]).frames(HOLD["anim"], "down")
         out.append(("hold", "down", [place(src[c], height) for c in HOLD["cols"]], HOLD_MS))
     return out
+
+
+def packed(frames, width=COLS * SIZE):
+    """The grocery's crowd is thirty-odd people on screen at once, so their sheets are kept small: each
+    frame cut down to what is drawn in it, a frame drawn twice stored once, and the pieces laid in rows.
+    Returns the sheet and, per frame, its rect in the sheet and where the cut sits in the 48px frame, the
+    trimmed-frame form Phaser reads from an atlas."""
+    placed, seen, rects = [], {}, []
+    x = y = row_h = 0
+    for img in frames:
+        box = img.getbbox() or (0, 0, 1, 1)
+        cut = img.crop(box)
+        key = (cut.size, cut.tobytes())
+        if key not in seen:
+            if x + cut.width > width:
+                x, y, row_h = 0, y + row_h, 0
+            seen[key] = (x, y, cut.width, cut.height)
+            placed.append((cut, x, y))
+            x += cut.width
+            row_h = max(row_h, cut.height)
+        rects.append((seen[key], box))
+    sheet = Image.new("RGBA", (width, y + row_h))
+    for cut, px, py in placed:
+        sheet.alpha_composite(cut, (px, py))
+    return sheet, rects
 
 
 def write(name, blocks):
@@ -248,9 +376,16 @@ def write(name, blocks):
         else:
             tags.append({"name": tag, "from": first, "to": len(frames) - 1,
                          "direction": "forward", "color": "#000000ff"})
-    sheet = Image.new("RGBA", (COLS * SIZE, row * SIZE))
-    for i, c, r in rows:
-        sheet.alpha_composite(frames[i], (c * SIZE, r * SIZE))
+    if name in STORE_PEOPLE:
+        sheet, rects = packed(frames)
+        for i, ((fx, fy, fw, fh), box) in enumerate(rects):
+            sheet_frames[str(i)].update({
+                "frame": {"x": fx, "y": fy, "w": fw, "h": fh}, "trimmed": True,
+                "spriteSourceSize": {"x": box[0], "y": box[1], "w": fw, "h": fh}})
+    else:
+        sheet = Image.new("RGBA", (COLS * SIZE, row * SIZE))
+        for i, c, r in rows:
+            sheet.alpha_composite(frames[i], (c * SIZE, r * SIZE))
     os.makedirs(OUT, exist_ok=True)
     small, clear = paletted(sheet)
     small.save(os.path.join(OUT, f"{name}.png"), transparency=clear, optimize=True)

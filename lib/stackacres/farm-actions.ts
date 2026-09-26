@@ -26,6 +26,7 @@ import type { BlueprintId } from "./blueprints";
 import type { ZoneId } from "./zones";
 import type { QuestPlaceId } from "./story/places";
 import type { TravelerId } from "./story/travelers";
+import { EMPIRE_BUILDINGS, type EmpireBuildingKind } from "./empire-buildings";
 
 export type Action =
   | { action: "expand-capacity"; stock: StackAcresStock }
@@ -128,6 +129,12 @@ export type Action =
   | { action: "remove-soil-tile"; tx: number; ty: number }
   | { action: "place-fence"; tx: number; ty: number }
   | { action: "remove-fence"; tx: number; ty: number }
+  // Far Field buildings (./empire-buildings.ts), by the top-left square of
+  // their plan. Buying spends Gold, Wood and Metal; placing one you own and
+  // picking it up are free.
+  | { action: "buy-building"; kind: EmpireBuildingKind; tx: number; ty: number }
+  | { action: "place-building"; id: string; tx: number; ty: number }
+  | { action: "pick-up-building"; id: string }
   // Hold-tap lift, tap-to-drop: slides the contiguous group of beds touching
   // `(tx, ty)` so that tile lands on `(toTx, toTy)`, whatever crop stands on
   // it carried along. Free -- moves no Gold either way. The group itself is
@@ -244,6 +251,8 @@ export function intentOf(body: Action): string {
   // which would otherwise collapse every crop's buy onto one shared
   // "buy-seed" intent.
   if ("crop" in body) return `${body.action}:${body.crop}`;
+  // One building at a time is moved or picked up; two different ones are two intents.
+  if (body.action === "place-building" || body.action === "pick-up-building") return `building:${body.id}`;
   if ("sector" in body) return `${body.action}:${body.sector}`;
   // Checked before the generic "item" branch below: a gift carries `item`
   // but no `quantity` (it is always exactly one unit), and gifting one NPC
@@ -337,6 +346,8 @@ export function purchaseCueText(body: Action): string | null {
       return "Enchantment forged!";
     case "deploy-drone":
       return "Drone deployed!";
+    case "buy-building":
+      return `${EMPIRE_BUILDINGS[body.kind].label} built!`;
     default:
       return null;
   }

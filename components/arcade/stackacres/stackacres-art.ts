@@ -274,6 +274,7 @@ type CorePainterName =
   | "ico-trailphoto"
   | "ico-wood"
   | "ico-stone"
+  | "ico-metal"
   | "ico-fence";
 
 // The drawing shorthands (rr, ell, lin, rad, F, poly, stroke, leaf, painter)
@@ -2265,6 +2266,20 @@ const DRAWN: Record<PainterName, Painter> = {
     ell(c, 10.5, 15, 6.5, 5, -0.08);
     stroke(c, "#5b5f66", 1);
     ell(c, 15, 13.5, 5, 4.2, 0.1);
+  }),
+
+  // A smelted metal bar: a lit top face over a steel front, the same bar as
+  // the barn-paint `metal` pixel icon.
+  "ico-metal": painter(24, 24, (c) => {
+    poly(c, [[5, 10], [8, 7], [20, 7], [17, 10]]);
+    F(c, "#dfe3e8");
+    stroke(c, "#4b4f57", 1);
+    rr(c, 4, 10, 13.5, 6, 0.6);
+    F(c, lin(c, 4, 10, 4, 16, [[0, "#b5bbc4"], [1, "#7d838d"]]));
+    stroke(c, "#4b4f57", 1);
+    poly(c, [[17.5, 10], [20, 7], [20, 13], [17.5, 16]]);
+    F(c, "#6a707a");
+    stroke(c, "#4b4f57", 1);
   }),
 
   "ico-bushels": painter(24, 24, (c) => {

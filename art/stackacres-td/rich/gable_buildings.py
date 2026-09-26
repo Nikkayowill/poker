@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 import gable_kit as B
-from gable_kit import (Cv, hsh, hx, RED_ROOF, BROWN_ROOF, SLATE_ROOF, CREAM, WOOD, DARKWOOD, BARN, STONE,
+from gable_kit import (Cv, hsh, hx, ramp, RED_ROOF, BROWN_ROOF, SLATE_ROOF, CREAM, WOOD, DARKWOOD, BARN, STONE,
                        GLASS, GREEN, WHITE, PLASTER, LEAF, FLOWERS)
 
 
@@ -324,6 +324,136 @@ def workshop():
     ax, ay = x1 - 20, foot - 12
     cv.rect(ax + 3, ay + 4, ax + 11, ay + 12, STONE[1])
     cv.rect(ax, ay, ax + 16, ay + 5, STONE[2]); cv.hline(ax, ax + 16, ay, STONE[4]); cv.rect(ax - 4, ay + 1, ax, ay + 3, STONE[2])
+    cv.outline()
+    return cv.image()
+
+
+APPLE = ramp('#4a0f14', '#8c1c22', '#c8312e', '#ec5a44', '#ff9a7a')
+CARROT = ramp('#5a2408', '#a2480f', '#dd7a1c', '#f7a23a', '#ffd08a')
+CORN = ramp('#5a4410', '#a07e1c', '#d8b232', '#f2d65a', '#fff2a8')
+CABBAGE = ramp('#16321a', '#2e5e2a', '#4f8f3a', '#7cbd55', '#b6e08a')
+
+
+def produce(cv, x, y, R, r=3, seed=0):
+    """One round piece of produce, lit top left."""
+    for yy in range(y - r, y + r + 1):
+        for xx in range(x - r, x + r + 1):
+            d = (xx - x) ** 2 + (yy - y) ** 2
+            if d > r * r + 1:
+                continue
+            lit = (x - xx) + (y - yy)
+            col = R[3] if lit > 1 else (R[2] if lit > -2 else R[1])
+            if d > (r - 1) ** 2 + 1 and xx - x + yy - y > 1:
+                col = R[0]
+            cv.put(xx, yy, col)
+    cv.put(x - 1, y - 1, R[4])
+    if R is APPLE:
+        cv.put(x, y - r - 1, DARKWOOD[1]); cv.put(x + 1, y - r - 1, LEAF[2])
+
+
+def crate_stand(cv, x0, x1, y, seed=0):
+    """A two-tier produce stand: a raised back row of crates and a front row, each heaped full."""
+    kinds = [APPLE, CARROT, CABBAGE, CORN]
+    for tier, (top, h) in enumerate(((y - 16, 10), (y - 6, 12))):
+        width = (x1 - x0) // 2
+        for k in range(2):
+            cx0, cx1 = x0 + k * width + 1, x0 + (k + 1) * width - 1
+            R = kinds[(k + tier * 2 + seed) % len(kinds)]
+            # heap: rows of produce spilling over the rim
+            for row in range(2):
+                for i, px in enumerate(range(cx0 + 3, cx1 - 2, 5)):
+                    produce(cv, px + (2 if row else 0), top - 2 + row * 3, R, seed=seed + i)
+            B.hboards(cv, cx0, top + 3, cx1, top + h, WOOD, bh=4, seed=seed + k + tier)
+            cv.hline(cx0, cx1, top + 3, WOOD[5])
+            cv.vline(cx0, top + 3, top + h, WOOD[1]); cv.vline(cx1 - 1, top + 3, top + h, DARKWOOD[1])
+    # legs under the front row
+    for lx in (x0 + 2, x1 - 5):
+        for yy in range(y + 6, y + 10):
+            cv.put(lx, yy, DARKWOOD[2]); cv.put(lx + 1, yy, DARKWOOD[1]); cv.put(lx + 2, yy, DARKWOOD[0])
+
+
+def counter(cv, x0, x1, y):
+    """The till counter: a boarded front, a worn top, and the register on it."""
+    top = y - 14
+    B.vboards(cv, x0, top + 4, x1, y + 8, WOOD, bw=6, seed=21)
+    cv.rect(x0 - 2, top, x1 + 2, top + 4, DARKWOOD[4]); cv.hline(x0 - 2, x1 + 2, top, DARKWOOD[5])
+    cv.hline(x0 - 2, x1 + 2, top + 4, DARKWOOD[1])
+    # register: a brass-trimmed box with a paper tape
+    rx = x1 - 22
+    cv.rect(rx, top - 12, rx + 16, top, STONE[2]); cv.hline(rx, rx + 16, top - 12, STONE[4])
+    cv.rect(rx + 2, top - 10, rx + 14, top - 6, hx('#1d3b2a')); cv.hline(rx + 3, rx + 9, top - 8, hx('#7ce0a0'))
+    for k in range(4):
+        cv.put(rx + 3 + k * 3, top - 3, hx('#f2cd5a')); cv.put(rx + 3 + k * 3, top - 2, hx('#9c6b1e'))
+    cv.rect(rx + 5, top - 16, rx + 11, top - 12, WHITE[5]); cv.hline(rx + 5, rx + 11, top - 13, WHITE[3])
+    # a basket of apples beside it
+    for i in range(3):
+        produce(cv, x0 + 8 + i * 6, top - 3, APPLE, r=3)
+
+
+def awning(cv, x0, x1, top, depth, stripe=12):
+    """A striped canvas awning over the shopfront, scalloped along its hem."""
+    for x in range(x0, x1):
+        k = (x - x0) % stripe
+        red = ((x - x0) // stripe) % 2 == 0
+        hem = int(round(3 * np.sin(np.pi * k / stripe)))
+        for y in range(top, top + depth + hem):
+            t = (y - top) / depth
+            if red:
+                col = BARN[4] if t < 0.3 else (BARN[3] if t < 0.8 else BARN[2])
+            else:
+                col = WHITE[5] if t < 0.3 else (WHITE[4] if t < 0.8 else WHITE[3])
+            if k == 0 or k == stripe - 1:
+                col = BARN[2] if red else WHITE[2]
+            cv.put(x, y, col)
+        cv.put(x, top + depth + hem, BARN[1] if red else WHITE[1])
+    cv.hline(x0 - 2, x1 + 2, top - 2, DARKWOOD[3]); cv.hline(x0 - 2, x1 + 2, top - 1, DARKWOOD[1])
+
+
+def grocery():
+    W, H = 244, 250
+    cv = Cv(W, H)
+    foot = 200
+    x0, x1, wall_top = 14, 230, 118
+    cx = (x0 + x1) // 2
+    prof = [(x0 - 10, wall_top + 6), (cx, wall_top - 58), (x1 + 10, wall_top + 6)]
+    roof(cv, prof, 50, GREEN, seed=31)
+    front_face(cv, prof, x0, x1, wall_top, foot, lambda t: B.hboards(t, x0, 40, x1, foot, WHITE, bh=6, seed=32))
+    corner_posts(cv, x0, x1, lambda x: profile_y(prof, x), foot, T=GREEN)
+    barge(cv, prof, WHITE, thick=5)
+    # a round sign in the gable: an apple
+    for y in range(wall_top - 34, wall_top - 8):
+        for x in range(cx - 13, cx + 14):
+            d = (x - cx) ** 2 + (y - wall_top + 21) ** 2
+            if d <= 13 * 13:
+                cv.put(x, y, GREEN[1] if d > 11 * 11 else (WHITE[5] if d > 10 * 10 else CREAM[5]))
+    produce(cv, cx, wall_top - 20, APPLE, r=6)
+    cv.put(cx + 1, wall_top - 27, LEAF[3]); cv.put(cx + 2, wall_top - 28, LEAF[3]); cv.put(cx + 2, wall_top - 27, LEAF[2])
+    # the long painted board over the awning
+    sy = wall_top + 8
+    cv.rect(cx - 62, sy, cx + 62, sy + 14, GREEN[2]); cv.hline(cx - 62, cx + 62, sy, GREEN[4]); cv.hline(cx - 62, cx + 62, sy + 13, GREEN[0])
+    cv.vline(cx - 62, sy, sy + 14, GREEN[4]); cv.vline(cx + 61, sy, sy + 14, GREEN[0])
+    for i, R in enumerate((APPLE, CARROT, CORN, CABBAGE, APPLE, CARROT, CORN)):
+        produce(cv, cx - 48 + i * 16, sy + 7, R, r=4)
+    # shop windows and a glazed double door under the awning
+    B.window(cv, x0 + 14, 168, 42, 20, trim=WHITE, box=False, seed=33)
+    B.window(cv, x1 - 56, 168, 42, 20, trim=WHITE, box=False, seed=34)
+    for leaf in (0, 1):
+        B.panel_door(cv, cx - 16 + leaf * 16, 162, 15, foot - 162, R=GREEN, trim=WHITE)
+    B.eave_shadow(cv, x0, x1, sy + 34, depth=4)
+    awning(cv, x0 - 6, x1 + 6, sy + 18, 14)
+    B.foundation(cv, x0, x1, foot, foot + 7, seed=35)
+    # boardwalk the stands and counter sit on
+    for y in range(foot + 1, foot + 16):
+        for x in range(x0 - 6, x1 + 6):
+            ly = (y - foot - 1) % 5
+            col = WOOD[3] if hsh((x + (y // 5) * 13) // 26, y // 5, 36) > 0.25 else WOOD[2]
+            if ly == 4: col = WOOD[1]
+            elif ly == 0: col = WOOD[4]
+            cv.put(x, y, col)
+    cv.hline(x0 - 6, x1 + 6, foot + 16, DARKWOOD[1]); cv.hline(x0 - 6, x1 + 6, foot + 17, DARKWOOD[0])
+    crate_stand(cv, x0 - 2, x0 + 44, foot + 6, seed=0)
+    crate_stand(cv, x0 + 48, cx - 22, foot + 6, seed=1)
+    counter(cv, cx + 24, x1 + 2, foot + 6)
     cv.outline()
     return cv.image()
 

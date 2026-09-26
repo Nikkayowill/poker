@@ -53,13 +53,11 @@ export function lineClear(grid: Grid, a: Point, b: Point): boolean {
   return true;
 }
 
-/** Waypoints from `from` to `to` (the last one is the destination), or [] when nothing is reachable. */
-export function findPath(grid: Grid, from: Point, to: Point): Point[] {
-  const { tile } = grid;
-  const [sx, sy] = tileOf(from, tile);
-  const [gx, gy] = tileOf(to, tile);
-  const centre = (tx: number, ty: number): Point => ({ x: tx * tile + tile / 2, y: ty * tile + tile / 2 });
-
+/**
+ * Breadth-first over the tiles from (sx, sy) toward (gx, gy): the tiles walked, start first, to the goal
+ * or, when it can't be reached, to the open tile nearest it.
+ */
+function searchTiles(grid: Grid, sx: number, sy: number, gx: number, gy: number): { tiles: [number, number][]; reachedGoal: boolean } {
   const cameFrom = new Map<string, string | null>([[tileKey(sx, sy), null]]);
   const queue: [number, number][] = [[sx, sy]];
   let best: [number, number] = [sx, sy];
@@ -81,13 +79,30 @@ export function findPath(grid: Grid, from: Point, to: Point): Point[] {
       queue.push([nx, ny]);
     }
   }
-
-  const reachedGoal = best[0] === gx && best[1] === gy;
-  const tiles: Point[] = [];
+  const tiles: [number, number][] = [];
   for (let key: string | null = tileKey(best[0], best[1]); key; key = cameFrom.get(key) ?? null) {
     const [tx, ty] = key.split(",").map(Number);
-    tiles.unshift(centre(tx, ty));
+    tiles.unshift([tx, ty]);
   }
+  return { tiles, reachedGoal: best[0] === gx && best[1] === gy };
+}
+
+/** The tiles, one step at a time, from `from` to `to` (the start left out), or null when `to` can't be reached. */
+export function tilePath(grid: Grid, from: [number, number], to: [number, number]): [number, number][] | null {
+  if (!open(grid, to[0], to[1])) return null;
+  const { tiles, reachedGoal } = searchTiles(grid, from[0], from[1], to[0], to[1]);
+  return reachedGoal ? tiles.slice(1) : null;
+}
+
+/** Waypoints from `from` to `to` (the last one is the destination), or [] when nothing is reachable. */
+export function findPath(grid: Grid, from: Point, to: Point): Point[] {
+  const { tile } = grid;
+  const [sx, sy] = tileOf(from, tile);
+  const [gx, gy] = tileOf(to, tile);
+  const centre = (tx: number, ty: number): Point => ({ x: tx * tile + tile / 2, y: ty * tile + tile / 2 });
+
+  const { tiles: walked, reachedGoal } = searchTiles(grid, sx, sy, gx, gy);
+  const tiles: Point[] = walked.map(([tx, ty]) => centre(tx, ty));
   tiles.shift();
   if (reachedGoal) {
     tiles.pop();

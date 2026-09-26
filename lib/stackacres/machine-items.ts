@@ -44,7 +44,7 @@ import { FISH_SPECIES } from "./fishing";
  *  crafted, and each is a required material on its own blueprints
  *  (./machines.ts's `woodCost`/`stoneCost`) rather than something a recipe
  *  consumes. */
-export const MACHINE_RAW_ITEMS = [...FISH_SPECIES, "meat", "pelt", "wood", "stone"] as const;
+export const MACHINE_RAW_ITEMS = [...FISH_SPECIES, "meat", "pelt", "wood", "stone", "metal"] as const;
 export const MACHINE_PROCESSED_ITEMS = [
   "flour",
   "cheese",
@@ -177,6 +177,9 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   // Silo (./machines.ts), and a cheap sell keeps building always the better
   // trade than cashing it in raw.
   stone: { label: "Stone", plural: "Stone", icon: "ico-stone", sellPrice: 6 },
+  // Smelted from ore. Its job is paying for the Far Field's buildings
+  // (./empire-buildings.ts), so like Wood and Stone it sells for little.
+  metal: { label: "Metal", plural: "Metal", icon: "ico-metal", sellPrice: 20 },
   flour: { label: "Flour", plural: "Flour", icon: "ico-flour", sellPrice: 40 },
   cheese: { label: "Cheese", plural: "Cheese", icon: "ico-cheese", sellPrice: 700 },
   cloth: { label: "Cloth", plural: "Cloth", icon: "ico-cloth", sellPrice: 320 },

@@ -2271,6 +2271,8 @@ describe("the currency wall", () => {
       "activate-synergy-perk",
       "bag-quarry",
       "build-greenhouse",
+      // Spends Gold (plus Wood and Metal) on a Far Field building, refunded if it can't go down.
+      "buy-building",
       "buy-cutter",
       "buy-feed",
       "buy-seed",
@@ -2303,6 +2305,10 @@ describe("the currency wall", () => {
       // Moves no Gold either way: turning an order down and drawing another
       // is the release valve on a one-slot board, capped at one a UTC day.
       "pass-contract",
+      // Moves no Gold either way: an owned building going back into storage.
+      "pick-up-building",
+      // Moves no Gold either way: an owned building moved or put back down.
+      "place-building",
       // Moves no Gold either way: a fence piece takes Wood and gives it back.
       "place-fence",
       "place-machine",

@@ -40,8 +40,8 @@ def _stand_in(img, **info):
     return proxy
 
 
-def _area(name, room, back):
-    """The rig's Area for a finished lpc_rooms.Room. `back` is where a player leaving lands on the Homestead."""
+def _area(name, room, back, to="homestead"):
+    """The rig's Area for a finished lpc_rooms.Room. `back` is where a player leaving lands in `to`."""
     plan = room.plan
     a = Area(name, plan.w, plan.h)
     a.indoor = True
@@ -63,7 +63,11 @@ def _area(name, room, back):
     a.wall(plan.w - 1, 0, plan.w - 1, plan.h - 1)
     a.wall(0, plan.h - 1, d0 - 1, plan.h - 1)
     a.wall(d1 + 1, plan.h - 1, plan.w - 1, plan.h - 1)
-    a.door("homestead", d0 * T, plan.h * T - 8, (d1 - d0 + 1) * T, 8, back)
+    for tx, ty in room.walls:
+        a.wall(tx, ty, tx, ty)
+    for tag, tx, ty in room.zones:
+        a.zone(tag, tx * T, ty * T, T, T)
+    a.door(to, d0 * T, plan.h * T - 8, (d1 - d0 + 1) * T, 8, back)
     # Just inside the door, where a player walking in lands: the Homestead's doors send them here.
     a.spawn = ((d0 + d1 + 1) * T // 2, plan.h * T - 26)
     a.sunbeams = [(img, _half(x), _half(y)) for img, x, y in plan.beams]
@@ -81,3 +85,8 @@ def workshop(for_game=False):
 
 def house(for_game=False):
     return _area("farmhouse", L.house(), (481, 300))
+
+
+# The city grocery. The city isn't built yet, so for now its door lets out onto the Far Field by the bridge.
+def grocery(for_game=False):
+    return _area("grocery", L.grocery(), (40, 240), to="empire")

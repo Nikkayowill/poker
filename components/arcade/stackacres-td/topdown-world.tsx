@@ -70,8 +70,21 @@ function toSceneUnits(units: StackAcresUnitSnapshot[]): StackAcresSceneUnit[] {
 }
 
 export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
-  const { units, celebrate, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles, fences, api } =
-    props;
+  const {
+    units,
+    celebrate,
+    sectors,
+    soilTiles,
+    woodNodes,
+    stoneNodes,
+    forageNodes,
+    landObstacles,
+    fences,
+    empireBuildings,
+    buildMode,
+    buildGhost,
+    api,
+  } = props;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<TopdownScene | null>(null);
   /** The live game, held so a layer can be added over the map after boot --
@@ -101,9 +114,9 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   });
 
   const sceneUnits = useMemo(() => toSceneUnits(units), [units]);
-  const latest = useRef({ sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles, fences });
+  const latest = useRef({ sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles, fences, empireBuildings, buildMode, buildGhost });
   useLayoutEffect(() => {
-    latest.current = { sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles, fences };
+    latest.current = { sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles, fences, empireBuildings, buildMode, buildGhost };
   });
 
   useEffect(() => {
@@ -152,6 +165,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onViewMoved: () => p().onViewMoved(),
           onPlaceEntered: (name) => p().onPlaceEntered(name),
           onInputLocked: setCastLocked,
+          onBuildTap: (tile) => p().onBuildTap(tile),
         },
         host,
       );
@@ -191,6 +205,9 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       scene.setForageNodes(now.forageNodes);
       scene.setLandObstacles(now.landObstacles);
       scene.setFences(now.fences);
+      scene.setEmpireBuildings(now.empireBuildings);
+      scene.setBuildMode(now.buildMode);
+      scene.setBuildGhost(now.buildGhost);
       scene.setClockSource(() => p().clockHour());
       scene.setDaySource(() => p().clockDay());
 
@@ -240,6 +257,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       tapAt: (clientX, clientY) => sceneRef.current?.tapAt(clientX, clientY),
       focusZone: (zone) => sceneRef.current?.focusZone(zone),
       currentPlace: () => sceneRef.current?.currentPlace() ?? "farmstead",
+      farmerTile: () => sceneRef.current?.farmerTile() ?? null,
       fieldPointFor: (x, y) => sceneRef.current?.fieldPointFor(x, y) ?? null,
       // A drag pans and a pinch zooms (scene.ts's free-camera section); these are the same moves without a gesture.
       zoomBy: (factor) => sceneRef.current?.zoomBy(factor),
@@ -388,6 +406,18 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   useEffect(() => {
     sceneRef.current?.setFences(fences);
   }, [fences]);
+
+  useEffect(() => {
+    sceneRef.current?.setEmpireBuildings(empireBuildings);
+  }, [empireBuildings]);
+
+  useLayoutEffect(() => {
+    sceneRef.current?.setBuildMode(buildMode);
+  }, [buildMode]);
+
+  useEffect(() => {
+    sceneRef.current?.setBuildGhost(buildGhost);
+  }, [buildGhost]);
 
   useLayoutEffect(() => {
     if (celebrate) sceneRef.current?.celebrate([celebrate.unitId]);

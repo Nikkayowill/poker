@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { seededRandomInt } from "@/lib/pvp/secure-random";
 import {
   applyCribbageMove,
+  CRIBBAGE_GAME,
+  CRIBBAGE_TURN_MS,
   createCribbageState,
+  cribbagePayouts,
   cribbageResult,
   cribbageSnapshot,
   resignCribbage,
@@ -116,7 +120,7 @@ function craftedState(overrides: Partial<CribbageState>): CribbageState {
     dealerSeat: 0,
     handNumber: 0,
     phase: "pegging",
-    rngState: 12345,
+    actionStartedAt: T0,
     hands: Array.from({ length: playerCount }, () => []),
     originalHands: Array.from({ length: playerCount }, () => [c(2, "S"), c(3, "H"), c(4, "D"), c(9, "C")]),
     discarded: new Array(playerCount).fill(null),
@@ -134,6 +138,7 @@ function craftedState(overrides: Partial<CribbageState>): CribbageState {
     lastHandSummary: null,
     winner: null,
     winReason: null,
+    forfeited: [],
   };
   return { ...base, ...overrides };
 }
@@ -285,7 +290,7 @@ describe("the automatic count", () => {
     // never got their turn, because the match was already over.
     expect(final.lastHandSummary?.entries).toHaveLength(1);
     expect(final.lastHandSummary?.entries[0].subject).toBe(1);
-    expect(cribbageResult(final)).toEqual({ winner: 1, reason: "121" });
+    expect(cribbageResult(final)).toEqual({ winner: 1, reason: "121", forfeited: [] });
   });
 
   it("attaches a proper lastHandSummary when the match ends on heels alone, before any pegging or counting", () => {
@@ -326,22 +331,117 @@ describe("the automatic count", () => {
   });
 });
 
-describe("tick", () => {
-  it("always returns null -- cribbage has no real-time clock", () => {
-    const live = discardAll(createCribbageState(9, T0, 3));
-    expect(tickCribbage(live, T0 + 60_000)).toBeNull();
+describe("dealing", () => {
+  it("is repeatable only through an injected RandomInt", () => {
+    const a = createCribbageState(0, T0, 4, seededRandomInt(7));
+    const b = createCribbageState(0, T0, 4, seededRandomInt(7));
+    expect(a.hands).toEqual(b.hands);
+    expect(a.deckRemaining).toEqual(b.deckRemaining);
+  });
+
+  it("does not derive the deal from the match seed", () => {
+    const a = createCribbageState(42, T0, 4);
+    const b = createCribbageState(42, T0, 4);
+    expect(a.hands).not.toEqual(b.hands);
+  });
+
+  it("shuffles the next deal with the RandomInt passed to the move that ends the hand", () => {
+    const pegging = discardAll(createCribbageState(0, T0, 3, seededRandomInt(3)));
+    let state = pegging;
+    let draws = 0;
+    const counting = (max: number) => {
+      draws += 1;
+      return max - 1;
+    };
+    let guard = 0;
+    while (state.phase === "pegging") {
+      guard += 1;
+      if (guard > 100) throw new Error("Pegging did not conclude.");
+      const seat = state.peggingTurn as CribbageSeat;
+      const playable = [...state.hands[seat]]
+        .sort((a, b) => a.rank - b.rank)
+        .find((card) => Math.min(card.rank, 10) + state.peggingCount <= 31);
+      const outcome = applyCribbageMove(state, seat, playable ? { type: "peg", card: playable } : { type: "go" }, T0, counting);
+      if (!("next" in outcome)) throw new Error(outcome.reject);
+      state = outcome.next;
+    }
+    if (state.phase === "done") return;
+    // One draw per swap of a 52-card Fisher-Yates.
+    expect(draws).toBe(51);
+    expect(state.handNumber).toBe(1);
+  });
+
+  it("stores no seeded accumulator on a new match", () => {
+    expect(createCribbageState(1, T0, 3).rngState).toBeUndefined();
+  });
+});
+
+describe("turn clock", () => {
+  it("does nothing while the decision is still inside its time", () => {
+    const dealt = createCribbageState(9, T0, 3);
+    expect(tickCribbage(dealt, T0 + CRIBBAGE_TURN_MS - 1)).toBeNull();
     const done = craftedState({ phase: "done", winner: 0, winReason: "121" });
-    expect(tickCribbage(done, T0 + 60_000)).toBeNull();
+    expect(tickCribbage(done, T0 + CRIBBAGE_TURN_MS * 10)).toBeNull();
+  });
+
+  it("forfeits every seat that has not discarded when the discard clock runs out", () => {
+    const dealt = createCribbageState(9, T0, 3);
+    const one = play(dealt, 1, { type: "discard", card: dealt.hands[1][0] }, T0 + 5_000);
+    // A discard that leaves others to go does not restart the table's clock.
+    expect(one.actionStartedAt).toBe(T0);
+    const ticked = tickCribbage(one, T0 + CRIBBAGE_TURN_MS);
+    expect(ticked?.phase).toBe("done");
+    expect(ticked?.forfeited).toEqual([0, 2]);
+    expect(ticked && cribbageResult(ticked)).toEqual({ winner: null, reason: "Timeout", forfeited: [0, 2] });
+  });
+
+  it("forfeits the seat to peg when it stalls, with the clock restarting on every play", () => {
+    const pegging = discardAll(createCribbageState(9, T0, 3));
+    expect(pegging.actionStartedAt).toBe(T0);
+    const seat = pegging.peggingTurn as CribbageSeat;
+    const card = pegging.hands[seat][0];
+    const played = play(pegging, seat, { type: "peg", card }, T0 + 60_000);
+    expect(played.actionStartedAt).toBe(T0 + 60_000);
+    expect(tickCribbage(played, T0 + CRIBBAGE_TURN_MS)).toBeNull();
+    const ticked = tickCribbage(played, T0 + 60_000 + CRIBBAGE_TURN_MS);
+    expect(ticked?.forfeited).toEqual([played.peggingTurn]);
+    expect(CRIBBAGE_GAME.tick?.(played, T0 + 60_000 + CRIBBAGE_TURN_MS)).toEqual(ticked);
+  });
+
+  it("ends the table on a move sent after the clock ran out", () => {
+    const dealt = createCribbageState(9, T0, 3);
+    const late = applyCribbageMove(dealt, 0, { type: "discard", card: dealt.hands[0][0] }, T0 + CRIBBAGE_TURN_MS);
+    if (!("next" in late)) throw new Error("expected next");
+    expect(late.next.phase).toBe("done");
+    expect(late.next.forfeited).toEqual([0, 1, 2]);
+  });
+
+  it("gives a match stored before the clock a start time once, then leaves it alone", () => {
+    const { actionStartedAt: _dropped, forfeited: _none, ...legacy } = craftedState({ hands: [[c(2, "S")], [c(3, "S")], [c(4, "S")]] });
+    void _dropped;
+    void _none;
+    const first = tickCribbage(legacy as CribbageState, T0 + 999_999);
+    expect(first?.actionStartedAt).toBe(T0 + 999_999);
+    expect(first && tickCribbage(first, T0 + 999_999 + 1_000)).toBeNull();
+  });
+
+  it("shows the time left in the snapshot, and none once over", () => {
+    const dealt = createCribbageState(9, T0, 3);
+    expect(cribbageSnapshot(dealt, 0, T0 + 30_000).turnRemainingMs).toBe(CRIBBAGE_TURN_MS - 30_000);
+    const resigned = resignCribbage(dealt, 0, T0);
+    expect(cribbageSnapshot(resigned, 1, T0).turnRemainingMs).toBeNull();
+    expect(cribbageSnapshot(resigned, 1, T0).forfeited).toEqual([0]);
   });
 });
 
 describe("resign", () => {
-  it("ends the whole match immediately, paying the highest remaining score", () => {
+  it("forfeits only the resigner and names no winner", () => {
     const state = craftedState({ playerCount: 4, scores: [10, 50, 30, 5], hands: Array.from({ length: 4 }, () => []) });
     const resigned = resignCribbage(state, 1, T0);
     expect(resigned.phase).toBe("done");
-    expect(resigned.winner).toBe(2);
+    expect(resigned.winner).toBeNull();
     expect(resigned.winReason).toBe("Resigned");
+    expect(cribbageResult(resigned)).toEqual({ winner: null, reason: "Resigned", forfeited: [1] });
   });
 
   it("does nothing to an already-finished match", () => {
@@ -349,6 +449,36 @@ describe("resign", () => {
     const resigned = resignCribbage(state, 1, T0);
     expect(resigned.winner).toBe(0);
     expect(resigned.winReason).toBe("121");
+  });
+});
+
+describe("cribbagePayouts", () => {
+  it("pays the whole pot to a winner at 121", () => {
+    expect(cribbagePayouts({ winner: 2, reason: "121", forfeited: [] }, 4, 1000)).toEqual([0, 0, 4000, 0]);
+  });
+
+  it("gives colluders nothing from a stranger when one of them resigns at a 3-seat table", () => {
+    // Seats 0 and 1 are friends, seat 2 a stranger. Seat 0 resigns.
+    const payouts = cribbagePayouts({ winner: null, reason: "Resigned", forfeited: [0] }, 3, 1000);
+    expect(payouts).toEqual([0, 1500, 1500]);
+    // The pair put in 2000 and take back 1500; the stranger ends up ahead.
+    expect(payouts[0] + payouts[1]).toBeLessThan(2000);
+    expect(payouts[2]).toBeGreaterThan(1000);
+  });
+
+  it("always pays out exactly the pot, odd Gold going to the lowest seats", () => {
+    const payouts = cribbagePayouts({ winner: null, reason: "Resigned", forfeited: [2] }, 4, 1001);
+    expect(payouts).toEqual([1335, 1335, 0, 1334]);
+    expect(payouts.reduce((sum, value) => sum + value, 0)).toBe(1001 * 4);
+  });
+
+  it("splits several forfeited stakes among the seats still in", () => {
+    const payouts = cribbagePayouts({ winner: null, reason: "Timeout", forfeited: [0, 3] }, 4, 500);
+    expect(payouts).toEqual([0, 1000, 1000, 0]);
+  });
+
+  it("refunds everyone when every seat forfeited", () => {
+    expect(cribbagePayouts({ winner: null, reason: "Timeout", forfeited: [0, 1, 2] }, 3, 700)).toEqual([700, 700, 700]);
   });
 });
 

@@ -39,7 +39,7 @@ describe("cancelWaitingPvpTable", () => {
     const host = await funded();
     await spendGoldByProfile(host.id, STAKE);
     const table = await createHeadsUpTableRow(host.id, "1k", STAKE, null);
-    await claimHeadsUpSeat(table.id, host.id, host.token);
+    await claimHeadsUpSeat(table.id, host.id, host.token, `test_stake:${host.id}`);
 
     const result = await cancelWaitingPvpTable("heads-up", table.id);
     expect(result).toEqual({ cancelledSeats: 1, refunded: STAKE, refundFailures: 0 });
@@ -110,7 +110,7 @@ describe("cancelWaitingPvpTable", () => {
     const host = await funded();
     await spendGoldByProfile(host.id, STAKE);
     const table = await createSitAndGoTableRow(host.id, "1k", STAKE);
-    await claimSitAndGoSeat(table.id, host.id, host.token);
+    await claimSitAndGoSeat(table.id, host.id, host.token, `test_stake:${host.id}`);
 
     expect((await listWaitingPvpTables()).find((row) => row.id === table.id)).toMatchObject({
       seatedCount: 1,
@@ -127,7 +127,7 @@ describe("cancelWaitingPvpTable", () => {
     const host = await funded();
     await spendGoldByProfile(host.id, STAKE);
     const table = await createHeadsUpTableRow(host.id, "1k", STAKE, null);
-    await claimHeadsUpSeat(table.id, host.id, host.token);
+    await claimHeadsUpSeat(table.id, host.id, host.token, `test_stake:${host.id}`);
 
     // Cancel it once for real, then try again on the now-cancelled table.
     await cancelWaitingPvpTable("heads-up", table.id);

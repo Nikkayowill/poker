@@ -907,6 +907,10 @@ export function PokerApp() {
           }
           catchUps = 0;
           refreshQueued = false;
+          // Anyone can broadcast on this channel, so a version it claims is
+          // only a hint. Once the catch-up reads are spent, go by what the
+          // server returned, or one bogus number would mute every real signal.
+          pendingVersion = Math.min(pendingVersion, fetchedVersion);
         });
     };
 

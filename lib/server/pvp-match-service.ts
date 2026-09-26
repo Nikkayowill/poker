@@ -12,10 +12,12 @@ import { publicIdentity } from "./leaderboard-identity";
 import { recordDuelResult } from "./leaderboard-store";
 import {
   attachMatchToChallenge,
+  cancelClaimedChallenge,
   claimChallenge,
   createChallenge,
   expireStaleChallenges,
   listOpenChallenges,
+  listStrandedClaims,
   OpenChallengeExists,
   releaseChallenge,
   reopenClaimedChallenge,
@@ -26,6 +28,7 @@ import {
   advancePvpMatch,
   createPvpMatch,
   getActivePvpMatch,
+  getPvpMatchByChallengeId,
   getPvpMatchById,
   getRecentlySettledPvpMatch,
   type StoredPvpMatch,
@@ -33,12 +36,11 @@ import {
 import { applyMissionEvent } from "./mission-store";
 import {
   confirmGoldDebitLedgered,
-  creditGoldByProfile,
   creditGoldByProfileLedgered,
   ensureProfile,
   getPublicProfilesByIds,
-  spendGoldByProfile,
   spendGoldByProfileLedgered,
+  type LedgeredGoldResult,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
 
@@ -74,7 +76,51 @@ import { awardWager } from "./progression-store";
  *
  * Rule 4 has no equivalent in the casino services: nothing there held a
  * stake for a counterparty who might never arrive.
+ *
+ * Every Gold movement here is ledgered under a key derived from the row it
+ * belongs to (see the key helpers below), so a retry, a replay by hand or the
+ * reconciliation sweep lands on the ledger row already written and pays
+ * nothing twice.
  */
+
+/** Games where seat 0 has to open and a clock starts the moment the match exists. */
+const OPENING_MOVE_GAMES: ReadonlySet<string> = new Set(["chess", "checkers", "othello", "mancala", "liars-dice"]);
+
+/**
+ * How long seat 0 has to make the first move before the match is called off
+ * and both stakes go back. The challenger may have walked away while the
+ * offer stood, and without this their clock would run out and hand the pot
+ * to whoever accepted. Well inside the five minute clocks, so a present
+ * challenger loses little time to it.
+ */
+export const OPENING_MOVE_WINDOW_MS = 60_000;
+
+/**
+ * How old a claimed challenge with no match must be before the sweep settles
+ * it. Far longer than any request can live, so a claim this old is not an
+ * accept still in flight.
+ */
+export const STRANDED_CLAIM_AFTER_MS = 15 * 60_000;
+
+/** The result card's line for a match called off by OPENING_MOVE_WINDOW_MS. */
+const NO_OPENING_MOVE: DuelOutcome = { winner: null, reason: "No first move" };
+
+// ---- ledger keys -----------------------------------------------------------
+
+/** The challenger's escrow. Its debit and whichever refund ends it share this key. */
+function challengeStakeKey(challengeId: string): string {
+  return `pvp_challenge_stake:${challengeId}`;
+}
+
+/** The acceptor's ante, keyed on the match it pays for. */
+function acceptStakeKey(matchId: string): string {
+  return `pvp_accept_stake:${matchId}`;
+}
+
+/** What one seat is credited when a match ends, whether win, draw or void. */
+function matchPayoutKey(matchId: string, seat: DuelSeat): string {
+  return `pvp_match_payout:${matchId}:${seat}`;
+}
 
 /** Refuses a duel request in a way the player can act on. */
 export class DuelRequestError extends ArcadeRequestError<never> {
@@ -170,46 +216,72 @@ async function matchView(
     stake: match.stake,
     pot: match.stake * 2,
     winnerSeat: match.winnerSeat,
-    outcome: match.status === "settled" ? game.result(match.state) : null,
+    outcome: match.status === "settled" ? settledOutcome(game, match) : null,
     state: game.snapshot(match.state, seat, now),
   };
 }
 
 /**
- * Pays a settled match out. Never throws.
+ * How a settled match ended, for the result card.
+ *
+ * The engine's own result, except for a match called off before the first
+ * move: that settles with the board untouched, so the engine has nothing to
+ * say about it.
+ */
+function settledOutcome(game: AnyDuelGame, match: StoredPvpMatch): DuelOutcome | null {
+  const outcome = game.result(match.state);
+  if (outcome) return outcome;
+  return match.winnerSeat === null ? NO_OPENING_MOVE : null;
+}
+
+/**
+ * Credits seats of a settled match. Never throws.
  *
  * The match is already durably settled by the time this runs, so letting a
  * credit failure bubble would turn a finished game into an error response and
- * cost a player their result on top of their Gold. Logged loudly instead:
- * this is the one place a duel can quietly cost real currency.
- *
- * Rule 3: a win is one credit of the whole pot, a draw is one credit of their
- * own stake to each, never a debit (both stakes already left in rule 1).
+ * cost a player their result on top of their Gold. Logged loudly instead,
+ * with the ledger key, so the credit can be replayed safely.
  */
-async function payOutMatch(match: StoredPvpMatch): Promise<void> {
-  const pot = match.stake * 2;
-  const credits: [string, number][] =
-    match.winnerSeat === null
-      // A draw returns each player their own ante: `stake` twice rather than
-      // `pot / 2`, since a division is how an odd pot silently loses a Gold,
-      // and the two halves are what was actually taken.
-      ? [[match.players[0], match.stake], [match.players[1], match.stake]]
-      : [[match.players[match.winnerSeat], pot]];
-
+async function creditSeats(
+  match: StoredPvpMatch,
+  credits: [DuelSeat, number][],
+  reason: string,
+): Promise<void> {
   // Independent profiles, no ordering between them, so run concurrently.
-  await Promise.all(credits.map(async ([profileId, amount]) => {
+  await Promise.all(credits.map(async ([seat, amount]) => {
+    const profileId = match.players[seat];
+    const correlationId = matchPayoutKey(match.id, seat);
     try {
-      await creditGoldByProfile(profileId, amount);
+      const credited = await creditGoldByProfileLedgered(profileId, amount, correlationId, reason);
+      if (!credited.success) throw new Error("No such profile.");
     } catch (error) {
       console.error("pvp.payout_credit_failed", {
         game: match.game,
         matchId: match.id,
         profileId,
         amount,
+        correlationId,
         error,
       });
     }
   }));
+}
+
+/**
+ * Pays a settled match out. Never throws.
+ *
+ * Rule 3: a win is one credit of the whole pot, a draw is one credit of their
+ * own stake to each, never a debit (both stakes already left in rule 1).
+ */
+async function payOutMatch(match: StoredPvpMatch): Promise<void> {
+  if (match.winnerSeat === null) {
+    // A draw returns each player their own ante: `stake` twice rather than
+    // `pot / 2`, since a division is how an odd pot silently loses a Gold,
+    // and the two halves are what was actually taken.
+    await creditSeats(match, [[0, match.stake], [1, match.stake]], "pvp_match_draw");
+  } else {
+    await creditSeats(match, [[match.winnerSeat, match.stake * 2]], "pvp_match_win");
+  }
 
   // Leaderboard stats record unconditionally, unlike the mission/achievement
   // calls below: a draw is a real result on a per-game record and must show
@@ -255,6 +327,50 @@ async function settleIfFinished(
 }
 
 /**
+ * Calls off a match whose first move never came, and returns both stakes.
+ *
+ * Null when the rule does not apply. Version 1 means nothing has been written
+ * since the match was created, and in these games seat 0 moves first, so it
+ * is exactly "seat 0 has not moved". The void is a version-guarded settle
+ * like any other, so it races a late first move safely and pays at most once
+ * (rule 2). Not a draw: it records no result on either player's record.
+ */
+async function voidIfNeverOpened(
+  match: StoredPvpMatch,
+  now: number,
+): Promise<StoredPvpMatch | null> {
+  if (
+    match.status !== "active"
+    || !OPENING_MOVE_GAMES.has(match.game)
+    || match.version !== 1
+    || now - Date.parse(match.createdAt) < OPENING_MOVE_WINDOW_MS
+  ) {
+    return null;
+  }
+
+  const voided = await advancePvpMatch(match, match.state, { winnerSeat: null });
+  if (!voided) return (await getPvpMatchById(match.id)) ?? match;
+
+  await creditSeats(voided, [[0, voided.stake], [1, voided.stake]], "pvp_match_void");
+  return voided;
+}
+
+/**
+ * Pays a challenger back their escrow. Only ever call this with a row a
+ * status-guarded write just returned (rule 4). The ledger key is the same one
+ * the stake was debited under, so even two paths that somehow both got the
+ * row could not refund it twice.
+ */
+function refundChallenge(challenge: StoredPvpChallenge, reason: string): Promise<LedgeredGoldResult> {
+  return creditGoldByProfileLedgered(
+    challenge.challengerId,
+    challenge.stake,
+    challengeStakeKey(challenge.id),
+    reason,
+  );
+}
+
+/**
  * Refunds every challenge a sweep reclaimed. Never throws.
  *
  * Rule 4: `expireStaleChallenges` returns each row at most once because its
@@ -265,16 +381,75 @@ async function refundExpired(expired: StoredPvpChallenge[]): Promise<void> {
   // Independent challengers, no ordering between them, so run concurrently.
   await Promise.all(expired.map(async (challenge) => {
     try {
-      await creditGoldByProfile(challenge.challengerId, challenge.stake);
+      await refundChallenge(challenge, "pvp_challenge_expired_refund");
     } catch (error) {
       console.error("pvp.expiry_refund_failed", {
         challengeId: challenge.id,
         profileId: challenge.challengerId,
         stake: challenge.stake,
+        correlationId: challengeStakeKey(challenge.id),
         error,
       });
     }
   }));
+}
+
+/**
+ * Settles claims whose accept died partway: the row is `accepted` but never
+ * got a match id.
+ *
+ * If a match exists for the claim, the accept got that far and only its
+ * bookkeeping is missing, so the link and the acceptor's debit confirmation
+ * are finished here. Otherwise the claim is cancelled through a guarded write
+ * and the challenger refunded (rule 4). The acceptor needs nothing from this:
+ * their debit was never confirmed, so reconcile-stale-stakes refunds it.
+ */
+export async function sweepStrandedDuelClaims(
+  now: Date = new Date(),
+): Promise<{ refunded: number; linked: number }> {
+  const stranded = await listStrandedClaims(new Date(now.getTime() - STRANDED_CLAIM_AFTER_MS));
+  let refunded = 0;
+  let linked = 0;
+
+  for (const claim of stranded) {
+    try {
+      const match = await getPvpMatchByChallengeId(claim.id);
+      if (match) {
+        // Confirmed before linking so reconcile-stale-stakes never refunds an
+        // ante that is sitting in a live pot.
+        await confirmGoldDebitLedgered(acceptStakeKey(match.id));
+        await attachMatchToChallenge(claim.id, match.id);
+        linked += 1;
+        continue;
+      }
+      const released = await cancelClaimedChallenge(claim.id);
+      if (!released) continue;
+      const credited = await refundChallenge(released, "pvp_challenge_stranded_refund");
+      if (credited.success && !credited.alreadyApplied) refunded += 1;
+    } catch (error) {
+      console.error("pvp.stranded_claim_sweep_failed", {
+        challengeId: claim.id,
+        profileId: claim.challengerId,
+        stake: claim.stake,
+        correlationId: challengeStakeKey(claim.id),
+        error,
+      });
+    }
+  }
+  return { refunded, linked };
+}
+
+/**
+ * Every duel escrow sweep in one call: lapsed open challenges and stranded
+ * claims. For the lobby read and the cron.
+ */
+export async function sweepDuelEscrow(
+  now: Date = new Date(),
+): Promise<{ expired: number; strandedRefunded: number; strandedLinked: number }> {
+  const expired = await expireStaleChallenges(now);
+  await refundExpired(expired);
+  const stranded = await sweepStrandedDuelClaims(now);
+  return { expired: expired.length, strandedRefunded: stranded.refunded, strandedLinked: stranded.linked };
 }
 
 // ---- challenges ------------------------------------------------------------
@@ -314,6 +489,11 @@ export async function openDuelChallenge(
     }
   }
 
+  // A lapsed row still marked open holds the one-open-per-game slot, so the
+  // sweep has to run before the insert. Its rows carry other players' escrow
+  // and are refunded here. Before the debit, so a failing sweep costs nothing.
+  await refundExpired(await expireStaleChallenges());
+
   // Rule 1: the stake leaves first. `false` is "cannot afford", not an
   // error; spendGoldByProfileLedgered is the authority, and any balance read
   // before it is stale.
@@ -324,7 +504,11 @@ export async function openDuelChallenge(
   // createChallenge below would otherwise leave unrecoverable -- no ledger
   // row means nothing to reconcile against. See
   // app/api/cron/reconcile-stale-stakes and confirmGoldDebitLedgered below.
-  const stakeCorrelationId = `pvp_challenge_stake:${randomUUID()}`;
+  //
+  // The row id is chosen now so the debit is keyed on it. Every refund that
+  // can end this challenge (cancel, expiry, a failed accept) uses that key.
+  const challengeId = randomUUID();
+  const stakeCorrelationId = challengeStakeKey(challengeId);
   const debited = await spendGoldByProfileLedgered(profile.id, stake, stakeCorrelationId, "pvp_challenge_open");
   if (!debited.success) {
     throw new DuelRequestError(
@@ -336,6 +520,7 @@ export async function openDuelChallenge(
   let challenge: StoredPvpChallenge;
   try {
     challenge = await createChallenge({
+      id: challengeId,
       game: game.id,
       challengerId: profile.id,
       opponentId,
@@ -391,8 +576,12 @@ export async function listDuelChallenges(
 
   // Swept on the read, and every reclaimed row refunded. Correctness does not
   // depend on it having run, since listOpenChallenges filters on expires_at
-  // regardless, but a challenger's escrow coming back does.
+  // regardless, but a challenger's escrow coming back does. The stranded half
+  // is best-effort here; the cron runs it too.
   await refundExpired(await expireStaleChallenges());
+  await sweepStrandedDuelClaims().catch((error) => {
+    console.error("pvp.stranded_claim_sweep_failed", { error });
+  });
 
   const rows = await listOpenChallenges(profile.id, game.id);
   if (rows.length === 0) return { challenges: [], profile };
@@ -440,25 +629,132 @@ export async function cancelDuelChallenge(
   if (!released) {
     throw new DuelRequestError("That challenge is no longer open.", 409);
   }
-  const refunded = await creditGoldByProfile(profile.id, released.stake);
-  return { profile: refunded ?? profile };
+  let refunded: LedgeredGoldResult;
+  try {
+    refunded = await refundChallenge(released, "pvp_challenge_cancel_refund");
+  } catch (error) {
+    // The row is already cancelled, so nothing will retry this. Logged with
+    // its ledger key, which makes a replay by hand safe.
+    console.error("pvp.cancel_refund_failed", {
+      challengeId: released.id,
+      profileId: profile.id,
+      stake: released.stake,
+      correlationId: challengeStakeKey(released.id),
+      error,
+    });
+    throw error;
+  }
+  return { profile: refunded.success ? { ...profile, goldBalance: refunded.goldBalance } : profile };
+}
+
+/**
+ * Puts a claimed challenge back after an accept that built no match. Never
+ * throws.
+ *
+ * Reopening returns the escrow to the pool. When that fails, most often
+ * because the challenger has since opened another challenge for this game,
+ * the claim is cancelled and the challenger refunded instead. If both fail
+ * the row stays claimed and sweepStrandedDuelClaims settles it later.
+ */
+async function unwindClaim(claimed: StoredPvpChallenge): Promise<void> {
+  try {
+    await reopenClaimedChallenge(claimed.id);
+    return;
+  } catch (reopenError) {
+    console.warn("pvp.accept_reopen_failed", { challengeId: claimed.id, error: reopenError });
+  }
+
+  try {
+    const released = await cancelClaimedChallenge(claimed.id);
+    if (released) await refundChallenge(released, "pvp_challenge_accept_failed_refund");
+  } catch (error) {
+    console.error("pvp.accept_unwind_failed", {
+      challengeId: claimed.id,
+      profileId: claimed.challengerId,
+      stake: claimed.stake,
+      correlationId: challengeStakeKey(claimed.id),
+      error,
+    });
+  }
+}
+
+/**
+ * Where an accept had got to when it threw, which decides what is safe to
+ * give back. `debiting` means the debit call itself threw, so whether it
+ * landed is unknown; `creating` means the acceptor has paid and the match
+ * insert was under way.
+ */
+type AcceptStage = "claimed" | "debiting" | "creating";
+
+/**
+ * Unwinds a failed accept, or recovers the match if it was written after all.
+ *
+ * Throws in every case but that last one. Nothing is refunded on a guess: a
+ * debit whose call threw is left unconfirmed for reconcile-stale-stakes, and
+ * a match insert that threw without saying why is looked up before anything
+ * is given back, since an insert can commit and still fail on the way back.
+ * If even the lookup fails, the claim is left for the stranded sweep, which
+ * makes the same check later.
+ */
+async function recoverFailedAccept(
+  error: unknown,
+  stage: AcceptStage,
+  claimed: StoredPvpChallenge,
+  acceptorId: string,
+  matchId: string,
+): Promise<StoredPvpMatch> {
+  const mapped = error instanceof ActivePvpMatchExists
+    ? new DuelRequestError(error.message, 409)
+    : error;
+
+  if (stage === "creating") {
+    let existing: StoredPvpMatch | null | undefined = null;
+    if (!(error instanceof ActivePvpMatchExists)) {
+      existing = await getPvpMatchByChallengeId(claimed.id).catch((lookupError: unknown) => {
+        console.error("pvp.accept_lookup_failed", { challengeId: claimed.id, matchId, error: lookupError });
+        return undefined;
+      });
+    }
+    if (existing) return existing;
+    if (existing === undefined) throw mapped;
+
+    // No match was written, so neither player may have paid for one.
+    const stakeCorrelationId = acceptStakeKey(matchId);
+    await creditGoldByProfileLedgered(acceptorId, claimed.stake, stakeCorrelationId, "pvp_challenge_accept_refund")
+      .catch((refundError: unknown) => {
+        // Unconfirmed and uncredited, so reconcile-stale-stakes refunds it.
+        console.error("pvp.accept_refund_failed", {
+          challengeId: claimed.id,
+          profileId: acceptorId,
+          stake: claimed.stake,
+          correlationId: stakeCorrelationId,
+          error: refundError,
+        });
+      });
+  }
+
+  await unwindClaim(claimed);
+  throw mapped;
 }
 
 /**
  * Accepts a challenge: debits the acceptor and opens the match.
  *
  * The order is claim, then pay, then build, and every failure after the
- * claim unwinds everything before it:
+ * claim goes through one unwind (recoverFailedAccept):
  *
  *   - The **claim** is a status-guarded UPDATE, so exactly one acceptor can
  *     ever take a given challenge. Doing it first is what stops two players
  *     both paying into one escrowed stake.
- *   - The **debit** comes next (rule 1). If they cannot afford it, the claim
- *     is reopened so the challenger's escrow goes back into the pool rather
- *     than being stranded in an accepted row that never became a match.
- *   - The **match** is built last. If it will not persist, the acceptor is
- *     refunded and the challenge reopened; neither player has paid for a
- *     game that does not exist.
+ *   - The **debit** comes next (rule 1), ledgered under the match id chosen
+ *     up front. If it is refused, the claim is reopened (or, failing that,
+ *     cancelled and refunded) so the challenger's escrow is never stranded.
+ *   - The **match** is built last, recording which challenge it came from.
+ *     If it will not persist, the acceptor is refunded and the claim unwound.
+ *
+ * A process that dies partway leaves an `accepted` row with no match id.
+ * sweepStrandedDuelClaims settles those, and reconcile-stale-stakes refunds
+ * the acceptor's unconfirmed debit.
  */
 export async function acceptDuelChallenge(
   token: string,
@@ -474,35 +770,49 @@ export async function acceptDuelChallenge(
     throw new DuelRequestError("That challenge is no longer available.", 409);
   }
 
+  // Chosen up front so the acceptor's debit can be keyed on the match it pays for.
+  const matchId = randomUUID();
+  const stakeCorrelationId = acceptStakeKey(matchId);
   const game = duelGame(claimed.game);
   if (!game) {
-    await reopenClaimedChallenge(claimed.id);
+    await unwindClaim(claimed);
     throw new DuelRequestError("That game is not available.", 404);
   }
-
-  if (await isBlockedEitherWay(profile.id, claimed.challengerId)) {
-    await reopenClaimedChallenge(claimed.id);
-    throw new DuelRequestError("You cannot play that player.", 403);
-  }
-
-  // Rule 1: the acceptor's stake leaves before the match exists.
-  const debited = await spendGoldByProfile(profile.id, claimed.stake);
-  if (!debited) {
-    await reopenClaimedChallenge(claimed.id);
-    throw new DuelRequestError(
-      `You need ${claimed.stake.toLocaleString()} Gold to accept this duel.`,
-      400,
-    );
-  }
-
+  let stage: AcceptStage = "claimed";
+  let goldBalance = profile.goldBalance;
   let match: StoredPvpMatch;
+
   try {
+    if (await isBlockedEitherWay(profile.id, claimed.challengerId)) {
+      throw new DuelRequestError("You cannot play that player.", 403);
+    }
+
+    // Rule 1: the acceptor's stake leaves before the match exists.
+    stage = "debiting";
+    const debited = await spendGoldByProfileLedgered(
+      profile.id,
+      claimed.stake,
+      stakeCorrelationId,
+      "pvp_challenge_accept",
+    );
+    if (!debited.success) {
+      stage = "claimed";
+      throw new DuelRequestError(
+        `You need ${claimed.stake.toLocaleString()} Gold to accept this duel.`,
+        400,
+      );
+    }
+    goldBalance = debited.goldBalance;
+
+    stage = "creating";
     // The challenger is seat 0: they moved first by challenging, and at
     // chess that means white. node:crypto's randomInt, not Math.random, since
     // the seed decides a trivia set and a word race's word, and both decide
     // real Gold, so it must not be reachable or predictable from a browser.
     const state = game.createState(randomInt(0, 2 ** 31 - 1), Date.now());
     match = await createPvpMatch({
+      id: matchId,
+      challengeId: claimed.id,
       game: claimed.game,
       players: [claimed.challengerId, profile.id],
       tier: claimed.tier,
@@ -510,24 +820,18 @@ export async function acceptDuelChallenge(
       state,
     });
   } catch (error) {
-    // Neither player may pay for a match that does not exist: refund the
-    // acceptor, and put the challenger's escrow back in the pool.
-    await creditGoldByProfile(profile.id, claimed.stake).catch((refundError) => {
-      console.error("pvp.accept_refund_failed", {
-        challengeId: claimed.id,
-        profileId: profile.id,
-        stake: claimed.stake,
-        error: refundError,
-      });
-    });
-    await reopenClaimedChallenge(claimed.id);
-    if (error instanceof ActivePvpMatchExists) {
-      throw new DuelRequestError(error.message, 409);
-    }
-    throw error;
+    match = await recoverFailedAccept(error, stage, claimed, profile.id, matchId);
   }
 
-  await attachMatchToChallenge(claimed.id, match.id);
+  // Best-effort, like the challenge's own confirm. Confirmed before linking:
+  // if this process dies between the two, the stranded sweep finds the match
+  // by its challenge id and finishes both.
+  await confirmGoldDebitLedgered(stakeCorrelationId).catch((confirmError: unknown) => {
+    console.error("pvp.accept_confirm_failed", { profileId: profile.id, stakeCorrelationId, error: confirmError });
+  });
+  await attachMatchToChallenge(claimed.id, match.id).catch((attachError: unknown) => {
+    console.error("pvp.accept_attach_failed", { challengeId: claimed.id, matchId: match.id, error: attachError });
+  });
 
   // Both players wagered, so both earn XP at the ordinary rate, the same
   // parity argument hand-completion.ts makes about chips and Gold. awardWager
@@ -538,7 +842,10 @@ export async function acceptDuelChallenge(
     awardWager(profile.id, token, claimed.stake),
   ]);
 
-  return { match: await matchView(game, match, 1, Date.now()), profile: debited };
+  return {
+    match: await matchView(game, match, 1, Date.now()),
+    profile: { ...profile, goldBalance },
+  };
 }
 
 // ---- matches ---------------------------------------------------------------
@@ -577,6 +884,10 @@ export async function readDuelMatch(
   if (seat === null) return { match: null, profile };
 
   const now = Date.now();
+  // Before the tick: a challenger who never moved is refunded, not flagged.
+  const voided = await voidIfNeverOpened(match, now);
+  if (voided) return { match: await matchView(game, voided, seat, now), profile };
+
   const ticked = game.tick?.(match.state, now) ?? null;
   if (ticked !== null) {
     // A tick that loses the version race is fine to drop: the writer that won
@@ -640,6 +951,12 @@ export async function playDuelMove(
       round: (await matchView(game, current, seat, now)) as never,
     });
   }
+  const voided = await voidIfNeverOpened(current, now);
+  if (voided) {
+    throw new DuelRequestError("The first move came too late, so the match was called off and both stakes went back.", 409, {
+      round: (await matchView(game, voided, seat, now)) as never,
+    });
+  }
   if (current.version !== input.version) {
     throw new DuelRequestError("That match moved on. Here is where it actually stands.", 409, {
       round: (await matchView(game, current, seat, now)) as never,
@@ -700,6 +1017,10 @@ export async function resignDuelMatch(
   if (current.status !== "active") {
     return { match: await matchView(game, current, seat, now), profile };
   }
+  // Resigning a match nobody opened would hand an absent challenger the pot,
+  // or cost them theirs, for a game that never started.
+  const voided = await voidIfNeverOpened(current, now);
+  if (voided) return { match: await matchView(game, voided, seat, now), profile };
 
   const next = game.resign
     ? game.resign(current.state, seat, now)

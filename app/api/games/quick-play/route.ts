@@ -59,6 +59,13 @@ export async function POST(request: NextRequest) {
       if (!openGameId) break;
       const loaded = await getStoredGame(openGameId);
       if (!loaded) continue;
+      // Already sitting here: hand back the seat they have, free, the same
+      // way the join route treats alreadySeated. claimSeat would return the
+      // existing seat anyway, so charging first would take a buy-in for nothing.
+      if (loaded.seats.some((seat) => seat.ownerToken === token)) {
+        joined = loaded;
+        break;
+      }
       // Every seat claim is a real buy-in. Inheriting an outgoing bot's chips
       // for free used to be harmless, but those chips are now redeemable for
       // Gold when the player stands up, so a free seat would be a faucet.

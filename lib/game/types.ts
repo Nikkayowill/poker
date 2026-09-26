@@ -357,7 +357,7 @@ export interface PublicSeat extends Omit<Seat, "holeCards" | "ownerToken"> {
 }
 
 export interface GameSnapshot
-  extends Omit<GameState, "deck" | "hostToken" | "seats"> {
+  extends Omit<GameState, "deck" | "hostToken" | "seats" | "opponentReads"> {
   seats: PublicSeat[];
   legalActions: LegalActions | null;
   /** True when the requesting session owns a seat at this table. */

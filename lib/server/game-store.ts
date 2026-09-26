@@ -1,10 +1,17 @@
 import "server-only";
-import { SEAT_COUNT, advanceTimedTurn, dealNextHandIfDue, normalizeGameState } from "@/lib/game/engine";
+import {
+  SEAT_COUNT,
+  advanceTimedTurn,
+  archiveTable,
+  dealNextHandIfDue,
+  normalizeGameState,
+  type ReleasedSeat,
+} from "@/lib/game/engine";
 import type { GameState, PlayerAction } from "@/lib/game/types";
 import { TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { adminClient } from "./supabase-admin";
 import { onHandCompleted } from "./hand-completion";
-import { creditGold } from "./profile-store";
+import { creditGold, creditGoldByProfileLedgered } from "./profile-store";
 import {
   cancelStaleSitAndGoTable,
   getSitAndGoSeats,
@@ -173,7 +180,7 @@ const STALE_SWEEP_LIMIT = 25;
  * every actionable guard checks `=== "playing"` positively (see
  * `GameStatus`'s own comment) rather than `!== "complete"`.
  *
- * Refunds each abandoned human seat's stack before the table closes,
+ * Refunds each abandoned human seat's stack once the table has closed,
  * best-effort and logged per seat rather than all-or-nothing, the same
  * shape `resolveTimedAdvance`'s inactive-release credit uses above and for
  * the same reason: a missing profile (usually a deleted guest account) must
@@ -188,9 +195,11 @@ const STALE_SWEEP_LIMIT = 25;
  * walk away with more Gold than either ever staked, with no elimination and
  * no single-winner guard ever running.
  *
- * Guarded on `status = "playing"` in the same write that sets `"archived"`,
- * so a table someone genuinely returns to mid-sweep is left alone rather
- * than yanked out from under them.
+ * The archive is one version-guarded write of the state blob itself (see
+ * archiveStoredGame), and credits run only after it lands. A table someone
+ * genuinely returns to mid-sweep loses nothing, since their action bumps the
+ * version first, and a stale copy read later can't pay out a second time
+ * because the stored state is archived with its stacks already zeroed.
  */
 /**
  * Refunds an abandoned Sit & Go's ORIGINAL entry fee to every seat, never
@@ -227,7 +236,6 @@ const STALE_SWEEP_LIMIT = 25;
 async function refundAbandonedSitAndGo(
   gameId: string,
   table: StoredSitAndGoTable | null | undefined,
-  seats: Array<{ token: string }>,
 ): Promise<boolean> {
   if (!table) return false;
   if (table.status !== "active") return true; // already settled or cancelled by something else
@@ -235,11 +243,16 @@ async function refundAbandonedSitAndGo(
   const cancelled = await cancelStaleSitAndGoTable(table.id, table.version);
   if (!cancelled) return true; // lost the race to a real settlement, which already paid
 
-  for (const seat of seats) {
+  // Keyed on each seat's own entry-fee ledger id, so a retry or the reconcile
+  // cron refunding the same fee is a no-op. The fallback id must match
+  // seatRefundCorrelationId in sit-and-go-service.ts.
+  for (const seat of await getSitAndGoSeats(table.id)) {
+    const correlationId = seat.stakeCorrelationId
+      ?? `sit_and_go_seat_refund:${table.id}:${seat.playerId}:${seat.joinedAt}`;
     try {
-      await creditGold(seat.token, table.entryFee);
+      await creditGoldByProfileLedgered(seat.playerId, table.entryFee, correlationId, "sit_and_go_stale_refund");
     } catch (error) {
-      console.error("table.stale_sit_and_go_refund_failed", { gameId, token: seat.token, error });
+      console.error("table.stale_sit_and_go_refund_failed", { gameId, profileId: seat.playerId, correlationId, error });
     }
   }
   return true;
@@ -270,7 +283,7 @@ async function refundAbandonedSitAndGo(
  * this exact caller), so the N+1 cost here is a few queries against 25
  * candidates at most, not worth a second batched lookup path.
  */
-async function refundAbandonedHeadsUp(gameId: string, seats: Array<{ token: string }>): Promise<boolean> {
+async function refundAbandonedHeadsUp(gameId: string): Promise<boolean> {
   const table = await getHeadsUpTableByGameId(gameId);
   if (!table) return false;
   if (table.status !== "active") return true; // already settled or cancelled by something else
@@ -278,36 +291,125 @@ async function refundAbandonedHeadsUp(gameId: string, seats: Array<{ token: stri
   const cancelled = await cancelStaleHeadsUpTable(table);
   if (!cancelled) return true; // lost the race to a real settlement, which already paid
 
-  for (const seat of seats) {
+  // Same ledger keying as refundAbandonedSitAndGo. The fallback id must match
+  // seatRefundCorrelationId in heads-up-service.ts.
+  for (const seat of await getHeadsUpSeats(table.id)) {
+    const correlationId = seat.stakeCorrelationId
+      ?? `heads_up_seat_refund:${table.id}:${seat.playerId}:${seat.joinedAt}`;
     try {
-      await creditGold(seat.token, table.stake);
+      await creditGoldByProfileLedgered(seat.playerId, table.stake, correlationId, "heads_up_stale_refund");
     } catch (error) {
-      console.error("table.stale_heads_up_refund_failed", { gameId, token: seat.token, error });
+      console.error("table.stale_heads_up_refund_failed", { gameId, profileId: seat.playerId, correlationId, error });
     }
   }
   return true;
 }
 
 /**
- * Catches a tournament stuck exactly where refundAbandonedHeadsUp's own
- * comment once swore it could never end up: `status: "complete"` with its
- * `tournament.winnerProfileId` still null, because every remaining seat
- * forfeited to a zero stack (a double leave-seat, or a winner's own
- * post-decision "Leave table" landing before finalizeTournamentIfDecided
- * ever saw a funded survivor -- see engine.ts's applyPlayerAction). A game
- * in that state never re-enters `archiveStaleGames`'s own candidate query
- * above, which is filtered to `status: "playing"` -- it already left that
- * status the instant the last hand decided, whether or not anyone actually
- * won. So this reads the escrow tables directly instead of going through
- * `games` at all: an `active` heads-up/Sit & Go row whose match started
- * long enough ago that it can't still be anyone's first hand is exactly the
- * one this sweep exists to find, independent of what `games.status` says.
+ * Which of these session tokens have been seen anywhere in the app since
+ * `cutoffIso`. Null when the lookup fails, which every caller reads as "can't
+ * tell, so assume someone is still here" rather than refunding or archiving
+ * a table on a failed query.
+ */
+async function recentlySeenTokens(tokens: string[], cutoffIso: string): Promise<Set<string> | null> {
+  const supabase = adminClient();
+  if (!supabase || tokens.length === 0) return new Set();
+  const { data, error } = await supabase
+    .from("player_sessions")
+    .select("token")
+    .in("token", tokens)
+    .gt("last_seen_at", cutoffIso);
+  if (error) return null;
+  return new Set((data ?? []).map((row) => row.token as string));
+}
+
+/**
+ * Whether every human at this table has been gone since `cutoffIso`. Memory
+ * mode has no session table, so the table's own updatedAt stands in, the
+ * same substitute findOpenPublicGame uses.
+ */
+async function everyHumanIsGone(state: GameState, cutoffIso: string): Promise<boolean> {
+  if (!adminClient()) return state.updatedAt < cutoffIso;
+  const tokens = state.seats.flatMap((seat) => (seat.ownerToken ? [seat.ownerToken] : []));
+  const recent = await recentlySeenTokens(tokens, cutoffIso);
+  if (!recent) return false;
+  return tokens.every((token) => !recent.has(token));
+}
+
+/**
+ * Archives a table in one version-guarded write and returns what each human
+ * seat is owed, or null if someone else changed the table first (in which
+ * case nothing may be paid). The state itself carries the "archived" status
+ * and the zeroed stacks, so a later read of this table can never cash the
+ * same chips out again.
+ */
+async function archiveStoredGame(state: GameState): Promise<ReleasedSeat[] | null> {
+  const expectedVersion = state.version;
+  const cashOuts = archiveTable(state);
+  if (state.version !== expectedVersion + 1) return null; // was already archived
+
+  const supabase = adminClient();
+  if (!supabase) return tryWriteMemoryGame(state) ? cashOuts : null;
+
+  const { data, error } = await supabase.rpc("try_persist_timed_game_action", {
+    p_game_id: state.id,
+    p_expected_version: expectedVersion,
+    p_state: state,
+    p_action_type: "payout",
+    p_amount: null,
+    p_actor_seat_id: null,
+  });
+  if (error) throw new Error(`Could not archive the table: ${error.message}`);
+  return data === true ? cashOuts : null;
+}
+
+/** Credits each archived cash seat, only after the archive write landed. */
+async function creditArchivedSeats(gameId: string, cashOuts: ReleasedSeat[]): Promise<void> {
+  for (const seat of cashOuts) {
+    if (seat.cashedOut <= 0) continue;
+    try {
+      await creditGold(seat.ownerToken, seat.cashedOut);
+    } catch (error) {
+      console.error("table.stale_archive_credit_failed", { gameId, token: seat.ownerToken, error });
+    }
+  }
+}
+
+type TournamentVerdict =
+  | { kind: "live" }
+  | { kind: "decided"; state: GameState }
+  | { kind: "abandoned"; state: GameState | null };
+
+/**
+ * Reads a tournament's linked game to decide what its escrow row should do.
  *
- * Reuses refundAbandonedHeadsUp/refundAbandonedSitAndGo unchanged -- both
- * already tolerate being handed a table that's since been legitimately
- * settled by someone else (the version-guarded cancel just returns null),
- * so calling them from here on a table that's actually fine to leave alone
- * is a no-op, not a hazard.
+ * A match that started long ago is not by itself abandoned: a long Sit & Go
+ * is still being played. It's abandoned only when the game ended with nobody
+ * named winner, or every human in it has been gone for the stale window. A
+ * game that already names a winner is settled, never refunded.
+ */
+async function judgeTournamentGame(gameId: string, cutoffIso: string): Promise<TournamentVerdict> {
+  const state = await getStoredGame(gameId);
+  if (!state) return { kind: "abandoned", state: null };
+  if (state.tournament?.winnerProfileId) return { kind: "decided", state };
+  if (state.status === "archived") return { kind: "abandoned", state: null };
+  const funded = state.seats.filter((seat) => seat.stack > 0).length;
+  if (state.status === "complete" && funded < 2) return { kind: "abandoned", state };
+  return (await everyHumanIsGone(state, cutoffIso)) ? { kind: "abandoned", state } : { kind: "live" };
+}
+
+/**
+ * Catches a tournament whose escrow row is still "active" long after it
+ * started. The ordinary "playing" sweep below never sees one that already
+ * reached "complete" with no winner (a double forfeit), and a decided match
+ * whose settlement never ran needs paying, not refunding. So this reads the
+ * escrow tables directly and then asks the linked game what really happened
+ * (see judgeTournamentGame).
+ *
+ * An abandoned game is archived first, version-guarded, so it can no longer
+ * produce a winner; only then is the escrow cancelled and refunded. If the
+ * archive write loses a race, someone is still playing and the table is left
+ * alone this pass.
  */
 async function sweepUndecidedTournaments(limit: number): Promise<number> {
   const cutoffIso = new Date(Date.now() - staleTableMs()).toISOString();
@@ -316,20 +418,56 @@ async function sweepUndecidedTournaments(limit: number): Promise<number> {
   const staleHeadsUp = await getStaleActiveHeadsUpTables(cutoffIso, limit);
   for (const table of staleHeadsUp) {
     if (!table.gameId) continue;
-    const seats = await getHeadsUpSeats(table.id);
-    const settled = await refundAbandonedHeadsUp(table.gameId, seats.map((seat) => ({ token: seat.token })));
-    if (settled) swept += 1;
+    const verdict = await judgeTournamentGame(table.gameId, cutoffIso);
+    if (verdict.kind === "live") continue;
+    if (verdict.kind === "decided") {
+      const { settleHeadsUpIfFinished } = await import("./heads-up-service");
+      await settleHeadsUpIfFinished(verdict.state);
+      swept += 1;
+      continue;
+    }
+    if (verdict.state && !(await archiveStoredGame(verdict.state))) continue;
+    if (await refundAbandonedHeadsUp(table.gameId)) swept += 1;
   }
 
   const staleSitAndGo = await getStaleActiveSitAndGoTables(cutoffIso, limit);
   for (const table of staleSitAndGo) {
     if (!table.gameId) continue;
-    const seats = await getSitAndGoSeats(table.id);
-    const settled = await refundAbandonedSitAndGo(table.gameId, table, seats.map((seat) => ({ token: seat.token })));
-    if (settled) swept += 1;
+    const verdict = await judgeTournamentGame(table.gameId, cutoffIso);
+    if (verdict.kind === "live") continue;
+    if (verdict.kind === "decided") {
+      const { settleSitAndGoIfFinished } = await import("./sit-and-go-service");
+      await settleSitAndGoIfFinished(verdict.state).catch((error: unknown) => {
+        console.error("sit_and_go.settle_failed", { gameId: table.gameId, error });
+      });
+      swept += 1;
+      continue;
+    }
+    if (verdict.state && !(await archiveStoredGame(verdict.state))) continue;
+    if (await refundAbandonedSitAndGo(table.gameId, table)) swept += 1;
   }
 
   return swept;
+}
+
+/**
+ * Archives one stale candidate and settles its money: a tournament refunds
+ * its escrow, a cash table credits what archiveTable says each human is owed.
+ * A tournament game with no escrow row found (written but never linked to its
+ * table) is archived without paying anyone: its stacks are starting chips,
+ * not Gold. Returns whether this call archived it.
+ */
+async function archiveCandidate(
+  state: GameState,
+  sitAndGoTable: StoredSitAndGoTable | undefined,
+): Promise<boolean> {
+  const isTournament = Boolean(state.tournament);
+  const cashOuts = await archiveStoredGame(state);
+  if (!cashOuts) return false;
+  const isSitAndGo = await refundAbandonedSitAndGo(state.id, sitAndGoTable);
+  const isHeadsUp = !isSitAndGo && (await refundAbandonedHeadsUp(state.id));
+  if (!isSitAndGo && !isHeadsUp && !isTournament) await creditArchivedSeats(state.id, cashOuts);
+  return true;
 }
 
 export async function archiveStaleGames(limit = STALE_SWEEP_LIMIT): Promise<number> {
@@ -343,28 +481,15 @@ export async function archiveStaleGames(limit = STALE_SWEEP_LIMIT): Promise<numb
     // for this whole sweep rather than one per candidate.
     const candidates = [...memoryGames.values()]
       .filter((state) => state.status === "playing" && state.updatedAt < cutoffIso)
-      .slice(0, limit);
+      .slice(0, limit)
+      .map((state) => normalizeGameState(clone(state)));
     const sitAndGoByGameId = await getSitAndGoTablesByGameIds(candidates.map((state) => state.id));
 
+    let archived = 0;
     for (const state of candidates) {
-      const humanSeats = state.seats.filter((seat) => seat.ownerToken);
-      const tokens = humanSeats.map((seat) => ({ token: seat.ownerToken as string }));
-      const isSitAndGo = await refundAbandonedSitAndGo(state.id, sitAndGoByGameId.get(state.id), tokens);
-      const isHeadsUp = !isSitAndGo && (await refundAbandonedHeadsUp(state.id, tokens));
-      if (!isSitAndGo && !isHeadsUp) {
-        for (const seat of humanSeats) {
-          if (seat.stack <= 0) continue;
-          try {
-            await creditGold(seat.ownerToken as string, seat.stack);
-          } catch (error) {
-            console.error("table.stale_archive_credit_failed", { gameId: state.id, token: seat.ownerToken, error });
-          }
-        }
-      }
-      state.status = "archived";
-      state.updatedAt = new Date().toISOString();
+      if (await archiveCandidate(state, sitAndGoByGameId.get(state.id))) archived += 1;
     }
-    return candidates.length + undecidedSwept;
+    return archived + undecidedSwept;
   }
 
   // Oldest-touched first and bounded, not filtered on updated_at here: a
@@ -383,62 +508,45 @@ export async function archiveStaleGames(limit = STALE_SWEEP_LIMIT): Promise<numb
 
   const { data: seatRows, error: seatError } = await supabase
     .from("game_seats")
-    .select("game_id, owner_token, stack")
+    .select("game_id, owner_token")
     .in("game_id", candidateIds)
     .not("owner_token", "is", null);
   if (seatError) return undecidedSwept;
 
-  const humanSeatsByGame = new Map<string, { token: string; stack: number }[]>();
+  const humanTokensByGame = new Map<string, string[]>();
   for (const row of seatRows ?? []) {
-    const list = humanSeatsByGame.get(row.game_id as string) ?? [];
-    list.push({ token: row.owner_token as string, stack: Number(row.stack) });
-    humanSeatsByGame.set(row.game_id as string, list);
+    const list = humanTokensByGame.get(row.game_id as string) ?? [];
+    list.push(row.owner_token as string);
+    humanTokensByGame.set(row.game_id as string, list);
   }
 
-  const allTokens = [...new Set([...humanSeatsByGame.values()].flat().map((seat) => seat.token))];
-  let recentTokens = new Set<string>();
-  if (allTokens.length > 0) {
-    const { data: sessions } = await supabase
-      .from("player_sessions")
-      .select("token")
-      .in("token", allTokens)
-      .gt("last_seen_at", cutoffIso);
-    recentTokens = new Set((sessions ?? []).map((row) => row.token as string));
-  }
+  const allTokens = [...new Set([...humanTokensByGame.values()].flat())];
+  const recentTokens = await recentlySeenTokens(allTokens, cutoffIso);
+  if (!recentTokens) return undecidedSwept;
 
   const toArchive = candidateIds.filter((id) => {
-    const humans = humanSeatsByGame.get(id) ?? [];
-    return humans.every((seat) => !recentTokens.has(seat.token));
+    const humans = humanTokensByGame.get(id) ?? [];
+    return humans.every((token) => !recentTokens.has(token));
   });
   if (toArchive.length === 0) return undecidedSwept;
 
-  const { data: archived, error: archiveError } = await supabase
-    .from("games")
-    .update({ status: "archived" })
-    .in("id", toArchive)
-    .eq("status", "playing")
-    .select("id");
-  if (archiveError || !archived) return undecidedSwept;
+  const { data: stateRows, error: stateError } = await supabase
+    .from("game_state_private")
+    .select("state")
+    .in("game_id", toArchive);
+  if (stateError || !stateRows) return undecidedSwept;
 
-  const sitAndGoByGameId = await getSitAndGoTablesByGameIds(archived.map((row) => row.id as string));
-  for (const row of archived) {
-    const gameId = row.id as string;
-    const seats = humanSeatsByGame.get(gameId) ?? [];
-    const tokens = seats.map((seat) => ({ token: seat.token }));
-    const isSitAndGo = await refundAbandonedSitAndGo(gameId, sitAndGoByGameId.get(gameId), tokens);
-    if (isSitAndGo) continue;
-    const isHeadsUp = await refundAbandonedHeadsUp(gameId, tokens);
-    if (isHeadsUp) continue;
-    for (const seat of seats) {
-      if (seat.stack <= 0) continue;
-      try {
-        await creditGold(seat.token, seat.stack);
-      } catch (error) {
-        console.error("table.stale_archive_credit_failed", { gameId, token: seat.token, error });
-      }
+  const sitAndGoByGameId = await getSitAndGoTablesByGameIds(toArchive);
+  let archived = 0;
+  for (const row of stateRows) {
+    const state = normalizeGameState(row.state as GameState);
+    try {
+      if (await archiveCandidate(state, sitAndGoByGameId.get(state.id))) archived += 1;
+    } catch (error) {
+      console.error("table.stale_archive_failed", { gameId: state.id, error });
     }
   }
-  return archived.length + undecidedSwept;
+  return archived + undecidedSwept;
 }
 
 /**
@@ -834,11 +942,19 @@ export async function getStoredGame(id: string): Promise<GameState | null> {
   if (!supabase) return memoryGames.has(id) ? normalizeGameState(clone(memoryGames.get(id)!)) : null;
   const { data, error } = await supabase
     .from("game_state_private")
-    .select("state")
+    .select("state, games(status)")
     .eq("game_id", id)
     .maybeSingle();
   if (error) throw new Error(`Could not load the table: ${error.message}`);
-  return data?.state ? normalizeGameState(data.state as GameState) : null;
+  if (!data?.state) return null;
+  const state = normalizeGameState(data.state as GameState);
+  // Tables archived before the archive also wrote the state blob still say
+  // "playing" in it, with their already-refunded stacks intact. The games
+  // row is the one that knows they're closed.
+  const parent = data.games as { status?: string } | Array<{ status?: string }> | null;
+  const tableStatus = Array.isArray(parent) ? parent[0]?.status : parent?.status;
+  if (tableStatus === "archived") state.status = "archived";
+  return state;
 }
 
 /**

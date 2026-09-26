@@ -307,7 +307,8 @@ describe("VPIP", () => {
 
     // Not through the act() helper: by now the hand is complete and nobody
     // is "on turn", but next-hand doesn't require turn ownership -- any
-    // seated player can deal the next one in.
+    // seated player can deal the next one in once its beat has passed.
+    game.nextHandAt = new Date(Date.now() - 1).toISOString();
     applyPlayerAction(game, { type: "next-hand" }, tokenOf(game, 0));
     expect(game.seats.every((seat) => seat.vpip === false)).toBe(true);
   });

@@ -7,8 +7,7 @@ import { loadGameWithTimeouts, logTurn, persistenceMode, updateStoredGame } from
 import { creditGold, isBanned, spendGold } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { onHandCompleted } from "@/lib/server/hand-completion";
-import { settleSitAndGoIfFinished } from "@/lib/server/sit-and-go-service";
-import { settleHeadsUpIfFinished } from "@/lib/server/heads-up-service";
+import { settleTournamentIfDecided } from "@/lib/server/tournament-settlement";
 import { readSessionToken } from "@/lib/server/session";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { publicErrorMessage } from "@/lib/server/public-error";
@@ -64,6 +63,14 @@ export async function POST(
     const game = await loadGameWithTimeouts(id);
     if (!game) return NextResponse.json({ error: "Table not found." }, { status: 404 });
 
+    // The timed advance inside that load can be what named a tournament's
+    // winner, and the action below may then be refused (the hand is over),
+    // so settle before anything can return. Awaited, not fired and
+    // forgotten: this credits real Gold, and a serverless invocation is not
+    // guaranteed to finish an un-awaited promise after the response. Never
+    // throws, and repeat calls on a settled table pay nothing.
+    let profile: PlayerProfile | undefined = (await settleTournamentIfDecided(game, ownerToken)) ?? undefined;
+
     // Optimistic concurrency. A retried or double-submitted action arrives
     // carrying the version its player was looking at; if the table has moved
     // on, applying it again would be a second bet nobody asked for. Answering
@@ -76,6 +83,7 @@ export async function POST(
           stale: true,
           game: toSnapshot(game, ownerToken),
           persistence: persistenceMode(),
+          ...(profile ? { profile } : {}),
         },
         { status: 409 },
       );
@@ -83,7 +91,6 @@ export async function POST(
 
     let action = parsed.data.action;
     let goldSpent = 0;
-    let profile: PlayerProfile | undefined;
 
     // Chips a departing player still has in front of them convert back to
     // Gold. Read before applying, because vacateSeat clears the seat as part
@@ -131,7 +138,7 @@ export async function POST(
 
     try {
       const wasComplete = game.status === "complete";
-      const wasAlreadyFinished = Boolean(game.tournament?.winnerProfileId);
+      const wasAlreadyDecided = Boolean(game.tournament?.winnerProfileId);
       const updated = applyPlayerAction(game, action, ownerToken);
       logTurn(updated, "player action applied", { action: action.type, expectedVersion });
       await updateStoredGame(updated, action, ownerToken);
@@ -145,34 +152,11 @@ export async function POST(
           return profile;
         });
       }
-      // Awaited, not fired-and-forgotten: this credits real Gold, and a
-      // serverless invocation is not guaranteed to keep running an
-      // un-awaited promise after the response is sent -- unlike
-      // onHandCompleted just below (pure stats, genuinely fine to lose).
-      // Neither settle function ever throws, so this cannot turn an
-      // ordinary poker action response into an error either way.
-      // wasAlreadyFinished skips the guarded-write attempt entirely once a
-      // table is already settled, rather than repeating it on every poll.
-      // No-ops for free on any cash table (format-dispatched, since a Sit &
-      // Go's game_id will never match a heads-up table lookup or vice versa,
-      // but there's no reason to pay for the wrong store's lookup either).
-      if (updated.tournament?.winnerProfileId && !wasAlreadyFinished) {
-        const settledProfile = updated.tournament.format === "sit_and_go"
-          ? await settleSitAndGoIfFinished(updated).catch((error) => {
-              console.error("sit_and_go.settle_failed", { gameId: updated.id, error });
-              return null;
-            })
-          : await settleHeadsUpIfFinished(updated).catch((error) => {
-              console.error("heads_up.settle_failed", { gameId: updated.id, error });
-              return null;
-            });
-        // Only when the requester is the winner: the pot was just credited to
-        // updated.tournament.winnerProfileId, and this request's own profile
-        // (if any) must not be silently swapped for someone else's balance.
-        const requesterProfileId = updated.seats.find((seat) => seat.ownerToken === ownerToken)?.profileId;
-        if (settledProfile && requesterProfileId === updated.tournament.winnerProfileId) {
-          profile = settledProfile;
-        }
+      // This action decided the tournament. A game that was already decided
+      // at load time was settled above.
+      if (updated.tournament?.winnerProfileId && !wasAlreadyDecided) {
+        const settledProfile = await settleTournamentIfDecided(updated, ownerToken);
+        if (settledProfile) profile = settledProfile;
       }
       // A human action just closed the hand (e.g. the last call that ends
       // the river). Recording is idempotent and best-effort -- a stats write

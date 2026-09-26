@@ -3,6 +3,7 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { Delete } from "lucide-react";
+import { SoundButton } from "@/components/arcade/sound-button";
 import { BrainStreak, useAnswerKeys, useBrainStreakRound } from "./brain-streak";
 
 /** Longest answer the pad accepts. The biggest product a long run deals stays well under this. */
@@ -76,19 +77,19 @@ function AnswerPad({
       </output>
       <div className="brain-keypad">
         {PAD_KEYS.map((digit) => (
-          <button key={digit} type="button" className="brain-key" disabled={disabled} onClick={() => press(digit)}>
+          <SoundButton key={digit} sound="tap" className="brain-key" disabled={disabled} onClick={() => press(digit)}>
             {digit}
-          </button>
+          </SoundButton>
         ))}
-        <button type="button" className="brain-key brain-key-erase" disabled={disabled} onClick={erase} aria-label="Delete">
+        <SoundButton sound="tap" className="brain-key brain-key-erase" disabled={disabled} onClick={erase} aria-label="Delete">
           <Delete size={20} aria-hidden="true" />
-        </button>
-        <button type="button" className="brain-key" disabled={disabled} onClick={() => press("0")}>
+        </SoundButton>
+        <SoundButton sound="tap" className="brain-key" disabled={disabled} onClick={() => press("0")}>
           0
-        </button>
-        <button type="button" className="brain-key brain-key-go" disabled={disabled || !value} onClick={send}>
+        </SoundButton>
+        <SoundButton sound="tap" className="brain-key brain-key-go" disabled={disabled || !value} onClick={send}>
           Go
-        </button>
+        </SoundButton>
       </div>
     </div>
   );

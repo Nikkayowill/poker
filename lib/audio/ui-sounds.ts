@@ -59,3 +59,18 @@ export function toggleSound() {
 export function gameOnSound() {
   playSound("game-on");
 }
+
+/**
+ * A puzzle paid off: a Blockudoku line, a Connections group, a correct Brain
+ * Streak answer. Distinct from `selectSound` on purpose -- a choice landing
+ * and a puzzle rewarding you are different presses, and folding both into one
+ * cue was the "every game sounds like a menu" complaint this pair fixes.
+ */
+export function clearSound() {
+  playSound("clear");
+}
+
+/** A bigger payoff than one `clearSound` -- several lines/groups at once, or a run milestone. */
+export function comboSound() {
+  playSound("combo");
+}

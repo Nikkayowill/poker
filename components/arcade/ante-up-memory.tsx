@@ -187,7 +187,7 @@ export function AnteUpMemory() {
     if (pairs === pairsHeard.current) return;
     const grew = pairs > pairsHeard.current;
     pairsHeard.current = pairs;
-    if (grew) play(pairs === attempt.pairs ? "win" : "card");
+    if (grew) play(pairs === attempt.pairs ? "win" : "clear");
   }, [attempt, play]);
 
   const start = () => {

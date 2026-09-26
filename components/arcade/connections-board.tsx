@@ -16,7 +16,7 @@ import { StakePressureNote } from "@/components/arcade/stake-pressure-note";
 import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { connectionsShareText, puzzleShareTitle } from "@/lib/arcade/puzzles/share";
-import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { clearSound, comboSound, selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { useAppShell } from "@/components/shell/app-shell";
 import {
@@ -274,6 +274,7 @@ export function ConnectionsBoard({ day, onExit }: { day?: string; onExit?: () =>
   const submit = () => {
     if (!round || !playable || picked.length !== CONNECTIONS_GROUP_SIZE) return;
     const guess = [...picked];
+    const solvedBefore = round.revealed.filter((group) => group.solved).length;
     void (async () => {
       const next = await send("/api/arcade/connections/actions", {
         day: round.day,
@@ -285,6 +286,10 @@ export function ConnectionsBoard({ day, onExit }: { day?: string; onExit?: () =>
       // rebuild it.
       if (!next) return;
       setSelection([]);
+      const solvedAfter = next.revealed.filter((group) => group.solved).length;
+      if (solvedAfter > solvedBefore) {
+        if (solvedAfter >= next.revealed.length) comboSound(); else clearSound();
+      }
       // The one hint a wrong guess is allowed to give, announced by the guess
       // that earned it.
       if (next.status === "active" && next.lastVerdict === "one-away") flash("One away…");

@@ -13,7 +13,7 @@ import { StakePressureNote } from "@/components/arcade/stake-pressure-note";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { maxAnteUpWager, type AnteUpGame } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
-import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { clearSound, selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   BRAIN_STREAK_RULES,
   MIN_ANTE_UP_WAGER,
@@ -148,7 +148,9 @@ export function BrainStreak({
   const [now, setNow] = useState(() => Date.now());
   const [verdict, setVerdict] = useState<BrainStreakRound["verdict"]>(null);
 
-  const play = useArcadeSound({ gameSounds: true });
+  // Primes clear/combo alongside the table set; clearSound() is called
+  // directly once an answer's outcome is known below.
+  useArcadeSound({ gameSounds: true });
   const active = attempt?.status === "active";
   const settled = attempt !== null && attempt.status !== "active";
   const sprint = attempt?.expiresAt !== null && attempt?.expiresAt !== undefined;
@@ -267,8 +269,8 @@ export function BrainStreak({
     if (attempt.score === scoreHeard.current) return;
     const grew = attempt.score > scoreHeard.current;
     scoreHeard.current = attempt.score;
-    if (grew) play("card");
-  }, [attempt, play]);
+    if (grew) clearSound();
+  }, [attempt]);
 
   const start = () => {
     if (sending.current) return;

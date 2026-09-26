@@ -15,7 +15,7 @@ import { StakePressureNote } from "@/components/arcade/stake-pressure-note";
 import { ANTE_UP_TIER_LADDERS, anteUpTierAllowed, maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
 import { STAKE_PRESSURE_STEPS, lowestTierFor, type TierLadder } from "@/lib/arcade/stake-pressure";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
-import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { clearSound, comboSound, selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   ANTE_UP_BLOCKUDOKU_GRANDMASTER,
   ANTE_UP_BLOCKUDOKU_TIERS,
@@ -54,8 +54,8 @@ const POLL_MS = 3000;
 /** Fallback pause on a 429 with no usable Retry-After header. */
 const DEFAULT_RETRY_AFTER_SECONDS = 5;
 
-/** How long cleared lines flash before the board shows them empty. */
-const CLEAR_FLASH_MS = 480;
+/** How long cleared lines animate before the board shows them empty. */
+const CLEAR_FLASH_MS = 560;
 
 /** Under this much time left the clock turns red. */
 const LOW_TIME_MS = 30_000;
@@ -261,7 +261,11 @@ export function AnteUpBlockudoku() {
   const [selected, setSelected] = useState<number | null>(null);
   const [aim, setAim] = useState<Anchor | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [clearing, setClearing] = useState<ReadonlySet<number>>(() => new Set());
+  // Ascending board order, so a cell's position in this array is also its
+  // stagger delay -- a full row wipes left to right instead of every cell
+  // popping in lockstep.
+  const [clearing, setClearing] = useState<readonly number[]>([]);
+  const [combo, setCombo] = useState(false);
   const [gain, setGain] = useState<{ points: number; key: number } | null>(null);
 
   const play = useArcadeSound({ gameSounds: true });
@@ -491,12 +495,20 @@ export function AnteUpBlockudoku() {
     setAim(null);
     placements.push({ slot, row: anchor.row, col: anchor.col, cells });
     if (cleared.size > 0) {
-      tapSound();
-      setClearing(cleared);
+      const order = Array.from(cleared).sort((a, b) => a - b);
+      // More than one row/column/box worth of cells means two or more groups
+      // cleared on the same drop -- the rarer, bigger moment gets its own cue.
+      const isCombo = order.length > GRID_SIDE;
+      if (isCombo) comboSound(); else clearSound();
+      setClearing(order);
+      setCombo(isCombo);
       if (clearTimer.current !== null) window.clearTimeout(clearTimer.current);
       clearTimer.current = window.setTimeout(() => {
         clearTimer.current = null;
-        if (mounted.current) setClearing(new Set());
+        if (mounted.current) {
+          setClearing([]);
+          setCombo(false);
+        }
       }, CLEAR_FLASH_MS);
     }
   };
@@ -796,7 +808,7 @@ export function AnteUpBlockudoku() {
           <div className="bk-play">
             <div
               ref={gridRef}
-              className={clsx("bk-grid", dragging && "bk-grid-dragging")}
+              className={clsx("bk-grid", dragging && "bk-grid-dragging", combo && "bk-grid-combo")}
               role="grid"
               aria-label="Blockudoku board"
               onPointerLeave={(event) => {
@@ -805,6 +817,7 @@ export function AnteUpBlockudoku() {
             >
               {(board ?? []).map((cell, index) => {
                 const inGhost = ghost?.cells.has(index) ?? false;
+                const clearOrder = clearing.indexOf(index);
                 return (
                   <button
                     key={index}
@@ -817,8 +830,9 @@ export function AnteUpBlockudoku() {
                       placedSet.has(index) && "bk-cell-pending",
                       inGhost && (ghost?.legal ? "bk-cell-ghost" : "bk-cell-ghost-bad"),
                       ghost?.legal && ghost.completes.has(index) && "bk-cell-will-clear",
-                      clearing.has(index) && "bk-cell-clearing",
+                      clearOrder !== -1 && "bk-cell-clearing",
                     )}
+                    style={clearOrder !== -1 ? ({ "--bk-clear-i": clearOrder } as React.CSSProperties) : undefined}
                     disabled={!active}
                     aria-label={`Row ${Math.floor(index / GRID_SIDE) + 1}, column ${(index % GRID_SIDE) + 1}, ${cell === 1 ? "filled" : "empty"}`}
                     onPointerEnter={(event) => hoverCell(index, event.pointerType)}

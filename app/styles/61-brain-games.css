@@ -7,6 +7,33 @@
  * buttons, the Lights Out grid and the Word Guess keyboard.
  */
 
+/* Every SoundButton (components/arcade/sound-button.tsx) gets this for free:
+   a real press, not just a color change, so a tap reads as physical before
+   its sound even reaches the speaker. */
+.arcade-sound-btn {
+  transition: transform .08s ease;
+}
+.arcade-sound-btn:active:not(:disabled) {
+  transform: scale(.93);
+}
+
+/* A correct/incorrect answer, applied to .brain-prompt by key so React
+   remounts the element and the animation replays every time. */
+.brain-feedback-correct { animation: brain-feedback-pop .4s ease-out; }
+.brain-feedback-wrong { animation: brain-feedback-shake .4s ease-out; }
+@keyframes brain-feedback-pop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+@keyframes brain-feedback-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
+
 .brain-prompt {
   display: flex;
   justify-content: center;

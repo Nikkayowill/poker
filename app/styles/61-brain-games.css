@@ -88,11 +88,12 @@
   padding: 8px;
   border: 0;
   border-radius: 12px;
-  opacity: .45;
+  opacity: .3;
+  filter: brightness(.6) saturate(.7);
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
-  transition: opacity .12s ease, transform .12s ease;
+  transition: opacity .1s ease, filter .1s ease, transform .1s ease, box-shadow .1s ease;
 }
 
 .brain-sequence-dots {
@@ -118,15 +119,17 @@
 
 .brain-pad-lit {
   opacity: 1;
-  transform: scale(1.03);
+  filter: brightness(1.35) saturate(1.2);
+  transform: scale(1.05);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, .55), 0 0 22px 4px currentColor;
 }
 
-.pad-red { background: #d64545; }
-.pad-blue { background: #3d6fd6; }
-.pad-green { background: #3fae5c; }
-.pad-yellow { background: #d6b83d; }
-.pad-purple { background: #9a55d6; }
-.pad-orange { background: #e0802f; }
+.pad-red { background: #d64545; color: #d64545; }
+.pad-blue { background: #3d6fd6; color: #3d6fd6; }
+.pad-green { background: #3fae5c; color: #3fae5c; }
+.pad-yellow { background: #d6b83d; color: #d6b83d; }
+.pad-purple { background: #9a55d6; color: #9a55d6; }
+.pad-orange { background: #e0802f; color: #e0802f; }
 
 /* Six pads at the big stakes: three across, same pad size as the 2x2. */
 .brain-pads-wide {

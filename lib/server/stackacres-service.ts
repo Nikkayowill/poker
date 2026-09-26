@@ -117,6 +117,21 @@ import {
   placeStackAcresFence as placeFenceRow,
   removeStackAcresFence as removeFenceRow,
 } from "./stackacres-fence-store";
+import {
+  EMPIRE_BUILDINGS,
+  PLACEMENT_MESSAGES,
+  isEmpireBuildingKind,
+  isPlaced,
+  layoutFingerprint,
+  placementProblem,
+  type EmpireBuildingKind,
+  type EmpireSnapshot,
+} from "@/lib/stackacres/empire-buildings";
+import {
+  listEmpireBuildings,
+  pickUpEmpireBuilding as pickUpEmpireBuildingRow,
+  placeEmpireBuilding as placeEmpireBuildingRow,
+} from "./stackacres-empire-building-store";
 import { SOIL_DEFAULT_TIER } from "@/lib/stackacres/soil-tiers";
 import { enrichedGrowthMultiplier, enrichesSoil, isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import {
@@ -329,7 +344,7 @@ import {
   releaseStackAcresIntent,
 } from "./stackacres-intent-store";
 import { bumpStackAcresRevision, readStackAcresRevision } from "./stackacres-revision-store";
-import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
+import { creditGoldByProfile, debitGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
 import {
   critBonusQuantity,
   nextToolTier,
@@ -836,7 +851,7 @@ export interface StackAcresView {
    * real chop/grow systems; these are the empire district's own counters,
    * currently always 0 rather than aliased onto a different economy.
    */
-  empire: { wood: number; wheat: number; workers: number };
+  empire: EmpireSnapshot;
 }
 
 /**
@@ -1076,6 +1091,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     landObstacleStates,
     fences,
     axe,
+    empireBuildings,
     fallback,
   ] = await Promise.all([
     supabase ? readStackAcresBatch(profile.id, day) : Promise.resolve(null),
@@ -1103,6 +1119,8 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     listStackAcresFences(profile.id),
     // And the axe: one small per-profile row, missing until the first upgrade.
     readStackAcresAxeLevel(profile.id),
+    // And the buildings this player owns on the Far Field: a handful of rows.
+    listEmpireBuildings(profile.id),
     supabase
       ? Promise.resolve(null)
       : Promise.all([
@@ -1396,10 +1414,16 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     fences,
     clock: { offsetMs: clockOffset, serverNowMs: now.getTime() },
     revision,
-    // Stub until the empire district's own clearing/hiring economy exists
-    // (docs/stackacres-second-map-direction.md section 6, still OPEN) --
-    // real zeros from the server, not a client-side literal.
-    empire: { wood: 0, wheat: 0, workers: 0 },
+    // Wood and Metal are the shared inventory's, since that is what the Far
+    // Field's buildings are paid from. Wheat and Workers stay zero until that
+    // map's own farming and hiring exist (docs/stackacres-second-map-direction.md).
+    empire: {
+      wood: inventory.wood ?? 0,
+      wheat: 0,
+      workers: 0,
+      metal: inventory.metal ?? 0,
+      buildings: empireBuildings,
+    },
   };
 }
 
@@ -3730,6 +3754,127 @@ export async function removeStackAcresFencePiece(
 ): Promise<StackAcresView> {
   const profile = await ensureProfile(token);
   await removeFenceRow(profile.id, Math.trunc(input.tx), Math.trunc(input.ty));
+  return view(profile, now);
+}
+
+/** Why a Far Field spot is refused, in the same words the build bar shows. */
+type EmpireRefusal = { status: 404 | 409; message: string };
+
+/**
+ * Checks the Far Field's rules against the layout as it stands, then writes the building, refused by the
+ * database if the layout changed in between (another tab, a second tap). Then it checks again, a few times.
+ * Returns the building's id, or why it can't go there.
+ */
+async function placeEmpireBuildingChecked(
+  profileId: string,
+  id: string | null,
+  kind: EmpireBuildingKind,
+  tx: number,
+  ty: number,
+): Promise<{ placed: string } | EmpireRefusal> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const owned = await listEmpireBuildings(profileId);
+    if (id !== null && !owned.some((b) => b.id === id)) return { status: 404, message: "That building isn't yours." };
+    const problem = placementProblem(kind, tx, ty, owned.filter(isPlaced), id);
+    if (problem) return { status: 409, message: PLACEMENT_MESSAGES[problem] };
+    const outcome = await placeEmpireBuildingRow(profileId, id, kind, tx, ty, layoutFingerprint(owned));
+    if (typeof outcome === "object") return outcome;
+    if (outcome === "overlap") return { status: 409, message: PLACEMENT_MESSAGES.overlap };
+    if (outcome === "missing") return { status: 404, message: "That building isn't yours." };
+  }
+  return { status: 409, message: "Something else moved. Try again." };
+}
+
+/**
+ * Buys a Far Field building and puts it down at (tx, ty) (lib/stackacres/empire-buildings.ts).
+ *
+ * Rule 1: Wood and Metal leave first, then Gold, and only then is the building written. If anything after
+ * the materials fails or is refused, everything taken so far goes back, once. Only what actually moved goes
+ * back: an account with unlimited Gold was never charged, and a building whose write landed but whose answer
+ * was lost is kept and paid for rather than refunded.
+ */
+export async function buyEmpireBuilding(
+  token: string,
+  input: { kind: string; tx: number; ty: number },
+  now = new Date(),
+): Promise<StackAcresView> {
+  if (!isEmpireBuildingKind(input.kind)) throw new StackAcresRequestError("Not a real building.", 400);
+  const kind = input.kind;
+  const def = EMPIRE_BUILDINGS[kind];
+  const profile = await ensureProfile(token);
+  const tx = Math.trunc(input.tx);
+  const ty = Math.trunc(input.ty);
+  // Refused up front when the spot is plainly wrong, so nothing is spent for it.
+  const before = await listEmpireBuildings(profile.id);
+  const problem = placementProblem(kind, tx, ty, before.filter(isPlaced));
+  if (problem) throw new StackAcresRequestError(PLACEMENT_MESSAGES[problem], 409, { round: await snapshots(profile.id, now) });
+
+  const { refund: refundMaterials } = await spendStackAcresMaterials(
+    profile.id,
+    def.materials,
+    now,
+    (material) =>
+      `A ${def.label} needs ${material.quantity.toLocaleString()} ${machineItemNoun(material.item, material.quantity)}.`,
+  );
+  let paid: boolean;
+  try {
+    paid = await debitGoldByProfile(profile.id, def.gold);
+  } catch (error) {
+    await refundMaterials();
+    throw error;
+  }
+  if (!paid) {
+    await refundMaterials();
+    throw new StackAcresRequestError(`A ${def.label} costs ${def.gold.toLocaleString()} Gold.`, 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  const giveBack = async () => {
+    if (!profile.unlimitedGold) await refundGold(profile.id, def.gold);
+    await refundMaterials();
+  };
+
+  let outcome: Awaited<ReturnType<typeof placeEmpireBuildingChecked>> | undefined;
+  try {
+    outcome = await placeEmpireBuildingChecked(profile.id, null, kind, tx, ty);
+  } catch (error) {
+    // The write may have landed with only its answer lost; then the building is theirs and stays paid for.
+    const landed = await listEmpireBuildings(profile.id)
+      .then((owned) => owned.some((b) => b.kind === kind && b.tx === tx && b.ty === ty && !before.some((old) => old.id === b.id)))
+      .catch(() => false);
+    if (!landed) {
+      await giveBack();
+      throw error;
+    }
+  }
+  if (outcome !== undefined && !("placed" in outcome)) {
+    await giveBack();
+    throw new StackAcresRequestError(outcome.message, outcome.status, { round: await snapshots(profile.id, now) });
+  }
+  return view(await ensureProfile(token), now);
+}
+
+/** Moves a Far Field building the player owns, or puts one down out of storage. Free. */
+export async function placeOwnedEmpireBuilding(
+  token: string,
+  input: { id: string; tx: number; ty: number },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const building = (await listEmpireBuildings(profile.id)).find((b) => b.id === input.id);
+  if (!building) throw new StackAcresRequestError("That building isn't yours.", 404, { round: await snapshots(profile.id, now) });
+  const outcome = await placeEmpireBuildingChecked(profile.id, building.id, building.kind, Math.trunc(input.tx), Math.trunc(input.ty));
+  if (!("placed" in outcome)) {
+    throw new StackAcresRequestError(outcome.message, outcome.status, { round: await snapshots(profile.id, now) });
+  }
+  return view(profile, now);
+}
+
+/** Picks a Far Field building up into storage, to put down again later for free. */
+export async function pickUpOwnedEmpireBuilding(token: string, input: { id: string }, now = new Date()): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  // A second tap on one already picked up has nothing to do and nothing to say.
+  await pickUpEmpireBuildingRow(profile.id, input.id);
   return view(profile, now);
 }
 

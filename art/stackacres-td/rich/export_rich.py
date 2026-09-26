@@ -68,7 +68,8 @@ PLAYABLE = [homestead, fold, pasture, coast, oak, mine, townsquare]
 # Rooms walked into through a Homestead door; drawn only by rich/, so they skip the DB16 sprite patching.
 INTERIORS = [SimpleNamespace(__name__="barn", build=interiors.barn),
              SimpleNamespace(__name__="workshop", build=interiors.workshop),
-             SimpleNamespace(__name__="farmhouse", build=interiors.house)]
+             SimpleNamespace(__name__="farmhouse", build=interiors.house),
+             SimpleNamespace(__name__="grocery", build=interiors.grocery)]
 TAP_CLEARANCE = 24   # map px of open space critters keep around anything a player taps
 # Light points in a tagged prop's own sprite pixels: where its windows and lamps are. The barn and the workshop
 # carry theirs on their sprites (buildings.py), since their tags are also on the counter and the bench inside.

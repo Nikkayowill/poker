@@ -291,6 +291,8 @@ import {
   type MachineView,
 } from "@/lib/stackacres/optimistic-actions";
 import { sendActionWithRetry } from "@/lib/stackacres/action-retry";
+import { EMPTY_EMPIRE, type EmpireSnapshot } from "@/lib/stackacres/empire-buildings";
+import { useEmpireBuild } from "./empire-build";
 import {
   GuessClaims,
   guessClaims,
@@ -461,7 +463,7 @@ interface StackAcresResponse {
   /** The second map's own resource HUD -- see StackAcresView's own doc
    *  comment. Absent from a response older than it, which the HUD reads as
    *  all-zero, same posture as every other stub-until-built field here. */
-  empire?: { wood: number; wheat: number; workers: number };
+  empire?: EmpireSnapshot;
   capacity: Partial<Record<StackAcresStock, number>>;
   /** Land the player may work. Everything else is drawn as wild growth. */
   sectors: SectorId[];
@@ -881,11 +883,7 @@ export function StackAcresFarm() {
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   /** The empire district's own resource HUD -- see StackAcresResponse's own
    *  doc comment. Honest zeros until that map's economy exists. */
-  const [empire, setEmpire] = useState<{ wood: number; wheat: number; workers: number }>({
-    wood: 0,
-    wheat: 0,
-    workers: 0,
-  });
+  const [empire, setEmpire] = useState<EmpireSnapshot>(EMPTY_EMPIRE);
   const [feed, setFeed] = useState(0);
   const [water, setWater] = useState(WATER_CAPACITY);
   const [energy, setEnergy] = useState<StackAcresEnergyAnchor>(() => ({
@@ -2809,6 +2807,16 @@ export function StackAcresFarm() {
     return () => window.clearTimeout(timer);
   }, [placeTag]);
 
+  const farmerTile = useCallback(() => world.current?.farmerTile() ?? null, []);
+  const build = useEmpireBuild({
+    active: onEmpireMap,
+    empire,
+    gold: profile?.goldBalance ?? 0,
+    unlimitedGold: profile?.unlimitedGold ?? false,
+    act,
+    farmerTile,
+  });
+
   const onViewMoved = useCallback(() => {
     setMonkDialogue(null);
     setGiftDialogue(null);
@@ -3992,6 +4000,10 @@ export function StackAcresFarm() {
             <StackAcresPixelIcon name="wood" />
             <strong>{empire.wood.toLocaleString()}</strong>
           </span>
+          <span className="sa-empire-stat" title="Metal">
+            <StackAcresPixelIcon name="metal" />
+            <strong>{empire.metal.toLocaleString()}</strong>
+          </span>
           <span className="sa-empire-stat" title="Wheat">
             <StackAcresPixelIcon name="wheat" />
             <strong>{empire.wheat.toLocaleString()}</strong>
@@ -4002,6 +4014,7 @@ export function StackAcresFarm() {
           </span>
         </div>
       )}
+      {build.controls}
       <header className="floor-bar">
         <div className="floor-bar-left">
           {/* Not the shared FloorBackLink: that one leaves for the StackChips
@@ -4100,6 +4113,10 @@ export function StackAcresFarm() {
               forageNodes={forageNodes}
               landObstacles={landObstacles}
               fences={fences}
+              empireBuildings={build.shown}
+              buildMode={build.buildMode}
+              buildGhost={build.ghost}
+              onBuildTap={build.onBuildTap}
               onUseSquare={onUseSquare}
               useKeyLabel={BELT_TOOL_DEFS[belt].label}
               tool={tool}

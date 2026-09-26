@@ -270,6 +270,72 @@ setting the React-side flag the empire HUD depends on (`onEmpireMap` in
 that teleports via `placeFarmer` will show a wrong HUD state with no error — use `travelTo` instead,
 or fix `placeFarmer` to also invoke the callback.
 
+**Worker bulletin board (2026-09-25, branch `feat/stackacres-worker-board`, uncommitted).** The NPC
+labor engine now exists as pure logic: plots, the store and customers post notes to a board, and hired
+hands (farmhand, hauler, clerk) claim the ones their job covers and walk the 16px grid to do them
+(`lib/stackacres-td/worksite.ts` and its `work-*.ts` parts). It is seeded and holds no Gold, so a sale is
+only an event for now. The one way to see it is the dev-only `__stackacres.scene.startWorksiteDemo()` in
+the Far Field, with no buildings drawn. Still open: payroll, what a sale pays and who credits it
+(server), buildings to hang the layout on, and workers standing on the same square.
+
+**Placeable buildings (2026-09-25, same branch, uncommitted).** Kayo: buildings cost Wood, Metal and
+Gold to buy; moving and picking up are free. Metal comes from mining ore and smelting it in the
+Workshop, which is the next slice (not built yet, so Metal has no source for players; an admin-only
+`/api/admin/stackacres-items` grants it for testing). Built: a Barn (the Homestead's own drawing). The Grocery is
+NOT placeable: Kayo confirmed it is the city's existing store, walk-in, bought through its manager. Its
+drawing (same gable kit) waits for the city (`art/stackacres-td/rich/gable_buildings.py`, exported by
+`export_buildings.py`), shared placement rules in `lib/stackacres/empire-buildings.ts` (map edge, trees
+and rocks, the bridge, overlap, every door reachable), `empire_buildings` table plus
+`place_empire_building` RPC (migration `20260930220000`, NOT applied to production yet), buy/place/pick-up
+actions, and a Build button in the Far Field with a tray and a tick/cross placing bar. First-pass
+price: Barn 6,000 Gold + 60 Wood + 10 Metal. Reviewed 2026-09-25: the placement rules are re-checked under the
+database lock through a layout fingerprint (`place_empire_building`'s `p_expected`, refused as 'stale'),
+the browser keeps the farmer from building on or walling in himself, and refusals are shown on the build
+bar. Not yet: the worker sim reading its layout from placed buildings, a cap on how many of each, crop plots to place.
+
+**Worker and customer behaviour, toward Chef RPG (2026-09-25, same branch).** Researched Chef RPG's
+staff and diners (its wiki: staff stats, stamina that runs out and forces breaks, traits with trade-offs,
+patience shown as emotes, satisfaction feeding prestige, lunch/dinner rushes) and built the equivalents
+into the pure sim: nobody shares a square (wait, route round, step aside; idle people make way), urgent
+work first (a clerk turns round for the till), harvests chained into an armful, per-worker profiles and
+traits (overworker, brisk, steady, dawdler) with energy and breaks at a break spot, customers with
+shopping lists, a real queue at each till, patience that runs down only while waiting, a satisfaction
+score per visit and a store reputation that sets how often people come, opening hours and rushes off the
+farm clock, and staff-only squares behind the tills. Mood shows as behaviour (impatient customers glance
+about), never as an icon. 15-minute simulations: 73-86 average satisfaction, reputation 83-98.
+
+**v2: a grocery market sim, not a farm (2026-09-25, same branch).** Kayo: "this sim is a grocery market
+sim. not the farming sim", staff sell produce shipped in and hand it out, nobody stands on plots. The farm
+side (`work-farm.ts`, plots, farmhands, haulers) is gone. The sim now runs the city grocery's walk-in
+interior (`lpc_rooms.grocery()`, exported to `public/stackacres-td/areas/grocery/`), and reads every work
+and shopping square from zones painted on the room itself: shelves and bulk bins, a served produce market,
+two tills with one shared queue, the stockroom doors, a break chair. Deliveries come in at 7 AM and 1 PM.
+Staff are named and wear the store's forest green (`lib/stackacres-td/store-cast.ts`): June and Omar on
+the tills, Rosa on produce, Dale on stock; six named shoppers in their own clothes. New LPC animations for
+carry, basket, reach, give, scan, sit and despair (`art/stackacres-td/lpc/build.py`), and walk frames that
+advance with distance so nobody glides. The room is reachable in development only until the city exists.
+Day-long runs: about 120 visits, 80+ produce orders, satisfaction 79-82.
+
+**V3 floor plan (2026-09-25, same branch).** The grocery is now 28 by 18 tiles: a stockroom bay stepping out
+of the back wall, two double-sided aisles with endcaps, a pantry and bulk bins, a produce island the clerk
+works from inside, and a manager's corner. The plan lives in `art/stackacres-td/rich/grocery-v3/` with the
+painting guides Kayo paints the final art from; `lpc_rooms.grocery()` builds it from the LPC pack until that
+art arrives. Tested over five simulated days before it was built. A one-row staff floor inside the island
+jammed the clerk and stocker, so the island's floor is two rows and open at both ends. Collision stays on
+whole 16px tiles.
+
+**Rush hours (2026-09-25, same branch).** Kayo wanted the shop much busier at lunch and dinner, as many people
+as fit without lag. The simulation was never the limit (about 0.05ms a step with everyone in); the floor was.
+So the front was rebuilt for flow: four checkout lanes, each with its own two-deep queue and the cashier at
+the foot, emptying into a corridor two squares wide; a three-place produce counter with one shared queue; and
+a four-square doorway split into a way out on the lanes' side and a way in on the other. Customers never
+route through a lane unless they're queueing in it, staff never walk down one, two people face to face in a
+one-square gap squeeze past each other, and someone whose shopping is on the belt waits it out. The crew is
+nine (four cashiers, three produce clerks, two stockers) and there are thirty shoppers. Full days run about
+320 to 345 visits with thirty-odd in the shop at the peaks and 4 to 7 percent walking out. The grocery's
+character sheets are cropped to what each frame draws and store a repeated frame once, about a tenth of the
+old size.
+
 ## 8. OPEN — needs Kayo's answer before any of this is built
 
 1. **Scope authorization.** `feedback_stackacres_homestead_only_focus` currently says every map

@@ -119,6 +119,21 @@ ICONS['minus']=g([
 "............","............","............","............",".kkkkkkkkkk.",".kkkkkkkkkk.",
 ".kkkkkkkkkk.",".kkkkkkkkkk.","............","............","............","............"])
 
+# A smelted metal bar (the Far Field's buildings cost it), side on: lit top face, steel front.
+ICONS['metal']=g([
+"............",
+"............",
+"...kkkkkkk..",
+"..kwwwwwwsk.",
+".kwsssssssk.",
+".kkkkkkkkkSk",
+".ksssssssSSk",
+".ksssssssSzk",
+".kSSSSSSSzk.",
+".kkkkkkkkk..",
+"............",
+"............",
+])
 # ---- 16px tools, drawn as shapes then outlined
 def shaped(fn, size=16):
     im=Image.new('RGBA',(size,size)); d=ImageDraw.Draw(im); fn(d)
@@ -167,7 +182,16 @@ def sack(d):
     d.line([(13,9),(13,13)],fill=C('trim2')); d.line([(2,13),(13,13)],fill=C('trim2'))
     d.rectangle([5,8,10,11],fill=C('red')); d.point((7,9),C('white')); d.point((8,10),C('white'))
     d.point((6,1),C('gold')); d.point((8,0),C('gold')); d.point((9,1),C('gold2'))
-TOOLS={'hand':glove,'hoe':hoe,'can':can,'pouch':pouch,'fence':fence,'egg':egg,'sack':sack}
+def build(d):
+    # a little red-roofed barn front: the Build button
+    d.polygon([(1,8),(8,1),(15,8)],fill=C('red'))
+    d.line([(2,8),(8,2)],fill=C('redhi')); d.line([(9,2),(14,7)],fill=C('red2'))
+    d.rectangle([3,8,13,14],fill=C('trim'))
+    d.line([(3,8),(3,14)],fill=C('white')); d.line([(13,8),(13,14)],fill=C('trim2')); d.line([(3,14),(13,14)],fill=C('trim2'))
+    d.rectangle([6,10,10,14],fill=C('red'))
+    d.line([(6,10),(10,14)],fill=C('trim')); d.line([(10,10),(6,14)],fill=C('trim'))
+    d.rectangle([7,5,9,6],fill=C('gold'))
+TOOLS={'hand':glove,'hoe':hoe,'can':can,'pouch':pouch,'fence':fence,'egg':egg,'sack':sack,'build':build}
 def coin():
     c=Canvas(12,12); yy,xx=np.mgrid[0:12,0:12]; r=np.hypot(xx+0.5-6,yy+0.5-6)
     face=r<=5.6; c.put(face,'gold')

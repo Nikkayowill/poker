@@ -5022,6 +5022,84 @@
   font-weight: 800;
   letter-spacing: 0.04em;
 }
+/* Building on the Far Field (empire-build.tsx): the Build key, the bar you
+   place with, and the tray of buildings. Bottom centre, clear of the belt on
+   the left and the thumb stick on the right. */
+.sa-build-open,
+.sa-build-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+  transform: translateX(-50%);
+}
+.sa-build-open {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 48px;
+  padding: 0 8px 2px 4px;
+  border: 10px solid transparent;
+  border-image: var(--sa-9-chip) 5 fill / 10px stretch;
+  background: none;
+  color: var(--sa-ink);
+  font-family: var(--sa-font-pixel);
+  font-size: 16px;
+  font-weight: 700;
+  image-rendering: pixelated;
+}
+.sa-build-open:active { border-image-source: var(--sa-9-chip-down); transform: translate(-50%, 1px); }
+/* One row, so the map above it stays in view while placing. */
+.sa-build-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(520px, calc(100vw - 32px));
+  padding: 0 2px;
+  border: 12px solid transparent;
+  border-image: var(--sa-9-panel) 10 fill / 16px / 2px stretch;
+  color: var(--sa-ink);
+  image-rendering: pixelated;
+}
+.sa-build-say { flex: 1; margin: 0; font-size: 13px; font-weight: 700; line-height: 1.3; }
+.sa-build-say.is-problem { color: var(--sa-ember); }
+.sa-build-keys { display: flex; flex: none; gap: 6px; }
+.sa-build-keys > button { min-width: 44px; min-height: 44px; padding: 0 6px 2px; font-size: 14px; }
+/* The tray is a sheet, whose slide-up owns its transform, so a full-width
+   strip centres it instead. */
+.sa-build-tray-wrap {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.sa-build-tray {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(calc(100dvh - 90px), 420px);
+  pointer-events: auto;
+}
+.sa-build-tray-head { display: flex; align-items: center; justify-content: space-between; }
+.sa-build-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.sa-build-item {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+.sa-build-pic { width: 72px; height: auto; image-rendering: pixelated; }
+.sa-build-about h3 { margin: 0; font-family: var(--sa-font-pixel); font-size: 16px; }
+.sa-build-about p { margin: 2px 0 0; font-size: 12px; line-height: 1.35; }
+.sa-build-cost { display: flex; flex-wrap: wrap; gap: 8px; font-family: var(--sa-font-pixel); font-weight: 700; font-variant-numeric: tabular-nums; }
+.sa-build-cost > span { display: inline-flex; align-items: center; gap: 2px; }
+.sa-build-cost > span.is-short { color: var(--sa-ember); }
+.sa-build-cost .sa-px { width: 18px; height: 18px; }
+.sa-build-stored { font-weight: 700; }
+.sa-build-item .sa-cta { min-height: 44px; padding: 0 6px 2px; font-size: 14px; }
+
 .sa-goals-list { display: grid; gap: 10px; margin: 0; padding: 2px 27px 27px; list-style: none; }
 .sa-goals-list > li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; opacity: 0.7; }
 .sa-goals-list > li.is-current { opacity: 1; }

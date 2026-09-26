@@ -1,4 +1,5 @@
 import type { FencePiece } from "@/lib/stackacres/fences";
+import type { EmpireBuildingKind, PlacedEmpireBuilding, Tile } from "@/lib/stackacres/empire-buildings";
 import type { Ref } from "react";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
@@ -148,6 +149,8 @@ export interface StackAcresWorldApi {
   focusZone: (zone: MapPlaceId) => void;
   /** Which map place the farmer is standing in right now. */
   currentPlace: () => MapPlaceId;
+  /** The map square under the farmer's feet, in the area he is in. */
+  farmerTile: () => Tile | null;
   /** The squash-and-stretch a tapped unit answers with, before the network
    *  has said anything at all. */
   popUnit: (unitId: string) => void;
@@ -262,6 +265,14 @@ export interface StackAcresWorldApi {
   sleep: (whileDark: () => Promise<void> | void) => Promise<void>;
 }
 
+/** A building being placed: where it would stand, and whether it may. */
+export interface BuildGhost {
+  kind: EmpireBuildingKind;
+  tx: number;
+  ty: number;
+  ok: boolean;
+}
+
 export interface StackAcresWorldProps {
   units: StackAcresUnitSnapshot[];
   /** The choppable trees, so a felled one shows as a stump until it regrows. */
@@ -276,6 +287,13 @@ export interface StackAcresWorldProps {
   landObstacles: readonly LandObstacleSnapshot[];
   /** Every fence piece the farm has put up, by Homestead map square (lib/stackacres/fences.ts). */
   fences: readonly FencePiece[];
+  /** The buildings standing on the Far Field (lib/stackacres/empire-buildings.ts). */
+  empireBuildings: readonly PlacedEmpireBuilding[];
+  /** Placing a building: taps pick a square (`onBuildTap`) instead of walking the farmer there. */
+  buildMode: boolean;
+  /** The building being placed, drawn see-through over green or red squares, or null. */
+  buildGhost: BuildGhost | null;
+  onBuildTap: (tile: Tile) => void;
   tool: StackAcresTool;
   /** Fired once, by nonce, to trigger the gold-burst effect on one unit --
    *  the client-side twin of a confirmed collect. */

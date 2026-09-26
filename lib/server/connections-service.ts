@@ -30,12 +30,12 @@ import {
 } from "./daily-puzzle-store";
 import {
   MIN_ANTE_UP_WAGER,
-  WAGER_MULTIPLIER_BY_MISTAKES,
   anteUpConnectionsPayout,
   connectionsDailyBonusMultiplier,
+  connectionsStakeRules,
 } from "@/lib/arcade/ante-up-connections";
 import type { WagerLadder } from "@/lib/arcade/ante-up-ladder";
-import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
+import { anteUpStakeProblem } from "@/lib/arcade/ante-up-stakes";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { applyAchievementEvent } from "./achievement-store";
 import { creditDailyBonus } from "./daily-puzzle-bonus";
@@ -230,10 +230,11 @@ export async function startConnectionsPuzzle(
       400,
     );
   }
-  // One flat ceiling; see lib/arcade/ante-up-stakes.ts and Word Stack's twin
-  // of this check. Deliberately after the resume short-circuit above.
-  const overCeiling = anteUpWagerCeilingProblem(CONNECTIONS_GAME, null, wagerInput);
-  if (overCeiling) throw new ConnectionsRequestError(overCeiling, 400);
+  // No ceiling: a bigger stake allows fewer mistakes instead
+  // (connectionsMaxMistakesFor below). Deliberately after the resume
+  // short-circuit above.
+  const stakeProblem = anteUpStakeProblem(CONNECTIONS_GAME, null, wagerInput);
+  if (stakeProblem) throw new ConnectionsRequestError(stakeProblem, 400);
 
   // The puzzle is the canonical one for this day: pickDaily only actually
   // runs on that day's first-ever ask and is cached forever after -- see
@@ -266,11 +267,13 @@ export async function startConnectionsPuzzle(
     throw new ConnectionsRequestError(`You need ${wagerInput.toLocaleString()} Gold to wager this.`, 400);
   }
 
+  // The stake band's rules are copied onto the round so a live round never changes.
+  const stakeRules = connectionsStakeRules(wagerInput);
   const round: StoredConnectionsRound = {
-    ...startConnectionsRound(puzzle, randomInt),
+    ...startConnectionsRound(puzzle, randomInt, { maxMistakes: stakeRules.maxMistakes }),
     wager: wagerInput,
     // Copied in only for a real wager; see the field's own doc comment.
-    ...(wagerInput > 0 ? { wagerLadder: WAGER_MULTIPLIER_BY_MISTAKES } : {}),
+    ...(wagerInput > 0 ? { wagerLadder: stakeRules.ladder } : {}),
   };
 
   let stored: StoredConnections;

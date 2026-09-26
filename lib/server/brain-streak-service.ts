@@ -14,7 +14,7 @@ import {
   type BrainStreakGame,
   type BrainStreakSnapshot,
 } from "@/lib/arcade/brain-streak";
-import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
+import { anteUpStakeProblem } from "@/lib/arcade/ante-up-stakes";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   ActiveAnteUpAttemptExists,
@@ -145,8 +145,8 @@ export function createBrainStreakService(game: BrainStreakGame, config: BrainStr
         400,
       );
     }
-    const overCeiling = anteUpWagerCeilingProblem(game, null, wagerInput);
-    if (overCeiling) throw new BrainStreakRequestError(overCeiling, 400);
+    const stakeProblem = anteUpStakeProblem(game, null, wagerInput);
+    if (stakeProblem) throw new BrainStreakRequestError(stakeProblem, 400);
 
     if (wagerInput > 0) {
       const sinceYesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);

@@ -22,9 +22,11 @@ import {
   resignBlockudokuRound,
   startBlockudokuRound,
   type BlockudokuMoveProblem,
+  type BlockudokuPieceSet,
   type BlockudokuRound,
   type BlockudokuView,
 } from "./puzzles/blockudoku";
+import { stakePressure } from "./stake-pressure";
 
 /** The floor for a wager. Restated per game; see ante-up-memory.ts's MIN_ANTE_UP_WAGER for why. */
 export const MIN_ANTE_UP_WAGER = 500;
@@ -36,14 +38,44 @@ export interface AnteUpBlockudokuTier {
   /** Measured from the first placement, not from opening the attempt; see the round's own clock. */
   readonly timeLimitMs: number;
   readonly multiplier: number;
+  /** Which pieces the round deals; see BLOCKUDOKU_PIECE_SETS. */
+  readonly pieceSet: BlockudokuPieceSet;
 }
 
-/** Starting numbers, not tuned against real play rates; retune here. */
+/**
+ * Tuned with lib/arcade/puzzles/blockudoku.sim.test.ts: four bots standing in
+ * for the median player and +1, +2 and +3 SD, 300 seeded games each, win rate
+ * on the easiest board each stake band may pick. Casual is easy on purpose,
+ * which is why it only pays 1.2x.
+ *
+ *   band  board                     median  +1SD  +2SD  +3SD
+ *   <10k  Casual, 150 in 5:00        100%   100%  100%  100%
+ *   10k+  Standard, 1800 in 9:00       8%    55%   97%   98%
+ *   100k+ Hardcore, 2500 in 9:00       0%    13%   75%   95%
+ *   1M+   Grandmaster, 3500 in 9:00    0%     0%   19%   68%
+ */
 export const ANTE_UP_BLOCKUDOKU_TIERS: Readonly<Record<BlockudokuDifficulty, AnteUpBlockudokuTier>> = {
-  casual: { targetScore: 150, timeLimitMs: 5 * 60 * 1000, multiplier: 1.2 },
-  standard: { targetScore: 350, timeLimitMs: 8 * 60 * 1000, multiplier: 2 },
-  hardcore: { targetScore: 700, timeLimitMs: 12 * 60 * 1000, multiplier: 3.5 },
+  casual: { targetScore: 150, timeLimitMs: 5 * 60 * 1000, multiplier: 1.2, pieceSet: "classic" },
+  standard: { targetScore: 1800, timeLimitMs: 9 * 60 * 1000, multiplier: 2, pieceSet: "big" },
+  hardcore: { targetScore: 2500, timeLimitMs: 9 * 60 * 1000, multiplier: 3.5, pieceSet: "expert" },
 };
+
+/**
+ * What a 1M+ stake plays in place of Hardcore's usual terms: the master piece
+ * set and a higher target. Stored on the attempt like any tier's terms.
+ */
+export const ANTE_UP_BLOCKUDOKU_GRANDMASTER: AnteUpBlockudokuTier = {
+  targetScore: 3500,
+  timeLimitMs: 9 * 60 * 1000,
+  multiplier: 3.5,
+  pieceSet: "master",
+};
+
+/** The terms a stake actually plays on this tier. */
+export function anteUpBlockudokuTerms(difficulty: BlockudokuDifficulty, wager: number): AnteUpBlockudokuTier {
+  if (difficulty === "hardcore" && stakePressure(wager) === 3) return ANTE_UP_BLOCKUDOKU_GRANDMASTER;
+  return ANTE_UP_BLOCKUDOKU_TIERS[difficulty];
+}
 
 export function isBlockudokuDifficulty(value: unknown): value is BlockudokuDifficulty {
   return value === "casual" || value === "standard" || value === "hardcore";
@@ -70,14 +102,14 @@ export function startAnteUpBlockudoku(
   seed: number,
   now: Date,
 ): AnteUpBlockudokuAttempt {
-  const tier = ANTE_UP_BLOCKUDOKU_TIERS[difficulty];
+  const tier = anteUpBlockudokuTerms(difficulty, wager);
   return {
     difficulty,
     wager,
     multiplier: tier.multiplier,
     targetScore: tier.targetScore,
     timeLimitMs: tier.timeLimitMs,
-    board: startBlockudokuRound(seed),
+    board: startBlockudokuRound(seed, tier.pieceSet),
     status: "active",
     startedAt: now.toISOString(),
   };

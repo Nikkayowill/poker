@@ -9,7 +9,7 @@ import {
 } from "./ante-up-memory-service";
 import { __resetAnteUpAttemptsForTest, getActiveAnteUpAttempt } from "./ante-up-store";
 import { adjustGold, ensureProfile } from "./profile-store";
-import { ANTE_UP_MEMORY_MAX_TURNS, MIN_ANTE_UP_WAGER, type AnteUpMemoryAttempt } from "@/lib/arcade/ante-up-memory";
+import { MEMORY_RULES_BY_PRESSURE, MIN_ANTE_UP_WAGER, type AnteUpMemoryAttempt } from "@/lib/arcade/ante-up-memory";
 import type { Card } from "@/lib/game/types";
 
 /**
@@ -62,15 +62,19 @@ async function clearActiveAttempt(token: string, profileId: string) {
   if (!stored) throw new Error("no active attempt");
 
   const tiles = stored.state.board.tiles;
+  // Past 13 pairs a rank repeats in both colours, so colour is part of the pair.
+  const pairKey = (card: Card) =>
+    tiles.length > 26 ? `${card.rank}:${card.suit === "hearts" || card.suit === "diamonds"}` : card.rank;
   const seen = new Map<string, number>();
   const pairs: [number, number][] = [];
   tiles.forEach((card, index) => {
-    const prior = seen.get(card.rank);
+    const key = pairKey(card);
+    const prior = seen.get(key);
     if (prior === undefined) {
-      seen.set(card.rank, index);
+      seen.set(key, index);
     } else {
       pairs.push([prior, index]);
-      seen.delete(card.rank);
+      seen.delete(key);
     }
   });
 
@@ -162,7 +166,7 @@ describe("settlement", () => {
     const result = await clearActiveAttempt(token, id);
     expect(result.status).toBe("won");
     expect(result.turns).toBe(8); // MEMORY_PAIRS -- pairing every rank on sight is the fastest possible clear
-    expect(result.payout).toBe(3000); // wager * the top-tier multiplier
+    expect(result.payout).toBe(2000); // wager * the small-stake top multiplier
 
     // At least the payout -- a win can also complete a daily mission and
     // credit its own (much smaller) reward alongside it. A win crediting less
@@ -179,7 +183,7 @@ describe("settlement", () => {
 
     const result = await forfeitByTurnCap(token, id);
     expect(result.status).toBe("lost");
-    expect(result.turns).toBe(ANTE_UP_MEMORY_MAX_TURNS);
+    expect(result.turns).toBe(MEMORY_RULES_BY_PRESSURE[0].maxTurns);
     expect(result.payout).toBe(0);
     expect(await balance(token)).toBe(before - 750);
   });
@@ -225,5 +229,28 @@ describe("daily wagered cap", () => {
     await expect(openAnteUpMemory(token, 500)).rejects.toBeInstanceOf(AnteUpMemoryRequestError);
     // Practice is not a wager, so the cap does not apply to it.
     await expect(openAnteUpMemory(token, 0)).resolves.toBeTruthy();
+  });
+});
+
+describe("stake bands", () => {
+  it("deals a 30-tile board with a 34-turn cap at 1M and pays it from that board's ladder", async () => {
+    const { token, id } = await funded(3_000_000);
+    const { attempt: opened } = await openAnteUpMemory(token, 1_000_000);
+    expect(opened.pairs).toBe(15);
+    expect(opened.board).toHaveLength(30);
+    expect(opened.columns).toBe(6);
+    expect(opened.maxTurns).toBe(34);
+
+    const result = await clearActiveAttempt(token, id);
+    expect(result.status).toBe("won");
+    expect(result.turns).toBe(15);
+    expect(result.payout).toBe(3_500_000);
+  });
+
+  it("keeps the free board at 8 pairs", async () => {
+    const { token } = await funded();
+    const { attempt } = await openAnteUpMemory(token, 0);
+    expect(attempt.pairs).toBe(8);
+    expect(attempt.maxTurns).toBe(20);
   });
 });

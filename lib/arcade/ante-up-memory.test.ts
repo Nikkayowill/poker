@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   ANTE_UP_MEMORY_MAX_TURNS,
+  LEGACY_MEMORY_RUNGS,
+  MEMORY_RULES_BY_PRESSURE,
   MIN_ANTE_UP_WAGER,
   anteUpMemoryFlipProblem,
   anteUpMemoryPayout,
   flipAnteUpMemoryTile,
   resignAnteUpMemory,
   startAnteUpMemory,
+  memoryStakeRules,
   toAnteUpMemorySnapshot,
   wagerMultiplierForTurns,
   type AnteUpMemoryAttempt,
@@ -24,7 +27,7 @@ const START = new Date("2026-08-21T12:00:00Z");
 
 /** A board laid out in a known order: pairs sit side by side, 0-1, 2-3, and so on -- same idiom memory.test.ts uses. */
 function orderedTiles(): Card[] {
-  return MEMORY_RANKS.flatMap((rank) => [
+  return MEMORY_RANKS.slice(0, MEMORY_PAIRS).flatMap((rank) => [
     { rank, suit: "spades" as const },
     { rank, suit: "hearts" as const },
   ]);
@@ -145,7 +148,7 @@ describe("flipAnteUpMemoryTile", () => {
   });
 
   it("stamps the cap onto every attempt it opens", () => {
-    expect(startAnteUpMemory(() => 0, 500, START).maxTurns).toBe(ANTE_UP_MEMORY_MAX_TURNS);
+    expect(startAnteUpMemory(() => 0, 500, START).maxTurns).toBe(MEMORY_RULES_BY_PRESSURE[0].maxTurns);
   });
 
   it("reports the attempt's own cap to the browser", () => {
@@ -253,3 +256,79 @@ describe("MIN_ANTE_UP_WAGER", () => {
     expect(MIN_ANTE_UP_WAGER).toBe(500);
   });
 });
+
+describe("stake bands", () => {
+  const sequential = (max: number) => max - 1;
+
+  it.each([
+    [0, 8, 20, 4],
+    [9_999, 8, 20, 4],
+    [10_000, 10, 24, 5],
+    [100_000, 12, 28, 6],
+    [1_000_000, 15, 34, 6],
+  ])("a %i wager deals %i pairs with a %i-turn cap, %i columns", (wager, pairs, maxTurns, columns) => {
+    const attempt = startAnteUpMemory(sequential, wager, START);
+    expect(attempt.board.tiles).toHaveLength(pairs * 2);
+    expect(attempt.maxTurns).toBe(maxTurns);
+    expect(attempt.rungs).toEqual(memoryStakeRules(wager).rungs);
+    const snap = toAnteUpMemorySnapshot(attempt, { id: "a1", version: 1 });
+    expect(snap.pairs).toBe(pairs);
+    expect(snap.maxTurns).toBe(maxTurns);
+    expect(snap.columns).toBe(columns);
+    expect(snap.board).toHaveLength(pairs * 2);
+    expect(snap.rungs).toEqual(memoryStakeRules(wager).rungs);
+  });
+
+  it("gives every band a ladder that ends at its own cap, falling as turns climb", () => {
+    for (const rules of Object.values(MEMORY_RULES_BY_PRESSURE)) {
+      expect(rules.rungs[rules.rungs.length - 1].upTo).toBe(rules.maxTurns);
+      const multipliers = rules.rungs.map((rung) => rung.multiplier);
+      expect([...multipliers].sort((a, b) => b - a)).toEqual(multipliers);
+      expect(multipliers[0]).toBeGreaterThan(1);
+      expect(multipliers[multipliers.length - 1]).toBeLessThan(1);
+    }
+  });
+
+  it("pays a new attempt from its own ladder", () => {
+    const attempt = startAnteUpMemory(sequential, 1_000_000, START);
+    const board = { ...attempt.board, status: "solved" as const, turns: 27 };
+    expect(anteUpMemoryPayout({ ...attempt, board })).toBe(1_800_000);
+    expect(anteUpMemoryPayout({ ...attempt, board: { ...board, turns: 28 } })).toBe(200_000);
+  });
+
+  it("forfeits a 15-pair attempt at 34 turns, not 16", () => {
+    let attempt = startAnteUpMemory(sequential, 1_000_000, START);
+    // Three tiles of different ranks in rotation never match, and the next
+    // flip is never one already face up.
+    const cycle = threeRanks(attempt);
+    let flip = 0;
+    const turn = () => {
+      attempt = flipAnteUpMemoryTile(attempt, cycle[flip % 3], START);
+      attempt = flipAnteUpMemoryTile(attempt, cycle[(flip + 1) % 3], START);
+      flip += 2;
+    };
+    for (let taken = 0; taken < 33; taken += 1) turn();
+    expect(attempt.status).toBe("active");
+    expect(attempt.board.turns).toBe(33);
+    turn();
+    expect(attempt.status).toBe("lost");
+    expect(attempt.board.turns).toBe(34);
+  });
+
+  it("settles an attempt stored before ladders were copied on at the old rates", () => {
+    const legacy = orderedAttempt(1000, START);
+    expect(legacy.rungs).toBeUndefined();
+    expect(toAnteUpMemorySnapshot(legacy, { id: "a1", version: 1 }).rungs).toEqual(LEGACY_MEMORY_RUNGS);
+    expect(anteUpMemoryPayout({ ...legacy, board: fakeSolvedBoard(12) })).toBe(1300);
+  });
+});
+
+function threeRanks(attempt: AnteUpMemoryAttempt): number[] {
+  const picked: number[] = [];
+  attempt.board.tiles.forEach((tile, index) => {
+    if (picked.length < 3 && picked.every((other) => attempt.board.tiles[other].rank !== tile.rank)) {
+      picked.push(index);
+    }
+  });
+  return picked;
+}

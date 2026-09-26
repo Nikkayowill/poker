@@ -306,6 +306,47 @@ describe("moves", () => {
   });
 });
 
+describe("stake pressure", () => {
+  it("refuses a board too easy for the stake, with the reason, and leaves the wallet alone", async () => {
+    const { token } = await funded(5_000_000);
+    const cases = [
+      ["beginner", 10_000, "Intermediate"],
+      ["intermediate", 100_000, "Expert"],
+      ["expert", 1_000_000, "Master"],
+    ] as const;
+    for (const [tier, wager, needs] of cases) {
+      const opening = openAnteUpMinesweeper(token, tier, wager, NOW);
+      await expect(opening).rejects.toBeInstanceOf(AnteUpMinesweeperRequestError);
+      await expect(opening).rejects.toThrow(`plays ${needs} or harder`);
+    }
+    expect(await balance(token)).toBe(5_000_000);
+  });
+
+  it("opens the lowest board each stake band allows", async () => {
+    const cases = [
+      ["intermediate", 10_000],
+      ["expert", 100_000],
+      ["master", 5_000_000],
+    ] as const;
+    for (const [tier, wager] of cases) {
+      const { token } = await funded(10_000_000);
+      const { attempt } = await openAnteUpMinesweeper(token, tier, wager, NOW);
+      expect(attempt.difficulty).toBe(tier);
+      expect(attempt.wager).toBe(wager);
+    }
+  });
+
+  it("leaves free play and small stakes on every board", async () => {
+    for (const tier of ["beginner", "intermediate", "expert"] as const) {
+      for (const wager of [0, 9_999]) {
+        const { token } = await funded();
+        const { attempt } = await openAnteUpMinesweeper(token, tier, wager, NOW);
+        expect(attempt.difficulty).toBe(tier);
+      }
+    }
+  });
+});
+
 describe("daily wagered cap", () => {
   it("refuses past the limit, but free practice stays open", async () => {
     const { token } = await funded(1_000_000);

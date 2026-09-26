@@ -11,7 +11,7 @@ import {
   type BrainLightsOutAttempt,
   type BrainLightsOutSnapshot,
 } from "@/lib/arcade/brain-lights-out";
-import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
+import { anteUpStakeProblem } from "@/lib/arcade/ante-up-stakes";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   ActiveAnteUpAttemptExists,
@@ -51,7 +51,7 @@ function snapshot(stored: StoredAnteUpAttempt<BrainLightsOutAttempt>): BrainLigh
 }
 
 /** Returns the credited profile, or null when nothing was paid, so the reply shows the new balance. */
-async function payOutWin(profileId: string, attempt: Pick<BrainLightsOutAttempt, "wager" | "status" | "moves">): Promise<PlayerProfile | null> {
+async function payOutWin(profileId: string, attempt: Pick<BrainLightsOutAttempt, "wager" | "status" | "moves" | "ladder">): Promise<PlayerProfile | null> {
   const payout = brainLightsOutPayout(attempt);
   if (payout <= 0) return null;
   let credited: PlayerProfile | null = null;
@@ -86,8 +86,8 @@ export async function openBrainLightsOut(
   if (wagerInput > 0 && wagerInput < MIN_ANTE_UP_WAGER) {
     throw new BrainLightsOutRequestError(`Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`, 400);
   }
-  const overCeiling = anteUpWagerCeilingProblem(GAME, null, wagerInput);
-  if (overCeiling) throw new BrainLightsOutRequestError(overCeiling, 400);
+  const stakeProblem = anteUpStakeProblem(GAME, null, wagerInput);
+  if (stakeProblem) throw new BrainLightsOutRequestError(stakeProblem, 400);
 
   if (wagerInput > 0) {
     const sinceYesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -156,6 +156,9 @@ export async function tapBrainLightsOutAttempt(
   }
   if (current.state.status !== "active") {
     throw new BrainLightsOutRequestError("This board is already over.", 409, { round: snapshot(current) });
+  }
+  if (input.index >= current.state.lights.length) {
+    throw new BrainLightsOutRequestError("That tile is not on this board.", 400);
   }
 
   const next = tapBrainLightsOut(current.state, input.index, now);

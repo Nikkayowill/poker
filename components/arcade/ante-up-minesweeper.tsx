@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { Bomb, Coins, Flag, HelpCircle } from "lucide-react";
+import { Bomb, Coins, Flag, HelpCircle, Lock } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
+import { StakePressureNote } from "@/components/arcade/stake-pressure-note";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { useAppShell } from "@/components/shell/app-shell";
@@ -11,12 +12,19 @@ import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { useActionQueue } from "@/components/shared/use-action-queue";
-import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
+import {
+  ANTE_UP_TIER_LADDERS,
+  anteUpStakeProblem,
+  anteUpTierAllowed,
+  maxAnteUpWager,
+} from "@/lib/arcade/ante-up-stakes";
+import { lowestTierFor, stakePressureThreshold } from "@/lib/arcade/stake-pressure";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   ANTE_UP_MINESWEEPER_TIERS,
   MIN_ANTE_UP_WAGER,
+  anteUpMinesweeperTimeLimitMs,
   type AnteUpMinesweeperSnapshot,
 } from "@/lib/arcade/ante-up-minesweeper";
 import {
@@ -25,6 +33,8 @@ import {
   CELL_MINE,
   CELL_WRONG_FLAG,
   MINESWEEPER_DIFFICULTIES,
+  isMinesweeperDifficulty,
+  minesweeperConfig,
   type MinesweeperDifficulty,
 } from "@/lib/arcade/puzzles/minesweeper";
 import { formatDuration } from "@/lib/arcade/puzzles/sudoku";
@@ -72,6 +82,39 @@ interface PendingMove {
 
 function difficultyLabel(id: MinesweeperDifficulty): string {
   return id[0].toUpperCase() + id.slice(1);
+}
+
+/** "5 min" for whole minutes, "2:30" otherwise. */
+function clockLabel(ms: number): string {
+  return ms % 60_000 === 0 ? `${ms / 60_000} min` : formatDuration(ms);
+}
+
+function rankedClock(id: MinesweeperDifficulty): string {
+  return clockLabel(ANTE_UP_MINESWEEPER_TIERS[id].rankedTimeLimitMs);
+}
+
+/** What each stake band asks of the board, for the lobby note. */
+const STAKE_RULES = {
+  1: [`Intermediate board or harder. Intermediate runs ${rankedClock("intermediate")}.`],
+  2: [`Expert board or harder. Expert runs ${rankedClock("expert")}.`],
+  3: [`Master board only: ${minesweeperConfig("master").mines} mines in ${rankedClock("master")}.`],
+} as const;
+
+/** The board a stake needs: the current one if it's still allowed, else the easiest that is. */
+function difficultyForStake(current: MinesweeperDifficulty, wager: number): MinesweeperDifficulty {
+  const ladder = ANTE_UP_TIER_LADDERS.minesweeper;
+  if (!ladder || anteUpTierAllowed("minesweeper", current, wager)) return current;
+  const lowest = lowestTierFor(ladder, wager);
+  return isMinesweeperDifficulty(lowest) ? lowest : current;
+}
+
+/** "10k" for a board a stake of 10k or more can't be played on. Null if no stake locks it. */
+function stakeLockedFrom(difficulty: MinesweeperDifficulty): string | null {
+  const ladder = ANTE_UP_TIER_LADDERS.minesweeper;
+  if (!ladder) return null;
+  const index = ladder.tiers.indexOf(difficulty);
+  const band = ([1, 2, 3] as const).find((pressure) => ladder.minTierByPressure[pressure] > index);
+  return band ? stakePressureThreshold(band).replace("+", "") : null;
 }
 
 export function AnteUpMinesweeper() {
@@ -336,6 +379,7 @@ export function AnteUpMinesweeper() {
   // Narrower than !canAfford; see ante-up-sudoku.tsx's own note on the same check.
   const insufficientGold = wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance < wager;
   const tier = ANTE_UP_MINESWEEPER_TIERS[difficulty];
+  const stakeProblem = anteUpStakeProblem("minesweeper", difficulty, wager);
 
   // Counted down from the absolute deadline against a `now` that ticks once a
   // second. Before the first click there is no deadline yet, so the full
@@ -383,10 +427,12 @@ export function AnteUpMinesweeper() {
             the numbers never has to come down to a coin-flip guess.
           </p>
           <p>
-            Pick beginner, intermediate, or expert, then wager Gold or play free. The clock
+            Pick beginner, intermediate, expert or master, then wager Gold or play free. The clock
             starts on your first click; clear the board before it runs out and you win. Hit a
             mine, let the clock expire, or resign, and the wager is gone. Harder difficulties
-            run a longer clock, pay more on a win, and let you stake more.
+            run a longer clock and pay more on a win. Bigger stakes need bigger boards and
+            run tighter clocks: 10k and up plays Intermediate or harder, 100k Expert or harder,
+            and 1M Master only.
           </p>
         </HowToPlayModal>
       )}
@@ -404,13 +450,14 @@ export function AnteUpMinesweeper() {
             <h1>Minesweeper, against the clock</h1>
             <p>
               Every board can be cleared by logic alone — no board here ever comes down to a guess.
-              Wager on your own reading of it and cash out up to {ANTE_UP_MINESWEEPER_TIERS.expert.multiplier}x.
+              Wager on your own reading of it and cash out up to {ANTE_UP_MINESWEEPER_TIERS.master.multiplier}x.
             </p>
           </div>
 
-          <div className="ante-difficulties" role="group" aria-label="Difficulty">
+          <div className="ante-difficulties ms-difficulties" role="group" aria-label="Difficulty">
             {MINESWEEPER_DIFFICULTIES.map((entry) => {
               const entryTier = ANTE_UP_MINESWEEPER_TIERS[entry.id];
+              const locked = !anteUpTierAllowed("minesweeper", entry.id, wager);
               return (
                 <button
                   key={entry.id}
@@ -420,6 +467,7 @@ export function AnteUpMinesweeper() {
                     entry.id === difficulty && "ante-difficulty-active",
                   )}
                   aria-pressed={entry.id === difficulty}
+                  disabled={locked}
                   onClick={() => {
                     selectSound();
                     setDifficulty(entry.id);
@@ -430,7 +478,13 @@ export function AnteUpMinesweeper() {
                 >
                   <strong>{entry.label}</strong>
                   <span>{entry.cols}×{entry.rows} · {entry.mines} mines</span>
-                  <span>{Math.round(entryTier.timeLimitMs / 60_000)} min · {entryTier.multiplier}x</span>
+                  {locked ? (
+                    <span className="ante-difficulty-lock">
+                      <Lock size={10} aria-hidden="true" /> Under {stakeLockedFrom(entry.id)} stakes
+                    </span>
+                  ) : (
+                    <span>{clockLabel(anteUpMinesweeperTimeLimitMs(entry.id, wager))} · {entryTier.multiplier}x</span>
+                  )}
                 </button>
               );
             })}
@@ -443,34 +497,43 @@ export function AnteUpMinesweeper() {
             min={0}
             max={ceiling}
             leading={{ label: "Free", value: 0 }}
-            onChange={(next) => { selectSound(); setWager(next); }}
+            onChange={(next) => {
+              selectSound();
+              setWager(next);
+              setDifficulty((current) => difficultyForStake(current, next));
+            }}
           />
+          <StakePressureNote wager={wager} rules={STAKE_RULES} />
           <p className="puzzle-verdict">
             {wager === 0
               ? "Free practice — no payout on a clear, but nothing at risk either."
               : wager < MIN_ANTE_UP_WAGER
                 ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
-                : wager > ceiling
-                  ? `${difficulty[0].toUpperCase() + difficulty.slice(1)} caps at ${ceiling.toLocaleString()} Gold a wager. Step up a difficulty to stake more.`
-                  : `Clear ${difficulty} inside ${Math.round(tier.timeLimitMs / 60_000)} minutes and cash out ${Math.round(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Hit a mine, or run out of time, and the wager is gone.`}
+                : stakeProblem
+                  ? stakeProblem
+                  : wager > ceiling
+                    ? `${difficulty[0].toUpperCase() + difficulty.slice(1)} caps at ${ceiling.toLocaleString()} Gold a wager. Step up a difficulty to stake more.`
+                    : `Clear ${difficulty} inside ${clockLabel(anteUpMinesweeperTimeLimitMs(difficulty, wager))} and cash out ${Math.round(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Hit a mine, or run out of time, and the wager is gone.`}
           </p>
 
           <button
             type="button"
             className="puzzle-share-button"
-            disabled={busy || !loaded || !canAfford}
+            disabled={busy || !loaded || !canAfford || stakeProblem !== null}
             onClick={() => { selectSound(); start(); }}
           >
             <Coins size={15} aria-hidden="true" />
             {!loaded
               ? "…"
-              : wager > ceiling
-                ? "Over the cap"
-                : !canAfford
-                  ? "Not enough Gold"
-                  : busy
-                    ? "Dealing…"
-                    : "Ante up"}
+              : stakeProblem
+                ? "Pick a harder board"
+                : wager > ceiling
+                  ? "Over the cap"
+                  : !canAfford
+                    ? "Not enough Gold"
+                    : busy
+                      ? "Dealing…"
+                      : "Ante up"}
           </button>
           {loaded && insufficientGold && <GoldShortfallHint needed={wager} compact />}
         </section>

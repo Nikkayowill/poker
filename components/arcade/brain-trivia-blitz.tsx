@@ -1,6 +1,7 @@
 "use client";
 
 import clsx from "clsx";
+import { BRAIN_STREAK_RULES, brainStreakLadder } from "@/lib/arcade/brain-streak";
 import { BrainStreak, useAnswerKeys, useBrainStreakRound } from "./brain-streak";
 
 function Prompt() {
@@ -42,6 +43,14 @@ function Controls() {
   );
 }
 
+function pressureLine(pressure: 1 | 2 | 3): string {
+  const ladder = brainStreakLadder(BRAIN_STREAK_RULES["trivia-blitz"], pressure);
+  const gain = [...ladder].reverse().find((rung) => rung.multiplier > 1);
+  return `Questions only, no quick myth statements. A profit needs ${gain?.min ?? 0} right.`;
+}
+
+const PRESSURE_RULES = { 1: [pressureLine(1)], 2: [pressureLine(2)], 3: [pressureLine(3)] };
+
 export function BrainTriviaBlitz() {
   return (
     <BrainStreak
@@ -65,6 +74,7 @@ export function BrainTriviaBlitz() {
       scoreNoun="correct"
       promptSlot={<Prompt />}
       controlsSlot={<Controls />}
+      pressureRules={PRESSURE_RULES}
     />
   );
 }

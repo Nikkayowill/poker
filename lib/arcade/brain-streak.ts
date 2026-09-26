@@ -27,6 +27,7 @@
  */
 
 import type { RandomInt } from "@/lib/game/deck";
+import { stakePressure, type StakePressure } from "@/lib/arcade/stake-pressure";
 
 export const MIN_ANTE_UP_WAGER = 500;
 
@@ -61,7 +62,15 @@ export interface BrainStreakConfig {
    * clears the ladder on a coin flip.
    */
   maxMisses?: number;
-  nextRound: (score: number, randomInt: RandomInt) => BrainStreakRound;
+  /** Replaces `maxMisses` in the bands listed. */
+  maxMissesByPressure?: Partial<Record<StakePressure, number>>;
+  /** Replaces `ladder` in the bands listed, for games where a bigger stake raises the bar. */
+  ladderByPressure?: Partial<Record<StakePressure, readonly StreakRung[]>>;
+  /**
+   * `pressure` is the run's stake band, fixed at open; see stake-pressure.ts.
+   * Null for a run opened before bands existed, which keeps the rules it started with.
+   */
+  nextRound: (score: number, randomInt: RandomInt, pressure: StakePressure | null) => BrainStreakRound;
   /**
    * Highest score first. The multiplier for a score is the first rung whose
    * `min` it meets or beats; a score below every rung's `min` pays 0 and the
@@ -88,6 +97,8 @@ export interface BrainStreakAttempt {
   misses?: number;
   /** Copied from the config at open, like `ladder`. Null means misses are free. */
   maxMisses?: number | null;
+  /** The stake band, fixed at open so a live run never changes. Missing on older runs, which play as band 0. */
+  pressure?: StakePressure;
   round: BrainStreakRound;
   status: BrainStreakStatus;
   startedAt: string;
@@ -105,6 +116,22 @@ export function streakMultiplierForScore(ladder: readonly StreakRung[], score: n
   return rung?.multiplier ?? 0;
 }
 
+/** The miss limit a run opened at `pressure` gets. Null means misses are free. */
+export function brainStreakMaxMisses(
+  rules: Pick<BrainStreakConfig, "maxMisses" | "maxMissesByPressure">,
+  pressure: StakePressure,
+): number | null {
+  return rules.maxMissesByPressure?.[pressure] ?? rules.maxMisses ?? null;
+}
+
+/** The payout ladder a run opened at `pressure` gets. */
+export function brainStreakLadder(
+  rules: Pick<BrainStreakConfig, "ladder" | "ladderByPressure">,
+  pressure: StakePressure,
+): readonly StreakRung[] {
+  return rules.ladderByPressure?.[pressure] ?? rules.ladder;
+}
+
 function finishedStatus(ladder: readonly StreakRung[], score: number): BrainStreakStatus {
   return streakMultiplierForScore(ladder, score) > 0 ? "won" : "lost";
 }
@@ -116,15 +143,17 @@ export function startBrainStreakAttempt(
   randomInt: RandomInt,
   now: Date,
 ): BrainStreakAttempt {
+  const pressure = stakePressure(wager);
   return {
     game,
     wager,
     mode: config.mode,
-    ladder: config.ladder,
+    ladder: brainStreakLadder(config, pressure),
     score: 0,
     misses: 0,
-    maxMisses: config.maxMisses ?? null,
-    round: config.nextRound(0, randomInt),
+    maxMisses: brainStreakMaxMisses(config, pressure),
+    pressure,
+    round: config.nextRound(0, randomInt, pressure),
     status: "active",
     startedAt: now.toISOString(),
     expiresAt:
@@ -179,7 +208,7 @@ export function answerBrainStreakRound(
     };
   }
   return {
-    attempt: { ...attempt, score, misses, round: config.nextRound(score, randomInt) },
+    attempt: { ...attempt, score, misses, round: config.nextRound(score, randomInt, attempt.pressure ?? null) },
     correct,
   };
 }
@@ -205,6 +234,8 @@ export interface BrainStreakSnapshot {
   score: number;
   misses: number;
   maxMisses: number | null;
+  /** The stake band this run was opened in. */
+  pressure: StakePressure;
   /** The payout ladder this run was opened with. */
   ladder: readonly StreakRung[];
   /** The live round's prompt, answer withheld (except Sequence Recall's, which IS the prompt; see file header). */
@@ -229,6 +260,7 @@ export function toBrainStreakSnapshot(
     score: attempt.score,
     misses: attempt.misses ?? 0,
     maxMisses: attempt.maxMisses ?? null,
+    pressure: attempt.pressure ?? 0,
     ladder: attempt.ladder,
     prompt: attempt.round.prompt,
     startedAt: attempt.startedAt,
@@ -237,6 +269,36 @@ export function toBrainStreakSnapshot(
     payout: brainStreakPayout(attempt),
   };
 }
+
+/** Sequence Recall per stake band: how many pads, how long the first sequence is, and how fast it flashes. */
+export interface SequenceRecallBand {
+  pads: number;
+  startLength: number;
+  flashMs: number;
+  gapMs: number;
+}
+
+/**
+ * Calibration, share of runs reaching 5 in a row (1.3x). Span model: Corsi block span
+ * (9 blocks) adult mean 5.8, SD 1.0; +1 item per halving of choices below 9 pads; -0.8
+ * items per halving of flash time below 400ms. A length L is repeated with chance
+ * logistic((span - L) / 0.6). 150ms at band 3 would drop +3SD to 52%, so it flashes at 175.
+ *
+ *   band                      median  +1SD  +2SD  +3SD
+ *   0: 4 pads, 400ms, from 2    80%    96%   99%  100%
+ *   1: 4 pads, 250ms, from 3    17%    60%   90%   98%
+ *   2: 6 pads, 200ms, from 3     2%    22%   67%   92%
+ *   3: 6 pads, 175ms, from 4     0%     1%   17%   60%
+ */
+/** What every run used before stake bands. Runs opened then, and their rounds, keep it. */
+export const SEQUENCE_RECALL_LEGACY_BAND: SequenceRecallBand = { pads: 4, startLength: 3, flashMs: 550, gapMs: 200 };
+
+export const SEQUENCE_RECALL_BANDS: Record<StakePressure, SequenceRecallBand> = {
+  0: { pads: 4, startLength: 2, flashMs: 400, gapMs: 160 },
+  1: { pads: 4, startLength: 3, flashMs: 250, gapMs: 100 },
+  2: { pads: 6, startLength: 3, flashMs: 200, gapMs: 80 },
+  3: { pads: 6, startLength: 4, flashMs: 175, gapMs: 70 },
+};
 
 /**
  * Each game's clock, miss limit and payout ladder: everything the browser may
@@ -253,9 +315,12 @@ export const BRAIN_STREAK_RULES: Record<BrainStreakGame, Omit<BrainStreakConfig,
       { min: 3, multiplier: 0.8 },
     ],
   },
+  // Three misses at band 3, so throwing away the two-digit x two-digit problems
+  // with a quick wrong answer is not a free skip. See brain-streak-rounds.ts.
   "quick-math": {
     mode: "sprint",
     timeLimitMs: 60_000,
+    maxMissesByPressure: { 3: 3 },
     ladder: [
       { min: 20, multiplier: 3 },
       { min: 15, multiplier: 2 },
@@ -274,6 +339,18 @@ export const BRAIN_STREAK_RULES: Record<BrainStreakGame, Omit<BrainStreakConfig,
   },
   // True/false has a 50% guess floor, so three wrong answers end the run and
   // the ladder starts paying later than the others.
+  //
+  // Calibration, share of runs reaching the 1.2x rung. Model: a player knows
+  // logistic(0.25 + 0.7z) of the bank outright (median 56%, so ~78% right on
+  // true/false) and coin-flips the rest; 2.6s per call at the median, log SD 0.25
+  // between players. The bar rises with the stake, since misses alone barely
+  // separate a +2SD player from a +3SD one.
+  //
+  //   band (1.2x at)  median  +1SD  +2SD  +3SD
+  //   0 (10)            68%    92%  100%  100%
+  //   1 (15)            15%    58%   86%   97%
+  //   2 (20)             0%    19%   76%   94%
+  //   3 (27)             0%     0%   18%   87%
   "trivia-blitz": {
     mode: "sprint",
     timeLimitMs: 45_000,
@@ -284,5 +361,25 @@ export const BRAIN_STREAK_RULES: Record<BrainStreakGame, Omit<BrainStreakConfig,
       { min: 10, multiplier: 1.2 },
       { min: 7, multiplier: 0.7 },
     ],
+    ladderByPressure: {
+      1: [
+        { min: 24, multiplier: 2.5 },
+        { min: 19, multiplier: 1.8 },
+        { min: 15, multiplier: 1.2 },
+        { min: 11, multiplier: 0.7 },
+      ],
+      2: [
+        { min: 28, multiplier: 2.5 },
+        { min: 24, multiplier: 1.8 },
+        { min: 20, multiplier: 1.2 },
+        { min: 15, multiplier: 0.7 },
+      ],
+      3: [
+        { min: 33, multiplier: 2.5 },
+        { min: 30, multiplier: 1.8 },
+        { min: 27, multiplier: 1.2 },
+        { min: 22, multiplier: 0.7 },
+      ],
+    },
   },
 };

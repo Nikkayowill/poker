@@ -6,6 +6,7 @@ import {
   Coins,
   HelpCircle,
   Lightbulb,
+  Lock,
   Move,
   Pencil,
   Undo2,
@@ -14,6 +15,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
+import { StakePressureNote } from "@/components/arcade/stake-pressure-note";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { useAppShell } from "@/components/shell/app-shell";
@@ -21,12 +23,20 @@ import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { useActionQueue } from "@/components/shared/use-action-queue";
-import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
+import {
+  ANTE_UP_TIER_LADDERS,
+  anteUpStakeProblem,
+  anteUpTierAllowed,
+  maxAnteUpWager,
+} from "@/lib/arcade/ante-up-stakes";
+import { lowestTierFor, stakePressureThreshold } from "@/lib/arcade/stake-pressure";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   ANTE_UP_NONOGRAM_TIERS,
   MIN_ANTE_UP_WAGER,
+  anteUpNonogramAutoCrossAllowed,
+  anteUpNonogramTimeLimitMs,
   type AnteUpNonogramSnapshot,
 } from "@/lib/arcade/ante-up-nonogram";
 import {
@@ -35,6 +45,7 @@ import {
   MARK_UNKNOWN,
   NONOGRAM_DIFFICULTIES,
   SOLUTION_FILLED,
+  isNonogramDifficulty,
   nonogramClueProgress,
   type NonogramDifficulty,
   type NonogramMark,
@@ -180,6 +191,44 @@ function buzz(pattern: number | number[]): void {
   } catch {
     // Some browsers throw rather than returning false. Either way, nothing happens.
   }
+}
+
+/** "5 min" for whole minutes, "2:30" otherwise. */
+function clockLabel(ms: number): string {
+  return ms % 60_000 === 0 ? `${ms / 60_000} min` : formatDuration(ms);
+}
+
+function rankedClock(id: NonogramDifficulty): string {
+  return clockLabel(ANTE_UP_NONOGRAM_TIERS[id].rankedTimeLimitMs);
+}
+
+const NO_AUTO_CROSS_RULE = "Auto-cross is off. Cross your own finished lines.";
+
+/** What each stake band asks of the board, for the lobby note. */
+const STAKE_RULES = {
+  1: [`Medium board (10×10) or bigger. Medium runs ${rankedClock("medium")}.`],
+  2: [`Hard board (15×15) or bigger. Hard runs ${rankedClock("hard")}.`, NO_AUTO_CROSS_RULE],
+  3: [
+    `Expert (20×20, ${rankedClock("expert")}) or Master (25×25, ${rankedClock("master")}) only.`,
+    NO_AUTO_CROSS_RULE,
+  ],
+} as const;
+
+/** The board a stake needs: the current one if it's still allowed, else the smallest that is. */
+function difficultyForStake(current: NonogramDifficulty, wager: number): NonogramDifficulty {
+  const ladder = ANTE_UP_TIER_LADDERS.nonogram;
+  if (!ladder || anteUpTierAllowed("nonogram", current, wager)) return current;
+  const lowest = lowestTierFor(ladder, wager);
+  return isNonogramDifficulty(lowest) ? lowest : current;
+}
+
+/** "10k" for a board a stake of 10k or more can't be played on. Null if no stake locks it. */
+function stakeLockedFrom(difficulty: NonogramDifficulty): string | null {
+  const ladder = ANTE_UP_TIER_LADDERS.nonogram;
+  if (!ladder) return null;
+  const index = ladder.tiers.indexOf(difficulty);
+  const band = ([1, 2, 3] as const).find((pressure) => ladder.minTierByPressure[pressure] > index);
+  return band ? stakePressureThreshold(band).replace("+", "") : null;
 }
 
 /** True when every number in a line is accounted for, so the whole gutter entry can dim. */
@@ -622,6 +671,8 @@ export function AnteUpNonogram() {
   // Narrower than !canAfford; see ante-up-sudoku.tsx's own note on the same check.
   const insufficientGold = wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance < wager;
   const tier = ANTE_UP_NONOGRAM_TIERS[difficulty];
+  const stakeProblem = anteUpStakeProblem("nonogram", difficulty, wager);
+  const autoCrossAllowed = anteUpNonogramAutoCrossAllowed(wager);
 
   // Counted down from the absolute deadline against a `now` that ticks once a
   // second. Before the first square there is no deadline yet, so the full
@@ -727,8 +778,10 @@ export function AnteUpNonogram() {
           <p>
             The clock starts on your first square. Fill every square in the picture before it
             runs out and you win; run out of time, spend the budget, or resign, and the wager
-            is gone. Bigger boards run a longer clock, allow more mistakes, pay more on a win,
-            and let you stake more.
+            is gone. Bigger boards run a longer clock, allow more mistakes and pay more on a
+            win. Bigger stakes need bigger boards: 10k and up plays Medium or bigger, 100k Hard
+            or bigger, and 1M Expert or Master. From 10k the clocks are tighter, and from 100k
+            finished lines are not crossed for you.
           </p>
         </HowToPlayModal>
       )}
@@ -753,6 +806,7 @@ export function AnteUpNonogram() {
           <div className="ante-difficulties ng-difficulties" role="group" aria-label="Board size">
             {NONOGRAM_DIFFICULTIES.map((entry) => {
               const entryTier = ANTE_UP_NONOGRAM_TIERS[entry.id];
+              const locked = !anteUpTierAllowed("nonogram", entry.id, wager);
               return (
                 <button
                   key={entry.id}
@@ -762,6 +816,7 @@ export function AnteUpNonogram() {
                     entry.id === difficulty && "ante-difficulty-active",
                   )}
                   aria-pressed={entry.id === difficulty}
+                  disabled={locked}
                   onClick={() => {
                     selectSound();
                     setDifficulty(entry.id);
@@ -772,7 +827,13 @@ export function AnteUpNonogram() {
                 >
                   <strong>{entry.label}</strong>
                   <span>{entry.size}×{entry.size} · {entry.mistakes} mistakes</span>
-                  <span>{Math.round(entryTier.timeLimitMs / 60_000)} min · {entryTier.multiplier}x</span>
+                  {locked ? (
+                    <span className="ante-difficulty-lock">
+                      <Lock size={10} aria-hidden="true" /> Under {stakeLockedFrom(entry.id)} stakes
+                    </span>
+                  ) : (
+                    <span>{clockLabel(anteUpNonogramTimeLimitMs(entry.id, wager))} · {entryTier.multiplier}x</span>
+                  )}
                 </button>
               );
             })}
@@ -791,18 +852,28 @@ export function AnteUpNonogram() {
             min={0}
             max={ceiling}
             leading={{ label: "Free", value: 0 }}
-            onChange={(next) => { selectSound(); setWager(next); }}
+            onChange={(next) => {
+              selectSound();
+              setWager(next);
+              setDifficulty((current) => difficultyForStake(current, next));
+            }}
           />
+          <StakePressureNote wager={wager} rules={STAKE_RULES} />
 
-          <label className="ng-option">
+          <label className={clsx("ng-option", !autoCrossAllowed && "ng-option-off")}>
             <input
               type="checkbox"
-              checked={autoCross}
+              checked={autoCross && autoCrossAllowed}
+              disabled={!autoCrossAllowed}
               onChange={(event) => { selectSound(); setAutoCross(event.target.checked); }}
             />
             <span>
               <strong>Cross finished lines for me</strong>
-              <small>Once your fills satisfy a line, the rest of it is crossed off. Turn it off for the paper experience.</small>
+              <small>
+                {autoCrossAllowed
+                  ? "Once your fills satisfy a line, the rest of it is crossed off. Turn it off for the paper experience."
+                  : "Off at 100k and up. You cross your own lines, as on paper."}
+              </small>
             </span>
           </label>
 
@@ -811,27 +882,31 @@ export function AnteUpNonogram() {
               ? "Free practice — no payout on a clear, but nothing at risk either."
               : wager < MIN_ANTE_UP_WAGER
                 ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
-                : wager > ceiling
-                  ? `${difficultyLabel(difficulty)} caps at ${ceiling.toLocaleString()} Gold a wager. Step up a size to stake more.`
-                  : `Finish ${difficultyLabel(difficulty)} inside ${Math.round(tier.timeLimitMs / 60_000)} minutes and cash out ${Math.round(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Spend the mistake budget, or run out of time, and the wager is gone.`}
+                : stakeProblem
+                  ? stakeProblem
+                  : wager > ceiling
+                    ? `${difficultyLabel(difficulty)} caps at ${ceiling.toLocaleString()} Gold a wager. Step up a size to stake more.`
+                    : `Finish ${difficultyLabel(difficulty)} inside ${clockLabel(anteUpNonogramTimeLimitMs(difficulty, wager))} and cash out ${Math.round(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Spend the mistake budget, or run out of time, and the wager is gone.`}
           </p>
 
           <button
             type="button"
             className="puzzle-share-button"
-            disabled={busy || !loaded || !canAfford}
+            disabled={busy || !loaded || !canAfford || stakeProblem !== null}
             onClick={() => { selectSound(); start(); }}
           >
             <Coins size={15} aria-hidden="true" />
             {!loaded
               ? "…"
-              : wager > ceiling
-                ? "Over the cap"
-                : !canAfford
-                  ? "Not enough Gold"
-                  : busy
-                    ? "Dealing…"
-                    : "Ante up"}
+              : stakeProblem
+                ? "Pick a bigger board"
+                : wager > ceiling
+                  ? "Over the cap"
+                  : !canAfford
+                    ? "Not enough Gold"
+                    : busy
+                      ? "Dealing…"
+                      : "Ante up"}
           </button>
           {loaded && insufficientGold && <GoldShortfallHint needed={wager} compact />}
         </section>

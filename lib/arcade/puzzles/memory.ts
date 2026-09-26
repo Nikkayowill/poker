@@ -35,12 +35,46 @@ export const MEMORY_PAIRS = 8;
 export const MEMORY_TILES = MEMORY_PAIRS * 2;
 export const MEMORY_COLUMNS = 4;
 
+/** The biggest board a big stake deals: fifteen pairs, six by five. */
+export const MEMORY_MAX_PAIRS = 15;
+export const MEMORY_MAX_TILES = MEMORY_MAX_PAIRS * 2;
+
 /**
- * The ranks in play. High cards, because they are the ones a player can tell
- * apart at a glance: a grid of 2s through 9s is legible but not memorable,
- * and this game is entirely about what sticks.
+ * The ranks in play, high first. The standard board uses the top eight,
+ * because high cards are the ones a player can tell apart at a glance.
+ * Bigger boards reach further down.
  */
-export const MEMORY_RANKS: readonly Rank[] = ["A", "K", "Q", "J", "10", "9", "8", "7"];
+export const MEMORY_RANKS: readonly Rank[] = ["A", "K", "Q", "J", "10", "9", "8", "7", "6", "5", "4", "3", "2"];
+
+/**
+ * Grid columns for a board of this many pairs. Bigger boards go wider rather
+ * than taller so they still fit a phone screen.
+ */
+export function memoryColumnsFor(pairs: number): number {
+  if (pairs <= 8) return 4;
+  if (pairs <= 10) return 5;
+  return 6;
+}
+
+/** How many pairs a round holds. Read off the tiles, so old 16-tile rounds need no new field. */
+export function memoryPairsOf(round: Pick<MemoryRound, "tiles">): number {
+  return round.tiles.length / 2;
+}
+
+/**
+ * Whether two tiles pair off. By rank, until a board has more pairs than
+ * there are ranks: then each rank can show up as a black pair and a red pair,
+ * so colour has to match too.
+ */
+export function memoryTilesMatch(a: Card, b: Card, pairs: number): boolean {
+  if (a.rank !== b.rank) return false;
+  if (pairs <= MEMORY_RANKS.length) return true;
+  return isRed(a) === isRed(b);
+}
+
+function isRed(card: Card): boolean {
+  return card.suit === "hearts" || card.suit === "diamonds";
+}
 
 export type MemoryStatus = "playing" | "solved";
 
@@ -61,16 +95,32 @@ export interface MemoryRound {
 /**
  * A shuffled board.
  *
- * The two copies of a rank are dealt in different suits so the grid is
- * pleasant to look at; matching is by rank, never by suit, which is what makes
- * the pair findable rather than a spot-the-difference.
+ * Up to thirteen pairs, the two copies of a rank are dealt in different suits
+ * so the grid is pleasant to look at, and matching is by rank alone. Past
+ * thirteen every rank is a black pair (spades and clubs) and the extra pairs
+ * reuse the top ranks in red (hearts and diamonds); see memoryTilesMatch.
  */
-export function dealMemoryTiles(randomInt: RandomInt): Card[] {
-  const tiles: Card[] = MEMORY_RANKS.flatMap((rank) => [
-    { rank, suit: "spades" as const },
-    { rank, suit: "hearts" as const },
-  ]);
-  // Fisher-Yates, the same shuffle lib/game/deck.ts uses, over the sixteen tiles.
+export function dealMemoryTiles(randomInt: RandomInt, pairs: number = MEMORY_PAIRS): Card[] {
+  if (!Number.isInteger(pairs) || pairs < 2 || pairs > MEMORY_MAX_PAIRS) {
+    throw new Error(`A memory board is 2 to ${MEMORY_MAX_PAIRS} pairs.`);
+  }
+  const tiles: Card[] =
+    pairs <= MEMORY_RANKS.length
+      ? MEMORY_RANKS.slice(0, pairs).flatMap((rank) => [
+        { rank, suit: "spades" as const },
+        { rank, suit: "hearts" as const },
+      ])
+      : [
+        ...MEMORY_RANKS.flatMap((rank) => [
+          { rank, suit: "spades" as const },
+          { rank, suit: "clubs" as const },
+        ]),
+        ...MEMORY_RANKS.slice(0, pairs - MEMORY_RANKS.length).flatMap((rank) => [
+          { rank, suit: "hearts" as const },
+          { rank, suit: "diamonds" as const },
+        ]),
+      ];
+  // Fisher-Yates, the same shuffle lib/game/deck.ts uses.
   for (let index = tiles.length - 1; index > 0; index -= 1) {
     const swapWith = randomInt(index + 1);
     [tiles[index], tiles[swapWith]] = [tiles[swapWith], tiles[index]];
@@ -79,7 +129,9 @@ export function dealMemoryTiles(randomInt: RandomInt): Card[] {
 }
 
 export function startMemoryRound(tiles: Card[], now: Date): MemoryRound {
-  if (tiles.length !== MEMORY_TILES) throw new Error(`A memory board is exactly ${MEMORY_TILES} tiles.`);
+  if (tiles.length % 2 !== 0 || tiles.length < 4 || tiles.length > MEMORY_MAX_TILES) {
+    throw new Error(`A memory board is an even number of tiles, at most ${MEMORY_MAX_TILES}.`);
+  }
   return {
     tiles: [...tiles],
     matched: [],
@@ -92,8 +144,8 @@ export function startMemoryRound(tiles: Card[], now: Date): MemoryRound {
 }
 
 /** A fresh, shuffled board. `makeDeck` is not used: this needs eight ranks twice, not fifty-two once. */
-export function dealMemoryRound(randomInt: RandomInt, now: Date): MemoryRound {
-  return startMemoryRound(dealMemoryTiles(randomInt), now);
+export function dealMemoryRound(randomInt: RandomInt, now: Date, pairs: number = MEMORY_PAIRS): MemoryRound {
+  return startMemoryRound(dealMemoryTiles(randomInt, pairs), now);
 }
 
 export type MemoryFlipProblem = "finished" | "out-of-range" | "already-matched" | "already-up";
@@ -101,7 +153,7 @@ export type MemoryFlipProblem = "finished" | "out-of-range" | "already-matched" 
 /** Why a tile cannot be turned over, or null if it can. */
 export function memoryFlipProblem(round: MemoryRound, index: number): MemoryFlipProblem | null {
   if (round.status !== "playing") return "finished";
-  if (!Number.isInteger(index) || index < 0 || index >= MEMORY_TILES) return "out-of-range";
+  if (!Number.isInteger(index) || index < 0 || index >= round.tiles.length) return "out-of-range";
   if (round.matched.includes(index)) return "already-matched";
   // Turning the same card back over to "look again" would be a free peek
   // that costs no turn: the one way to cheat a memory game.
@@ -133,13 +185,13 @@ export function flipMemoryTile(round: MemoryRound, index: number, now: Date): Me
   const [first, second] = revealed;
   const turns = round.turns + 1;
 
-  if (round.tiles[first].rank !== round.tiles[second].rank) {
+  if (!memoryTilesMatch(round.tiles[first], round.tiles[second], memoryPairsOf(round))) {
     // Left face up; the next flip clears them.
     return { ...round, revealed, turns };
   }
 
   const matched = [...round.matched, first, second];
-  const solved = matched.length >= MEMORY_TILES;
+  const solved = matched.length >= round.tiles.length;
   return {
     ...round,
     matched,
@@ -204,9 +256,9 @@ export function toMemorySnapshot(
     revealed: [...round.revealed],
     turns: round.turns,
     status: round.status,
-    pairs: MEMORY_PAIRS,
-    columns: MEMORY_COLUMNS,
-    perfectTurns: PERFECT_TURNS,
+    pairs: memoryPairsOf(round),
+    columns: memoryColumnsFor(memoryPairsOf(round)),
+    perfectTurns: memoryPairsOf(round),
     startedAt: round.startedAt,
     finishedAt: round.finishedAt,
     elapsedMs: memoryElapsedMs(round),

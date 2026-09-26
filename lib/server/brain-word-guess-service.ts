@@ -12,8 +12,9 @@ import {
   type BrainWordGuessAttempt,
   type BrainWordGuessSnapshot,
 } from "@/lib/arcade/brain-word-guess";
-import { pickWordGuessWord } from "@/lib/arcade/brain-word-guess-words";
-import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
+import { pickWordGuessWords } from "@/lib/arcade/brain-word-guess-words";
+import { anteUpStakeProblem } from "@/lib/arcade/ante-up-stakes";
+import { stakePressure } from "@/lib/arcade/stake-pressure";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   ActiveAnteUpAttemptExists,
@@ -53,7 +54,7 @@ function snapshot(stored: StoredAnteUpAttempt<BrainWordGuessAttempt>): BrainWord
 }
 
 /** Returns the credited profile, or null when nothing was paid, so the reply shows the new balance. */
-async function payOutWin(profileId: string, attempt: Pick<BrainWordGuessAttempt, "wager" | "status" | "misses">): Promise<PlayerProfile | null> {
+async function payOutWin(profileId: string, attempt: Pick<BrainWordGuessAttempt, "wager" | "status" | "misses" | "ladder">): Promise<PlayerProfile | null> {
   const payout = brainWordGuessPayout(attempt);
   if (payout <= 0) return null;
   let credited: PlayerProfile | null = null;
@@ -88,8 +89,8 @@ export async function openBrainWordGuess(
   if (wagerInput > 0 && wagerInput < MIN_ANTE_UP_WAGER) {
     throw new BrainWordGuessRequestError(`Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`, 400);
   }
-  const overCeiling = anteUpWagerCeilingProblem(GAME, null, wagerInput);
-  if (overCeiling) throw new BrainWordGuessRequestError(overCeiling, 400);
+  const stakeProblem = anteUpStakeProblem(GAME, null, wagerInput);
+  if (stakeProblem) throw new BrainWordGuessRequestError(stakeProblem, 400);
 
   if (wagerInput > 0) {
     const sinceYesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -109,7 +110,8 @@ export async function openBrainWordGuess(
     throw new BrainWordGuessRequestError(`You need ${wagerInput.toLocaleString()} Gold to wager this.`, 400);
   }
 
-  const state = startBrainWordGuess(pickWordGuessWord((max) => randomInt(0, max)), wagerInput, now);
+  const words = pickWordGuessWords((max) => randomInt(0, max), stakePressure(wagerInput));
+  const state = startBrainWordGuess(words, wagerInput, now);
 
   let stored: StoredAnteUpAttempt<BrainWordGuessAttempt>;
   try {

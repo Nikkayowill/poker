@@ -60,29 +60,47 @@ const SEED_DENSITY = 0.5;
 /** How many majority-rule passes. Two is blobs; four is a blob. */
 const SMOOTHING_PASSES = 3;
 
-/** Mirrors a row-major grid left to right. Keeps a drawing upright, which a rotation would not. */
-function mirrorRows(cells: readonly string[], size: number): string[] {
-  const out: string[] = [];
+/**
+ * One of the square's eight symmetries (four turns, each optionally mirrored),
+ * applied to a row-major grid. Transform 0 is the identity.
+ *
+ * Line logic doesn't care about any of them: a turn or a mirror only swaps
+ * rows for columns or reverses a line, and reversing a line reverses its clue.
+ * So a board that line logic finishes still finishes after any of the eight.
+ */
+export function transformNonogramCells(cells: ArrayLike<string>, size: number, transform: number): string[] {
+  const last = size - 1;
+  const out: string[] = new Array<string>(size * size);
   for (let row = 0; row < size; row += 1) {
-    for (let col = 0; col < size; col += 1) out.push(cells[row * size + (size - 1 - col)]);
+    for (let col = 0; col < size; col += 1) {
+      let r = row;
+      let c = col;
+      if (transform & 4) c = last - c;
+      for (let turn = 0; turn < (transform & 3); turn += 1) [r, c] = [c, last - r];
+      out[r * size + c] = cells[row * size + col];
+    }
   }
   return out;
 }
 
+/** How many distinct ways `transformNonogramCells` can deal one picture. */
+export const NONOGRAM_TRANSFORMS = 8;
+
 /**
- * A drawing from the library, mirrored half the time.
+ * A drawing from the library, turned and mirrored at random.
  *
- * Mirroring is the only transform used. Rotating would double the variety
- * again, but a cat on its side is not a cat, and the reveal is the point.
+ * A player who clears the same fifteen-square cat twice would otherwise know
+ * its clues on sight, and the library is small. Eight orientations per
+ * drawing make that memory worth far less. A cat on its side is still a cat
+ * once the picture comes out.
  */
 function dealPicture(random: () => number, size: number): NonogramDeal | null {
   const library = nonogramPicturesFor(size);
   if (library.length === 0) return null;
 
   const picture = library[Math.floor(random() * library.length)];
-  const cells = [...picture.cells];
-  const solution = random() < 0.5 ? mirrorRows(cells, size).join("") : cells.join("");
-  return { solution, title: picture.name };
+  const transform = Math.floor(random() * NONOGRAM_TRANSFORMS);
+  return { solution: transformNonogramCells(picture.cells, size, transform).join(""), title: picture.name };
 }
 
 /**
@@ -198,7 +216,13 @@ function dealGrown(random: () => number, size: number): NonogramDeal {
 export function dealNonogram(seed: number, difficulty: NonogramDifficulty): NonogramDeal {
   const { size } = nonogramConfig(difficulty);
   const random = mulberry32(seed >>> 0);
-  return dealPicture(random, size) ?? dealGrown(random, size);
+  const picture = dealPicture(random, size);
+  if (picture) return picture;
+  // Grown shapes are fresh every time already; turning them costs nothing and
+  // keeps their left-right symmetry from always running the same way.
+  const grown = dealGrown(random, size);
+  const transform = Math.floor(random() * NONOGRAM_TRANSFORMS);
+  return { ...grown, solution: transformNonogramCells(grown.solution, size, transform).join("") };
 }
 
 /**

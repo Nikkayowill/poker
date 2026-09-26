@@ -84,6 +84,34 @@ beforeEach(() => {
   __resetAnteUpAttemptsForTest();
 });
 
+describe("stake pressure", () => {
+  it("refuses Quick at a big stake without touching the wallet", async () => {
+    const { token, id } = await funded(200_000);
+    await expect(openAnteUpWordFillIn(token, "quick", 10_000, NOW)).rejects.toThrow(/Marathon or harder/);
+    await expect(openAnteUpWordFillIn(token, "quick", 150_000, NOW)).rejects.toBeInstanceOf(
+      AnteUpWordFillInRequestError,
+    );
+    expect(await balance(token)).toBe(200_000);
+    expect(await getActiveAnteUpAttempt(id, GAME)).toBeNull();
+  });
+
+  it("opens Marathon at a big stake on the large grid", async () => {
+    const { token, id } = await funded(200_000);
+    const { attempt } = await openAnteUpWordFillIn(token, "marathon", 150_000, NOW);
+    expect(attempt.wager).toBe(150_000);
+    expect(attempt.gridSize).toBe(11);
+    expect(attempt.timeLimitMs).toBe(300_000);
+    const stored = await getActiveAnteUpAttempt<AnteUpWordFillInAttempt>(id, GAME);
+    expect(stored?.state.round.pattern).toHaveLength(121);
+  });
+
+  it("keeps Quick open under the first band", async () => {
+    const { token } = await funded(20_000);
+    const { attempt } = await openAnteUpWordFillIn(token, "quick", 9_999, NOW);
+    expect(attempt.gridSize).toBe(9);
+  });
+});
+
 describe("wagering", () => {
   it("debits the wager before the attempt row exists", async () => {
     const { token, id } = await funded(10_000);

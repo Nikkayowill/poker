@@ -115,6 +115,15 @@
 .pad-blue { background: #3d6fd6; }
 .pad-green { background: #3fae5c; }
 .pad-yellow { background: #d6b83d; }
+.pad-purple { background: #9a55d6; }
+.pad-orange { background: #e0802f; }
+
+/* Six pads at the big stakes: three across, same pad size as the 2x2. */
+.brain-pads-wide {
+  grid-template-columns: repeat(3, 1fr);
+  width: min(330px, 88vw);
+  aspect-ratio: 3 / 2;
+}
 
 /* ---- Shared streak furniture: payout ladder, clock bar, progress -------- */
 

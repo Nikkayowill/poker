@@ -13,7 +13,7 @@ import {
   type AnteUpAttempt,
   type AnteUpSnapshot,
 } from "@/lib/arcade/ante-up";
-import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
+import { anteUpStakeProblem } from "@/lib/arcade/ante-up-stakes";
 import { isSudokuDifficulty, type SudokuDifficulty } from "@/lib/arcade/puzzles/sudoku";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
@@ -174,8 +174,8 @@ export async function openAnteUpAttempt(
   // A bigger stake has to buy a harder grid; see lib/arcade/ante-up-stakes.ts.
   // The board picker only offers permitted amounts, so a request that trips
   // this did not come from it.
-  const overCeiling = anteUpWagerCeilingProblem(GAME, difficulty, wagerInput);
-  if (overCeiling) throw new AnteUpRequestError(overCeiling, 400);
+  const stakeProblem = anteUpStakeProblem(GAME, difficulty, wagerInput);
+  if (stakeProblem) throw new AnteUpRequestError(stakeProblem, 400);
 
   if (wagerInput > 0) {
     const sinceYesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);

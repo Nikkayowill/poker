@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { anteUpWordStackPayout, wordStackDailyBonusMultiplier } from "./ante-up-word-stack";
+import {
+  WAGER_MULTIPLIER_BY_GUESSES,
+  WORD_STACK_LADDER_BY_PRESSURE,
+  anteUpWordStackPayout,
+  wordStackDailyBonusMultiplier,
+  wordStackStakeRules,
+} from "./ante-up-word-stack";
 import type { WordStackRound } from "./puzzles/word-stack";
 
 function round(status: WordStackRound["status"], guessCount: number): Pick<WordStackRound, "status" | "guesses"> {
@@ -59,5 +65,45 @@ describe("wordStackDailyBonusMultiplier", () => {
     [6, 1.0],
   ])("pays %ix for a win taking %i guesses", (guessCount, multiplier) => {
     expect(wordStackDailyBonusMultiplier(round("won", guessCount))).toBe(multiplier);
+  });
+});
+
+describe("wordStackStakeRules", () => {
+  it.each([
+    [0, false, 0],
+    [9_999, false, 0],
+    [10_000, true, 1],
+    [100_000, true, 2],
+    [1_000_000, true, 3],
+  ] as const)("a %i wager: hard mode %s, band %i ladder", (wager, hardMode, band) => {
+    expect(wordStackStakeRules(wager)).toEqual({ hardMode, ladder: WORD_STACK_LADDER_BY_PRESSURE[band] });
+  });
+
+  it("keeps today's ladder for small stakes", () => {
+    expect(WORD_STACK_LADDER_BY_PRESSURE[0]).toBe(WAGER_MULTIPLIER_BY_GUESSES);
+  });
+
+  it("profits only on a 3-guess solve or better from 10k up, with the top multiple shrinking by band", () => {
+    const tops = ([1, 2, 3] as const).map((band) => {
+      const ladder = WORD_STACK_LADDER_BY_PRESSURE[band];
+      for (const guesses of [1, 2, 3]) expect(ladder[guesses]).toBeGreaterThan(1);
+      for (const guesses of [4, 5, 6]) expect(ladder[guesses]).toBeLessThan(1);
+      expect(ladder[6]).toBe(0);
+      return ladder[1];
+    });
+    expect(tops).toEqual([...tops].sort((a, b) => b - a));
+  });
+
+  it("pays a 1M round from its stored ladder", () => {
+    const ladder = WORD_STACK_LADDER_BY_PRESSURE[3];
+    expect(anteUpWordStackPayout({ wager: 1_000_000, word: round("won", 3), ladder })).toBe(1_700_000);
+    expect(anteUpWordStackPayout({ wager: 1_000_000, word: round("won", 4), ladder })).toBe(300_000);
+    expect(anteUpWordStackPayout({ wager: 1_000_000, word: round("won", 6), ladder })).toBe(0);
+  });
+
+  it("floors an unnamed rung at the stored ladder's lowest value", () => {
+    const ladder = WORD_STACK_LADDER_BY_PRESSURE[3];
+    expect(anteUpWordStackPayout({ wager: 1000, word: round("won", 7), ladder })).toBe(0);
+    expect(anteUpWordStackPayout({ wager: 1000, word: round("won", 7) })).toBe(700);
   });
 });

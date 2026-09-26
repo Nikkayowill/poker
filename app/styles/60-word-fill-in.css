@@ -73,6 +73,16 @@
   -webkit-tap-highlight-color: transparent;
   transition: background .1s ease;
 }
+/* Marathon's 11x11 grid takes the whole width on a phone and a taller floor,
+   so a square stays about 28px wide on a 375px screen. The word list below
+   scrolls with the page. */
+.wf-grid-large {
+  width: min(100%, 480px, max(300px, calc(100dvh - 330px)));
+}
+
+/* A tier the stake has locked out, and why. */
+.wf-tier-locked { color: var(--text-muted); font-style: italic; }
+
 /* The shared button:disabled rule fades a settled grid; the answers must stay crisp. */
 .wf-cell:disabled { cursor: default; opacity: 1; }
 
@@ -240,6 +250,7 @@
     /* Height is what binds on a rotated phone. */
     width: min(440px, max(220px, calc(100dvh - 140px)), 55vw);
   }
+  .wf-grid-large { width: min(480px, max(240px, calc(100dvh - 120px)), 58vw); }
   .wf-side { flex: 1 1 0; max-width: 440px; }
 }
 

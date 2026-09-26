@@ -248,3 +248,17 @@
   .sk-cell-wrong { animation: none; }
   .sk-key:active:not(:disabled) { transform: none; }
 }
+
+/* A rung the current stake is too big for. Dimmed and inert, with the lock
+   line in place of its clock so the tile keeps its height. */
+.sk-difficulties .ante-difficulty:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.sk-difficulties .ante-difficulty-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #ffb27a;
+}

@@ -12,6 +12,7 @@ import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
+import { StakePressureNote } from "@/components/arcade/stake-pressure-note";
 import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { puzzleShareTitle, wordStackShareText } from "@/lib/arcade/puzzles/share";
@@ -24,7 +25,7 @@ import {
   type WordStackSnapshot,
   type WordStackTile,
 } from "@/lib/arcade/puzzles/word-stack";
-import { MIN_ANTE_UP_WAGER } from "@/lib/arcade/ante-up-word-stack";
+import { MIN_ANTE_UP_WAGER, WORD_STACK_PRESSURE_RULES } from "@/lib/arcade/ante-up-word-stack";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 /**
@@ -330,7 +331,10 @@ export function WordStackBoard({ day, onExit }: { day?: string; onExit?: () => v
               <HelpCircle size={13} aria-hidden="true" /> How to play
             </button>
           </div>
-          <h1>Daily Word Stack</h1>
+          <h1>
+            Daily Word Stack
+            {round?.hardMode && <span className="word-stack-hard-badge">Hard mode</span>}
+          </h1>
           <p>
             {meta
               ? isArchive
@@ -369,6 +373,11 @@ export function WordStackBoard({ day, onExit }: { day?: string; onExit?: () => v
             pays more; scraping the answer on your last guess pays back less than you staked, and
             missing all six loses the wager outright. Whatever you wager, the payout it can earn
             is locked in the moment the round opens.
+          </p>
+          <p>
+            Wagers of 10,000 Gold or more play hard mode: a green letter has to stay in its spot
+            and a gold letter has to be used in every later guess. A guess that skips a hint is
+            turned away without costing you a try.
           </p>
         </HowToPlayModal>
       )}
@@ -412,6 +421,7 @@ export function WordStackBoard({ day, onExit }: { day?: string; onExit?: () => v
                   ? `Word Stack caps at ${ceiling.toLocaleString()} Gold a wager.`
                   : "Fewer guesses, bigger payout. Scraping it on the last guess pays back less than you staked, and missing all six loses the wager outright."}
           </p>
+          <StakePressureNote wager={wager} rules={WORD_STACK_PRESSURE_RULES} />
           <button
             type="button"
             className="puzzle-share-button"

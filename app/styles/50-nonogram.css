@@ -451,3 +451,21 @@
 /* Five rungs rather than the three every other Ante Up game has, so the tiles
    wrap instead of trying to share one row at phone width. */
 .ng-difficulties { flex-wrap: wrap; }
+
+/* A rung the current stake is too big for. Dimmed and inert, with the lock
+   line in place of its clock so the tile keeps its height. */
+.ng-difficulties .ante-difficulty:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.ng-difficulties .ante-difficulty-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #ffb27a;
+}
+
+/* Auto-cross can't be had on a big stake; the row stays to say so. */
+.ng-option-off { cursor: not-allowed; }
+.ng-option-off strong { color: var(--text-muted); }

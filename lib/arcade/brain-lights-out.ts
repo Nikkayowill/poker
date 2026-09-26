@@ -11,61 +11,132 @@
  */
 
 import type { RandomInt } from "@/lib/game/deck";
+import { stakePressure, type StakePressure } from "@/lib/arcade/stake-pressure";
 
 export const MIN_ANTE_UP_WAGER = 500;
 
-export const LIGHTS_OUT_SIZE = 5;
-const CELLS = LIGHTS_OUT_SIZE * LIGHTS_OUT_SIZE;
-/** How many random taps scramble a fresh board. Also this board's par. */
-const SCRAMBLE_TAPS = 8;
-/** Moves a wagered attempt may take before it forfeits. Restated per game; see ante-up-memory.ts's ANTE_UP_MEMORY_MAX_TURNS. */
-export const LIGHTS_OUT_MAX_MOVES = 20;
+/** One payout rung: clear the board in at most `maxMoves` moves, cash out `multiplier`x. Best first. */
+export interface LightsOutRung {
+  maxMoves: number;
+  multiplier: number;
+}
 
-function neighbors(index: number): number[] {
-  const row = Math.floor(index / LIGHTS_OUT_SIZE);
-  const col = index % LIGHTS_OUT_SIZE;
+/**
+ * The board a stake band deals. `taps` distinct tiles scramble it from all
+ * off, so it can always be solved in `taps` moves, and that is its par. Each
+ * rung is par plus some slack; the last rung is the move cap.
+ */
+export interface LightsOutBand {
+  size: number;
+  taps: number;
+  /** Extra moves over par for the 2x, 1.3x and 0.8x rungs. */
+  slack: readonly [number, number, number];
+}
+
+/**
+ * Calibration, share of boards cleared on a rung above 1x. There are no published
+ * norms, so the model is stated: moves over par, plus one, are log-normal with log
+ * SD 0.6; the median player wastes 4 moves on a 5x5 board with 8 taps, scaling with
+ * taps and board side, and each SD of skill multiplies waste by exp(-0.7).
+ * 6x6 and 7x7 boards have exactly one solution, so par there is the true minimum.
+ *
+ *   band                       median  +1SD  +2SD  +3SD
+ *   0: 5x5, 8 taps, par+8        84%    98%  100%  100%
+ *   1: 6x6, 10 taps, par+3       15%    55%   90%   99%
+ *   2: 6x6, 14 taps, par+2        2%    18%   60%   92%
+ *   3: 7x7, 15 taps, par+1        0%     2%   21%   64%
+ */
+export const LIGHTS_OUT_BANDS: Record<StakePressure, LightsOutBand> = {
+  0: { size: 5, taps: 8, slack: [4, 8, 12] },
+  1: { size: 6, taps: 10, slack: [2, 3, 7] },
+  2: { size: 6, taps: 14, slack: [1, 2, 6] },
+  3: { size: 7, taps: 15, slack: [1, 1, 5] },
+};
+
+export function lightsOutLadder(band: LightsOutBand): LightsOutRung[] {
+  const par = band.taps;
+  const ladder: LightsOutRung[] = [
+    { maxMoves: par, multiplier: 3 },
+    { maxMoves: par + band.slack[0], multiplier: 2 },
+    { maxMoves: par + band.slack[1], multiplier: 1.3 },
+    { maxMoves: par + band.slack[2], multiplier: 0.8 },
+  ];
+  // Where two rungs share a move count, the better one is the one that pays.
+  return ladder.filter((rung, i) => i === 0 || rung.maxMoves > ladder[i - 1].maxMoves);
+}
+
+export function lightsOutBandFor(wager: number): LightsOutBand {
+  return LIGHTS_OUT_BANDS[stakePressure(wager)];
+}
+
+/** Today's 5x5 board. Runs stored before boards had a size play on this. */
+export const LIGHTS_OUT_SIZE = LIGHTS_OUT_BANDS[0].size;
+const LEGACY_LADDER = lightsOutLadder(LIGHTS_OUT_BANDS[0]);
+/** The biggest board any band deals, so a request can be checked before its run is loaded. */
+export const LIGHTS_OUT_MAX_SIZE = Math.max(...Object.values(LIGHTS_OUT_BANDS).map((band) => band.size));
+/** The band-0 move cap. Restated per game; see ante-up-memory.ts's ANTE_UP_MEMORY_MAX_TURNS. */
+export const LIGHTS_OUT_MAX_MOVES = LEGACY_LADDER[LEGACY_LADDER.length - 1].maxMoves;
+
+function neighbors(index: number, size: number): number[] {
+  const row = Math.floor(index / size);
+  const col = index % size;
   const result = [index];
-  if (row > 0) result.push(index - LIGHTS_OUT_SIZE);
-  if (row < LIGHTS_OUT_SIZE - 1) result.push(index + LIGHTS_OUT_SIZE);
+  if (row > 0) result.push(index - size);
+  if (row < size - 1) result.push(index + size);
   if (col > 0) result.push(index - 1);
-  if (col < LIGHTS_OUT_SIZE - 1) result.push(index + 1);
+  if (col < size - 1) result.push(index + 1);
   return result;
+}
+
+/** A square board's side, from its cell count. */
+function sizeOf(lights: readonly boolean[]): number {
+  return Math.round(Math.sqrt(lights.length));
 }
 
 /** Flips a tile and its neighbours. Exported so the board can show a tap before the server confirms it. */
 export function toggleLightsOut(lights: readonly boolean[], index: number): boolean[] {
   const next = [...lights];
-  for (const i of neighbors(index)) next[i] = !next[i];
+  for (const i of neighbors(index, sizeOf(lights))) next[i] = !next[i];
   return next;
 }
 
-/** A fresh, always-solvable board: every tap is its own inverse, so scrambling from all-off guarantees a solution exists. */
-function scrambleBoard(randomInt: RandomInt): boolean[] {
-  let lights = Array<boolean>(CELLS).fill(false);
-  let taps = 0;
-  // A scramble that happens to cancel itself back to all-off would deal a
-  // won board, so re-roll until at least one light is on.
-  while (taps < 1 || lights.every((on) => !on)) {
-    lights = Array<boolean>(CELLS).fill(false);
-    for (let i = 0; i < SCRAMBLE_TAPS; i++) lights = toggleLightsOut(lights, randomInt(CELLS));
-    taps = SCRAMBLE_TAPS;
+/**
+ * A fresh, always-solvable board: every tap is its own inverse, so tapping
+ * `taps` distinct tiles on an all-off board means tapping them again solves it.
+ */
+export function scrambleLightsOut(randomInt: RandomInt, size: number, taps: number): boolean[] {
+  const cells = size * size;
+  let lights = Array<boolean>(cells).fill(false);
+  // A scramble that cancels itself back to all-off would deal a won board, so re-roll until one light is on.
+  while (lights.every((on) => !on)) {
+    const order = Array.from({ length: cells }, (_, i) => i);
+    lights = Array<boolean>(cells).fill(false);
+    for (let i = 0; i < taps; i++) {
+      const j = i + randomInt(cells - i);
+      [order[i], order[j]] = [order[j], order[i]];
+      lights = toggleLightsOut(lights, order[i]);
+    }
   }
   return lights;
 }
 
-/** Win-only payout multiplier, keyed by moves taken. See wagerMultiplierForTurns's header for why the slow rungs pay under 1x on purpose. */
-export function wagerMultiplierForMoves(moves: number): number {
-  if (moves <= SCRAMBLE_TAPS) return 3;
-  if (moves <= 12) return 2;
-  if (moves <= 16) return 1.3;
-  if (moves <= LIGHTS_OUT_MAX_MOVES) return 0.8;
-  return 0;
+/** Win-only payout multiplier for a clear in `moves`. The slow rungs pay under 1x on purpose; see wagerMultiplierForTurns. */
+export function wagerMultiplierForMoves(moves: number, ladder: readonly LightsOutRung[] = LEGACY_LADDER): number {
+  return ladder.find((rung) => moves <= rung.maxMoves)?.multiplier ?? 0;
+}
+
+function moveCap(ladder: readonly LightsOutRung[]): number {
+  return ladder[ladder.length - 1].maxMoves;
 }
 
 export type BrainLightsOutStatus = "active" | "won" | "lost";
 
 export interface BrainLightsOutAttempt {
   wager: number;
+  /** The stake band, fixed at open. Missing on older runs, which play as band 0. */
+  pressure?: StakePressure;
+  /** Copied at open, like a streak run's ladder. Missing on older runs. */
+  ladder?: LightsOutRung[];
   lights: boolean[];
   moves: number;
   status: BrainLightsOutStatus;
@@ -74,9 +145,13 @@ export interface BrainLightsOutAttempt {
 }
 
 export function startBrainLightsOut(randomInt: RandomInt, wager: number, now: Date): BrainLightsOutAttempt {
+  const pressure = stakePressure(wager);
+  const band = LIGHTS_OUT_BANDS[pressure];
   return {
     wager,
-    lights: scrambleBoard(randomInt),
+    pressure,
+    ladder: lightsOutLadder(band),
+    lights: scrambleLightsOut(randomInt, band.size, band.taps),
     moves: 0,
     status: "active",
     startedAt: now.toISOString(),
@@ -86,7 +161,7 @@ export function startBrainLightsOut(randomInt: RandomInt, wager: number, now: Da
 
 /** Taps one tile. Clearing the board wins; exceeding the move cap forfeits. */
 export function tapBrainLightsOut(attempt: BrainLightsOutAttempt, index: number, now: Date): BrainLightsOutAttempt {
-  if (attempt.status !== "active" || index < 0 || index >= CELLS) return attempt;
+  if (attempt.status !== "active" || !Number.isInteger(index) || index < 0 || index >= attempt.lights.length) return attempt;
 
   const lights = toggleLightsOut(attempt.lights, index);
   const moves = attempt.moves + 1;
@@ -94,7 +169,7 @@ export function tapBrainLightsOut(attempt: BrainLightsOutAttempt, index: number,
   if (cleared) return { ...attempt, lights, moves, status: "won", finishedAt: now.toISOString() };
   // >=, not >: see ante-up-memory.ts's flipAnteUpMemoryTile for why the move
   // that reaches the cap is the one that forfeits, not the one after it.
-  if (moves >= LIGHTS_OUT_MAX_MOVES) return { ...attempt, lights, moves, status: "lost", finishedAt: now.toISOString() };
+  if (moves >= moveCap(attempt.ladder ?? LEGACY_LADDER)) return { ...attempt, lights, moves, status: "lost", finishedAt: now.toISOString() };
   return { ...attempt, lights, moves };
 }
 
@@ -103,9 +178,11 @@ export function resignBrainLightsOut(attempt: BrainLightsOutAttempt, now: Date):
   return { ...attempt, status: "lost", finishedAt: now.toISOString() };
 }
 
-export function brainLightsOutPayout(attempt: Pick<BrainLightsOutAttempt, "wager" | "status" | "moves">): number {
+export function brainLightsOutPayout(
+  attempt: Pick<BrainLightsOutAttempt, "wager" | "status" | "moves" | "ladder">,
+): number {
   if (attempt.status !== "won") return 0;
-  return Math.round(attempt.wager * wagerMultiplierForMoves(attempt.moves));
+  return Math.round(attempt.wager * wagerMultiplierForMoves(attempt.moves, attempt.ladder ?? LEGACY_LADDER));
 }
 
 export interface BrainLightsOutSnapshot {
@@ -117,6 +194,9 @@ export interface BrainLightsOutSnapshot {
   lights: boolean[];
   moves: number;
   maxMoves: number;
+  /** Moves the scramble took, so the fewest a clear can need. */
+  par: number;
+  ladder: LightsOutRung[];
   payout: number;
 }
 
@@ -124,15 +204,18 @@ export function toBrainLightsOutSnapshot(
   attempt: BrainLightsOutAttempt,
   meta: { id: string; version: number },
 ): BrainLightsOutSnapshot {
+  const ladder = attempt.ladder ?? LEGACY_LADDER;
   return {
     id: meta.id,
     wager: attempt.wager,
     version: meta.version,
     status: attempt.status,
-    size: LIGHTS_OUT_SIZE,
+    size: sizeOf(attempt.lights),
     lights: [...attempt.lights],
     moves: attempt.moves,
-    maxMoves: LIGHTS_OUT_MAX_MOVES,
+    maxMoves: moveCap(ladder),
+    par: ladder[0].maxMoves,
+    ladder: ladder.map((rung) => ({ ...rung })),
     payout: brainLightsOutPayout(attempt),
   };
 }

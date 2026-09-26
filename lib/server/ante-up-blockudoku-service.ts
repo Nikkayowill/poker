@@ -15,7 +15,7 @@ import {
   type AnteUpBlockudokuSnapshot,
   type BlockudokuDifficulty,
 } from "@/lib/arcade/ante-up-blockudoku";
-import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
+import { anteUpStakeProblem } from "@/lib/arcade/ante-up-stakes";
 import type { BlockudokuMoveProblem } from "@/lib/arcade/puzzles/blockudoku";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
@@ -164,9 +164,9 @@ export async function openAnteUpBlockudoku(
       400,
     );
   }
-  // Kept for the day a per-board ceiling comes back; see lib/arcade/ante-up-stakes.ts.
-  const overCeiling = anteUpWagerCeilingProblem(GAME, difficulty, wagerInput);
-  if (overCeiling) throw new AnteUpBlockudokuRequestError(overCeiling, 400);
+  // A big stake has to play a hard enough board; see lib/arcade/stake-pressure.ts.
+  const stakeProblem = anteUpStakeProblem(GAME, difficulty, wagerInput);
+  if (stakeProblem) throw new AnteUpBlockudokuRequestError(stakeProblem, 400);
 
   if (wagerInput > 0) {
     const sinceYesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);

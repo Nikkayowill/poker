@@ -15,12 +15,13 @@
  * same job ANTE_UP_MEMORY_MAX_TURNS does for Memory Match, and it also stops
  * an abandoned attempt from holding the player's one active slot forever.
  *
- * The limits still sit above real solve times -- the challenge is the board,
- * not the stopwatch -- but no longer by the margin they once did. A beginner
+ * Free play and small stakes get limits above real solve times. From 10k up
+ * the clock is set so a player at that band's level of skill usually makes
+ * it and most others don't; see ANTE_UP_MINESWEEPER_TIERS. A beginner
  * board with five minutes on it was a certain win, and a certain win paying
  * 1.5x is a money printer at whatever size the player can stake. The clocks
- * below are tighter and the multipliers lower for that reason; the ceiling
- * half of the same fix lives in lib/arcade/ante-up-stakes.ts.
+ * below are tighter and the multipliers lower for that reason, and a big
+ * stake has to be played on a bigger board (lib/arcade/ante-up-stakes.ts).
  */
 
 import {
@@ -39,24 +40,58 @@ import {
   type MinesweeperRound,
   type MinesweeperView,
 } from "./puzzles/minesweeper";
+import { stakePressure } from "./stake-pressure";
 
 /** The floor for a wager. Restated per game; see ante-up-memory.ts's MIN_ANTE_UP_WAGER for why. */
 export const MIN_ANTE_UP_WAGER = 500;
 
 export interface AnteUpMinesweeperTier {
-  /** Measured from the first click, not from opening the attempt; see the round's own clock. */
+  /**
+   * For free play and stakes under 10k. Measured from the first click, not
+   * from opening the attempt; see the round's own clock.
+   */
   readonly timeLimitMs: number;
+  /** From 10k up, where each band is set for a stronger player. */
+  readonly rankedTimeLimitMs: number;
   readonly multiplier: number;
 }
 
-/** Starting numbers, not tuned against real solve rates; retune here. */
+/**
+ * Clocks come from a skill model, not from solve-rate data we don't have yet
+ * (lib/arcade/ante-up-calibration.test.ts holds it and checks the targets).
+ * A median player's time on a phone is taken from published desktop
+ * benchmarks (casual beginner about 90s, intermediate 150-300s), scaled to
+ * our boards by their work and a 1.3x touch penalty: beginner 90s,
+ * intermediate 175s, expert 330s, master 410s. Log-normal, sigma 0.3. Each
+ * standard deviation of skill is 1.8x faster, since published skill tiers
+ * roughly halve the time each step. A careless click loses the board: 15-40%
+ * of the time for a median player, halving per standard deviation.
+ *
+ * Win rate on the easiest board each stake band allows, by player:
+ *
+ *   band (floor board, clock)       median   +1SD   +2SD   +3SD
+ *   <10k   (beginner, 3:00)           84%     92%     96%    98%
+ *   10k+   (intermediate, 2:00)        8%     66%     93%    97%
+ *   100k+  (expert, 2:30)             0%     21%     82%    96%
+ *   1M+    (master, 1:40)             0%      0%     19%    84%
+ *
+ * Free play and small stakes keep the old roomy clocks, so anyone can still
+ * finish a big board for fun. Retune here once real attempts give solve rates.
+ */
 export const ANTE_UP_MINESWEEPER_TIERS: Readonly<
   Record<MinesweeperDifficulty, AnteUpMinesweeperTier>
 > = {
-  beginner: { timeLimitMs: 3 * 60 * 1000, multiplier: 1.1 },
-  intermediate: { timeLimitMs: 10 * 60 * 1000, multiplier: 1.8 },
-  expert: { timeLimitMs: 20 * 60 * 1000, multiplier: 3 },
+  beginner: { timeLimitMs: 3 * 60_000, rankedTimeLimitMs: 3 * 60_000, multiplier: 1.1 },
+  intermediate: { timeLimitMs: 5 * 60_000, rankedTimeLimitMs: 2 * 60_000, multiplier: 1.8 },
+  expert: { timeLimitMs: 10 * 60_000, rankedTimeLimitMs: 150_000, multiplier: 3 },
+  master: { timeLimitMs: 12 * 60_000, rankedTimeLimitMs: 100_000, multiplier: 4.5 },
 };
+
+/** The clock a board runs at this stake. Fixed on the attempt when it opens. */
+export function anteUpMinesweeperTimeLimitMs(difficulty: MinesweeperDifficulty, wager: number): number {
+  const tier = ANTE_UP_MINESWEEPER_TIERS[difficulty];
+  return stakePressure(wager) >= 1 ? tier.rankedTimeLimitMs : tier.timeLimitMs;
+}
 
 export type AnteUpMinesweeperStatus = "active" | "won" | "lost" | "timed-out";
 
@@ -83,7 +118,7 @@ export function startAnteUpMinesweeper(
     difficulty,
     wager,
     multiplier: tier.multiplier,
-    timeLimitMs: tier.timeLimitMs,
+    timeLimitMs: anteUpMinesweeperTimeLimitMs(difficulty, wager),
     board: startMinesweeperRound(difficulty, seed),
     status: "active",
     startedAt: now.toISOString(),

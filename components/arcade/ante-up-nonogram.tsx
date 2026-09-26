@@ -31,7 +31,7 @@ import {
 } from "@/lib/arcade/ante-up-stakes";
 import { lowestTierFor, stakePressureThreshold } from "@/lib/arcade/stake-pressure";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
-import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { clearSound, comboSound, selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   ANTE_UP_NONOGRAM_TIERS,
   MIN_ANTE_UP_WAGER,
@@ -254,6 +254,14 @@ export function AnteUpNonogram() {
   const [showHelp, setShowHelp] = useState(false);
   const [cursor, setCursor] = useState(0);
   const [beatBest, setBeatBest] = useState(false);
+  // Cells of a row/column a stroke just satisfied (server-confirmed marks
+  // only, never the optimistic paint), plus whether more than one line
+  // completed on the same stroke.
+  const [celebrate, setCelebrate] = useState<readonly number[]>([]);
+  const [celebrateCombo, setCelebrateCombo] = useState(false);
+  const celebrateTimer = useRef<number | null>(null);
+  /** Which lines were already done, so only a false-to-true edge celebrates. */
+  const doneLines = useRef<Set<string> | null>(null);
 
   // Read through to localStorage rather than mirrored into state; see subscribeBests.
   const best = useSyncExternalStore(
@@ -278,7 +286,10 @@ export function AnteUpNonogram() {
   // Read ordering, board versions and the stroke queue all go through
   // `sequence`, so a poll can never paint an older board over a stroke.
   const mounted = useRef(true);
-  useEffect(() => () => { mounted.current = false; }, []);
+  useEffect(() => () => {
+    mounted.current = false;
+    if (celebrateTimer.current !== null) window.clearTimeout(celebrateTimer.current);
+  }, []);
   const [sequence] = useState(() => createRequestSequence<AnteUpNonogramSnapshot>());
 
   /**
@@ -663,6 +674,46 @@ export function AnteUpNonogram() {
     return count;
   }, [marks]);
 
+  // A line (row or column) the server's own marks now satisfy, checked
+  // against server truth only so an optimistic fill that merely looks
+  // complete before the server confirms it never celebrates early.
+  useEffect(() => {
+    if (!board) {
+      doneLines.current = null;
+      return;
+    }
+    const trueProgress = nonogramClueProgress(board.marks, board.size, board.clues);
+    const now = new Set<string>();
+    for (let row = 0; row < board.size; row += 1) if (lineDone(trueProgress.rows[row])) now.add(`r${row}`);
+    for (let col = 0; col < board.size; col += 1) if (lineDone(trueProgress.cols[col])) now.add(`c${col}`);
+
+    const before = doneLines.current;
+    doneLines.current = now;
+    if (!before) return; // First read of a fresh attempt; nothing "just" happened.
+
+    const newlyDone = [...now].filter((key) => !before.has(key));
+    if (newlyDone.length === 0) return;
+
+    const cells = new Set<number>();
+    for (const key of newlyDone) {
+      const n = Number(key.slice(1));
+      if (key[0] === "r") for (let col = 0; col < board.size; col += 1) cells.add(n * board.size + col);
+      else for (let row = 0; row < board.size; row += 1) cells.add(row * board.size + n);
+    }
+    const isCombo = newlyDone.length > 1;
+    if (isCombo) comboSound(); else clearSound();
+    setCelebrate(Array.from(cells).sort((a, b) => a - b));
+    setCelebrateCombo(isCombo);
+    if (celebrateTimer.current !== null) window.clearTimeout(celebrateTimer.current);
+    celebrateTimer.current = window.setTimeout(() => {
+      celebrateTimer.current = null;
+      if (mounted.current) {
+        setCelebrate([]);
+        setCelebrateCombo(false);
+      }
+    }, 500);
+  }, [board]);
+
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;
   const result = anteUpResultLine(attempt?.wager ?? 0, attempt?.payout ?? 0);
   const ceiling = maxAnteUpWager("nonogram", difficulty);
@@ -956,7 +1007,7 @@ export function AnteUpNonogram() {
                 rather than guessed -- a fixed gutter either clips a busy line
                 or wastes half the screen on a quiet one. */}
             <div
-              className={clsx("ng-grid", tool === "pan" && "ng-grid-pan")}
+              className={clsx("ng-grid", tool === "pan" && "ng-grid-pan", celebrateCombo && "ng-grid-combo")}
               role="grid"
               aria-label={`Nonogram board, ${board.size} by ${board.size}`}
               onPointerMove={onGridPointerMove}
@@ -1019,6 +1070,7 @@ export function AnteUpNonogram() {
                       board.solution !== null &&
                       board.solution[index] === SOLUTION_FILLED &&
                       cell !== MARK_FILLED;
+                    const celebrateOrder = celebrate.indexOf(index);
 
                     return (
                       <button
@@ -1036,7 +1088,9 @@ export function AnteUpNonogram() {
                           active && (row === cursorRow || col === cursorCol) && "ng-cell-lit",
                           (col + 1) % 5 === 0 && col + 1 < board.size && "ng-major-col",
                           (row + 1) % 5 === 0 && row + 1 < board.size && "ng-major-row",
+                          celebrateOrder !== -1 && "ng-cell-complete",
                         )}
+                        style={celebrateOrder !== -1 ? ({ "--ng-complete-i": celebrateOrder } as React.CSSProperties) : undefined}
                         disabled={!active}
                         aria-label={
                           `Row ${row + 1}, column ${col + 1}, ` +

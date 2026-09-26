@@ -12,7 +12,7 @@ import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { maxAnteUpWager, type AnteUpGame } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
-import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { clearSound, comboSound, selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   LIGHTS_OUT_BANDS,
   MIN_ANTE_UP_WAGER,
@@ -61,6 +61,8 @@ export function BrainLightsOut() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [wonPulse, setWonPulse] = useState(false);
+  const wonPulseTimer = useRef<number | null>(null);
 
   const play = useArcadeSound({ gameSounds: true });
   const active = attempt?.status === "active";
@@ -168,6 +170,29 @@ export function BrainLightsOut() {
     movesHeard.current = attempt.moves;
     play("card");
   }, [attempt, play]);
+
+  // The board clearing is the payoff, not any one tap along the way -- a
+  // clear at or under par gets the bigger cue, same as a Blockudoku combo.
+  const wonHeard = useRef<string | null>(null);
+  useEffect(() => {
+    if (!attempt) {
+      wonHeard.current = null;
+      return;
+    }
+    if (attempt.status !== "won" || wonHeard.current === attempt.id) return;
+    wonHeard.current = attempt.id;
+    if (attempt.moves <= attempt.par) comboSound(); else clearSound();
+    setWonPulse(true);
+    if (wonPulseTimer.current !== null) window.clearTimeout(wonPulseTimer.current);
+    wonPulseTimer.current = window.setTimeout(() => {
+      wonPulseTimer.current = null;
+      if (mounted.current) setWonPulse(false);
+    }, 500);
+  }, [attempt]);
+
+  useEffect(() => () => {
+    if (wonPulseTimer.current !== null) window.clearTimeout(wonPulseTimer.current);
+  }, []);
 
   const start = () => {
     if (sending.current) return;
@@ -294,7 +319,10 @@ export function BrainLightsOut() {
             </span>
           </div>
 
-          <div className="lo-grid" style={{ "--lo-size": attempt.size } as React.CSSProperties}>
+          <div
+            className={clsx("lo-grid", wonPulse && "lo-grid-won")}
+            style={{ "--lo-size": attempt.size } as React.CSSProperties}
+          >
             {shownLights.map((on, index) => (
               <button
                 key={index}

@@ -12,7 +12,7 @@ import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { useActionQueue } from "@/components/shared/use-action-queue";
-import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { clearSound, comboSound, selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   ANTE_UP_TIERS,
   MIN_ANTE_UP_WAGER,
@@ -104,6 +104,40 @@ interface PendingFill {
   value: number;
 }
 
+/** The 9 cell indices sharing `index`'s row, column, or box. */
+function rowCells(index: number): number[] {
+  const row = rowOf(index);
+  return Array.from({ length: SUDOKU_SIZE }, (_, c) => row * SUDOKU_SIZE + c);
+}
+function columnCells(index: number): number[] {
+  const col = columnOf(index);
+  return Array.from({ length: SUDOKU_SIZE }, (_, r) => r * SUDOKU_SIZE + col);
+}
+function boxCells(index: number): number[] {
+  const boxRow = Math.floor(rowOf(index) / 3) * 3;
+  const boxCol = Math.floor(columnOf(index) / 3) * 3;
+  const cells: number[] = [];
+  for (let r = 0; r < 3; r += 1) {
+    for (let c = 0; c < 3; c += 1) cells.push((boxRow + r) * SUDOKU_SIZE + (boxCol + c));
+  }
+  return cells;
+}
+
+/**
+ * Every cell of a row, column or box that `index` just completed, deduped and
+ * in ascending order (the same "stagger delay by position" idiom Blockudoku's
+ * own clear animation uses). A digit only ever completes a unit it's part of,
+ * so checking the after-fill board at `index`'s own three units is enough --
+ * no need to compare against the board before the fill.
+ */
+function newlyCompletedCells(board: readonly number[], index: number): number[] {
+  const done = new Set<number>();
+  for (const cells of [rowCells(index), columnCells(index), boxCells(index)]) {
+    if (cells.every((cell) => board[cell] !== 0)) for (const cell of cells) done.add(cell);
+  }
+  return Array.from(done).sort((a, b) => a - b);
+}
+
 /** How often the shell re-reads a live attempt, so the clock still settles even with no fill sent. */
 const POLL_MS = 3000;
 /** Fallback pause on a 429 with no (or a bogus) Retry-After header. */
@@ -130,6 +164,12 @@ export function AnteUpSudoku() {
   const [notesMode, setNotesMode] = useState(false);
   const [notes, setNotes] = useState<Record<number, Set<number>>>({});
   const [showHelp, setShowHelp] = useState(false);
+  // Cells of a row/column/box a fill just completed, ascending order (also
+  // each cell's glow stagger delay), plus whether more than one unit
+  // completed on the same digit.
+  const [celebrate, setCelebrate] = useState<readonly number[]>([]);
+  const [celebrateCombo, setCelebrateCombo] = useState(false);
+  const celebrateTimer = useRef<number | null>(null);
 
   const play = useArcadeSound({ gameSounds: true });
   const active = attempt?.status === "active";
@@ -147,7 +187,10 @@ export function AnteUpSudoku() {
   // versions live in `sequence`, which also covers the queued fills.
   const sending = useRef(false);
   const mounted = useRef(true);
-  useEffect(() => () => { mounted.current = false; }, []);
+  useEffect(() => () => {
+    mounted.current = false;
+    if (celebrateTimer.current !== null) window.clearTimeout(celebrateTimer.current);
+  }, []);
   const [sequence] = useState(() => createRequestSequence<AnteUpSnapshot>());
 
   const applyResponse = useCallback((data: Partial<AnteUpResponse>) => {
@@ -263,6 +306,25 @@ export function AnteUpSudoku() {
         if (value !== 0) {
           play("ui");
           clearPeerNotes(index, value);
+          const next = data.attempt;
+          if (next) {
+            const board = next.puzzle.map((given, i) => given || next.entries[i]);
+            const completed = newlyCompletedCells(board, index);
+            if (completed.length > 0) {
+              const combo = completed.length > SUDOKU_SIZE;
+              if (combo) comboSound(); else clearSound();
+              setCelebrate(completed);
+              setCelebrateCombo(combo);
+              if (celebrateTimer.current !== null) window.clearTimeout(celebrateTimer.current);
+              celebrateTimer.current = window.setTimeout(() => {
+                celebrateTimer.current = null;
+                if (mounted.current) {
+                  setCelebrate([]);
+                  setCelebrateCombo(false);
+                }
+              }, 500);
+            }
+          }
         }
         return true;
       }
@@ -625,7 +687,7 @@ export function AnteUpSudoku() {
             </span>
           </div>
 
-          <div className="sk-grid" role="grid" aria-label="Sudoku grid">
+          <div className={clsx("sk-grid", celebrateCombo && "sk-grid-combo")} role="grid" aria-label="Sudoku grid">
             {Array.from({ length: SUDOKU_CELLS }, (_, index) => {
               const given = attempt.puzzle[index];
               const entry = entries[index];
@@ -639,6 +701,7 @@ export function AnteUpSudoku() {
               const twin = selected !== null && value !== 0
                 && value === (attempt.puzzle[selected] || entries[selected]);
               const cellNotes = value === 0 ? notes[index] : undefined;
+              const celebrateOrder = celebrate.indexOf(index);
 
               return (
                 <button
@@ -652,11 +715,13 @@ export function AnteUpSudoku() {
                     !isSelected && peer && "sk-cell-peer",
                     !isSelected && twin && "sk-cell-twin",
                     rejected === index && "sk-cell-wrong",
+                    celebrateOrder !== -1 && "sk-cell-complete",
                     columnOf(index) % 3 === 0 && "sk-cell-box-left",
                     rowOf(index) % 3 === 0 && "sk-cell-box-top",
                     columnOf(index) === SUDOKU_SIZE - 1 && "sk-cell-box-right",
                     rowOf(index) === SUDOKU_SIZE - 1 && "sk-cell-box-bottom",
                   )}
+                  style={celebrateOrder !== -1 ? ({ "--sk-complete-i": celebrateOrder } as React.CSSProperties) : undefined}
                   disabled={!active}
                   aria-label={
                     `Row ${rowOf(index) + 1}, column ${columnOf(index) + 1}` +

@@ -241,6 +241,29 @@
   cursor: default;
 }
 
+/* A row or column the player's marks just satisfied. Glow only, no scale --
+   see the note above on why a per-square transform across a whole line
+   would stutter -- staggered by `--ng-complete-i` (set inline: the cell's
+   position in the completed line's ascending-order list) so it sweeps along
+   the line instead of flashing in lockstep. */
+.ng-cell-complete {
+  animation: ng-complete 460ms ease-out both;
+  animation-delay: calc(var(--ng-complete-i, 0) * 10ms);
+}
+@keyframes ng-complete {
+  0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+  35% { box-shadow: inset 0 0 0 2px #fff, 0 0 8px 1px rgba(255, 210, 63, .7); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+}
+
+/* Two or more lines completed by the same stroke. */
+.ng-grid-combo { animation: ng-grid-combo-pulse 420ms ease-out; }
+@keyframes ng-grid-combo-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 210, 63, .5); }
+  40% { box-shadow: 0 0 26px 4px rgba(255, 210, 63, .5); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 210, 63, 0); }
+}
+
 .ng-cell-crossed {
   background: color-mix(in srgb, var(--brand-ink) 45%, transparent);
   color: var(--text-muted);
@@ -469,3 +492,7 @@
 /* Auto-cross can't be had on a big stake; the row stays to say so. */
 .ng-option-off { cursor: not-allowed; }
 .ng-option-off strong { color: var(--text-muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ng-cell-complete, .ng-grid-combo { animation: none; }
+}

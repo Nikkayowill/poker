@@ -20,7 +20,7 @@ import {
 } from "@/lib/arcade/ante-up-stakes";
 import { lowestTierFor, stakePressureThreshold } from "@/lib/arcade/stake-pressure";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
-import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { clearSound, comboSound, selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   ANTE_UP_MINESWEEPER_TIERS,
   MIN_ANTE_UP_WAGER,
@@ -131,6 +131,12 @@ export function AnteUpMinesweeper() {
   const [flagMode, setFlagMode] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [showHelp, setShowHelp] = useState(false);
+  // Cells a reveal just opened, ascending index order (so a cell's position
+  // here is also its pop-in stagger delay), plus whether that reveal was a
+  // multi-cell cascade rather than one number.
+  const [revealed, setRevealed] = useState<readonly number[]>([]);
+  const [cascade, setCascade] = useState(false);
+  const revealTimer = useRef<number | null>(null);
 
   const play = useArcadeSound({ gameSounds: true });
   const active = attempt?.status === "active";
@@ -228,6 +234,7 @@ export function AnteUpMinesweeper() {
    */
   const sendMove = useCallback(async ({ action, index }: PendingMove): Promise<boolean> => {
     if (!mounted.current) return false;
+    const before = sequence.latest();
     try {
       const response = await fetch("/api/ante-up-minesweeper/actions", {
         method: "POST",
@@ -241,6 +248,35 @@ export function AnteUpMinesweeper() {
       if (!mounted.current) return false;
       if (response.ok) {
         applyResponse(data);
+        // A reveal that opened more than one square (a flood-fill cascade) is
+        // the satisfying moment; a mine's own single "exploded" square must
+        // never sound like a payoff, so it's excluded explicitly rather than
+        // relying on the count alone.
+        const next = data.attempt;
+        if (action === "reveal" && before && next) {
+          const opened: number[] = [];
+          let hitMine = false;
+          for (let i = 0; i < next.board.cells.length; i += 1) {
+            const wasHidden = before.board.cells[i] === CELL_HIDDEN;
+            const cell = next.board.cells[i];
+            if (cell === CELL_EXPLODED || cell === CELL_MINE) hitMine = true;
+            else if (wasHidden && cell >= 0) opened.push(i);
+          }
+          if (!hitMine && opened.length > 0) {
+            const isCascade = opened.length > 1;
+            if (isCascade) comboSound(); else clearSound();
+            setRevealed(opened);
+            setCascade(isCascade);
+            if (revealTimer.current !== null) window.clearTimeout(revealTimer.current);
+            revealTimer.current = window.setTimeout(() => {
+              revealTimer.current = null;
+              if (mounted.current) {
+                setRevealed([]);
+                setCascade(false);
+              }
+            }, 420);
+          }
+        }
         return true;
       }
       if (!data.round) {
@@ -312,6 +348,7 @@ export function AnteUpMinesweeper() {
 
   useEffect(() => () => {
     if (pressTimer.current !== null) window.clearTimeout(pressTimer.current);
+    if (revealTimer.current !== null) window.clearTimeout(revealTimer.current);
   }, []);
 
   const start = () => {
@@ -555,7 +592,7 @@ export function AnteUpMinesweeper() {
           </div>
 
           <div
-            className="ms-grid"
+            className={clsx("ms-grid", cascade && "ms-grid-combo")}
             role="grid"
             aria-label="Minesweeper board"
             style={
@@ -570,6 +607,7 @@ export function AnteUpMinesweeper() {
               const column = (index % attempt.board.cols) + 1;
               const flagged = view.flags.has(index);
               const open = cell >= 0 && cell <= 8;
+              const revealOrder = revealed.indexOf(index);
 
               return (
                 <button
@@ -585,7 +623,9 @@ export function AnteUpMinesweeper() {
                     cell === CELL_WRONG_FLAG && "ms-cell-wrong-flag",
                     flagged && cell === CELL_HIDDEN && "ms-cell-flagged",
                     !open && view.pressed.has(index) && "ms-cell-pending",
+                    revealOrder !== -1 && "ms-cell-revealing",
                   )}
+                  style={revealOrder !== -1 ? ({ "--ms-reveal-i": revealOrder } as React.CSSProperties) : undefined}
                   disabled={!active}
                   aria-label={
                     `Row ${row}, column ${column}, ` +

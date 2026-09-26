@@ -140,7 +140,12 @@ export interface Contract {
  *  own wording, which is the wording a player should see -- this component
  *  never invents an explanation for something the server declined. */
 export type ContractActionResult =
-  | { readonly ok: true; readonly reward?: { readonly gold: number; readonly influence: number } }
+  | {
+      readonly ok: true;
+      readonly reward?: { readonly gold: number; readonly influence: number };
+      /** Only on a settled `grocery-collect`: the Gold it actually paid (lib/stackacres/grocery-economy.ts). */
+      readonly groceryPaid?: number;
+    }
   | { readonly ok: false; readonly message: string };
 
 export interface TownContractsModalProps {

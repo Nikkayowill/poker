@@ -83,6 +83,13 @@ import {
   buyEmpireBuilding,
   placeOwnedEmpireBuilding,
   pickUpOwnedEmpireBuilding,
+  takeOverStackAcresGrocery,
+  hireStackAcresGroceryWorker,
+  fireStackAcresGroceryWorker,
+  collectStackAcresGroceryTill,
+  buyStackAcresGroceryItem,
+  placeStackAcresGroceryItem,
+  storeStackAcresGroceryItem,
   removeStackAcresSoilTile,
   moveStackAcresSoilTileGroup,
   buyStackAcresSeed,
@@ -471,6 +478,26 @@ const bodySchema = z.discriminatedUnion("action", [
     ty: z.number().int().min(0).max(255),
   }),
   z.object({ action: z.literal("pick-up-building"), id: z.string().uuid() }),
+  // The city grocery (lib/stackacres/grocery.ts). Taking it over is free and development-only; hiring and
+  // buying fixtures SPEND Gold, priced on the server; emptying the till CREDITS takings less wages; firing,
+  // moving and storing move nothing.
+  z.object({ action: z.literal("grocery-take-over") }),
+  z.object({ action: z.literal("grocery-hire"), name: z.string().min(1).max(24) }),
+  z.object({ action: z.literal("grocery-fire"), name: z.string().min(1).max(24) }),
+  z.object({ action: z.literal("grocery-collect") }),
+  z.object({
+    action: z.literal("grocery-buy"),
+    kind: z.string().max(32),
+    tx: z.number().int().min(0).max(63),
+    ty: z.number().int().min(0).max(63),
+  }),
+  z.object({
+    action: z.literal("grocery-place"),
+    id: z.string().min(1).max(48),
+    tx: z.number().int().min(0).max(63),
+    ty: z.number().int().min(0).max(63),
+  }),
+  z.object({ action: z.literal("grocery-store"), id: z.string().min(1).max(48) }),
   // Hold-tap lift, tap-to-drop. `(tx, ty)` names the bed picked up (and,
   // through it, the whole contiguous group touching it -- see
   // stackacres-service.ts's `moveStackAcresSoilTileGroup`); `(toTx, toTy)` is
@@ -682,6 +709,20 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return placeOwnedEmpireBuilding(token, { id: action.id, tx: action.tx, ty: action.ty }, now);
     case "pick-up-building":
       return pickUpOwnedEmpireBuilding(token, { id: action.id }, now);
+    case "grocery-take-over":
+      return takeOverStackAcresGrocery(token, now);
+    case "grocery-hire":
+      return hireStackAcresGroceryWorker(token, { name: action.name }, now);
+    case "grocery-fire":
+      return fireStackAcresGroceryWorker(token, { name: action.name }, now);
+    case "grocery-collect":
+      return collectStackAcresGroceryTill(token, now);
+    case "grocery-buy":
+      return buyStackAcresGroceryItem(token, { kind: action.kind, tx: action.tx, ty: action.ty }, now);
+    case "grocery-place":
+      return placeStackAcresGroceryItem(token, { id: action.id, tx: action.tx, ty: action.ty }, now);
+    case "grocery-store":
+      return storeStackAcresGroceryItem(token, { id: action.id }, now);
     case "move-soil-tile-group":
       return moveStackAcresSoilTileGroup(
         token,

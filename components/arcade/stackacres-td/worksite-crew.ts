@@ -68,6 +68,18 @@ export class WorksiteCrew {
     }
   }
 
+  /** The member of staff drawn under a map point, if any: their name and where they stand. */
+  workerAt(at: { x: number; y: number }): { name: string; x: number; y: number } | null {
+    for (const worker of this.site.view().workers) {
+      const node = this.nodes.get(worker.id);
+      if (!node) continue;
+      const { x, y } = node.sprite;
+      // The body, from the feet up, a little wider than the sprite's own figure so a finger finds it.
+      if (at.x >= x - 9 && at.x <= x + 9 && at.y >= y - 30 && at.y <= y + 3) return { name: worker.id, x, y };
+    }
+    return null;
+  }
+
   destroy(): void {
     for (const node of this.nodes.values()) this.remove(node);
     this.nodes.clear();

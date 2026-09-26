@@ -576,6 +576,60 @@ def produce_bin(heap_sheet, tx, ty):
 VEG = SI + "Food/Vegetables A.png"
 FRUIT = SI + "Food/Fruit A.png"
 
+# Cork and the wood round it, for the notice board: the sign panel's own ramp, dark to light, laid onto these.
+CORK = [(58, 36, 26), (84, 55, 36), (112, 76, 48), (150, 104, 66), (178, 129, 84), (201, 153, 104), (222, 180, 130)]
+
+
+def notice_board(w=48, h=36):
+    """The Help Wanted board: the pack's framed sign panel stretched to w x h and turned to cork, with three of
+    its blank notices pinned on it."""
+    panel, _ = trim(cut(ST + "Signs/Sign Backgrounds A.png", 0, 32, 32, 32))
+    # The panel's colours, darkest first, onto the cork ramp in the same order.
+    arr = np.array(panel)
+    seen = sorted({tuple(px[:3]) for px in arr.reshape(-1, 4) if px[3] > 0}, key=lambda c: 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2])
+    panel = recolour(panel, {c: CORK[min(len(CORK) - 1, i * len(CORK) // len(seen))] for i, c in enumerate(seen)})
+    e = 6                                               # the frame's width, kept whole at the corners
+    out = Image.new("RGBA", (w, h))
+    pw, ph = panel.size
+    xs = [(0, 0, e), (e, e, pw - 2 * e), (pw - e, w - e, e)]
+    ys = [(0, 0, e), (e, e, ph - 2 * e), (ph - e, h - e, e)]
+    for sx, dx, sw in xs:
+        for sy, dy, sh in ys:
+            part = panel.crop((sx, sy, sx + sw, sy + sh))
+            tw = w - 2 * e if sw == pw - 2 * e else sw
+            th = h - 2 * e if sh == ph - 2 * e else sh
+            out.alpha_composite(part.resize((tw, th), Image.NEAREST), (dx, dy))
+    # Notices pinned across it, left to right, each kept inside the frame.
+    notes = [piece(WI + "Posters.png", 0, 0), piece(WI + "Posters.png", 2, 0), piece(WI + "Posters.png", 0, 0)]
+    x = e + 1
+    for i, note in enumerate(notes):
+        room = w - e - 1 - x
+        if room < 5:
+            break
+        y = e + (i % 2) * 2
+        out.alpha_composite(note.crop((0, 0, min(note.width, room), min(note.height, h - e - 1 - y))), (x, y))
+        x += note.width + 2
+    return out
+
+
+def grocery_decor():
+    """What an owner can buy to dress the grocery (lib/stackacres/grocery-layout.ts), by kind: its picture, its
+    plan in tiles (w, h), and whether it lies flat on the floor (a rug) rather than standing."""
+    diamond = F + "Rugs/Diamond Rug, tiling.png"
+    apples = over((piece(F + "Barrel.png", 2, 0, 1, 2), 0, 10), (piece(FRUIT, 3, 2), 5, 0))
+    return {
+        "fern": (piece(F + "Planter.png", 0, 1, 1, 2), 1, 1, False),
+        "flowerbox": (piece(F + "Planter.png", 4, 0), 1, 1, False),
+        "topiary": (piece(F + "Planter.png", 2, 0, 1, 3), 1, 1, False),
+        "floorlamp": (piece(F + "Lighting, Floor.png", 0, 0, 1, 2), 1, 1, False),
+        "clock": (piece(F + "Clock, Grandfather.png", 0, 0, 1, 3), 1, 1, False),
+        "bench": (piece(F + "Seating/Loveseat, Small - Casual Solid A.png", 6, 0, 2, 1), 2, 1, False),
+        "barrel": (apples, 1, 1, False),
+        "rug-large": (rug(diamond, 3, 0, 8, 4), 8, 4, True),
+        "rug-small": (rug(diamond, 3, 0, 4, 3), 4, 3, True),
+        "rug-gold": (rug(diamond, 6, 0, 4, 2), 4, 2, True),
+    }
+
 
 BREAD = SI + "Food/Bread B.png"
 CHEESE = SI + "Food/Cheese A.png"
@@ -630,9 +684,9 @@ def grocery():
         plan.put(plank, x, 30)
         for k, (tx, ty) in enumerate(((4, 2), (5, 2), (3, 2), (4, 2))):
             plan.put(piece(SI + "Kitchen Clutter A.png", tx, ty), x + 6 + k * 22, 12)
-    # A rug under the produce island, the doormat, a mat behind each till and one in the manager's corner.
+    # The doormat and a rug in the manager's corner. The rug under the produce island is decor the owner can
+    # move (grocery_decor below), so it isn't painted into the floor.
     diamond = F + "Rugs/Diamond Rug, tiling.png"
-    plan.put(rug(diamond, 3, 0, 8, 4), 14 * HT, 7 * HT)
     plan.put(rug(diamond, 9, 0, 4, 1), 12 * HT, 16 * HT + 4)
     plan.put(rug(diamond, 3, 0, 5, 2), 22 * HT, 15 * HT)
     plan.wall_foot_shadow(WALL_H)
@@ -681,6 +735,8 @@ def grocery():
     for x in range(5, 12):
         P.append(Prop(piece(SI + "Kitchen Clutter A.png", 4 + (x % 2), 2), x * HT + 16, base(3) + 1, lift=54))
     P.append(Prop(piece(SI + "Buckets.png", 0, 0), 12 * HT + 16, base(3)))                    # the mop bucket
+    # The Help Wanted board hangs on the stockroom bay's front, beside the staff's doors, at eye height.
+    P.append(Prop(notice_board(34, 28), 13 * HT + 18, base(4), tag="jobboard", lift=base(4) - 142))
     P.append(Prop(piece(F + "Crate.png", 0, 1), 19 * HT + 16, base(4)))                       # the delivery
     P.append(Prop(piece(F + "Crate.png", 1, 1), 19 * HT + 16, base(4) + 1, lift=24))
     P.append(Prop(piece(F + "Crate.png", 0, 0), 19 * HT + 16, base(3)))
@@ -789,7 +845,7 @@ def grocery():
     # through the manager, so this is where that happens one day.
     P.append(Prop(tiles(F + "Cabinet.png", 5, 4, 1, 2), 22 * HT + 16, base(16)))
     P.append(Prop(piece(F + "Seating/Chair, Dining A.png", 0, 4), 24 * HT + 16, base(15)))
-    P.append(Prop(piece(F + "Table, Rough Wood.png", 0, 2, 3, 2), 24 * HT + 16, base(16)))
+    P.append(Prop(piece(F + "Table, Rough Wood.png", 0, 2, 3, 2), 24 * HT + 16, base(16), tag="desk"))
     P.append(Prop(piece(SI + "Lighting, Table.png", 0, 0), 23 * HT + 16, base(16) + 1, lights=((10, 8, "lamp"),), lift=30))
     P.append(Prop(piece(F + "Planter.png", 0, 1), 26 * HT + 16, base(16)))
     walls += row(range(22, 27), 15) + row(range(22, 27), 16)

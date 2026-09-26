@@ -293,6 +293,10 @@ import {
 import { sendActionWithRetry } from "@/lib/stackacres/action-retry";
 import { EMPTY_EMPIRE, type EmpireSnapshot } from "@/lib/stackacres/empire-buildings";
 import { useEmpireBuild } from "./empire-build";
+import type { GroceryView } from "@/lib/stackacres/grocery";
+import { useGroceryArrange } from "./grocery-arrange";
+import { GroceryDesk, type DeskTab } from "./grocery-desk";
+import type { GroceryScene } from "./world-contract";
 import {
   GuessClaims,
   guessClaims,
@@ -464,6 +468,11 @@ interface StackAcresResponse {
    *  comment. Absent from a response older than it, which the HUD reads as
    *  all-zero, same posture as every other stub-until-built field here. */
   empire?: EmpireSnapshot;
+  /** The city grocery (lib/stackacres/grocery.ts): null where owning it isn't open yet, absent from an older response. */
+  grocery?: GroceryView | null;
+  /** Only on a settled `grocery-collect`: the Gold that emptying actually paid, which may be a moment fresher
+   *  than the till's own client-side estimate at the instant it was pressed. */
+  groceryPaid?: number;
   capacity: Partial<Record<StackAcresStock, number>>;
   /** Land the player may work. Everything else is drawn as wild growth. */
   sectors: SectorId[];
@@ -884,6 +893,9 @@ export function StackAcresFarm() {
   /** The empire district's own resource HUD -- see StackAcresResponse's own
    *  doc comment. Honest zeros until that map's economy exists. */
   const [empire, setEmpire] = useState<EmpireSnapshot>(EMPTY_EMPIRE);
+  /** The city grocery as the server last said, and the manager's desk while it's open. */
+  const [grocery, setGrocery] = useState<GroceryView | null>(null);
+  const [desk, setDesk] = useState<{ tab: DeskTab; focus: string | null } | null>(null);
   const [feed, setFeed] = useState(0);
   const [water, setWater] = useState(WATER_CAPACITY);
   const [energy, setEnergy] = useState<StackAcresEnergyAnchor>(() => ({
@@ -904,6 +916,8 @@ export function StackAcresFarm() {
     [],
   );
   const gameDayNow = useCallback(() => gameDayAt(Date.now() + clockRef.current.skewMs, clockRef.current.offsetMs), []);
+  /** The server's now, in ms: what the grocery's till is read against, whatever this device's clock says. */
+  const serverNowMs = useCallback(() => Date.now() + clockRef.current.skewMs, []);
   /** The hour the HUD clock shows, re-read every couple of seconds. */
   const [clockHour, setClockHour] = useState(() => gameHourAt(Date.now(), 0));
   useEffect(() => {
@@ -1705,6 +1719,7 @@ export function StackAcresFarm() {
     if (data.devotion) setDevotion(data.devotion);
     if (data.friendship) setFriendship(data.friendship);
     if (data.empire) setEmpire(data.empire);
+    if (data.grocery !== undefined) setGrocery(data.grocery);
     // Fresh arrays on every answer; keeping the old one when nothing moved
     // saves the map a redraw.
     if (data.woodNodes) {
@@ -2274,7 +2289,7 @@ export function StackAcresFarm() {
             nonce: Date.now(),
           });
         }
-        return { ok: true, reward: data.contractReward };
+        return { ok: true, reward: data.contractReward, groceryPaid: data.groceryPaid };
       } catch {
         // The outcome is unknown -- the write may well have committed. The
         // guess goes back in `finally` so nothing false is on screen, then
@@ -2797,9 +2812,13 @@ export function StackAcresFarm() {
    * must not force that into the shell's own bundle.
    */
   const [onEmpireMap, setOnEmpireMap] = useState(false);
+  /** The same for the grocery, whose Arrange key and desk are only there. */
+  const [onGroceryMap, setOnGroceryMap] = useState(false);
   const onPlaceEntered = useCallback((name: string) => {
     setPlaceTag((was) => ({ name, n: (was?.n ?? 0) + 1 }));
     setOnEmpireMap(name === "The Far Field");
+    setOnGroceryMap(name === "The Grocery");
+    if (name !== "The Grocery") setDesk(null);
   }, []);
   useEffect(() => {
     if (!placeTag) return;
@@ -2816,6 +2835,28 @@ export function StackAcresFarm() {
     act,
     farmerTile,
   });
+  const arrange = useGroceryArrange({
+    active: onGroceryMap && grocery?.owned === true,
+    grocery,
+    gold: profile?.goldBalance ?? 0,
+    unlimitedGold: profile?.unlimitedGold ?? false,
+    act,
+    farmerTile,
+  });
+  // What the grocery room draws and who works in it: the owner's, or the store as it was built.
+  const groceryLayout = arrange.layout;
+  const groceryStaff = grocery?.owned ? grocery.staff : null;
+  const groceryScene = useMemo<GroceryScene | null>(
+    () => (groceryLayout && groceryStaff ? { layout: groceryLayout, staff: groceryStaff } : null),
+    [groceryLayout, groceryStaff],
+  );
+  const onJobBoardTap = useCallback(() => setDesk({ tab: "hiring", focus: null }), []);
+  const onStoreDeskTap = useCallback(() => setDesk({ tab: "till", focus: null }), []);
+  const onStaffTap = useCallback((name: string) => setDesk({ tab: "staff", focus: name }), []);
+  const onDeskArrange = useCallback(() => {
+    setDesk(null);
+    arrange.openTray();
+  }, [arrange]);
 
   const onViewMoved = useCallback(() => {
     setMonkDialogue(null);
@@ -4015,6 +4056,21 @@ export function StackAcresFarm() {
         </div>
       )}
       {build.controls}
+      {arrange.controls}
+      {desk && grocery && (
+        <GroceryDesk
+          grocery={grocery}
+          tab={desk.tab}
+          onTab={(tab) => setDesk({ tab, focus: null })}
+          focus={desk.focus}
+          gold={profile?.goldBalance ?? 0}
+          unlimitedGold={profile?.unlimitedGold ?? false}
+          act={act}
+          serverNowMs={serverNowMs}
+          onArrange={onDeskArrange}
+          onClose={() => setDesk(null)}
+        />
+      )}
       <header className="floor-bar">
         <div className="floor-bar-left">
           {/* Not the shared FloorBackLink: that one leaves for the StackChips
@@ -4114,9 +4170,14 @@ export function StackAcresFarm() {
               landObstacles={landObstacles}
               fences={fences}
               empireBuildings={build.shown}
-              buildMode={build.buildMode}
+              buildMode={build.buildMode || arrange.buildMode}
               buildGhost={build.ghost}
-              onBuildTap={build.onBuildTap}
+              onBuildTap={onGroceryMap ? arrange.onBuildTap : build.onBuildTap}
+              grocery={groceryScene}
+              groceryGhost={arrange.ghost}
+              onJobBoardTap={onJobBoardTap}
+              onStoreDeskTap={onStoreDeskTap}
+              onStaffTap={onStaffTap}
               onUseSquare={onUseSquare}
               useKeyLabel={BELT_TOOL_DEFS[belt].label}
               tool={tool}

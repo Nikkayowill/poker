@@ -38,6 +38,22 @@ describe("intentOf: farm taps that must not swallow each other", () => {
     expect(intentOf({ action: "stock", stock: "carrot", tiles: [{ tx: 1, ty: 2 }, { tx: 2, ty: 2 }] })).not.toBe(here);
   });
 
+  it("keeps two grocery fixtures of different kinds bought on the same square apart", () => {
+    const fern = intentOf({ action: "grocery-buy", kind: "fern", tx: 5, ty: 5 });
+    const flowerbox = intentOf({ action: "grocery-buy", kind: "flowerbox", tx: 5, ty: 5 });
+    expect(fern).not.toBe(flowerbox);
+    expect(intentOf({ action: "grocery-buy", kind: "fern", tx: 5, ty: 5 })).toBe(fern);
+  });
+
+  it("keeps two grocery items moved apart by id, and two hires apart by name", () => {
+    expect(intentOf({ action: "grocery-place", id: "a", tx: 1, ty: 1 })).not.toBe(
+      intentOf({ action: "grocery-place", id: "b", tx: 1, ty: 1 }),
+    );
+    expect(intentOf({ action: "grocery-store", id: "a" })).toBe(intentOf({ action: "grocery-place", id: "a", tx: 1, ty: 1 }));
+    expect(intentOf({ action: "grocery-hire", name: "june" })).not.toBe(intentOf({ action: "grocery-hire", name: "omar" }));
+    expect(intentOf({ action: "grocery-fire", name: "june" })).toBe(intentOf({ action: "grocery-hire", name: "june" }));
+  });
+
   it("reads back which crops an in-flight harvest already names", () => {
     const intents = [
       intentOf({ action: "collect", unitIds: ["a", "b"] }),

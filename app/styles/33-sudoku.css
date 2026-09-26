@@ -131,6 +131,28 @@
   75% { transform: translateX(3px); }
 }
 
+/* A digit that completed its row, column or box: every cell of that unit
+   glows gold and settles back, staggered by `--sk-complete-i` (set inline:
+   the cell's position in the completed unit's ascending-order list) so the
+   line reads as a sweep rather than every cell flashing in lockstep. */
+.sk-cell-complete {
+  animation: sk-complete 500ms ease-out both;
+  animation-delay: calc(var(--sk-complete-i, 0) * 12ms);
+}
+@keyframes sk-complete {
+  0% { background: rgba(255,255,255,.015); box-shadow: none; }
+  30% { background: rgba(255,210,63,.55); box-shadow: 0 0 12px rgba(255,210,63,.6); transform: scale(1.05); }
+  100% { background: rgba(255,255,255,.015); box-shadow: none; transform: scale(1); }
+}
+
+/* Two or three units (row, column, box) completed by the same digit. */
+.sk-grid-combo { animation: sk-grid-combo-pulse 420ms ease-out; }
+@keyframes sk-grid-combo-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 210, 63, .5); }
+  40% { box-shadow: 0 0 24px 4px rgba(255, 210, 63, .5); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 210, 63, 0); }
+}
+
 /* ---- Pencil marks ----
  *
  * Candidates, not answers -- a 3x3 grid of the digit's own position (1 top-
@@ -245,7 +267,9 @@
  * whatever vertical room a device actually has instead of guessing a cutoff. */
 
 @media (prefers-reduced-motion: reduce) {
-  .sk-cell-wrong { animation: none; }
+  .sk-cell-wrong,
+  .sk-cell-complete,
+  .sk-grid-combo { animation: none; }
   .sk-key:active:not(:disabled) { transform: none; }
 }
 

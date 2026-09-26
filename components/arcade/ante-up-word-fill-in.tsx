@@ -16,7 +16,7 @@ import { ANTE_UP_TIER_LADDERS, anteUpTierAllowed, maxAnteUpWager } from "@/lib/a
 import { STAKE_PRESSURE_STEPS, lowestTierFor, type TierLadder } from "@/lib/arcade/stake-pressure";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { clearedSlotGuesses, placedSlotGuesses } from "@/lib/arcade/puzzles/word-fill-in-grid";
-import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { clearSound, comboSound, selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   ANTE_UP_WORD_FILL_IN_TIERS,
   anteUpWordFillInTerms,
@@ -114,6 +114,11 @@ export function AnteUpWordFillIn() {
   const [armedWord, setArmedWord] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [showHelp, setShowHelp] = useState(false);
+  // Cells of a slot a placement just completed with a list word, ascending
+  // order (also each cell's pop stagger delay).
+  const [celebrate, setCelebrate] = useState<readonly number[]>([]);
+  const [celebrateCombo, setCelebrateCombo] = useState(false);
+  const celebrateTimer = useRef<number | null>(null);
 
   const play = useArcadeSound({ gameSounds: true });
   const active = attempt?.status === "active";
@@ -133,7 +138,10 @@ export function AnteUpWordFillIn() {
   // Refresh) would otherwise leave it false and drop every response.
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; };
+    return () => {
+      mounted.current = false;
+      if (celebrateTimer.current !== null) window.clearTimeout(celebrateTimer.current);
+    };
   }, []);
 
   const applyResponse = useCallback((data: Partial<AnteUpWordFillInResponse>) => {
@@ -358,9 +366,43 @@ export function AnteUpWordFillIn() {
     if (!cells || cells.length !== word.length) return;
     setArmedWord(null);
     if (spelled(guesses, cells) === word) return;
+
+    // Computed synchronously from the same function the optimistic `guesses`
+    // memo uses, rather than waiting for the next render, so the payoff is
+    // known before the state update that will actually produce it.
+    const nextGuesses = placedSlotGuesses(guesses, slots, slot, word);
+    const listed = new Set(board.words);
+    const placedSlotsOf = (letters: string) => {
+      const placed = new Set<number>();
+      slots.forEach((slotCells, index) => {
+        if (listed.has(spelled(letters, slotCells))) placed.add(index);
+      });
+      return placed;
+    };
+    const before = placedSlotsOf(guesses);
+    const after = placedSlotsOf(nextGuesses);
+    const newlyPlaced = [...after].filter((index) => !before.has(index));
+
     play("ui");
     setSelected(null);
     moves.push({ action: "place", slot, word });
+
+    if (newlyPlaced.length > 0) {
+      const cellSet = new Set<number>();
+      for (const index of newlyPlaced) for (const cell of slots[index]) cellSet.add(cell);
+      const isCombo = newlyPlaced.length > 1;
+      if (isCombo) comboSound(); else clearSound();
+      setCelebrate(Array.from(cellSet).sort((a, b) => a - b));
+      setCelebrateCombo(isCombo);
+      if (celebrateTimer.current !== null) window.clearTimeout(celebrateTimer.current);
+      celebrateTimer.current = window.setTimeout(() => {
+        celebrateTimer.current = null;
+        if (mounted.current) {
+          setCelebrate([]);
+          setCelebrateCombo(false);
+        }
+      }, 460);
+    }
   };
 
   const clearSlot = () => {
@@ -596,7 +638,11 @@ export function AnteUpWordFillIn() {
 
           <div className="wf-play" aria-busy={busy || moves.pending.length > 0}>
             <div
-              className={clsx("wf-grid", attempt.gridSize > REGULAR_GRID_SIDE && "wf-grid-large")}
+              className={clsx(
+                "wf-grid",
+                attempt.gridSize > REGULAR_GRID_SIDE && "wf-grid-large",
+                celebrateCombo && "wf-grid-combo",
+              )}
               role="group"
               aria-label="Word grid"
               style={{ "--wf-size": attempt.gridSize } as React.CSSProperties}
@@ -613,6 +659,7 @@ export function AnteUpWordFillIn() {
                 const unconfirmed = guess !== board.guesses[index];
                 const answer = revealAnswer ? board.solution?.[index] ?? "" : "";
                 const wrong = Boolean(answer) && letter !== answer;
+                const celebrateOrder = celebrate.indexOf(index);
                 return (
                   <button
                     key={index}
@@ -625,7 +672,9 @@ export function AnteUpWordFillIn() {
                       wrong && "wf-cell-revealed",
                       clashCells.has(index) && "wf-cell-clash",
                       unconfirmed && "wf-cell-pending",
+                      celebrateOrder !== -1 && "wf-cell-complete",
                     )}
+                    style={celebrateOrder !== -1 ? ({ "--wf-complete-i": celebrateOrder } as React.CSSProperties) : undefined}
                     disabled={!active}
                     aria-label={`Row ${row}, column ${column}, ${letter || "empty"}`}
                     onClick={() => tapCell(index)}

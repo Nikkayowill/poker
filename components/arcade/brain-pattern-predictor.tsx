@@ -1,6 +1,7 @@
 "use client";
 
 import clsx from "clsx";
+import { SoundButton } from "@/components/arcade/sound-button";
 import { BrainStreak, useAnswerKeys, useBrainStreakRound } from "./brain-streak";
 
 function Prompt() {
@@ -31,9 +32,9 @@ function Controls() {
       key={verdict?.key}
     >
       {options.map((option, i) => (
-        <button key={i} type="button" className="brain-option" disabled={disabled} onClick={() => answer(option)}>
+        <SoundButton key={i} sound="tap" className="brain-option" disabled={disabled} onClick={() => answer(option)}>
           {option} <kbd>{i + 1}</kbd>
-        </button>
+        </SoundButton>
       ))}
     </div>
   );

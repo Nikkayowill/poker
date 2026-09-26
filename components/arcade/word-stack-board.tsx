@@ -16,7 +16,7 @@ import { StakePressureNote } from "@/components/arcade/stake-pressure-note";
 import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { puzzleShareTitle, wordStackShareText } from "@/lib/arcade/puzzles/share";
-import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { clearSound, selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { useAppShell } from "@/components/shell/app-shell";
 import {
@@ -242,7 +242,10 @@ export function WordStackBoard({ day, onExit }: { day?: string; onExit?: () => v
       });
       // The draft is cleared only on an accepted guess: a word the dictionary
       // refused should still be sitting there to edit, not retyped from scratch.
-      if (ok) setDraft("");
+      if (ok) {
+        clearSound();
+        setDraft("");
+      }
     })();
   }, [canType, draft, flash, round, send]);
 

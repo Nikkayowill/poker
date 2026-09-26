@@ -126,6 +126,28 @@
 .wf-cell-clash { color: #b3261e; }
 .wf-cell-clash.wf-cell-selected { color: #8c1d16; }
 
+/* A slot a placement just completed with a real list word. `--wf-complete-i`
+   (set inline: the cell's position in the completed slot(s)' ascending-order
+   list) staggers the pop across a word's letters. */
+.wf-cell-complete {
+  animation: wf-complete 420ms ease-out both;
+  animation-delay: calc(var(--wf-complete-i, 0) * 14ms);
+}
+@keyframes wf-complete {
+  0% { transform: scale(1); box-shadow: none; }
+  35% { transform: scale(1.12); box-shadow: 0 0 10px rgba(255, 210, 63, .7); }
+  100% { transform: scale(1); box-shadow: none; }
+}
+
+/* A placement that completes more than one word at once (a crossing word
+   also fell into place). */
+.wf-grid-combo { animation: wf-grid-combo-pulse 420ms ease-out; }
+@keyframes wf-grid-combo-pulse {
+  0% { box-shadow: 0 6px 18px rgba(0, 0, 0, .35), 0 0 0 0 rgba(255, 210, 63, .55); }
+  35% { box-shadow: 0 6px 18px rgba(0, 0, 0, .35), 0 0 26px 6px rgba(255, 210, 63, .55); }
+  100% { box-shadow: 0 6px 18px rgba(0, 0, 0, .35), 0 0 0 0 rgba(255, 210, 63, 0); }
+}
+
 /* A settled loss shows the answer in the squares the player had empty or wrong. */
 .wf-cell-revealed { color: #b3261e; background: #fbd9d6; }
 
@@ -257,4 +279,8 @@
 /* A desktop has the height to give each length its own line. */
 @media (min-width: 860px) and (min-height: 600px) {
   .wf-group { flex-basis: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-cell-complete, .wf-grid-combo { animation: none; }
 }

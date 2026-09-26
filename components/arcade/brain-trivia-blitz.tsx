@@ -2,6 +2,7 @@
 
 import clsx from "clsx";
 import { BRAIN_STREAK_RULES, brainStreakLadder } from "@/lib/arcade/brain-streak";
+import { SoundButton } from "@/components/arcade/sound-button";
 import { BrainStreak, useAnswerKeys, useBrainStreakRound } from "./brain-streak";
 
 function Prompt() {
@@ -33,12 +34,12 @@ function Controls() {
       className={clsx("brain-options brain-truefalse", verdict && (verdict.correct ? "brain-verdict-right" : "brain-verdict-wrong"))}
       key={verdict?.key}
     >
-      <button type="button" className="brain-option brain-option-true" disabled={disabled} onClick={() => answer("true")}>
+      <SoundButton sound="tap" className="brain-option brain-option-true" disabled={disabled} onClick={() => answer("true")}>
         True <kbd>T</kbd>
-      </button>
-      <button type="button" className="brain-option brain-option-false" disabled={disabled} onClick={() => answer("false")}>
+      </SoundButton>
+      <SoundButton sound="tap" className="brain-option brain-option-false" disabled={disabled} onClick={() => answer("false")}>
         False <kbd>F</kbd>
-      </button>
+      </SoundButton>
     </div>
   );
 }

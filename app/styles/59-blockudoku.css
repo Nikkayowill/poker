@@ -133,11 +133,31 @@
 .bk-cell-will-clear.bk-cell-filled { background: var(--bk-gold); }
 .bk-cell-will-clear:not(.bk-cell-filled):not(.bk-cell-ghost) { background: rgba(255, 210, 63, .18); }
 
-.bk-cell-clearing { animation: bk-clear 480ms ease-out; }
+/* A cleared cell pops, flashes gold, then shatters down to nothing rather
+   than just flashing in place. Each cell in a cleared line gets a short
+   stagger (`--bk-clear-i`, set inline: its position in the ascending-order
+   `clearing` array) so a full row wipes left to right instead of every cell
+   popping in lockstep. */
+.bk-cell-clearing {
+  position: relative;
+  z-index: 1;
+  animation: bk-clear 420ms cubic-bezier(.32, 0, .67, 0) both;
+  animation-delay: calc(var(--bk-clear-i, 0) * 16ms);
+}
 @keyframes bk-clear {
-  0% { background: #fff; box-shadow: 0 0 10px var(--bk-gold); transform: scale(1); }
-  40% { background: var(--bk-gold); transform: scale(.85); }
-  100% { transform: scale(1); }
+  0% { background: var(--bk-block); box-shadow: inset 1.5px 1.5px 0 rgba(255,255,255,.28), inset -1.5px -1.5px 0 rgba(0,0,0,.3); transform: scale(1) rotate(0deg); }
+  25% { background: #fff; box-shadow: 0 0 16px 4px var(--bk-gold); transform: scale(1.22) rotate(0deg); }
+  60% { background: var(--bk-gold); box-shadow: 0 0 10px var(--bk-gold); transform: scale(.75) rotate(12deg); opacity: 1; }
+  100% { background: var(--bk-gold); transform: scale(0) rotate(30deg); opacity: 0; }
+}
+
+/* A double (or overlapping) clear on the same drop: the whole board answers,
+   not just the cleared cells, so the bigger moment reads as bigger. */
+.bk-grid-combo { animation: bk-grid-combo-pulse 420ms ease-out; }
+@keyframes bk-grid-combo-pulse {
+  0% { box-shadow: 0 6px 18px rgba(0, 0, 0, .35), 0 0 0 0 rgba(255, 210, 63, .55); }
+  35% { box-shadow: 0 6px 18px rgba(0, 0, 0, .35), 0 0 26px 6px rgba(255, 210, 63, .55); }
+  100% { box-shadow: 0 6px 18px rgba(0, 0, 0, .35), 0 0 0 0 rgba(255, 210, 63, 0); }
 }
 
 .bk-tray {
@@ -243,6 +263,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .bk-cell-clearing,
+  .bk-grid-combo,
   .bk-gain,
   .bk-clock-low,
   .bk-tray-dealing .bk-slot { animation: none; }

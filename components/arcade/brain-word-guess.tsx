@@ -12,7 +12,7 @@ import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { maxAnteUpWager, type AnteUpGame } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
-import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { clearSound, comboSound, selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   MIN_ANTE_UP_WAGER,
   WORD_GUESS_BANDS,
@@ -58,6 +58,9 @@ export function BrainWordGuess() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  // Slots a correct guess just revealed, for a pop-in; cleared shortly after.
+  const [popSlots, setPopSlots] = useState<readonly number[]>([]);
+  const popTimer = useRef<number | null>(null);
 
   const play = useArcadeSound({ gameSounds: true });
   const active = attempt?.status === "active";
@@ -124,6 +127,7 @@ export function BrainWordGuess() {
   /** Sends one queued move against the newest version. A refusal drops the rest of the queue. */
   const sendMove = useCallback(async (move: string): Promise<boolean> => {
     if (!mounted.current) return false;
+    const before = sequence.latest();
     try {
       const response = await fetch("/api/brain-word-guess/actions", {
         method: "POST",
@@ -135,9 +139,29 @@ export function BrainWordGuess() {
       if (!mounted.current) return false;
       if (response.ok) {
         applyResponse(data);
+        const next = data.attempt;
+        // A correct guess is the payoff; a miss already makes its own sound
+        // (see the misses effect below). Guarded by word length: a solved
+        // word deals the next one in the same response, and diffing two
+        // different words' "_" arrays against each other makes no sense.
+        if (next && before && next.length === before.length) {
+          const newlyRevealed: number[] = [];
+          for (let i = 0; i < next.revealed.length; i += 1) {
+            if (before.revealed[i] === "_" && next.revealed[i] !== "_") newlyRevealed.push(i);
+          }
+          if (newlyRevealed.length > 0) {
+            if (next.revealed.every((char) => char !== "_")) comboSound(); else clearSound();
+            setPopSlots(newlyRevealed);
+            if (popTimer.current !== null) window.clearTimeout(popTimer.current);
+            popTimer.current = window.setTimeout(() => {
+              popTimer.current = null;
+              if (mounted.current) setPopSlots([]);
+            }, 420);
+          }
+        }
         // A solved word deals the next one with no letters guessed. Letters queued for the
         // old word are dropped rather than spent on the new one.
-        return data.attempt?.status === "active" && data.attempt.guessed.length > 0;
+        return next?.status === "active" && next.guessed.length > 0;
       }
       if (data.round) applyResponse({ attempt: data.round });
       // A repeat, or a word that finished under a queued letter, already shows why.
@@ -167,6 +191,10 @@ export function BrainWordGuess() {
     missesHeard.current = attempt.misses;
     play("card");
   }, [attempt, play]);
+
+  useEffect(() => () => {
+    if (popTimer.current !== null) window.clearTimeout(popTimer.current);
+  }, []);
 
   const start = () => {
     if (sending.current) return;
@@ -294,7 +322,10 @@ export function BrainWordGuess() {
 
           <div className="wg-word" aria-live="polite">
             {attempt.revealed.map((char, i) => (
-              <span key={i} className={clsx("wg-slot", char !== "_" && "wg-slot-filled")}>
+              <span
+                key={i}
+                className={clsx("wg-slot", char !== "_" && "wg-slot-filled", popSlots.includes(i) && "wg-slot-pop")}
+              >
                 {char === "_" ? "" : char}
               </span>
             ))}

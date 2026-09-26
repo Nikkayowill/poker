@@ -142,9 +142,19 @@ import { PeopleLife, greeting } from "./people-life";
 import { NpcWalkers, keepsRoutine } from "./npc-walkers";
 import { WorksiteCrew } from "./worksite-crew";
 import { EMPIRE_BUILDINGS, buildingTiles, doorTile, type PlacedEmpireBuilding, type Tile } from "@/lib/stackacres/empire-buildings";
-import type { BuildGhost } from "../stackacres/world-contract";
+import type { BuildGhost, GroceryGhost, GroceryScene } from "../stackacres/world-contract";
 import { Worksite, marketLayout, type MarketArea } from "@/lib/stackacres-td/worksite";
-import { STAFF_SPRITES, STORE_SHOPPERS, STORE_STAFF } from "@/lib/stackacres-td/store-cast";
+import { STAFF_SPRITES, STORE_SHOPPERS, STORE_STAFF, staffAtPosts } from "@/lib/stackacres-td/store-cast";
+import {
+  DEFAULT_GROCERY_LAYOUT,
+  GROCERY_ITEMS,
+  GROCERY_SHELL,
+  composeGroceryRoom,
+  itemFootprint,
+  itemSolid,
+  itemVariants,
+  layoutFingerprint as groceryFingerprint,
+} from "@/lib/stackacres/grocery-layout";
 import { gridRouter } from "@/lib/stackacres-td/work-board";
 import type { AreaSpecForRoutines } from "@/lib/stackacres-td/npc-routine";
 import { WindSway } from "./wind-sway";
@@ -396,6 +406,10 @@ interface PropSpec {
   /** A waterfall: the band of falling water, in map units down from the top of the picture, that the engine
    *  covers with a moving copy of common/waterfall.png. */
   falls?: { top: number; height: number };
+  /** The texture it's drawn from, when not the area's own props sheet (the grocery's decor). */
+  atlas?: string;
+  /** Lies on the floor under everything (a rug). */
+  flat?: boolean;
 }
 
 interface AreaSpec {
@@ -475,8 +489,14 @@ export interface TopdownCallbacks {
    *  stands the thumb stick and the Use key down for the duration: they are
    *  refused anyway, and leaving them lit reads as the game having frozen. */
   onInputLocked: (locked: boolean) => void;
-  /** A tap while placing a building: the map square it landed on, in the Far Field. */
+  /** A tap while placing a building: the map square it landed on, in the Far Field or the grocery. */
   onBuildTap: (tile: Tile) => void;
+  /** The farmer walked up to the grocery's Help Wanted board. */
+  onJobBoardTap: () => void;
+  /** The farmer walked up to the grocery manager's desk. */
+  onStoreDeskTap: () => void;
+  /** A finger landed on someone working at the grocery: their name, and the point over their head. */
+  onStaffTap: (name: string, at: TapPoint) => void;
 }
 
 /**
@@ -672,6 +692,11 @@ export class TopdownScene extends Phaser.Scene {
   private buildMode = false;
   private buildGhost: BuildGhost | null = null;
   private ghostObjects: Phaser.GameObjects.GameObject[] = [];
+  /** The grocery as its owner has it (or null for the store as it was built, crew and all), and the piece of
+   *  it being placed. */
+  private grocery: GroceryScene | null = null;
+  private groceryGhost: GroceryGhost | null = null;
+  private groceryObjects: Phaser.GameObjects.GameObject[] = [];
   private nextRegrowCheck = 0;
 
   constructor(callbacks: TopdownCallbacks, host: HTMLElement) {
@@ -690,6 +715,9 @@ export class TopdownScene extends Phaser.Scene {
       this.load.json(`area:${area}`, `${ASSETS}/areas/${area}/area.json`);
       this.load.atlas(`props:${area}`, `${ASSETS}/areas/${area}/props.png`, `${ASSETS}/areas/${area}/props.json`);
     }
+    if ((AREAS as readonly string[]).includes("grocery")) {
+      this.load.atlas("decor:grocery", `${ASSETS}/areas/grocery/decor.png`, `${ASSETS}/areas/grocery/decor.json`);
+    }
     this.load.atlas("common", `${ASSETS}/common/sprites.png`, `${ASSETS}/common/sprites.json`);
     this.load.atlas("buildings", `${ASSETS}/common/buildings.png`, `${ASSETS}/common/buildings.json`);
     this.load.image("forest", `${ASSETS}/common/forest.png`);
@@ -705,6 +733,7 @@ export class TopdownScene extends Phaser.Scene {
 
   create(): void {
     for (const area of AREAS) this.specs.set(area, this.cache.json.get(`area:${area}`) as AreaSpec);
+    this.composeGrocery();
     drawNodeTextures(this.textures);
     this.cameras.main.setRoundPixels(false).setZoom(this.zoom);
     this.time.addEvent({
@@ -1070,6 +1099,8 @@ export class TopdownScene extends Phaser.Scene {
     this.buildingImages = [];
     for (const object of this.ghostObjects) object.destroy();
     this.ghostObjects = [];
+    for (const object of this.groceryObjects) object.destroy();
+    this.groceryObjects = [];
     this.wetTiles.clear();
     this.unitNodes.clear();
     this.preview = null;
@@ -1109,7 +1140,12 @@ export class TopdownScene extends Phaser.Scene {
     );
     for (const spec of this.area.props) {
       const image = this.keep(
-        this.add.image(spec.x - spec.ax, spec.y - spec.ay, `props:${name}`, spec.frame).setOrigin(0, 0).setScale(spec.scale).setDepth(spec.y),
+        this.add
+          .image(spec.x - spec.ax, spec.y - spec.ay, spec.atlas ?? `props:${name}`, spec.frame)
+          .setOrigin(0, 0)
+          .setScale(spec.scale)
+          // A rug lies on the floor: over the ground, under everyone's shadow.
+          .setDepth(spec.flat ? -5 : spec.y),
       );
       let canopy: Phaser.GameObjects.Image | undefined;
       if (spec.frames.length > 1) this.animated.push({ sprite: image, frames: spec.frames });
@@ -1119,7 +1155,7 @@ export class TopdownScene extends Phaser.Scene {
         );
         this.wind.add(canopy, spec.x, spec.y, spec.sway.amp, spec.sway.rustle);
         this.sunlight.lightCanopy(canopy, spec.x, spec.y, spec.sway.amp, spec.sway.rustle);
-      } else if (spec.passable) {
+      } else if (spec.passable && !spec.flat) {
         // A bush has no separate top, so the whole sprite shivers.
         this.wind.add(image, spec.x, spec.y, 0, true);
       }
@@ -1197,6 +1233,8 @@ export class TopdownScene extends Phaser.Scene {
     this.drawFences();
     this.drawBuildings();
     this.drawGhost();
+    this.drawGroceryGhost();
+    if (name === "grocery" && !this.buildMode) this.openGrocery();
     this.drawUnits();
   }
 
@@ -1852,7 +1890,7 @@ export class TopdownScene extends Phaser.Scene {
     }
     // Placing a building: the tap picks the square, and the farmer and the camera stay put.
     if (this.buildMode) {
-      if (this.areaName !== "empire") return;
+      if (this.areaName !== "empire" && this.areaName !== "grocery") return;
       const rect = this.host.getBoundingClientRect();
       const map = this.cssToMap(clientX - rect.left, clientY - rect.top);
       const { tile } = this.area;
@@ -1863,6 +1901,12 @@ export class TopdownScene extends Phaser.Scene {
     this.homeCamera();
     const rect = this.host.getBoundingClientRect();
     const map = this.cssToMap(clientX - rect.left, clientY - rect.top);
+    // Someone at work in the grocery: who they are, without walking him over and interrupting them.
+    const worker = this.areaName === "grocery" ? this.worksite?.workerAt(map) : null;
+    if (worker) {
+      this.callbacks.onStaffTap(worker.name, this.mapToCss({ x: worker.x, y: worker.y - 26 }));
+      return;
+    }
     const target = this.targetAt(map);
     // A building with a door (the barn, the workshop) is walked into: its exit is named for the building's tag,
     // and what opens its menu stands inside.
@@ -2511,6 +2555,10 @@ export class TopdownScene extends Phaser.Scene {
         return cb.onHouseTap(at);
       case "bed":
         return cb.onBedTap(at);
+      case "jobboard":
+        return cb.onJobBoardTap();
+      case "desk":
+        return cb.onStoreDeskTap();
       case "secret":
         return cb.onSecretZoneTap(detail as HiddenZoneId, at);
       case "place":
@@ -3250,7 +3298,13 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   setBuildMode(on: boolean): void {
+    const was = this.buildMode;
     this.buildMode = on;
+    // The grocery shuts while it's being arranged, so nobody is left standing where a shelf is about to go, and
+    // opens again with the new floor when it's done.
+    if (!this.booted || this.areaName !== "grocery" || was === on) return;
+    if (on) this.stopWorksiteDemo();
+    else this.openGrocery();
   }
 
   setBuildGhost(ghost: BuildGhost | null): void {
@@ -3669,6 +3723,8 @@ export class TopdownScene extends Phaser.Scene {
     this.pending = null;
     this.enterArea(area, at);
     this.callbacks.onViewMoved();
+    // The shell keys what it shows (the Far Field's HUD, the grocery's buttons) off where he is.
+    this.callbacks.onPlaceEntered(AREA_NAMES[area]);
   }
 
   /** Which map place the farmer is standing in, for the map sheet's "you are here". */
@@ -3730,8 +3786,10 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   /**
-   * Dev only (through `__stackacres`): the grocery's staff at work and its customers shopping, in the
-   * grocery room. Nothing is saved or paid. False anywhere but the grocery.
+   * The grocery's staff at work and its customers shopping, drawn in the grocery room: its owner's crew at
+   * the posts the floor has for them, or the crew it was built with while it isn't anyone's. The money is the
+   * server's (lib/stackacres/grocery-economy.ts); this is the picture of it. Nothing is saved or paid. A new
+   * game day brings a different day's shoppers. False anywhere but the grocery.
    */
   startWorksiteDemo(seed = 1): boolean {
     if (this.areaName !== "grocery") return false;
@@ -3745,9 +3803,92 @@ export class TopdownScene extends Phaser.Scene {
       // site time, so the site itself never reads the wall clock.
       hourAt: (now) => (startHour + now / STACKACRES_HOUR_MS) % 24,
     });
-    for (const { name, job, post, profile } of STORE_STAFF) site.hire(name, job, name, post, profile);
+    const names = this.grocery?.staff ?? STORE_STAFF.map((member) => member.name);
+    for (const { name, job, post, profile } of staffAtPosts(names, layout.tills.length, layout.counters.length)) {
+      site.hire(name, job, name, post, profile);
+    }
     this.worksite = new WorksiteCrew(this, site, this.area.tile, STANDING);
     return true;
+  }
+
+  /** Opens the grocery for the day: its staff come on and the shoppers start coming in. */
+  private openGrocery(): void {
+    this.startWorksiteDemo(this.routineDay() + 1);
+  }
+
+  /**
+   * The grocery as its owner has it: its layout, drawn into the room, and its staff. A new layout rebuilds the
+   * room around the farmer; new staff reopen the shop with them.
+   */
+  setGrocery(grocery: GroceryScene | null): void {
+    const was = this.grocery;
+    this.grocery = grocery;
+    const layoutOf = (g: GroceryScene | null) => groceryFingerprint(g?.layout ?? DEFAULT_GROCERY_LAYOUT);
+    const staffOf = (g: GroceryScene | null) => (g?.staff ?? STORE_STAFF.map((member) => member.name)).join(",");
+    const newLayout = layoutOf(was) !== layoutOf(grocery);
+    if (newLayout) this.composeGrocery();
+    if (!this.booted || this.areaName !== "grocery") return;
+    if (newLayout) this.enterArea("grocery", { ...this.pos });
+    else if (staffOf(was) !== staffOf(grocery) && !this.buildMode) this.openGrocery();
+  }
+
+  /** The grocery's room with its layout in it (lib/stackacres/grocery-layout.ts). */
+  private composeGrocery(): void {
+    const loaded = this.cache?.json.get("area:grocery") as AreaSpec | undefined;
+    if (!loaded) return;
+    const shell: AreaSpec = {
+      ...loaded,
+      props: GROCERY_SHELL.props as PropSpec[],
+      blocked: GROCERY_SHELL.blocked,
+      zones: GROCERY_SHELL.zones,
+      lights: GROCERY_SHELL.lights as LightPoint[],
+    };
+    this.specs.set("grocery", composeGroceryRoom(shell, this.grocery?.layout ?? DEFAULT_GROCERY_LAYOUT));
+  }
+
+  setGroceryGhost(ghost: GroceryGhost | null): void {
+    this.groceryGhost = ghost;
+    if (this.booted) this.drawGroceryGhost();
+  }
+
+  /**
+   * A fixture or piece of decor being placed in the grocery: the squares it would stand on, green where it may
+   * go and red where it may not, the squares people use it from paler, the floor it needs kept open marked,
+   * and the thing itself see-through over them.
+   */
+  private drawGroceryGhost(): void {
+    for (const object of this.groceryObjects) object.destroy();
+    this.groceryObjects = [];
+    const ghost = this.groceryGhost;
+    if (!ghost || this.areaName !== "grocery") return;
+    const { tile } = this.area;
+    const top = 1_000_000;
+    const colour = ghost.ok ? 0x71ad66 : 0xc84e38;
+    const def = GROCERY_ITEMS[ghost.kind];
+    const square = (tx: number, ty: number, fill: number, alpha: number, line: number) =>
+      this.groceryObjects.push(
+        this.add
+          .rectangle(tx * tile + 0.5, ty * tile + 0.5, tile - 1, tile - 1, fill, alpha)
+          .setOrigin(0)
+          .setStrokeStyle(1, line, 0.85)
+          .setDepth(top),
+      );
+    const solid = def.flat ? itemFootprint(ghost.kind, ghost.tx, ghost.ty) : itemSolid(ghost.kind, ghost.tx, ghost.ty);
+    for (const c of solid) square(c.tx, c.ty, colour, 0.34, colour);
+    for (const zone of def.zones) for (const [dx, dy] of zone.cells) square(ghost.tx + dx, ghost.ty + dy, colour, 0.14, colour);
+    for (const [dx, dy] of def.keepOpen) square(ghost.tx + dx, ghost.ty + dy, 0xf2cd5a, 0.2, 0xf2cd5a);
+    for (const piece of itemVariants(ghost.kind)[0]) {
+      const x = ghost.tx * tile + piece.x;
+      const y = ghost.ty * tile + piece.y;
+      this.groceryObjects.push(
+        this.add
+          .image(x - piece.ax, y - piece.ay, piece.atlas === "decor" ? "decor:grocery" : "props:grocery", piece.frame)
+          .setOrigin(0, 0)
+          .setScale(piece.scale)
+          .setAlpha(0.72)
+          .setDepth(top + 1 + y / 1000),
+      );
+    }
   }
 
   stopWorksiteDemo(): void {

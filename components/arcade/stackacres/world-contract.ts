@@ -1,5 +1,6 @@
 import type { FencePiece } from "@/lib/stackacres/fences";
 import type { EmpireBuildingKind, PlacedEmpireBuilding, Tile } from "@/lib/stackacres/empire-buildings";
+import type { GroceryItemKind, GroceryPlacement } from "@/lib/stackacres/grocery-layout";
 import type { Ref } from "react";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
@@ -273,6 +274,20 @@ export interface BuildGhost {
   ok: boolean;
 }
 
+/** A fixture or piece of decor being placed in the grocery: where it would stand, and whether it may. */
+export interface GroceryGhost {
+  kind: GroceryItemKind;
+  tx: number;
+  ty: number;
+  ok: boolean;
+}
+
+/** The grocery as its owner has it, for the room to draw and its people to work. */
+export interface GroceryScene {
+  layout: readonly GroceryPlacement[];
+  staff: readonly string[];
+}
+
 export interface StackAcresWorldProps {
   units: StackAcresUnitSnapshot[];
   /** The choppable trees, so a felled one shows as a stump until it regrows. */
@@ -294,6 +309,16 @@ export interface StackAcresWorldProps {
   /** The building being placed, drawn see-through over green or red squares, or null. */
   buildGhost: BuildGhost | null;
   onBuildTap: (tile: Tile) => void;
+  /** The grocery as its owner has it, or null for the store as it was built, crew and all. */
+  grocery: GroceryScene | null;
+  /** The fixture or decor being placed in the grocery, drawn see-through over green or red squares, or null. */
+  groceryGhost: GroceryGhost | null;
+  /** The farmer walked up to the grocery's Help Wanted board. */
+  onJobBoardTap: () => void;
+  /** The farmer walked up to the grocery manager's desk. */
+  onStoreDeskTap: () => void;
+  /** A finger landed on someone working at the grocery. */
+  onStaffTap: (name: string, at: TapPoint) => void;
   tool: StackAcresTool;
   /** Fired once, by nonce, to trigger the gold-burst effect on one unit --
    *  the client-side twin of a confirmed collect. */

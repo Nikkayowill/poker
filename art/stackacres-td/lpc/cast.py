@@ -161,6 +161,35 @@ CAST.update({
                         ("feet_boots_revised", "walnut"), ("hat_cap_bonnie", "forest")],
                  palette={"body": "olive", "hair": "dark_brown", "eye": "brown"}),
 })
+# Townsfolk looking for work at the grocery, on its Help Wanted board (lib/stackacres/grocery-crew.ts), already in
+# the uniform of the job they're after, so a hire walks straight onto the floor dressed for it.
+CAST.update({
+    "ravi": dict(items=[BODY, ("heads_human_male", None), ("hair_parted_side_bangs", None),
+                        ("torso_clothes_shortsleeve_polo", "white"), APRON_M, ("legs_pants2", "charcoal"),
+                        ("feet_boots_revised", "black")],
+                 palette={"body": "bronze", "hair": "black", "eye": "brown"}),
+    "noor": dict(items=[BODY, ("heads_human_female", None), ("hair_long_straight", None), ("torso_clothes_shortsleeve_polo", "white"),
+                        APRON, ("legs_pants2", "navy"), ("feet_boots_revised", "brown")],
+                 body="female", palette={"body": "amber", "hair": "raven", "eye": "brown"}),
+    "lucia": dict(items=[BODY, ("heads_human_female", None), ("hair_high_ponytail", None), ("torso_clothes_shortsleeve_polo", "white"),
+                         APRON, ("legs_pants2", "navy"), ("feet_boots_revised", "black")],
+                  body="female", palette={"body": "light", "hair": "chestnut", "eye": "green"}),
+    "sade": dict(items=[BODY, ("heads_human_female", None), ("hair_curly_long", None), ("torso_clothes_longsleeve", "white"),
+                        APRON, ("legs_pants2", "brown"), ("feet_boots_revised", "walnut"), ("hat_cap_bonnie", "tan")],
+                 body="female", palette={"body": "black", "hair": "dark_brown", "eye": "brown"}),
+    "otto": dict(items=[BODY, ("heads_human_male_elderly", None), ("hair_plain", None), ("beards_trimmed", None),
+                        ("torso_clothes_longsleeve", "white"), APRON_M, ("legs_pants2", "charcoal"),
+                        ("feet_boots_revised", "brown"), ("hat_cap_bonnie", "tan")],
+                 palette={"body": "light", "hair": "white", "eye": "blue"}),
+    "wren": dict(items=[BODY, ("heads_human_female", None), ("hair_topknot_short", None), ("torso_clothes_longsleeve", "white"),
+                        ("torso_aprons_overalls", "forest"), ("legs_pants2", "forest"), ("feet_boots_revised", "walnut"),
+                        ("hat_cap_bonnie", "forest")],
+                 body="female", palette={"body": "light", "hair": "strawberry", "eye": "blue"}),
+    "zeke": dict(items=[BODY, ("heads_human_male", None), ("hair_halfmessy", None), ("torso_clothes_longsleeve", "white"),
+                        ("torso_aprons_overalls", "forest"), ("legs_pants2", "forest"), ("feet_boots_revised", "walnut"),
+                        ("hat_cap_bonnie", "forest")],
+                 body="teen", palette={"body": "taupe", "hair": "dark_brown", "eye": "brown"}),
+})
 # The townsfolk, in their own clothes and never the store's green: every age, build and skin.
 CAST.update({
     "ada": dict(items=[BODY, ("heads_human_female", None), ("hair_curly_long", None), ("torso_clothes_blouse", "rose"),
@@ -240,7 +269,8 @@ CAST.update({
 })
 # What each carries in their arms at work, and who takes the apron off to sit on a break.
 STORE_STAFF = {"june": None, "omar": None, "nell": None, "theo": None, "rosa": "produce", "ines": "produce", "kofi": "produce",
-               "dale": "crate", "cole": "crate"}
+               "dale": "crate", "cole": "crate",
+               "ravi": None, "noor": None, "lucia": None, "sade": "produce", "otto": "produce", "wren": "crate", "zeke": "crate"}
 STORE_SHOPPERS = ("mabel", "priya", "gus", "hank", "lena", "tomas", "ada", "bruno", "cora", "dev", "elsie", "felix", "gemma",
                   "hugo", "iris", "jonah", "kiko", "luis", "maya", "ned", "olive", "pablo", "quinn", "rhea", "sam", "tilly",
                   "uma", "vince", "winnie", "yusuf")

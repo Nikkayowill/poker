@@ -1,5 +1,6 @@
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { adminClient } from "./supabase-admin";
 import {
@@ -132,6 +133,20 @@ import {
   pickUpEmpireBuilding as pickUpEmpireBuildingRow,
   placeEmpireBuilding as placeEmpireBuildingRow,
 } from "./stackacres-empire-building-store";
+import { createGrocery, readGrocery, writeGrocery } from "./stackacres-grocery-store";
+import { applicantsFor, hiringFee } from "@/lib/stackacres/grocery-crew";
+import { bankTill, freshTill, groceryRates, readTill } from "@/lib/stackacres/grocery-economy";
+import {
+  ARRANGE_MESSAGES,
+  GROCERY_ITEMS,
+  isGroceryItemKind,
+  layoutCapacity,
+  layoutProblem,
+  withItem,
+  type GroceryPlacement,
+} from "@/lib/stackacres/grocery-layout";
+import { groceryOwnershipEnabled, groceryView, newGroceryState, noPostFor, type GroceryState, type GroceryView } from "@/lib/stackacres/grocery";
+import { storePerson, type StorePerson } from "@/lib/stackacres-td/store-cast";
 import { SOIL_DEFAULT_TIER } from "@/lib/stackacres/soil-tiers";
 import { enrichedGrowthMultiplier, enrichesSoil, isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import {
@@ -344,7 +359,14 @@ import {
   releaseStackAcresIntent,
 } from "./stackacres-intent-store";
 import { bumpStackAcresRevision, readStackAcresRevision } from "./stackacres-revision-store";
-import { creditGoldByProfile, debitGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
+import {
+  creditGoldByProfile,
+  creditGoldByProfileLedgered,
+  debitGoldByProfile,
+  ensureProfile,
+  spendGoldByProfile,
+  spendGoldByProfileLedgered,
+} from "./profile-store";
 import {
   critBonusQuantity,
   nextToolTier,
@@ -852,6 +874,8 @@ export interface StackAcresView {
    * currently always 0 rather than aliased onto a different economy.
    */
   empire: EmpireSnapshot;
+  /** The city grocery, owned or not; null where owning it isn't open yet (lib/stackacres/grocery.ts). */
+  grocery: GroceryView | null;
 }
 
 /**
@@ -1092,6 +1116,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     fences,
     axe,
     empireBuildings,
+    groceryState,
     fallback,
   ] = await Promise.all([
     supabase ? readStackAcresBatch(profile.id, day) : Promise.resolve(null),
@@ -1121,6 +1146,8 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     readStackAcresAxeLevel(profile.id),
     // And the buildings this player owns on the Far Field: a handful of rows.
     listEmpireBuildings(profile.id),
+    // And the city grocery, one row, where owning it is open.
+    groceryOwnershipEnabled() ? readGrocery(profile.id) : Promise.resolve(null),
     supabase
       ? Promise.resolve(null)
       : Promise.all([
@@ -1420,10 +1447,11 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     empire: {
       wood: inventory.wood ?? 0,
       wheat: 0,
-      workers: 0,
+      workers: groceryState?.staff.length ?? 0,
       metal: inventory.metal ?? 0,
       buildings: empireBuildings,
     },
+    grocery: groceryOwnershipEnabled() ? groceryView(groceryState, profile.id, now) : null,
   };
 }
 
@@ -1467,6 +1495,14 @@ export async function getPrestigeMultiplier(profileId: string): Promise<number> 
 async function refundGold(profileId: string, gold: number): Promise<void> {
   if (gold <= 0) return;
   await creditGoldByProfile(profileId, gold).catch(() => null);
+}
+
+/** The same for a spend made through the Gold ledger: the refund is keyed off the spend, so it lands once. */
+async function refundGoldLedgered(profileId: string, gold: number, spent: string): Promise<void> {
+  if (gold <= 0) return;
+  await creditGoldByProfileLedgered(profileId, gold, `${spent}:refund`, "stackacres_refund").catch((error) =>
+    console.error("stackacres.refund_failed", { profileId, gold, spent, error }),
+  );
 }
 
 /**
@@ -1563,6 +1599,8 @@ async function markSoilEnriched(profileId: string, slot: number): Promise<void> 
  */
 export type StackAcresActionResult = StackAcresView & {
   harvest?: unknown;
+  /** Set by `collectStackAcresGroceryTill` to the Gold THIS emptying paid out. */
+  groceryPaid?: number;
   /** Set (to an item id or null) by `tapStackAcresSecretZone`; every other
    *  action leaves this undefined. */
   discovery?: unknown;
@@ -3875,6 +3913,244 @@ export async function pickUpOwnedEmpireBuilding(token: string, input: { id: stri
   const profile = await ensureProfile(token);
   // A second tap on one already picked up has nothing to do and nothing to say.
   await pickUpEmpireBuildingRow(profile.id, input.id);
+  return view(profile, now);
+}
+
+/* ------------------------------------------------------------------------ */
+/* The city grocery (lib/stackacres/grocery.ts)                              */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * GOLD: enters when the till is emptied (takings less wages, never below nothing). Leaves as a hiring fee and
+ * as the price of a fixture or piece of decor, each paid before the change is written and given back, once,
+ * if the change doesn't land. Firing, moving and storing are free.
+ */
+
+function requireGroceryOpen(): void {
+  if (!groceryOwnershipEnabled()) throw new StackAcresRequestError("The city isn't open yet.", 404);
+}
+
+async function requireGrocery(profileId: string, now: Date): Promise<GroceryState> {
+  const state = await readGrocery(profileId);
+  if (!state) throw new StackAcresRequestError("The store isn't yours yet.", 404, { round: await snapshots(profileId, now) });
+  return state;
+}
+
+const groceryRatesOf = (state: Pick<GroceryState, "staff" | "layout">) => groceryRates(state.staff, layoutCapacity(state.layout));
+
+/**
+ * Reads the store, works out the change, and writes it if nothing else wrote in between; otherwise reads it
+ * again and works the change out afresh, a few times. `change` gets the store as it stands and returns it as
+ * it should be, or throws a refusal. Before the store's rate can change, what the till earned at the old rate
+ * is banked, so every change banks it.
+ */
+async function changeGrocery(
+  profileId: string,
+  now: Date,
+  change: (state: GroceryState) => Partial<Omit<GroceryState, "version">>,
+): Promise<GroceryState> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const state = await requireGrocery(profileId, now);
+    const changed = change(state);
+    const next = {
+      staff: changed.staff ?? state.staff,
+      layout: changed.layout ?? state.layout,
+      till: changed.till ?? bankTill(state.till, groceryRatesOf(state), now),
+      collected: changed.collected ?? state.collected,
+    };
+    if (await writeGrocery(profileId, state.version, next)) return { ...next, version: state.version + 1 };
+  }
+  throw new StackAcresRequestError("Something else changed in the store. Try again.", 409, { round: await snapshots(profileId, now) });
+}
+
+/**
+ * Runs a grocery change and makes sure any refusal it throws carries a round snapshot, the same as every other
+ * refusal in this file -- `changeGrocery`'s own retry-exhausted throw already has one, but a refusal thrown
+ * from inside its `change` callback (the person or item isn't there any more, the arrangement doesn't work)
+ * otherwise wouldn't.
+ */
+async function changeGroceryChecked(
+  profileId: string,
+  now: Date,
+  change: (state: GroceryState) => Partial<Omit<GroceryState, "version">>,
+): Promise<GroceryState> {
+  try {
+    return await changeGrocery(profileId, now, change);
+  } catch (error) {
+    if (error instanceof StackAcresRequestError && !error.round) {
+      throw new StackAcresRequestError(error.message, error.status, { round: await snapshots(profileId, now) });
+    }
+    throw error;
+  }
+}
+
+const firstName = (person: StorePerson) => person.label.split(",")[0];
+
+/** Takes the city grocery over, with the crew and floor plan it came with. Development only, and free. */
+export async function takeOverStackAcresGrocery(token: string, now = new Date()): Promise<StackAcresView> {
+  requireGroceryOpen();
+  const profile = await ensureProfile(token);
+  // A second tap after it's already theirs has nothing to do.
+  await createGrocery(profile.id, newGroceryState(now));
+  return view(profile, now);
+}
+
+/**
+ * Hires someone off today's Help Wanted board. Rule 1: the hiring fee leaves the wallet first, then they're
+ * written onto the staff; if that doesn't land (they were hired a moment ago, their post filled), the fee goes
+ * back, once.
+ */
+export async function hireStackAcresGroceryWorker(token: string, input: { name: string }, now = new Date()): Promise<StackAcresView> {
+  requireGroceryOpen();
+  const profile = await ensureProfile(token);
+  const person = storePerson(input.name);
+  if (!person) throw new StackAcresRequestError("Nobody by that name is looking for work.", 404);
+  const name = firstName(person);
+  const state = await requireGrocery(profile.id, now);
+  const refuse = async (message: string, status = 409) =>
+    new StackAcresRequestError(message, status, { round: await snapshots(profile.id, now) });
+  if (state.staff.includes(person.name)) throw await refuse(`${name} already works here.`);
+  if (!applicantsFor(profile.id, now.toISOString().slice(0, 10), state.staff).some((p) => p.name === person.name)) {
+    throw await refuse(`${name} isn't looking for work today.`);
+  }
+  const noPost = noPostFor(person, state);
+  if (noPost) throw await refuse(noPost);
+
+  const fee = hiringFee(person);
+  const correlation = `grocery-hire:${profile.id}:${person.name}:${randomUUID()}`;
+  const paid = await spendGoldByProfileLedgered(profile.id, fee, correlation, "stackacres_grocery_hire");
+  if (!paid.success) throw await refuse(`Hiring ${name} costs ${fee.toLocaleString()} Gold.`, 400);
+  try {
+    await changeGroceryChecked(profile.id, now, (current) => {
+      if (current.staff.includes(person.name)) throw new StackAcresRequestError(`${name} already works here.`, 409);
+      const full = noPostFor(person, current);
+      if (full) throw new StackAcresRequestError(full, 409);
+      return { staff: [...current.staff, person.name] };
+    });
+  } catch (error) {
+    await refundGoldLedgered(profile.id, fee, correlation);
+    throw error;
+  }
+  return view(await ensureProfile(token), now);
+}
+
+/** Lets someone go. They're back among the townsfolk looking for work, and nothing is owed either way. */
+export async function fireStackAcresGroceryWorker(token: string, input: { name: string }, now = new Date()): Promise<StackAcresView> {
+  requireGroceryOpen();
+  const profile = await ensureProfile(token);
+  await changeGroceryChecked(profile.id, now, (current) => {
+    if (!current.staff.includes(input.name)) throw new StackAcresRequestError("They don't work here.", 404);
+    return { staff: current.staff.filter((name) => name !== input.name) };
+  });
+  return view(profile, now);
+}
+
+/**
+ * Empties the till. Rule 2: the till is emptied first, guarded on the version it was read at, and only once
+ * that write has landed is the pay credited, under that version's own ledger key, so it's paid at most once
+ * for what it held. A full till whose wages ate everything still empties, so the shop opens again.
+ */
+export async function collectStackAcresGroceryTill(token: string, now = new Date()): Promise<StackAcresActionResult> {
+  requireGroceryOpen();
+  const profile = await ensureProfile(token);
+  let pay = 0;
+  let from = 0;
+  await changeGroceryChecked(profile.id, now, (current) => {
+    const reading = readTill(current.till, groceryRatesOf(current), now);
+    if (reading.pay <= 0 && !reading.full) throw new StackAcresRequestError("Nothing in the till yet.", 409);
+    pay = reading.pay;
+    from = current.version;
+    return { till: freshTill(now), collected: current.collected + reading.pay };
+  });
+  let paid: PlayerProfile | null = null;
+  if (pay > 0) {
+    try {
+      const credited = await creditGoldByProfileLedgered(profile.id, pay, `grocery-till:${profile.id}:${from}`, "stackacres_grocery_till");
+      if (credited.success) paid = await ensureProfile(token);
+    } catch (error) {
+      console.error("stackacres.grocery_till_credit_failed", { profileId: profile.id, version: from, pay, error });
+    }
+  }
+  return { ...(await view(paid ?? (await ensureProfile(token)), now)), groceryPaid: pay };
+}
+
+/** Why the store can't be laid out like this, in the words the arrange bar shows. */
+function arrangeRefusal(layout: readonly GroceryPlacement[]): StackAcresRequestError | null {
+  const problem = layoutProblem(layout);
+  return problem ? new StackAcresRequestError(ARRANGE_MESSAGES[problem], 409) : null;
+}
+
+/**
+ * Buys a fixture or a piece of decor and puts it down at (tx, ty). Rule 1: the Gold leaves first, then it's
+ * written into the layout; if that doesn't land, the Gold goes back, once.
+ */
+export async function buyStackAcresGroceryItem(
+  token: string,
+  input: { kind: string; tx: number; ty: number },
+  now = new Date(),
+): Promise<StackAcresView> {
+  requireGroceryOpen();
+  if (!isGroceryItemKind(input.kind)) throw new StackAcresRequestError("That isn't sold here.", 400);
+  const kind = input.kind;
+  const def = GROCERY_ITEMS[kind];
+  const profile = await ensureProfile(token);
+  const item: GroceryPlacement = { id: `${kind}-${randomUUID().slice(0, 8)}`, kind, tx: Math.trunc(input.tx), ty: Math.trunc(input.ty) };
+  const state = await requireGrocery(profile.id, now);
+  const refusal = arrangeRefusal(withItem(state.layout, item));
+  if (refusal) throw new StackAcresRequestError(refusal.message, refusal.status, { round: await snapshots(profile.id, now) });
+
+  const correlation = `grocery-buy:${profile.id}:${item.id}`;
+  const paid = await spendGoldByProfileLedgered(profile.id, def.gold, correlation, "stackacres_grocery_item");
+  if (!paid.success) {
+    throw new StackAcresRequestError(`A ${def.label.toLowerCase()} costs ${def.gold.toLocaleString()} Gold.`, 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  try {
+    await changeGroceryChecked(profile.id, now, (current) => {
+      const layout = withItem(current.layout, item);
+      const refused = arrangeRefusal(layout);
+      if (refused) throw refused;
+      return { layout };
+    });
+  } catch (error) {
+    await refundGoldLedgered(profile.id, def.gold, correlation);
+    throw error;
+  }
+  return view(await ensureProfile(token), now);
+}
+
+/** Moves a fixture or piece of decor the store owns, or puts one down out of storage. Free. */
+export async function placeStackAcresGroceryItem(
+  token: string,
+  input: { id: string; tx: number; ty: number },
+  now = new Date(),
+): Promise<StackAcresView> {
+  requireGroceryOpen();
+  const profile = await ensureProfile(token);
+  await changeGroceryChecked(profile.id, now, (current) => {
+    const item = current.layout.find((i) => i.id === input.id);
+    if (!item) throw new StackAcresRequestError("That isn't in your store.", 404);
+    const layout = withItem(current.layout, { ...item, tx: Math.trunc(input.tx), ty: Math.trunc(input.ty) });
+    const refused = arrangeRefusal(layout);
+    if (refused) throw refused;
+    return { layout };
+  });
+  return view(profile, now);
+}
+
+/** Picks a fixture or piece of decor up into storage, to put down again later for free. */
+export async function storeStackAcresGroceryItem(token: string, input: { id: string }, now = new Date()): Promise<StackAcresView> {
+  requireGroceryOpen();
+  const profile = await ensureProfile(token);
+  await changeGroceryChecked(profile.id, now, (current) => {
+    const item = current.layout.find((i) => i.id === input.id);
+    if (!item) throw new StackAcresRequestError("That isn't in your store.", 404);
+    const layout = withItem(current.layout, { ...item, tx: null, ty: null });
+    const refused = arrangeRefusal(layout);
+    if (refused) throw refused;
+    return { layout };
+  });
   return view(profile, now);
 }
 

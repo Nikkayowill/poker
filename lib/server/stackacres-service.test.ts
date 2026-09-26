@@ -2255,6 +2255,21 @@ describe("the currency wall", () => {
     expect(harvest).not.toContain("creditGoldByProfile(");
   });
 
+  it("credits ledgered Gold in exactly two places: the ledgered refund helper, and the grocery's till", () => {
+    // The city grocery's till is a faucet on purpose (Kayo, 2026-09-26: wages
+    // skim off the takings, like Land Maintenance). If this is 3, the new one
+    // is either a refund that belongs in `refundGoldLedgered` or another faucet.
+    expect(calls(SERVICE, "creditGoldByProfileLedgered")).toBe(2);
+    expect(SERVICE).toContain("async function refundGoldLedgered(");
+    const start = SERVICE.indexOf("export async function collectStackAcresGroceryTill(");
+    const till = SERVICE.slice(start, SERVICE.indexOf("\nexport ", start + 1));
+    // The till is emptied (a version-guarded write) before anything is paid.
+    const emptied = till.indexOf("await changeGroceryChecked(");
+    const credited = till.indexOf("creditGoldByProfileLedgered(");
+    expect(emptied).toBeGreaterThan(-1);
+    expect(emptied).toBeLessThan(credited);
+  });
+
   it("spends Gold freely, which is the direction that is allowed", async () => {
     // Deliberately NOT pinned to a count. A new sink is a sink; the direction
     // is the invariant, not the arity. Clearing a sector arrived as one more
@@ -2299,6 +2314,20 @@ describe("the currency wall", () => {
       "give-gift",
       // Moves no Gold either way, and no item either -- a plain greet.
       "greet-npc",
+      // The city grocery. Buying a fixture or decor SPENDS Gold, refunded if it can't go down.
+      "grocery-buy",
+      // PAYS Gold: the till's takings less wages, never below nothing, at most once for what it held.
+      "grocery-collect",
+      // Moves no Gold either way: someone let go.
+      "grocery-fire",
+      // SPENDS Gold: the hiring fee, refunded if the hire can't be written.
+      "grocery-hire",
+      // Moves no Gold either way: an owned fixture moved or put down.
+      "grocery-place",
+      // Moves no Gold either way: an owned fixture put into storage.
+      "grocery-store",
+      // Moves no Gold either way: the store taken over, development only until it can be bought.
+      "grocery-take-over",
       "harvest-crossbreed",
       "mine-stone",
       "move-soil-tile-group",

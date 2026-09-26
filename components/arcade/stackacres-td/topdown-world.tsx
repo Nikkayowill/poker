@@ -83,6 +83,8 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
     empireBuildings,
     buildMode,
     buildGhost,
+    grocery,
+    groceryGhost,
     api,
   } = props;
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -114,9 +116,37 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   });
 
   const sceneUnits = useMemo(() => toSceneUnits(units), [units]);
-  const latest = useRef({ sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles, fences, empireBuildings, buildMode, buildGhost });
+  const latest = useRef({
+    sceneUnits,
+    sectors,
+    soilTiles,
+    woodNodes,
+    stoneNodes,
+    forageNodes,
+    landObstacles,
+    fences,
+    empireBuildings,
+    buildMode,
+    buildGhost,
+    grocery,
+    groceryGhost,
+  });
   useLayoutEffect(() => {
-    latest.current = { sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles, fences, empireBuildings, buildMode, buildGhost };
+    latest.current = {
+      sceneUnits,
+      sectors,
+      soilTiles,
+      woodNodes,
+      stoneNodes,
+      forageNodes,
+      landObstacles,
+      fences,
+      empireBuildings,
+      buildMode,
+      buildGhost,
+      grocery,
+      groceryGhost,
+    };
   });
 
   useEffect(() => {
@@ -166,6 +196,9 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onPlaceEntered: (name) => p().onPlaceEntered(name),
           onInputLocked: setCastLocked,
           onBuildTap: (tile) => p().onBuildTap(tile),
+          onJobBoardTap: () => p().onJobBoardTap(),
+          onStoreDeskTap: () => p().onStoreDeskTap(),
+          onStaffTap: (name, at) => p().onStaffTap(name, at),
         },
         host,
       );
@@ -208,6 +241,8 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       scene.setEmpireBuildings(now.empireBuildings);
       scene.setBuildMode(now.buildMode);
       scene.setBuildGhost(now.buildGhost);
+      scene.setGrocery(now.grocery);
+      scene.setGroceryGhost(now.groceryGhost);
       scene.setClockSource(() => p().clockHour());
       scene.setDaySource(() => p().clockDay());
 
@@ -418,6 +453,14 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   useEffect(() => {
     sceneRef.current?.setBuildGhost(buildGhost);
   }, [buildGhost]);
+
+  useEffect(() => {
+    sceneRef.current?.setGrocery(grocery);
+  }, [grocery]);
+
+  useEffect(() => {
+    sceneRef.current?.setGroceryGhost(groceryGhost);
+  }, [groceryGhost]);
 
   useLayoutEffect(() => {
     if (celebrate) sceneRef.current?.celebrate([celebrate.unitId]);

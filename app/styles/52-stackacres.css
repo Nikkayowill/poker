@@ -5100,6 +5100,168 @@
 .sa-build-stored { font-weight: 700; }
 .sa-build-item .sa-cta { min-height: 44px; padding: 0 6px 2px; font-size: 14px; }
 
+/* ---- the city grocery (grocery-desk.tsx, grocery-arrange.tsx) ----------- */
+/* The manager's desk is the house's tabbed popup; inside it, flat trim-edged
+   cards on the whitewash, the same square corners as the barn paint. */
+.sa-grocery-mark { flex: none; color: var(--sa-barn); }
+.sa-grocery-head-staff {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--sa-font-pixel);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.sa-grocery-head-staff .sa-px { width: 18px; height: 18px; }
+.sa-grocery-unowned { display: grid; gap: 10px; justify-items: start; }
+.sa-grocery-intro { margin: 0 0 10px; font-size: 14px; line-height: 1.4; }
+.sa-grocery-note { margin: 4px 0 0; color: var(--sa-ink-soft); font-size: 12.5px; line-height: 1.35; }
+.sa-grocery-note.is-warn { color: var(--sa-ember); font-weight: 700; }
+.sa-grocery-said { margin: 6px 0 0; font-size: 13px; font-weight: 800; }
+.sa-grocery-said.is-good { color: var(--sa-sprout-3); }
+.sa-grocery-said.is-bad { color: var(--sa-ember); }
+.sa-grocery-foot { margin: 2px 0 0; color: var(--sa-ink-soft); font-size: 12px; text-align: center; }
+.sa-grocery-kicker {
+  margin: 0 0 4px;
+  color: var(--sa-barn);
+  font-family: var(--sa-font-pixel);
+  font-size: 14px;
+  font-weight: 700;
+}
+.sa-grocery-card {
+  padding: 10px 12px;
+  border: 2px solid var(--sa-trim-2);
+  background: rgba(255, 255, 255, .5);
+}
+.sa-grocery-till { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+.sa-grocery-till > .sa-grocery-foot { grid-column: 1 / -1; }
+.sa-grocery-till-card { display: grid; justify-items: start; gap: 2px; }
+.sa-grocery-till-amount {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-family: var(--sa-font-pixel);
+  font-size: 34px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.sa-grocery-till-amount .sa-px { width: 28px; height: 28px; }
+.sa-grocery-till-split { margin: 0 0 6px; color: var(--sa-ink-soft); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.sa-grocery-bar {
+  position: relative;
+  width: 100%;
+  height: 8px;
+  background: var(--sa-trim-2);
+  overflow: hidden;
+}
+.sa-grocery-bar > span { position: absolute; inset: 0 auto 0 0; background: var(--sa-sprout); }
+.sa-grocery-bar.is-appeal > span { background: var(--sa-harvest-2); }
+.sa-grocery-empty { margin-top: 8px; min-height: 44px; padding: 0 10px 2px; }
+.sa-grocery-hourly { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0; }
+.sa-grocery-hourly > div { display: grid; gap: 2px; }
+.sa-grocery-hourly dt { color: var(--sa-ink-soft); font-size: 12px; font-weight: 700; }
+.sa-grocery-hourly dd { margin: 0; font-family: var(--sa-font-pixel); font-size: 20px; font-variant-numeric: tabular-nums; }
+.sa-grocery-hourly .is-good dd { color: var(--sa-sprout-3); }
+.sa-grocery-hourly .is-bad dd { color: var(--sa-ember); }
+.sa-grocery-meter { display: grid; grid-template-columns: 64px 1fr 48px; align-items: center; gap: 8px; margin-top: 6px; font-size: 13px; font-weight: 700; }
+.sa-grocery-meter strong { font-family: var(--sa-font-pixel); font-variant-numeric: tabular-nums; text-align: right; }
+/* What to do next leads the till: one line across the top with its key beside it. */
+.sa-grocery-advice {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+}
+.sa-grocery-advice-text { flex: 1 1 260px; min-width: 0; }
+.sa-grocery-advice p:not(.sa-grocery-kicker):not(.sa-grocery-note) { margin: 0; font-size: 14px; line-height: 1.4; }
+.sa-grocery-advice.is-hold { border-color: var(--sa-harvest-2); background: rgba(244, 197, 66, .16); }
+.sa-grocery-advice-keys { display: flex; flex: none; flex-wrap: wrap; gap: 6px; }
+.sa-grocery-advice-keys .sa-cta,
+.sa-grocery-person-keys .sa-cta,
+.sa-grocery-person-keys .sa-sheet-close,
+.sa-grocery-applicant .sa-cta { min-height: 44px; padding: 0 8px 2px; font-size: 14px; }
+
+/* People: a portrait from their own sheet, what they do, and how they rate. */
+.sa-grocery-face,
+.sa-grocery-pic { display: block; flex: none; image-rendering: pixelated; }
+.sa-grocery-face { background: var(--sa-paint-fill-quiet); border: 2px solid var(--sa-trim-2); }
+.sa-grocery-people,
+.sa-grocery-applicants { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.sa-grocery-people { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.sa-grocery-person {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  align-items: start;
+  padding: 10px;
+  border: 2px solid var(--sa-trim-2);
+  background: rgba(255, 255, 255, .5);
+}
+.sa-grocery-person.is-focus { border-color: var(--sa-barn); background: rgba(255, 255, 255, .8); }
+.sa-grocery-person-keys { grid-column: 1 / -1; display: flex; gap: 6px; justify-content: flex-end; }
+.sa-grocery-person h3,
+.sa-grocery-applicant h3 { margin: 0; font-family: var(--sa-font-pixel); font-size: 18px; font-weight: 700; }
+.sa-grocery-job { margin: 0; color: var(--sa-barn); font-size: 12.5px; font-weight: 800; }
+.sa-grocery-does { margin: 0; color: var(--sa-ink-soft); font-size: 12.5px; line-height: 1.35; }
+.sa-grocery-wage { margin: 6px 0 0; font-size: 12.5px; font-weight: 800; }
+.sa-grocery-ratings { display: grid; gap: 2px; margin-top: 6px; }
+.sa-grocery-stars { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.sa-grocery-stars-label { color: var(--sa-ink-soft); font-weight: 700; }
+.sa-grocery-stars-row { display: inline-flex; gap: 2px; }
+.sa-grocery-star { width: 9px; height: 9px; background: var(--sa-trim-2); }
+.sa-grocery-star.is-on { background: var(--sa-harvest-2); box-shadow: inset 0 -2px 0 rgba(58, 21, 17, .25); }
+.sa-grocery-traits { display: grid; gap: 3px; margin: 6px 0 0; padding: 0; list-style: none; }
+.sa-grocery-trait { padding-left: 8px; border-left: 3px solid var(--sa-sprout); font-size: 12px; line-height: 1.35; }
+.sa-grocery-trait.is-bad { border-left-color: var(--sa-ember); }
+.sa-grocery-applicants { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.sa-grocery-applicant {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border: 2px solid var(--sa-trim-2);
+  background: rgba(255, 255, 255, .5);
+}
+.sa-grocery-applicant > .sa-cta { margin-top: auto; }
+.sa-grocery-applicant-head { display: flex; align-items: center; gap: 10px; }
+.sa-grocery-terms { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 6px 0 4px; }
+.sa-grocery-terms dt { color: var(--sa-ink-soft); font-size: 12px; font-weight: 700; }
+.sa-grocery-terms dd {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0;
+  font-family: var(--sa-font-pixel);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+.sa-grocery-terms dd .sa-px { width: 16px; height: 16px; }
+.sa-grocery-terms small { font-family: var(--sa-font); font-size: 11px; color: var(--sa-ink-soft); }
+.sa-cta.is-danger { filter: hue-rotate(-95deg) saturate(1.2); }
+
+/* The arrange tray: two tabs and the appeal it's bought so far. */
+.sa-grocery-tray-tabs { display: flex; gap: 6px; }
+.sa-grocery-tray-tab {
+  min-height: 40px;
+  padding: 0 8px 2px;
+  border: 10px solid transparent;
+  border-image: var(--sa-9-tab) 5 fill / 10px stretch;
+  background: none;
+  color: var(--sa-ink);
+  font-family: var(--sa-font-pixel);
+  font-size: 15px;
+  font-weight: 700;
+  image-rendering: pixelated;
+}
+.sa-grocery-tray-tab.is-on { border-image-source: var(--sa-9-tab-on); color: #ffffff; }
+.sa-grocery-tray-appeal { margin: 0 0 8px; font-size: 13px; }
+.sa-grocery-tray-item { grid-template-columns: 72px 1fr auto; }
+.sa-grocery-gives { color: var(--sa-sprout-3); font-weight: 800; }
+.sa-grocery-have { color: var(--sa-ink-soft); font-family: var(--sa-font); font-size: 12px; font-weight: 700; }
+
 .sa-goals-list { display: grid; gap: 10px; margin: 0; padding: 2px 27px 27px; list-style: none; }
 .sa-goals-list > li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; opacity: 0.7; }
 .sa-goals-list > li.is-current { opacity: 1; }

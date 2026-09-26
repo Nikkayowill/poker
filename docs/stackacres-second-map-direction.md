@@ -336,6 +336,48 @@ nine (four cashiers, three produce clerks, two stockers) and there are thirty sh
 character sheets are cropped to what each frame draws and store a repeated frame once, about a tenth of the
 old size.
 
+**Running the grocery: hiring, the till and arranging the floor (2026-09-26, branch
+`feat/stackacres-store-manager`).** Kayo asked for the UI to hire people, manage the store and customize its inside,
+and picked, from the options given: wages skim off the takings, fixtures that move plus decor, ownership
+development-only until the purchase story is built, and a daily Help Wanted board of applicants.
+
+- *Where Gold enters:* emptying the till at the manager's desk. The till fills at a rate per real hour worked out
+  from the store as it stands (`lib/stackacres/grocery-economy.ts`): shoppers come in for what the shelves and
+  produce tables hold, more with decor (appeal, up to +50%); produce clerks and stockers get it to them; cashiers
+  ring it up; whichever runs out first caps the sales, and a shop that lets people down gets fewer of them. The
+  simulation (`worksite.ts`) is the picture of that, and the model was checked against it for which hire helps
+  most. First-pass numbers: 4 Gold kept per thing sold, the starting crew of four nets about 81 Gold an hour, the
+  full crew of nine about 197.
+- *Where Gold leaves:* wages, taken off the takings when the till is emptied, never from the wallet and never below
+  nothing (Land Maintenance's shape). A hiring fee (20 hours of the person's wage) and the price of a fixture or piece
+  of decor, paid from the wallet first and refunded once if the change can't be written.
+- *The till holds one real day of takings* (the farm's offline accumulation limit, `docs/stackacres-direction.md`
+  section 21). Once it's full the shop waits, and the staff aren't paid for the wait either. Emptying it is a
+  version-guarded write before a ledgered credit keyed on that version, so it pays at most once for what it held.
+- *Hiring:* four named townsfolk a day on the board (seeded by player and UTC day, so the server and the browser
+  agree without storing it; hiring one brings the next in line onto the board). Each card shows their job, three
+  star ratings, traits with their trade-offs, the fee and the wage. A cashier needs a till, a produce clerk a place
+  at the counter, and the stockroom has room for three stockers, so hiring past that means arranging first. The
+  store comes with June, Omar, Rosa and Dale; the rest of the old rush crew and seven new faces are on the board.
+- *The desk* (tap the manager's table) shows the till climbing live, takings against wages each hour, service and
+  appeal meters, and one line saying what's holding the shop back with the key that fixes it ("Hire a produce
+  clerk", "Add a checkout lane"). The Help Wanted board hangs on the stockroom bay by the staff doors; tapping it
+  opens hiring. Tapping someone at work opens the staff tab with them picked out.
+- *Arranging:* checkout lanes, aisle shelving, the produce island, fridges, wall shelving, pantry and bulk bins, the
+  bakery counter, and decor (plants, a lamp that glows at night, a clock, a bench, carts, rugs). Everything moves,
+  stores or is bought from a tray, over green and red squares. The shop shuts while you arrange. The rules
+  (`lib/stackacres/grocery-layout.ts`, checked in the browser and again on the server) keep every square used once,
+  wall pieces against the back wall, the doorway and desk clear, the floor below each lane open, at least one till
+  and something to sell, and they refuse any layout that leaves a shopper unable to reach a shelf or get out, or a
+  worker unable to reach a post without cutting down a lane. Each fixture's picture is the room's own pieces that
+  stood on it, so Kayo's painted grocery should keep each fixture on its own layer.
+- Table `empire_grocery` (migration `20260930230000_stackacres_grocery.sql`), one row per owner, every write guarded
+  on its version. Not applied to production; production can't reach any of this until the purchase story exists.
+
+Still open: the purchase story itself (deliveries, finding the manager, the price), what the store stocks
+(shipped-in goods now, the player's own crops later?), the bankruptcy/idle-worker state beyond "the wages ate the
+takings", and a real tuning pass on every number above.
+
 ## 8. OPEN — needs Kayo's answer before any of this is built
 
 1. **Scope authorization.** `feedback_stackacres_homestead_only_focus` currently says every map
@@ -348,9 +390,10 @@ old size.
 4. **Rename.** Kayo floated that "Homestead"/"StackAcres" both imply just a farm plot, and this
    concept is closer to a settlement/town-building game with farming as one activity among several.
    No name chosen.
-5. **NPC payroll shape.** Does hiring an NPC create a recurring salary line item distinct from the
-   land-maintenance skim (i.e., stacks with it), or is payroll folded into the same single upkeep
-   number per profile? Not decided — affects whether this needs one ledger line or several.
+5. ~~**NPC payroll shape.**~~ **Resolved 2026-09-26 for the grocery:** each worker has an hourly wage, and wages
+   come off the store's own takings when the till is emptied, never from the wallet and never below nothing. It
+   is separate from Land Maintenance and doesn't stack with it (the till isn't netted for upkeep). Far Field
+   workers, when they exist, aren't decided.
 6. **Town scale, actually pinned down.** Section 3 confirms "many districts, many NPCs, many shops"
    as a direction but not a count. How many districts at launch? How many NPCs? Is every shop in
    the reference's spirit (grocery, apparel, bar, bathhouse, library, barber, infirmary, fishing

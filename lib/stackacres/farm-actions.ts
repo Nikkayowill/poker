@@ -27,6 +27,7 @@ import type { ZoneId } from "./zones";
 import type { QuestPlaceId } from "./story/places";
 import type { TravelerId } from "./story/travelers";
 import { EMPIRE_BUILDINGS, type EmpireBuildingKind } from "./empire-buildings";
+import type { GroceryItemKind } from "./grocery-layout";
 
 export type Action =
   | { action: "expand-capacity"; stock: StackAcresStock }
@@ -135,6 +136,14 @@ export type Action =
   | { action: "buy-building"; kind: EmpireBuildingKind; tx: number; ty: number }
   | { action: "place-building"; id: string; tx: number; ty: number }
   | { action: "pick-up-building"; id: string }
+  // The city grocery (./grocery.ts): taking it over, its staff, its till, and arranging its floor.
+  | { action: "grocery-take-over" }
+  | { action: "grocery-hire"; name: string }
+  | { action: "grocery-fire"; name: string }
+  | { action: "grocery-collect" }
+  | { action: "grocery-buy"; kind: GroceryItemKind; tx: number; ty: number }
+  | { action: "grocery-place"; id: string; tx: number; ty: number }
+  | { action: "grocery-store"; id: string }
   // Hold-tap lift, tap-to-drop: slides the contiguous group of beds touching
   // `(tx, ty)` so that tile lands on `(toTx, toTy)`, whatever crop stands on
   // it carried along. Free -- moves no Gold either way. The group itself is
@@ -253,6 +262,12 @@ export function intentOf(body: Action): string {
   if ("crop" in body) return `${body.action}:${body.crop}`;
   // One building at a time is moved or picked up; two different ones are two intents.
   if (body.action === "place-building" || body.action === "pick-up-building") return `building:${body.id}`;
+  // Likewise one piece of the grocery's floor, and one person at a time hired or let go. Keyed on kind as
+  // well as the square, checked before the generic `tx` branch below: two different kinds can share a
+  // square (a rug under a fixture), and buying one must never be taken for a retry of the other.
+  if (body.action === "grocery-buy") return `${body.action}:${body.kind}:${body.tx},${body.ty}`;
+  if (body.action === "grocery-place" || body.action === "grocery-store") return `grocery-item:${body.id}`;
+  if (body.action === "grocery-hire" || body.action === "grocery-fire") return `grocery-staff:${body.name}`;
   if ("sector" in body) return `${body.action}:${body.sector}`;
   // Checked before the generic "item" branch below: a gift carries `item`
   // but no `quantity` (it is always exactly one unit), and gifting one NPC

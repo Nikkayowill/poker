@@ -4,8 +4,8 @@ The inside of the house, the barn, the workshop and the city grocery is built fr
 Liberated Pixel Cup artists (https://github.com/ElizaWy/LPC). Every sheet used is listed below with its
 artists, licence and original source, as its own Credits.txt gives them. All are OGA-BY 3.0
 (https://static.opengameart.org/OGA-BY-3.0.txt), some with CC0 originals. The sheets are vendored under
-`art/stackacres-td/lpc/interior/` with the pack's folder names. The room border is recoloured to orange;
-nothing else is changed.
+`art/stackacres-td/lpc/interior/` with the pack's folder names. The room border is recoloured to orange
+and the grocery's notice board (a sign panel) to cork; nothing else is changed.
 
 - **Objects/Furniture/Barrel.png**: Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
 - **Objects/Furniture/Beds/Beds, Double C.png**: Lanea Zimmerman (Sharm), BlueCarrot16, Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-upholstery
@@ -20,6 +20,7 @@ nothing else is changed.
 - **Objects/Furniture/Fireplace, Cast Iron.png**: Lanea Zimmerman (aka Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-modified-base-tiles
 - **Objects/Furniture/Fireplace.png**: Lanea Zimmerman (aka Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-modified-base-tiles
 - **Objects/Furniture/Fridge.png**: Eliza Wyatt (DeathsDarling). OGA-BY 3.0.
+- **Objects/Furniture/Lighting, Floor.png**: Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-modified-base-tiles, https://opengameart.org/content/lpc-interior-castle-tiles
 - **Objects/Furniture/Planter.png**: Lanea Zimmerman (Sharm). OGA-BY 3.0. https://opengameart.org/content/lpc-interior-castle-tiles
 - **Objects/Furniture/Rugs/Diamond Rug, tiling.png**: Eliza Wyatt (DeathsDarling). OGA-BY 3.0. 
 - **Objects/Furniture/Sawhorse.png**: BlueCarrot16. OGA-BY 3.0. https://opengameart.org/content/lpc-woodshop
@@ -56,8 +57,10 @@ nothing else is changed.
 - **Objects/Wall Items/Lighting, Wall.png**: Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-modified-base-tiles
 - **Objects/Wall Items/Paintings, Landscape.png**: Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-interior-castle-tiles
 - **Objects/Wall Items/Paintings, Still Life.png**: Eliza Wyatt (DeathsDarling). OGA-BY 3.0. 
+- **Objects/Wall Items/Posters.png**: Eliza Wyatt (DeathsDarling). OGA-BY 3.0.
 - **Structure/Doors/64x64px Arched Doors/Arched Double Doors A.png**: Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-interior-castle-tiles
 - **Structure/Floor/Wood Floor A.png**: Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-modified-base-tiles
+- **Structure/Signs/Sign Backgrounds A.png**: Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
 - **Structure/Wall Borders/Plain Edged Border.png**: Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-modified-base-tiles
 - **Structure/Walls/Floral Wallpaper A.png**: Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-interior-castle-tiles
 - **Structure/Walls/Half-Wall Paneling A.png**: Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-interior-castle-tiles

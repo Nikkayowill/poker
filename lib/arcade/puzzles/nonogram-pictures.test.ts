@@ -5,6 +5,7 @@ import {
   nonogramPicturesFor,
 } from "./nonogram-pictures";
 import { isNoGuessNonogram, nonogramConfig } from "./nonogram";
+import { NONOGRAM_TRANSFORMS, transformNonogramCells } from "./nonogram-deal";
 
 /**
  * The gate that lets a drawing ship.
@@ -13,19 +14,10 @@ import { isNoGuessNonogram, nonogramConfig } from "./nonogram";
  * finishable by reasoning alone. A drawing that needs a guess is a coin flip
  * dressed as a puzzle, and no amount of eyeballing catches one -- ambiguity in
  * a nonogram is not visible in the picture. So every entry in the library is
- * run through the line solver here, upright and mirrored, and a new drawing
- * that fails is not a test to relax. Thicken it: a run of one square in an
+ * run through the line solver here, in all eight orientations the deal can
+ * turn it to, and a new drawing that fails is not a test to relax. Thicken it: a run of one square in an
  * otherwise quiet line is almost always what did it.
  */
-
-/** Mirrors a row-major grid left to right, the one transform nonogram-deal.ts applies. */
-function mirror(cells: string, size: number): string {
-  let out = "";
-  for (let row = 0; row < size; row += 1) {
-    for (let col = 0; col < size; col += 1) out += cells[row * size + (size - 1 - col)];
-  }
-  return out;
-}
 
 describe("the picture library", () => {
   it.each(ALL_NONOGRAM_PICTURES.map((p) => [`${p.size}x${p.size} ${p.name}`, p] as const))(
@@ -37,10 +29,12 @@ describe("the picture library", () => {
   );
 
   it.each(ALL_NONOGRAM_PICTURES.map((p) => [`${p.size}x${p.size} ${p.name}`, p] as const))(
-    "%s can be finished by line logic alone, either way round",
+    "%s can be finished by line logic alone, whichever way it is turned",
     (_label, picture) => {
-      expect(isNoGuessNonogram(picture.cells, picture.size)).toBe(true);
-      expect(isNoGuessNonogram(mirror(picture.cells, picture.size), picture.size)).toBe(true);
+      for (let transform = 0; transform < NONOGRAM_TRANSFORMS; transform += 1) {
+        const cells = transformNonogramCells(picture.cells, picture.size, transform).join("");
+        expect(isNoGuessNonogram(cells, picture.size)).toBe(true);
+      }
     },
   );
 

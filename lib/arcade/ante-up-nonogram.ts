@@ -48,45 +48,64 @@ import {
   type NonogramUndoProblem,
   type NonogramView,
 } from "./puzzles/nonogram";
+import { stakePressure } from "./stake-pressure";
 
 /** The floor for a wager. Restated per game; see ante-up-memory.ts's MIN_ANTE_UP_WAGER for why. */
 export const MIN_ANTE_UP_WAGER = 500;
 
 export interface AnteUpNonogramTier {
-  /** Measured from the first square, not from opening the attempt; see the round's own clock. */
+  /**
+   * For free play and stakes under 10k. Measured from the first square, not
+   * from opening the attempt; see the round's own clock.
+   */
   readonly timeLimitMs: number;
+  /** From 10k up, where each band is set for a stronger player. */
+  readonly rankedTimeLimitMs: number;
   readonly multiplier: number;
 }
 
 /**
- * Starting numbers, not tuned against real solve rates; retune here.
+ * The free-play clocks grow faster than the board does, because a nonogram's
+ * work grows with its area and its cross-referencing grows faster still. Easy
+ * pays barely over 1x on purpose: a 5x5 with four minutes on it is close to a
+ * certain win, and a big stake can't be played on it at all
+ * (lib/arcade/ante-up-stakes.ts).
  *
- * The clock grows faster than the board does, because a nonogram's work grows
- * with its area and its cross-referencing grows faster still: a 25x25 is not
- * five times a 5x5, it is twenty-five times the squares with far more
- * back-and-forth between rows and columns. Easy pays barely over 1x on
- * purpose -- a 5x5 with four minutes on it is close to a certain win, and the
- * ceiling half of that same guard lives in lib/arcade/ante-up-stakes.ts.
+ * The clocks from 10k up come from a skill model, not from solve-rate data we
+ * don't have yet (lib/arcade/ante-up-calibration.test.ts holds it and checks
+ * the targets). A median player's time on our boards is taken as easy 1.5,
+ * medium 7, hard 18, expert 35 and master 55 minutes, below the 10-15 minute
+ * 10x10 and 30-45 minute 15x15 published for casual solvers because ours are
+ * line-solvable with drag-to-fill. Log-normal, sigma 0.3. Each standard
+ * deviation of skill is 1.65x faster, which puts the top players near
+ * published speed-solver times. Crossing your own lines (100k up) adds 10%.
+ * Spending the mistake budget ends it for 5-25% of median players, halving
+ * per standard deviation.
  *
- * **These are now more winnable than the day they were written, and nobody
- * has measured by how much.** They were set against boards of uniform random
- * noise; a 25x25 of that is a wall of one-square runs that almost nobody
- * finishes in forty minutes, so master was close to dead money. The boards are
- * now drawings and grown shapes with real runs in them, and dragging puts a
- * whole run down in one gesture rather than one round trip per square. Both
- * changes move the win rate up, and expert and master pay 3.2x and 5x. The
- * honest fix is solve-rate data from real attempts, which is why nothing here
- * was guessed at instead -- but the numbers on the two top rungs are the first
- * thing to look at, and lib/arcade/ante-up-stakes.ts's ceilings are what bound
- * the damage until somebody does.
+ * Win rate on the smallest board each stake band allows, by player:
+ *
+ *   band (floor board, clock)     median   +1SD   +2SD   +3SD
+ *   <10k   (easy, 4 min)            95%     97%     99%    99%
+ *   10k+   (medium, 5 min)          12%     67%     96%    99%
+ *   100k+  (hard, 9 min)             0%     16%     73%    97%
+ *   1M+    (expert, 11 min)          0%      1%     19%    78%
+ *   1M+    (master, 16 min)          0%      0%     13%    69%
+ *
+ * Retune here once real attempts give solve rates.
  */
 export const ANTE_UP_NONOGRAM_TIERS: Readonly<Record<NonogramDifficulty, AnteUpNonogramTier>> = {
-  easy: { timeLimitMs: 4 * 60 * 1000, multiplier: 1.05 },
-  medium: { timeLimitMs: 10 * 60 * 1000, multiplier: 1.4 },
-  hard: { timeLimitMs: 18 * 60 * 1000, multiplier: 2.2 },
-  expert: { timeLimitMs: 28 * 60 * 1000, multiplier: 3.2 },
-  master: { timeLimitMs: 40 * 60 * 1000, multiplier: 5 },
+  easy: { timeLimitMs: 4 * 60_000, rankedTimeLimitMs: 4 * 60_000, multiplier: 1.05 },
+  medium: { timeLimitMs: 10 * 60_000, rankedTimeLimitMs: 5 * 60_000, multiplier: 1.4 },
+  hard: { timeLimitMs: 15 * 60_000, rankedTimeLimitMs: 9 * 60_000, multiplier: 2.2 },
+  expert: { timeLimitMs: 20 * 60_000, rankedTimeLimitMs: 11 * 60_000, multiplier: 3.2 },
+  master: { timeLimitMs: 30 * 60_000, rankedTimeLimitMs: 16 * 60_000, multiplier: 5 },
 };
+
+/** The clock a board runs at this stake. Fixed on the attempt when it opens. */
+export function anteUpNonogramTimeLimitMs(difficulty: NonogramDifficulty, wager: number): number {
+  const tier = ANTE_UP_NONOGRAM_TIERS[difficulty];
+  return stakePressure(wager) >= 1 ? tier.rankedTimeLimitMs : tier.timeLimitMs;
+}
 
 export type AnteUpNonogramStatus = "active" | "won" | "lost" | "timed-out";
 
@@ -103,11 +122,26 @@ export interface AnteUpNonogramAttempt {
 }
 
 /**
+ * Whether a stake this size may have finished lines crossed off for it.
+ *
+ * Auto-cross never reveals anything, but on a big board it does the
+ * bookkeeping that keeps a player from filling a square in a line that is
+ * already done, which is a lot of the care the mistake budget is there to
+ * test. From 100k up the player crosses their own, as on paper.
+ */
+export function anteUpNonogramAutoCrossAllowed(wager: number): boolean {
+  return stakePressure(wager) < 2;
+}
+
+/**
  * Opens an attempt on a board that has already been dealt.
  *
  * The deal comes in rather than being made here for the reason
  * lib/arcade/puzzles/nonogram.ts's header gives: the picture library is
  * `server-only` and this module is imported by the browser.
+ *
+ * The auto-cross setting is decided here and kept on the round, so a live
+ * board never changes under the player.
  */
 export function startAnteUpNonogram(
   difficulty: NonogramDifficulty,
@@ -118,12 +152,13 @@ export function startAnteUpNonogram(
   options: { autoCross?: boolean } = {},
 ): AnteUpNonogramAttempt {
   const tier = ANTE_UP_NONOGRAM_TIERS[difficulty];
+  const autoCross = anteUpNonogramAutoCrossAllowed(wager) ? options.autoCross : false;
   return {
     difficulty,
     wager,
     multiplier: tier.multiplier,
-    timeLimitMs: tier.timeLimitMs,
-    board: startNonogramRound(difficulty, seed, deal, options),
+    timeLimitMs: anteUpNonogramTimeLimitMs(difficulty, wager),
+    board: startNonogramRound(difficulty, seed, deal, { autoCross }),
     status: "active",
     startedAt: now.toISOString(),
   };

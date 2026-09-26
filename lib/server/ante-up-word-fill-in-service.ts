@@ -17,7 +17,7 @@ import {
   type AnteUpWordFillInSnapshot,
   type AnteUpWordFillInTier,
 } from "@/lib/arcade/ante-up-word-fill-in";
-import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
+import { anteUpStakeProblem } from "@/lib/arcade/ante-up-stakes";
 import type {
   WordFillInClearProblem,
   WordFillInPlaceProblem,
@@ -153,8 +153,8 @@ export async function openAnteUpWordFillIn(
       400,
     );
   }
-  const overCeiling = anteUpWagerCeilingProblem(GAME, tier, wagerInput);
-  if (overCeiling) throw new AnteUpWordFillInRequestError(overCeiling, 400);
+  const stakeProblem = anteUpStakeProblem(GAME, tier, wagerInput);
+  if (stakeProblem) throw new AnteUpWordFillInRequestError(stakeProblem, 400);
 
   if (wagerInput > 0) {
     const sinceYesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);

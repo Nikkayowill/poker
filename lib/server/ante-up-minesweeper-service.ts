@@ -17,7 +17,7 @@ import {
   type AnteUpMinesweeperAttempt,
   type AnteUpMinesweeperSnapshot,
 } from "@/lib/arcade/ante-up-minesweeper";
-import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
+import { anteUpStakeProblem } from "@/lib/arcade/ante-up-stakes";
 import {
   isMinesweeperDifficulty,
   type MinesweeperDifficulty,
@@ -165,8 +165,8 @@ export async function openAnteUpMinesweeper(
     );
   }
   // A bigger stake has to buy a harder board; see lib/arcade/ante-up-stakes.ts.
-  const overCeiling = anteUpWagerCeilingProblem(GAME, difficulty, wagerInput);
-  if (overCeiling) throw new AnteUpMinesweeperRequestError(overCeiling, 400);
+  const stakeProblem = anteUpStakeProblem(GAME, difficulty, wagerInput);
+  if (stakeProblem) throw new AnteUpMinesweeperRequestError(stakeProblem, 400);
 
   if (wagerInput > 0) {
     const sinceYesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);

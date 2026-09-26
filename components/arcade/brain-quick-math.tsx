@@ -99,6 +99,12 @@ function Controls() {
   return <AnswerPad key={roundKey} submit={submit} busy={busy} disabled={disabled} verdict={verdict} />;
 }
 
+const PRESSURE_RULES = {
+  1: ["Three-digit ± two-digit, two-digit × one-digit, and division that comes out whole."],
+  2: ["Three-digit ± three-digit, bigger times tables, and harder division."],
+  3: ["Two-digit × two-digit and harder division. Three wrong answers end the run."],
+} as const;
+
 export function BrainQuickMath() {
   return (
     <BrainStreak
@@ -123,6 +129,7 @@ export function BrainQuickMath() {
       scoreNoun="correct"
       promptSlot={<Prompt />}
       controlsSlot={<Controls />}
+      pressureRules={PRESSURE_RULES}
     />
   );
 }

@@ -175,10 +175,14 @@
   to { opacity: .6; }
 }
 
+/* Blocks shrink for the five-long pieces so every piece fits the same slot
+   height and a deal never makes the tray jump. Declared here, next to the
+   inline --bk-piece-span it reads; see app/styles/CLAUDE.md. */
 .bk-piece {
+  --bk-piece-cell: min(14px, calc((68px - (var(--bk-piece-span, 4) - 1) * 2px) / var(--bk-piece-span, 4)));
   display: grid;
-  grid-template-columns: repeat(var(--bk-piece-cols), 14px);
-  grid-auto-rows: 14px;
+  grid-template-columns: repeat(var(--bk-piece-cols), var(--bk-piece-cell));
+  grid-auto-rows: var(--bk-piece-cell);
   gap: 2px;
   pointer-events: none;
 }
@@ -187,6 +191,9 @@
   background: var(--bk-block);
   box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .28), inset -1px -1px 0 rgba(0, 0, 0, .3);
 }
+
+/* A tier the stake has locked out, and why. */
+.bk-tier-locked { color: var(--text-muted); font-style: italic; }
 
 .bk-hint {
   margin: 0;
@@ -228,6 +235,7 @@
   .bk-progress { grid-area: progress; width: 100%; }
   .bk-tray { grid-area: tray; width: 100%; gap: 8px; }
   .bk-slot { min-height: 72px; padding: 6px; }
+  .bk-piece { --bk-piece-cell: min(12px, calc((56px - (var(--bk-piece-span, 4) - 1) * 2px) / var(--bk-piece-span, 4))); }
   .bk-hint { grid-area: hint; }
   .bk-match > .duel-controls { grid-area: controls; }
   .bk-match > .duel-result { grid-column: 2; grid-row: 3 / 6; align-self: center; }

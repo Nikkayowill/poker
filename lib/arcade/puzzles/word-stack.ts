@@ -37,6 +37,12 @@ export interface WordStackRound {
   /** Parallel to `guesses`: results[i] scores guesses[i]. */
   results: WordStackTile[][];
   status: WordStackStatus;
+  /**
+   * Hard mode: every revealed hint must be used in later guesses. Set at open
+   * for a big enough stake and never changed after. Rows stored before this
+   * field existed load as normal mode.
+   */
+  hardMode?: boolean;
 }
 
 /**
@@ -46,7 +52,7 @@ export interface WordStackRound {
  * answer that question and doesn't pretend to. The service checks it
  * against the server-only word list and rejects there.
  */
-export type WordStackGuessProblem = "finished" | "length" | "letters";
+export type WordStackGuessProblem = "finished" | "length" | "letters" | "hard-mode";
 
 export function normalizeGuess(guess: string): string {
   return guess.trim().toLowerCase();
@@ -57,6 +63,53 @@ export function wordStackGuessProblem(round: WordStackRound, guess: string): Wor
   const word = normalizeGuess(guess);
   if (word.length !== WORD_STACK_WORD_LENGTH) return "length";
   if (!/^[a-z]+$/.test(word)) return "letters";
+  if (wordStackHardModeProblem(round, word)) return "hard-mode";
+  return null;
+}
+
+const ORDINALS = ["1st", "2nd", "3rd", "4th", "5th"];
+const TIMES = ["", "", " twice", " three times", " four times", " five times"];
+
+/**
+ * Why a guess breaks hard mode, as a message for the player, or null if it
+ * doesn't (or the round isn't in hard mode).
+ *
+ * NYT rules: a green letter stays in its spot, and every revealed letter is
+ * used again. Repeats count: if one guess showed two Es as green or gold, the
+ * next guess needs at least two Es. A gold letter may sit in the same spot
+ * again, as on NYT; hard mode only makes you use it.
+ */
+export function wordStackHardModeProblem(
+  round: Pick<WordStackRound, "hardMode" | "guesses" | "results">,
+  guess: string,
+): string | null {
+  if (!round.hardMode) return null;
+  const word = normalizeGuess(guess);
+  const letters = word.split("");
+
+  for (let row = 0; row < round.guesses.length; row += 1) {
+    const previous = round.guesses[row].split("");
+    const tiles = round.results[row] ?? [];
+    for (let position = 0; position < previous.length; position += 1) {
+      if (tiles[position] === "correct" && letters[position] !== previous[position]) {
+        return `${ORDINALS[position]} letter must be ${previous[position].toUpperCase()}.`;
+      }
+    }
+  }
+
+  const required = new Map<string, number>();
+  for (let row = 0; row < round.guesses.length; row += 1) {
+    const found = new Map<string, number>();
+    round.guesses[row].split("").forEach((letter, position) => {
+      const tile = round.results[row]?.[position];
+      if (tile === "correct" || tile === "present") found.set(letter, (found.get(letter) ?? 0) + 1);
+    });
+    found.forEach((count, letter) => required.set(letter, Math.max(required.get(letter) ?? 0, count)));
+  }
+  for (const [letter, count] of required) {
+    const used = letters.filter((candidate) => candidate === letter).length;
+    if (used < count) return `Guess must contain ${letter.toUpperCase()}${TIMES[count] ?? ""}.`;
+  }
   return null;
 }
 
@@ -163,6 +216,7 @@ export interface WordStackSnapshot {
   keyboard: Record<string, WordStackTile>;
   wordLength: number;
   maxGuesses: number;
+  hardMode: boolean;
 }
 
 export function toWordStackSnapshot(
@@ -180,5 +234,6 @@ export function toWordStackSnapshot(
     keyboard: wordStackKeyboardState(round),
     wordLength: WORD_STACK_WORD_LENGTH,
     maxGuesses: WORD_STACK_MAX_GUESSES,
+    hardMode: Boolean(round.hardMode),
   };
 }

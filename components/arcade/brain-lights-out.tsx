@@ -14,12 +14,15 @@ import { maxAnteUpWager, type AnteUpGame } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
-  LIGHTS_OUT_MAX_MOVES,
+  LIGHTS_OUT_BANDS,
   MIN_ANTE_UP_WAGER,
+  lightsOutBandFor,
+  lightsOutLadder,
   toggleLightsOut,
   wagerMultiplierForMoves,
   type BrainLightsOutSnapshot,
 } from "@/lib/arcade/brain-lights-out";
+import { StakePressureNote } from "@/components/arcade/stake-pressure-note";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { useActionQueue } from "@/components/shared/use-action-queue";
 import { createRequestSequence } from "@/lib/ui/request-sequence";
@@ -35,6 +38,14 @@ import { createRequestSequence } from "@/lib/ui/request-sequence";
  */
 
 const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000, 25_000] as const;
+
+function pressureLine(pressure: 1 | 2 | 3): string {
+  const band = LIGHTS_OUT_BANDS[pressure];
+  const ladder = lightsOutLadder(band);
+  return `${band.size}x${band.size} board scrambled by ${band.taps} taps. 3x needs a clear in ${band.taps} moves, and the cap is ${ladder[ladder.length - 1].maxMoves}.`;
+}
+
+const PRESSURE_RULES = { 1: [pressureLine(1)], 2: [pressureLine(2)], 3: [pressureLine(3)] };
 
 interface Response {
   attempt: BrainLightsOutSnapshot | null;
@@ -185,9 +196,11 @@ export function BrainLightsOut() {
   const ceiling = maxAnteUpWager("lights-out" as AnteUpGame, null);
   const canAfford = wager === 0 || (wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance >= wager);
   const insufficientGold = wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance < wager;
-  const movesLeft = attempt ? Math.max(0, attempt.maxMoves - shownMoves) : LIGHTS_OUT_MAX_MOVES;
+  const lobbyLadder = lightsOutLadder(lightsOutBandFor(wager));
+  const maxMoves = attempt?.maxMoves ?? lobbyLadder[lobbyLadder.length - 1].maxMoves;
+  const movesLeft = Math.max(0, maxMoves - shownMoves);
   const ranOutOfMoves = attempt !== null && attempt.status === "lost" && attempt.moves >= attempt.maxMoves;
-  const projectedPayout = attempt && active ? Math.round(attempt.wager * wagerMultiplierForMoves(shownMoves)) : attempt?.payout ?? 0;
+  const projectedPayout = attempt && active ? Math.round(attempt.wager * wagerMultiplierForMoves(shownMoves, attempt.ladder)) : attempt?.payout ?? 0;
 
   return (
     <main className="duel-shell ante-shell">
@@ -215,8 +228,9 @@ export function BrainLightsOut() {
           </p>
           <p>
             Wager Gold or play free, any time — there&apos;s no daily board to gate here, so a fresh
-            layout deals on every attempt. Clear it within {LIGHTS_OUT_MAX_MOVES} moves to win and
+            layout deals on every attempt. Clear it within {maxMoves} moves to win and
             cash out; run past that cap, or give up early, and the wager is gone. Fewer moves pays more.
+            Bigger wagers deal bigger boards.
           </p>
         </HowToPlayModal>
       )}
@@ -233,7 +247,7 @@ export function BrainLightsOut() {
           <div className="ante-lobby-heading">
             <h1>Lights Out, against yourself</h1>
             <p>
-              Wager on your own logic. Clear the board before your {LIGHTS_OUT_MAX_MOVES}th move and
+              Wager on your own logic. Clear the board before your {maxMoves}th move and
               cash out — the fewer moves it takes, the more it pays.
             </p>
           </div>
@@ -247,12 +261,13 @@ export function BrainLightsOut() {
             leading={{ label: "Free", value: 0 }}
             onChange={(next) => { selectSound(); setWager(next); }}
           />
+          <StakePressureNote wager={wager} rules={PRESSURE_RULES} />
           <p className="puzzle-verdict">
             {wager === 0
               ? "Free practice — no payout on a win, but there's no fun in that."
               : wager < MIN_ANTE_UP_WAGER
                 ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
-                : `Clear the board inside ${LIGHTS_OUT_MAX_MOVES} moves. Speed is what pays: a fast clear multiplies the wager, a slow one returns less than you staked, and running past the cap loses it outright.`}
+                : `Clear the board inside ${maxMoves} moves. Speed is what pays: a fast clear multiplies the wager, a slow one returns less than you staked, and running past the cap loses it outright.`}
           </p>
 
           <button
@@ -270,7 +285,7 @@ export function BrainLightsOut() {
         <div className="duel-match ante-match">
           <div className="duel-scoreline ante-scoreline">
             <span className="ante-clock" aria-live="polite">
-              {active ? `${movesLeft} move${movesLeft === 1 ? "" : "s"} left` : `${attempt.moves} moves taken`}
+              {active ? `${movesLeft} move${movesLeft === 1 ? "" : "s"} left · par ${attempt.par}` : `${attempt.moves} moves taken`}
             </span>
             <span className="duel-pot">
               <Coins size={12} aria-hidden="true" />

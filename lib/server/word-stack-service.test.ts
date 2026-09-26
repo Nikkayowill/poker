@@ -13,7 +13,10 @@ import {
 } from "./word-stack-service";
 import { adjustGold, ensureProfile } from "./profile-store";
 import { advancePuzzleRound, createPuzzleRound, getPuzzleRound } from "./daily-puzzle-store";
-import { WAGER_MULTIPLIER_BY_GUESSES } from "@/lib/arcade/ante-up-word-stack";
+import {
+  WAGER_MULTIPLIER_BY_GUESSES,
+  WORD_STACK_LADDER_BY_PRESSURE,
+} from "@/lib/arcade/ante-up-word-stack";
 import type { StoredWordStackRound } from "./word-stack-service";
 
 /**
@@ -500,5 +503,80 @@ describe("a failed canon lookup does not take the stake", () => {
     expect((await ensureProfile(token)).goldBalance).toBe(before);
     // And no half-open round was left behind to burn the day's attempt.
     expect(await getPuzzleRound<StoredWordStackRound>(id, WORD_STACK_GAME, today())).toBeNull();
+  });
+});
+
+describe("a big stake plays hard mode", () => {
+  async function fundedPlayer(gold: number) {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    const delta = gold - profile.goldBalance;
+    if (delta !== 0) await adjustGold(profile.id, delta);
+    return { token, id: profile.id };
+  }
+
+  /** A real word sharing the answer's first letter, so that letter comes back green. */
+  function sameFirstLetter(answer: string): string {
+    const word = WORD_STACK_ANSWERS.find((candidate) => candidate !== answer && candidate[0] === answer[0]);
+    if (!word) throw new Error("no word shares the first letter");
+    return word;
+  }
+
+  function otherFirstLetter(answer: string): string {
+    const word = WORD_STACK_ANSWERS.find((candidate) => candidate[0] !== answer[0]);
+    if (!word) throw new Error("no word with another first letter");
+    return word;
+  }
+
+  it("keeps normal rules under 10k", async () => {
+    const { token } = await fundedPlayer(50_000);
+    const view = await startWordStackPuzzle(token, 9_999);
+    expect(view.round?.hardMode).toBe(false);
+  });
+
+  it("opens hard mode at 10k and refuses a guess that drops a green, without spending it", async () => {
+    const { token, id } = await fundedPlayer(50_000);
+    const view = await startWordStackPuzzle(token, 10_000);
+    expect(view.round?.hardMode).toBe(true);
+
+    const answer = todaysAnswer();
+    await playWordStackGuess(token, { day: today(), version: 1, guess: sameFirstLetter(answer) });
+    await expect(
+      playWordStackGuess(token, { day: today(), version: 2, guess: otherFirstLetter(answer) }),
+    ).rejects.toMatchObject({
+      status: 400,
+      reason: "hard-mode",
+      message: `1st letter must be ${answer[0].toUpperCase()}.`,
+    });
+
+    const stored = await getPuzzleRound<StoredWordStackRound>(id, WORD_STACK_GAME, today());
+    expect(stored?.round.guesses).toHaveLength(1);
+    expect(stored?.version).toBe(2);
+    expect(stored?.round.wagerLadder).toEqual(WORD_STACK_LADDER_BY_PRESSURE[1]);
+  });
+
+  it("stamps the top-stake ladder at 1M, where a 6th-guess win pays nothing", async () => {
+    const { token, id } = await fundedPlayer(2_000_000);
+    await startWordStackPuzzle(token, 1_000_000);
+    const stored = await getPuzzleRound<StoredWordStackRound>(id, WORD_STACK_GAME, today());
+    expect(stored?.round.hardMode).toBe(true);
+    expect(stored?.round.wagerLadder).toEqual(WORD_STACK_LADDER_BY_PRESSURE[3]);
+  });
+
+  it("loads a big-stake round stored before hard mode existed with the old rules", async () => {
+    const { token, id } = await fundedPlayer(50_000);
+    await startWordStackPuzzle(token, 50_000);
+    const opened = await getPuzzleRound<StoredWordStackRound>(id, WORD_STACK_GAME, today());
+    if (!opened) throw new Error("no round");
+    const legacy: StoredWordStackRound = { ...opened.round };
+    delete legacy.hardMode;
+    await advancePuzzleRound<StoredWordStackRound>(opened, legacy, false);
+
+    const answer = todaysAnswer();
+    const read = await readWordStackPuzzle(token);
+    expect(read.round?.hardMode).toBe(false);
+    await playWordStackGuess(token, { day: today(), version: 2, guess: sameFirstLetter(answer) });
+    const next = await playWordStackGuess(token, { day: today(), version: 3, guess: otherFirstLetter(answer) });
+    expect(next.round?.guesses).toHaveLength(2);
   });
 });

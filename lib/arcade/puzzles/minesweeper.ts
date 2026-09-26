@@ -21,7 +21,7 @@
 
 import { mulberry32 } from "@/lib/seeded-random";
 
-export type MinesweeperDifficulty = "beginner" | "intermediate" | "expert";
+export type MinesweeperDifficulty = "beginner" | "intermediate" | "expert" | "master";
 
 export type MinesweeperRoundStatus = "active" | "cleared" | "lost";
 
@@ -52,6 +52,9 @@ export const MINESWEEPER_DIFFICULTIES: readonly MinesweeperDifficultyConfig[] = 
   { id: "beginner", label: "Beginner", cols: 9, rows: 9, mines: 10 },
   { id: "intermediate", label: "Intermediate", cols: 9, rows: 14, mines: 22 },
   { id: "expert", label: "Expert", cols: 10, rows: 18, mines: 38 },
+  // The top-stakes board: a little bigger and denser than expert, so more of
+  // it is subset reasoning rather than easy openings. Still guess-free.
+  { id: "master", label: "Master", cols: 10, rows: 20, mines: 46 },
 ];
 
 /** The largest board any difficulty deals; the outer bound a request may name a cell within. */
@@ -279,11 +282,12 @@ export function isNoGuessBoard(
 
 /**
  * How many layouts to try before settling for one that needs a guess. At
- * expert density most random layouts are guessy, so this is generous on
- * purpose; the solver is cheap enough (a few hundred microseconds on a
- * 180-cell board) that the whole search stays well inside a single request.
+ * expert density about 1 layout in 16 is guess-free, and at master's about 1
+ * in 60, so this is generous on purpose; the solver is cheap enough (under
+ * half a millisecond on a 200-cell board) that even the whole run stays
+ * under a second, and a typical master deal takes a few tens of ms.
  */
-const MAX_LAYOUT_ATTEMPTS = 400;
+const MAX_LAYOUT_ATTEMPTS = 2000;
 
 function placeMines(round: MinesweeperRound, start: number): number[] {
   const { cols, rows, mineCount } = round;

@@ -18,7 +18,7 @@ import {
   type AnteUpNonogramAttempt,
   type AnteUpNonogramSnapshot,
 } from "@/lib/arcade/ante-up-nonogram";
-import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
+import { anteUpStakeProblem } from "@/lib/arcade/ante-up-stakes";
 import { dealNonogram } from "@/lib/arcade/puzzles/nonogram-deal";
 import {
   isNonogramDifficulty,
@@ -168,8 +168,8 @@ export async function openAnteUpNonogram(
     );
   }
   // A bigger stake has to buy a harder board; see lib/arcade/ante-up-stakes.ts.
-  const overCeiling = anteUpWagerCeilingProblem(GAME, difficulty, wagerInput);
-  if (overCeiling) throw new AnteUpNonogramRequestError(overCeiling, 400);
+  const stakeProblem = anteUpStakeProblem(GAME, difficulty, wagerInput);
+  if (stakeProblem) throw new AnteUpNonogramRequestError(stakeProblem, 400);
 
   if (wagerInput > 0) {
     const sinceYesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);

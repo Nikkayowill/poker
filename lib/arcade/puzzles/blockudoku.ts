@@ -48,10 +48,10 @@ export interface BlockudokuShape {
 }
 
 /**
- * The fixed set of pieces a round ever draws from. Single block up through
- * the four-cell tetrominoes, the same family a classic block-puzzle deals --
- * no five-or-more piece, which is what keeps a jammed board recoverable by a
- * careful player instead of routinely impossible near the end of a round.
+ * The classic set: single block up through the four-cell tetrominoes, the
+ * same family a classic block-puzzle deals. With no five-or-more piece a
+ * careful player can nearly always dig out of a crowded board. Casual plays
+ * this set, and so does any round stored before piece sets existed.
  */
 export const BLOCKUDOKU_SHAPES: readonly BlockudokuShape[] = [
   { id: "single", cells: [[0, 0]] },
@@ -73,6 +73,68 @@ export const BLOCKUDOKU_SHAPES: readonly BlockudokuShape[] = [
   { id: "tetromino-j", cells: [[0, 1], [1, 1], [2, 1], [2, 0]] },
 ];
 
+/** Five-cell straights and long Ls. They need a clear run of five, which a messy board stops having. */
+const BIG_SHAPES: readonly BlockudokuShape[] = [
+  { id: "pentomino-i-h", cells: [[0, 0], [0, 1], [0, 2], [0, 3], [0, 4]] },
+  { id: "pentomino-i-v", cells: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]] },
+  { id: "pentomino-l", cells: [[0, 0], [1, 0], [2, 0], [3, 0], [3, 1]] },
+  { id: "pentomino-j", cells: [[0, 1], [1, 1], [2, 1], [3, 1], [3, 0]] },
+  { id: "pentomino-l-h", cells: [[0, 0], [1, 0], [1, 1], [1, 2], [1, 3]] },
+  { id: "pentomino-j-h", cells: [[0, 3], [1, 0], [1, 1], [1, 2], [1, 3]] },
+];
+
+/** The awkward pieces real Blockudoku deals, each wanting a clean 3x3 footprint. */
+const AWKWARD_SHAPES: readonly BlockudokuShape[] = [
+  { id: "corner-1", cells: [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2]] },
+  { id: "corner-2", cells: [[0, 0], [0, 1], [0, 2], [1, 0], [2, 0]] },
+  { id: "corner-3", cells: [[0, 0], [0, 1], [0, 2], [1, 2], [2, 2]] },
+  { id: "corner-4", cells: [[0, 2], [1, 2], [2, 2], [2, 1], [2, 0]] },
+  { id: "plus", cells: [[0, 1], [1, 0], [1, 1], [1, 2], [2, 1]] },
+  { id: "big-t-down", cells: [[0, 0], [0, 1], [0, 2], [1, 1], [2, 1]] },
+  { id: "big-t-up", cells: [[0, 1], [1, 1], [2, 0], [2, 1], [2, 2]] },
+  { id: "big-t-right", cells: [[0, 0], [1, 0], [2, 0], [1, 1], [1, 2]] },
+  { id: "big-t-left", cells: [[0, 2], [1, 2], [2, 2], [1, 0], [1, 1]] },
+];
+
+/** Expert only: the U needs a notch to sit in, and the full 3x3 block needs an empty box. */
+const EXPERT_SHAPES: readonly BlockudokuShape[] = [
+  { id: "u-up", cells: [[0, 0], [0, 2], [1, 0], [1, 1], [1, 2]] },
+  { id: "u-down", cells: [[0, 0], [0, 1], [0, 2], [1, 0], [1, 2]] },
+  { id: "square-3", cells: [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2], [2, 0], [2, 1], [2, 2]] },
+];
+
+/**
+ * Which pieces a round deals from, each drawn with equal odds. Classic is the
+ * original set. Big adds the five-cell straights and long Ls plus the 3x3
+ * corners, crosses and big Ts. Expert adds the Us and the full 3x3 block,
+ * which is where a jam becomes a real risk even for careful play. Master is
+ * expert without the single and the dominoes, so there is no small piece to
+ * patch a gap with. The tiers pick one each (lib/arcade/ante-up-blockudoku.ts);
+ * blockudoku.sim.test.ts has the numbers behind that choice.
+ */
+export type BlockudokuPieceSet = "classic" | "big" | "expert" | "master";
+
+export const BLOCKUDOKU_PIECE_SETS: Readonly<Record<BlockudokuPieceSet, readonly BlockudokuShape[]>> = {
+  classic: BLOCKUDOKU_SHAPES,
+  big: [...BLOCKUDOKU_SHAPES, ...BIG_SHAPES, ...AWKWARD_SHAPES],
+  expert: [...BLOCKUDOKU_SHAPES, ...BIG_SHAPES, ...AWKWARD_SHAPES, ...EXPERT_SHAPES],
+  master: [
+    ...BLOCKUDOKU_SHAPES.filter((shape) => shape.cells.length > 2),
+    ...BIG_SHAPES,
+    ...AWKWARD_SHAPES,
+    ...EXPERT_SHAPES,
+  ],
+};
+
+export function isBlockudokuPieceSet(value: unknown): value is BlockudokuPieceSet {
+  return value === "classic" || value === "big" || value === "expert" || value === "master";
+}
+
+/** Every shape any set can deal, by id. */
+export function blockudokuShapeById(id: string): BlockudokuShape | null {
+  return BLOCKUDOKU_PIECE_SETS.expert.find((shape) => shape.id === id) ?? null;
+}
+
 export const GRID_SIDE = 9;
 export const GRID_CELLS = GRID_SIDE * GRID_SIDE;
 export const INVENTORY_SIZE = 3;
@@ -92,35 +154,42 @@ export interface BlockudokuRound {
   status: BlockudokuRoundStatus;
   /** The PRNG's own accumulator, carried forward so a refill never repeats a past draw. See the file header. */
   rngState: number;
+  /** Which pieces refills draw from. Absent on rounds stored before sets existed, which read as classic. */
+  pieceSet?: BlockudokuPieceSet;
   moves: number;
   /** Null until the first placement; the clock starts there, same as Minesweeper's first click. */
   startedAt: string | null;
   endedAt: string | null;
 }
 
-function drawShape(rngState: number): { shape: BlockudokuShape; nextState: number } {
+function drawShape(
+  rngState: number,
+  shapes: readonly BlockudokuShape[],
+): { shape: BlockudokuShape; nextState: number } {
   const [nextState, value] = mulberry32Step(rngState);
-  const index = Math.min(
-    BLOCKUDOKU_SHAPES.length - 1,
-    Math.floor(value * BLOCKUDOKU_SHAPES.length),
-  );
-  return { shape: BLOCKUDOKU_SHAPES[index], nextState };
+  const index = Math.min(shapes.length - 1, Math.floor(value * shapes.length));
+  return { shape: shapes[index], nextState };
 }
 
-function drawInventory(rngState: number): { inventory: BlockudokuShape[]; nextState: number } {
+function drawInventory(
+  rngState: number,
+  pieceSet: BlockudokuPieceSet,
+): { inventory: BlockudokuShape[]; nextState: number } {
+  const shapes = BLOCKUDOKU_PIECE_SETS[pieceSet];
   const inventory: BlockudokuShape[] = [];
   let state = rngState;
   for (let i = 0; i < INVENTORY_SIZE; i += 1) {
-    const drawn = drawShape(state);
+    const drawn = drawShape(state, shapes);
     inventory.push(drawn.shape);
     state = drawn.nextState;
   }
   return { inventory, nextState: state };
 }
 
-export function startBlockudokuRound(seed: number): BlockudokuRound {
-  const { inventory, nextState } = drawInventory(seed >>> 0);
+export function startBlockudokuRound(seed: number, pieceSet: BlockudokuPieceSet = "classic"): BlockudokuRound {
+  const { inventory, nextState } = drawInventory(seed >>> 0, pieceSet);
   return {
+    pieceSet,
     board: new Array(GRID_CELLS).fill(0),
     inventory,
     score: 0,
@@ -284,7 +353,7 @@ export function placeBlockudokuPiece(
   let inventory = afterPlay;
   let rngState = round.rngState;
   if (inventory.every((entry) => entry === null)) {
-    const refill = drawInventory((rngState ^ entropy) >>> 0);
+    const refill = drawInventory((rngState ^ entropy) >>> 0, round.pieceSet ?? "classic");
     inventory = refill.inventory;
     rngState = refill.nextState;
   }

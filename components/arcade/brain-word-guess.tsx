@@ -15,16 +15,27 @@ import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   MIN_ANTE_UP_WAGER,
-  WORD_GUESS_MAX_MISSES,
+  WORD_GUESS_BANDS,
   wagerMultiplierForMisses,
+  wordGuessMissCap,
   type BrainWordGuessSnapshot,
 } from "@/lib/arcade/brain-word-guess";
+import { stakePressure } from "@/lib/arcade/stake-pressure";
+import { StakePressureNote } from "@/components/arcade/stake-pressure-note";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { useActionQueue } from "@/components/shared/use-action-queue";
 import { createRequestSequence } from "@/lib/ui/request-sequence";
 import { useAnswerKeys } from "./brain-streak";
 
 const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000, 25_000] as const;
+
+function pressureLine(pressure: 1 | 2 | 3): string {
+  const band = WORD_GUESS_BANDS[pressure];
+  const gain = band.ladder.find((rung) => rung.multiplier > 1 && rung.multiplier < 2);
+  return `${band.words} harder words in a row, sharing ${wordGuessMissCap(band.ladder)} misses. A profit needs ${gain?.maxMisses ?? 0} misses or fewer in total.`;
+}
+
+const PRESSURE_RULES = { 1: [pressureLine(1)], 2: [pressureLine(2)], 3: [pressureLine(3)] };
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz".split("");
 
 interface Response {
@@ -124,7 +135,9 @@ export function BrainWordGuess() {
       if (!mounted.current) return false;
       if (response.ok) {
         applyResponse(data);
-        return data.attempt?.status === "active";
+        // A solved word deals the next one with no letters guessed. Letters queued for the
+        // old word are dropped rather than spent on the new one.
+        return data.attempt?.status === "active" && data.attempt.guessed.length > 0;
       }
       if (data.round) applyResponse({ attempt: data.round });
       // A repeat, or a word that finished under a queued letter, already shows why.
@@ -184,8 +197,9 @@ export function BrainWordGuess() {
   const ceiling = maxAnteUpWager("word-guess" as AnteUpGame, null);
   const canAfford = wager === 0 || (wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance >= wager);
   const insufficientGold = wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance < wager;
-  const missesLeft = attempt ? Math.max(0, attempt.maxMisses - attempt.misses) : WORD_GUESS_MAX_MISSES;
-  const projectedPayout = attempt && active ? Math.round(attempt.wager * wagerMultiplierForMisses(attempt.misses)) : attempt?.payout ?? 0;
+  const maxMisses = attempt?.maxMisses ?? wordGuessMissCap(WORD_GUESS_BANDS[stakePressure(wager)].ladder);
+  const missesLeft = Math.max(0, maxMisses - (attempt?.misses ?? 0));
+  const projectedPayout = attempt && active ? Math.round(attempt.wager * wagerMultiplierForMisses(attempt.misses, attempt.ladder)) : attempt?.payout ?? 0;
 
   return (
     <main className="duel-shell ante-shell">
@@ -208,7 +222,7 @@ export function BrainWordGuess() {
       {showHelp && (
         <HowToPlayModal title="Word Guess" onClose={() => setShowHelp(false)}>
           <p>
-            Classic hangman: guess letters to reveal an everyday word. {WORD_GUESS_MAX_MISSES} wrong
+            Classic hangman: guess letters to reveal an everyday word. {maxMisses} wrong
             guesses and it&apos;s over — nothing here needs any specialist background.
           </p>
           <p>
@@ -230,7 +244,7 @@ export function BrainWordGuess() {
           <div className="ante-lobby-heading">
             <h1>Word Guess, against yourself</h1>
             <p>
-              Wager on your own vocabulary. Solve the word within {WORD_GUESS_MAX_MISSES} wrong
+              Wager on your own vocabulary. Solve the word within {maxMisses} wrong
               guesses and cash out — fewer misses pays more.
             </p>
           </div>
@@ -244,12 +258,13 @@ export function BrainWordGuess() {
             leading={{ label: "Free", value: 0 }}
             onChange={(next) => { selectSound(); setWager(next); }}
           />
+          <StakePressureNote wager={wager} rules={PRESSURE_RULES} />
           <p className="puzzle-verdict">
             {wager === 0
               ? "Free practice — no payout on a win, but there's no fun in that."
               : wager < MIN_ANTE_UP_WAGER
                 ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
-                : `Solve it inside ${WORD_GUESS_MAX_MISSES} wrong guesses. Fewer misses pays more, and running out loses the wager outright.`}
+                : `Solve it inside ${maxMisses} wrong guesses. Fewer misses pays more, and running out loses the wager outright.`}
           </p>
 
           <button
@@ -267,6 +282,7 @@ export function BrainWordGuess() {
         <div className="duel-match ante-match">
           <div className="duel-scoreline ante-scoreline">
             <span className="ante-clock" aria-live="polite">
+              {attempt.wordCount > 1 && `Word ${attempt.wordNumber} of ${attempt.wordCount} · `}
               {active ? `${missesLeft} miss${missesLeft === 1 ? "" : "es"} left` : `${attempt.misses} misses`}
             </span>
             <span className="duel-pot">
@@ -313,7 +329,7 @@ export function BrainWordGuess() {
             <div className={clsx("duel-result", attempt.status === "won" && "duel-result-won")}>
               <WinCelebration active={attempt.status === "won" && result.profited} amount={result.net} />
               <strong>{attempt.status === "won" ? "You got it" : "Out of guesses"}</strong>
-              <span>The word was {attempt.word}</span>
+              <span>{attempt.status === "won" && attempt.wordCount > 1 ? `All ${attempt.wordCount} words solved` : `The word was ${attempt.word}`}</span>
               <span className="duel-result-gold">{result.label}</span>
               <button type="button" className="floor-play" onClick={playAgain}>Play again</button>
             </div>

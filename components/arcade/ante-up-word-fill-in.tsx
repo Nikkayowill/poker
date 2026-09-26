@@ -11,12 +11,15 @@ import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { useActionQueue } from "@/components/shared/use-action-queue";
-import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
+import { StakePressureNote } from "@/components/arcade/stake-pressure-note";
+import { ANTE_UP_TIER_LADDERS, anteUpTierAllowed, maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
+import { STAKE_PRESSURE_STEPS, lowestTierFor, type TierLadder } from "@/lib/arcade/stake-pressure";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { clearedSlotGuesses, placedSlotGuesses } from "@/lib/arcade/puzzles/word-fill-in-grid";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   ANTE_UP_WORD_FILL_IN_TIERS,
+  anteUpWordFillInTerms,
   MIN_ANTE_UP_WAGER,
   type AnteUpWordFillInSnapshot,
   type AnteUpWordFillInTier,
@@ -39,6 +42,9 @@ import { createRequestSequence } from "@/lib/ui/request-sequence";
 
 const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 25_000, 100_000, 500_000] as const;
 
+/** Marathon grids are bigger than this and get more room; see 60-word-fill-in.css. */
+const REGULAR_GRID_SIDE = 9;
+
 /** How often the page re-reads a live attempt, so a clock that runs out with nobody tapping still settles. */
 const POLL_MS = 3000;
 
@@ -54,6 +60,29 @@ interface AnteUpWordFillInResponse {
   attempt: AnteUpWordFillInSnapshot | null;
   profile: PlayerProfile;
   error?: string;
+}
+
+const LADDER = ANTE_UP_TIER_LADDERS["word-fill-in"] as TierLadder<AnteUpWordFillInTier>;
+
+function marathonLine(wager: number): string {
+  const clock = formatDuration(anteUpWordFillInTerms("marathon", wager).timeLimitMs);
+  return `Marathon only: the big 11x11 grid, sixteen words that all cross, on a ${clock} clock.`;
+}
+
+/** What each stake band changes, for the lobby note. */
+const STAKE_RULES = {
+  1: [marathonLine(STAKE_PRESSURE_STEPS[0])],
+  2: [marathonLine(STAKE_PRESSURE_STEPS[1])],
+  3: [marathonLine(STAKE_PRESSURE_STEPS[2])],
+};
+
+/** "Under 10k" style limit for a tier a big stake locks out, or null if no stake does. */
+function stakeLimitLabel(id: AnteUpWordFillInTier): string | null {
+  const index = LADDER.tiers.indexOf(id);
+  const band = LADDER.minTierByPressure.findIndex((min) => min > index);
+  if (band <= 0) return null;
+  const step = STAKE_PRESSURE_STEPS[band - 1];
+  return `Stakes under ${step >= 1_000_000 ? `${step / 1_000_000}M` : `${step / 1000}k`}`;
 }
 
 function tierLabel(id: AnteUpWordFillInTier): string {
@@ -314,7 +343,7 @@ export function AnteUpWordFillIn() {
   const selectedSet = useMemo(() => new Set(selectedCells ?? []), [selectedCells]);
 
   const start = () => {
-    if (sending.current) return;
+    if (sending.current || !anteUpTierAllowed("word-fill-in", tier, wager)) return;
     setSelected(null);
     setArmedWord(null);
     moves.clear();
@@ -395,7 +424,14 @@ export function AnteUpWordFillIn() {
   const canAfford =
     wager === 0 || (wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance >= wager);
   const insufficientGold = wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance < wager;
-  const tierConfig = ANTE_UP_WORD_FILL_IN_TIERS[tier];
+  const tierConfig = anteUpWordFillInTerms(tier, wager);
+  const tierAllowed = anteUpTierAllowed("word-fill-in", tier, wager);
+
+  // A bigger stake moves the pick up to the easiest grid it still allows.
+  const changeWager = (next: number) => {
+    setWager(next);
+    if (!anteUpTierAllowed("word-fill-in", tier, next)) setTier(lowestTierFor(LADDER, next));
+  };
 
   // Capped at the tier's limit as well as floored at zero, so network latency
   // never shows more time than the tier allows.
@@ -482,15 +518,17 @@ export function AnteUpWordFillIn() {
             </p>
           </div>
 
-          <div className="ante-difficulties" role="group" aria-label="Clock">
+          <div className="ante-difficulties" role="group" aria-label="Grid">
             {TIERS.map((entry) => {
-              const entryTier = ANTE_UP_WORD_FILL_IN_TIERS[entry.id];
+              const entryTier = anteUpWordFillInTerms(entry.id, wager);
+              const locked = !anteUpTierAllowed("word-fill-in", entry.id, wager);
               return (
                 <button
                   key={entry.id}
                   type="button"
                   className={clsx("ante-difficulty", entry.id === tier && "ante-difficulty-active")}
                   aria-pressed={entry.id === tier}
+                  disabled={locked}
                   onClick={() => {
                     selectSound();
                     setTier(entry.id);
@@ -498,7 +536,9 @@ export function AnteUpWordFillIn() {
                   }}
                 >
                   <strong>{entry.label}</strong>
-                  <span>{Math.round(entryTier.timeLimitMs / 60_000)} min · {entryTier.multiplier}x</span>
+                  <span>{entryTier.grid === "large" ? "Big 11×11 grid" : "9×9 grid"}</span>
+                  <span>{formatDuration(entryTier.timeLimitMs)} · {entryTier.multiplier}x</span>
+                  {locked && <span className="wf-tier-locked">{stakeLimitLabel(entry.id)}</span>}
                 </button>
               );
             })}
@@ -511,24 +551,25 @@ export function AnteUpWordFillIn() {
             min={0}
             max={ceiling}
             leading={{ label: "Free", value: 0 }}
-            onChange={(next) => { selectSound(); setWager(next); }}
+            onChange={(next) => { selectSound(); changeWager(next); }}
           />
+          <StakePressureNote wager={wager} rules={STAKE_RULES} />
           <p className="puzzle-verdict">
             {wager === 0
               ? "Free practice. No payout on a solve, but nothing at risk either."
               : wager < MIN_ANTE_UP_WAGER
                 ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
-                : `Fill the grid inside ${Math.round(tierConfig.timeLimitMs / 60_000)} minutes and cash out ${Math.round(wager * tierConfig.multiplier).toLocaleString()} Gold (${tierConfig.multiplier}x). Run out of time and the wager is gone.`}
+                : `Fill the grid inside ${formatDuration(tierConfig.timeLimitMs)} and cash out ${Math.round(wager * tierConfig.multiplier).toLocaleString()} Gold (${tierConfig.multiplier}x). Run out of time and the wager is gone.`}
           </p>
 
           <button
             type="button"
             className="puzzle-share-button"
-            disabled={busy || !loaded || !canAfford}
+            disabled={busy || !loaded || !canAfford || !tierAllowed}
             onClick={() => { selectSound(); start(); }}
           >
             <Coins size={15} aria-hidden="true" />
-            {!loaded ? "…" : !canAfford ? "Not enough Gold" : busy ? "Dealing…" : "Ante up"}
+            {!loaded ? "…" : !tierAllowed ? "Pick a bigger grid" : !canAfford ? "Not enough Gold" : busy ? "Dealing…" : "Ante up"}
           </button>
           {loaded && insufficientGold && <GoldShortfallHint needed={wager} compact />}
         </section>
@@ -555,7 +596,7 @@ export function AnteUpWordFillIn() {
 
           <div className="wf-play" aria-busy={busy || moves.pending.length > 0}>
             <div
-              className="wf-grid"
+              className={clsx("wf-grid", attempt.gridSize > REGULAR_GRID_SIDE && "wf-grid-large")}
               role="group"
               aria-label="Word grid"
               style={{ "--wf-size": attempt.gridSize } as React.CSSProperties}

@@ -3,20 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { tapSound } from "@/lib/audio/ui-sounds";
+import { SEQUENCE_RECALL_BANDS, SEQUENCE_RECALL_LEGACY_BAND } from "@/lib/arcade/brain-streak";
 import { BrainStreak, useAnswerKeys, useBrainStreakRound } from "./brain-streak";
 
 /** One flash pad's color per index -- purely a CSS hook, not game state. */
-const PAD_TONES = ["pad-red", "pad-blue", "pad-green", "pad-yellow"] as const;
-/** How long each flash shows, and the gap before the next one. */
-const FLASH_MS = 550;
-const GAP_MS = 200;
+const PAD_TONES = ["pad-red", "pad-blue", "pad-green", "pad-yellow", "pad-purple", "pad-orange"] as const;
 /** How long a pad stays lit after the player taps it. */
 const TAP_FLASH_MS = 180;
 
 function Prompt() {
   const { prompt } = useBrainStreakRound();
   const length = (prompt.sequence as number[]).length;
-  return <p className="brain-hint">Round {length - 2} · {length} flashes</p>;
+  return <p className="brain-hint">{length} flashes</p>;
 }
 
 /**
@@ -29,12 +27,16 @@ function Prompt() {
 function Pads({
   colors,
   sequence,
+  flashMs,
+  gapMs,
   submit,
   busy,
   disabled,
 }: {
   colors: number;
   sequence: number[];
+  flashMs: number;
+  gapMs: number;
   submit: (given: string) => void;
   busy: boolean;
   disabled: boolean;
@@ -56,20 +58,20 @@ function Pads({
         window.setTimeout(() => {
           if (cancelled) return;
           setFlashing(pad);
-        }, i * (FLASH_MS + GAP_MS)),
+        }, i * (flashMs + gapMs)),
       );
       timers.push(
         window.setTimeout(() => {
           if (cancelled) return;
           setFlashing(null);
-        }, i * (FLASH_MS + GAP_MS) + FLASH_MS),
+        }, i * (flashMs + gapMs) + flashMs),
       );
     });
     timers.push(
       window.setTimeout(() => {
         if (cancelled) return;
         setPhase("answering");
-      }, sequence.length * (FLASH_MS + GAP_MS)),
+      }, sequence.length * (flashMs + gapMs)),
     );
     return () => {
       cancelled = true;
@@ -106,7 +108,7 @@ function Pads({
       <p className={clsx("brain-turn", phase === "answering" && "brain-turn-yours")} aria-live="polite">
         {phase === "watching" ? "Watch…" : busy ? "Checking…" : "Your turn"}
       </p>
-      <div className="brain-pads" aria-label={phase === "watching" ? "Watch the pattern" : "Repeat the pattern"}>
+      <div className={clsx("brain-pads", colors > 4 && "brain-pads-wide")} aria-label={phase === "watching" ? "Watch the pattern" : "Repeat the pattern"}>
         {Array.from({ length: colors }, (_, pad) => (
           <button
             key={pad}
@@ -132,17 +134,28 @@ function Pads({
 function Controls() {
   const { prompt, submit, busy, disabled } = useBrainStreakRound();
   const sequence = prompt.sequence as number[];
+  // Rounds dealt before timing was per run carry none, and keep the old pace.
+  const band = SEQUENCE_RECALL_LEGACY_BAND;
   return (
     <Pads
       key={sequence.join(",")}
       colors={prompt.colors as number}
       sequence={sequence}
+      flashMs={typeof prompt.flashMs === "number" ? prompt.flashMs : band.flashMs}
+      gapMs={typeof prompt.gapMs === "number" ? prompt.gapMs : band.gapMs}
       submit={submit}
       busy={busy}
       disabled={disabled}
     />
   );
 }
+
+function pressureLine(pressure: 1 | 2 | 3): string {
+  const band = SEQUENCE_RECALL_BANDS[pressure];
+  return `${band.pads} pads, ${band.flashMs}ms flashes, and sequences start at ${band.startLength}.`;
+}
+
+const PRESSURE_RULES = { 1: [pressureLine(1)], 2: [pressureLine(2)], 3: [pressureLine(3)] };
 
 export function BrainSequenceRecall() {
   return (
@@ -168,6 +181,7 @@ export function BrainSequenceRecall() {
       scoreNoun="in a row"
       promptSlot={<Prompt />}
       controlsSlot={<Controls />}
+      pressureRules={PRESSURE_RULES}
     />
   );
 }

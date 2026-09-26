@@ -12,6 +12,7 @@ import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
+import { StakePressureNote } from "@/components/arcade/stake-pressure-note";
 import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { connectionsShareText, puzzleShareTitle } from "@/lib/arcade/puzzles/share";
@@ -27,7 +28,7 @@ import {
   selectionKey,
   shuffleBoardOrder,
 } from "@/lib/arcade/puzzles/board-order";
-import { MIN_ANTE_UP_WAGER } from "@/lib/arcade/ante-up-connections";
+import { CONNECTIONS_PRESSURE_RULES, MIN_ANTE_UP_WAGER } from "@/lib/arcade/ante-up-connections";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 /**
@@ -370,9 +371,14 @@ export function ConnectionsBoard({ day, onExit }: { day?: string; onExit?: () =>
           <p>
             It&apos;s one shared puzzle a day for everyone, so there&apos;s exactly one wagered
             attempt allowed — choose your wager, or play free, before it opens. A clean solve
-            with no mistakes pays the most; scraping it on your last life pays back less than you
-            staked, and running out of mistakes loses the wager outright. Whatever you wager, the
-            payout it can earn is locked in the moment the round opens.
+            with no mistakes pays the most, and running out of mistakes loses the wager
+            outright. Whatever you wager, the payout it can earn is locked in the moment the
+            round opens.
+          </p>
+          <p>
+            Bigger wagers leave less room for trial and error: from 10,000 Gold three mistakes end
+            the board, from 100,000 Gold two do, and from 1,000,000 Gold one does. At those
+            stakes only a clean solve makes a profit.
           </p>
         </HowToPlayModal>
       )}
@@ -412,8 +418,9 @@ export function ConnectionsBoard({ day, onExit }: { day?: string; onExit?: () =>
                 ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
                 : overCeiling
                   ? `Connections caps at ${ceiling.toLocaleString()} Gold a wager.`
-                  : "A clean solve pays out the most. Solving on your last life pays back less than you staked, and running out of mistakes loses the wager outright."}
+                  : "A clean solve pays out the most, and running out of mistakes loses the wager outright."}
           </p>
+          <StakePressureNote wager={wager} rules={CONNECTIONS_PRESSURE_RULES} />
           <button
             type="button"
             className="puzzle-share-button"

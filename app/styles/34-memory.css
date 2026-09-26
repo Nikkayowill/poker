@@ -9,7 +9,8 @@
      would not need a matching edit here. */
   grid-template-columns: repeat(var(--mm-columns, 4), 1fr);
   gap: clamp(5px, 1.8vw, 10px);
-  width: min(100%, 380px);
+  /* 95px a column keeps the 4-wide board at 380px; bigger boards go wider. */
+  width: min(100%, calc(var(--mm-columns, 4) * 95px));
   margin: 0 auto;
 }
 
@@ -54,7 +55,9 @@
 .mm-tile-matched:hover:not(:disabled) { transform: none; }
 
 @media (max-width: 640px) {
-  .mm-grid { width: min(100%, 260px); }
+  /* 65px a column keeps the 4-wide board at 260px. A 6-wide board fills the
+     phone's width, which keeps each card over 50px wide on a 375px screen. */
+  .mm-grid { width: min(100%, calc(var(--mm-columns, 4) * 65px)); }
   .mm-tile:hover:not(:disabled) { transform: none; }
 }
 

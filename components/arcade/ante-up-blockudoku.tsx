@@ -11,11 +11,15 @@ import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { useActionQueue } from "@/components/shared/use-action-queue";
-import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
+import { StakePressureNote } from "@/components/arcade/stake-pressure-note";
+import { ANTE_UP_TIER_LADDERS, anteUpTierAllowed, maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
+import { STAKE_PRESSURE_STEPS, lowestTierFor, type TierLadder } from "@/lib/arcade/stake-pressure";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
+  ANTE_UP_BLOCKUDOKU_GRANDMASTER,
   ANTE_UP_BLOCKUDOKU_TIERS,
+  anteUpBlockudokuTerms,
   MIN_ANTE_UP_WAGER,
   type AnteUpBlockudokuSnapshot,
   type BlockudokuDifficulty,
@@ -94,6 +98,32 @@ interface DragState {
   startY: number;
   touch: boolean;
   moved: boolean;
+}
+
+const LADDER = ANTE_UP_TIER_LADDERS.blockudoku as TierLadder<BlockudokuDifficulty>;
+
+const { hardcore } = ANTE_UP_BLOCKUDOKU_TIERS;
+
+/** What each stake band changes, for the lobby note. */
+const STAKE_RULES = {
+  1: ["Standard or harder. Five-cell pieces, 3x3 corners, crosses and big Ts join the tray."],
+  2: [
+    "Hardcore only. U shapes and the solid 3x3 block join the tray.",
+    `Score ${hardcore.targetScore.toLocaleString()} in ${formatDuration(hardcore.timeLimitMs)}. Plan all three pieces, not just the next one.`,
+  ],
+  3: [
+    "Grandmaster: Hardcore with no singles or dominoes to patch a gap.",
+    `Score ${ANTE_UP_BLOCKUDOKU_GRANDMASTER.targetScore.toLocaleString()} in ${formatDuration(ANTE_UP_BLOCKUDOKU_GRANDMASTER.timeLimitMs)}.`,
+  ],
+};
+
+/** "Under 10k" style limit for a tier a big stake locks out, or null if no stake does. */
+function stakeLimitLabel(id: BlockudokuDifficulty): string | null {
+  const index = LADDER.tiers.indexOf(id);
+  const band = LADDER.minTierByPressure.findIndex((min) => min > index);
+  if (band <= 0) return null;
+  const step = STAKE_PRESSURE_STEPS[band - 1];
+  return `Stakes under ${step >= 1_000_000 ? `${step / 1_000_000}M` : `${step / 1000}k`}`;
 }
 
 function difficultyLabel(id: BlockudokuDifficulty): string {
@@ -202,7 +232,13 @@ function PieceGlyph({ shape }: { shape: BlockudokuShape }) {
   return (
     <span
       className="bk-piece"
-      style={{ "--bk-piece-cols": size.cols, "--bk-piece-rows": size.rows } as React.CSSProperties}
+      style={
+        {
+          "--bk-piece-cols": size.cols,
+          "--bk-piece-rows": size.rows,
+          "--bk-piece-span": Math.max(size.rows, size.cols),
+        } as React.CSSProperties
+      }
     >
       {Array.from({ length: size.rows * size.cols }, (_, index) => (
         <span key={index} className={filled.has(index) ? "bk-piece-block" : undefined} />
@@ -431,7 +467,7 @@ export function AnteUpBlockudoku() {
   }, [liveSelection, board, selectedShape, aim]);
 
   const start = () => {
-    if (sending.current) return;
+    if (sending.current || !anteUpTierAllowed("blockudoku", difficulty, wager)) return;
     setSelected(null);
     setAim(null);
     placements.clear();
@@ -586,7 +622,14 @@ export function AnteUpBlockudoku() {
   const canAfford =
     wager === 0 || (wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance >= wager);
   const insufficientGold = wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance < wager;
-  const tier = ANTE_UP_BLOCKUDOKU_TIERS[difficulty];
+  const tier = anteUpBlockudokuTerms(difficulty, wager);
+  const tierAllowed = anteUpTierAllowed("blockudoku", difficulty, wager);
+
+  // A bigger stake moves the pick up to the easiest board it still allows.
+  const changeWager = (next: number) => {
+    setWager(next);
+    if (!anteUpTierAllowed("blockudoku", difficulty, next)) setDifficulty(lowestTierFor(LADDER, next));
+  };
 
   // Counted down from the server's absolute deadline, capped at the tier's
   // own limit so network latency never shows more time than the board has.
@@ -670,22 +713,25 @@ export function AnteUpBlockudoku() {
 
           <div className="ante-difficulties" role="group" aria-label="Difficulty">
             {DIFFICULTIES.map((entry) => {
-              const entryTier = ANTE_UP_BLOCKUDOKU_TIERS[entry.id];
+              const entryTier = anteUpBlockudokuTerms(entry.id, wager);
+              const locked = !anteUpTierAllowed("blockudoku", entry.id, wager);
               return (
                 <button
                   key={entry.id}
                   type="button"
                   className={clsx("ante-difficulty", entry.id === difficulty && "ante-difficulty-active")}
                   aria-pressed={entry.id === difficulty}
+                  disabled={locked}
                   onClick={() => {
                     selectSound();
                     setDifficulty(entry.id);
                     setWager((current) => Math.min(current, maxAnteUpWager("blockudoku", entry.id)));
                   }}
                 >
-                  <strong>{entry.label}</strong>
+                  <strong>{entryTier === ANTE_UP_BLOCKUDOKU_GRANDMASTER ? "Grandmaster" : entry.label}</strong>
                   <span>Score {entryTier.targetScore.toLocaleString()}</span>
                   <span>{Math.round(entryTier.timeLimitMs / 60_000)} min · {entryTier.multiplier}x</span>
+                  {locked && <span className="bk-tier-locked">{stakeLimitLabel(entry.id)}</span>}
                 </button>
               );
             })}
@@ -698,8 +744,9 @@ export function AnteUpBlockudoku() {
             min={0}
             max={ceiling}
             leading={{ label: "Free", value: 0 }}
-            onChange={(next) => { selectSound(); setWager(next); }}
+            onChange={(next) => { selectSound(); changeWager(next); }}
           />
+          <StakePressureNote wager={wager} rules={STAKE_RULES} />
           <p className="puzzle-verdict">
             {wager === 0
               ? "Free practice. No payout on a win, but nothing at risk either."
@@ -711,11 +758,11 @@ export function AnteUpBlockudoku() {
           <button
             type="button"
             className="puzzle-share-button"
-            disabled={busy || !loaded || !canAfford}
+            disabled={busy || !loaded || !canAfford || !tierAllowed}
             onClick={() => { selectSound(); start(); }}
           >
             <Coins size={15} aria-hidden="true" />
-            {!loaded ? "…" : !canAfford ? "Not enough Gold" : busy ? "Dealing…" : "Ante up"}
+            {!loaded ? "…" : !tierAllowed ? "Pick a harder board" : !canAfford ? "Not enough Gold" : busy ? "Dealing…" : "Ante up"}
           </button>
           {loaded && insufficientGold && <GoldShortfallHint needed={wager} compact />}
         </section>

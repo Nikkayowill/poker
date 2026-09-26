@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BLOCKUDOKU_PIECE_SETS,
   BLOCKUDOKU_SHAPES,
   GRID_CELLS,
   GRID_SIDE,
@@ -10,7 +11,10 @@ import {
   blockudokuView,
   placeBlockudokuPiece,
   resignBlockudokuRound,
+  blockudokuShapeById,
+  isBlockudokuPieceSet,
   startBlockudokuRound,
+  type BlockudokuPieceSet,
   type BlockudokuRound,
   type BlockudokuShape,
 } from "./blockudoku";
@@ -232,5 +236,96 @@ describe("blockudokuElapsedMs", () => {
     expect(blockudokuElapsedMs(ended, new Date("2026-09-18T13:00:00.000Z"))).toBe(
       LATER.getTime() - NOW.getTime(),
     );
+  });
+});
+
+describe("piece sets", () => {
+  const ids = (set: BlockudokuPieceSet) => BLOCKUDOKU_PIECE_SETS[set].map((entry) => entry.id);
+
+  it("keeps classic as the original set", () => {
+    expect(BLOCKUDOKU_PIECE_SETS.classic).toBe(BLOCKUDOKU_SHAPES);
+    expect(Math.max(...BLOCKUDOKU_SHAPES.map((entry) => entry.cells.length))).toBe(4);
+  });
+
+  it("grows each set from the one below it", () => {
+    expect(ids("big").slice(0, ids("classic").length)).toEqual(ids("classic"));
+    expect(ids("expert").slice(0, ids("big").length)).toEqual(ids("big"));
+    expect(ids("big")).toEqual(expect.arrayContaining(["pentomino-i-h", "pentomino-l", "corner-1", "plus", "big-t-down"]));
+    expect(ids("big")).not.toContain("square-3");
+    expect(ids("expert")).toEqual(expect.arrayContaining(["u-up", "u-down", "square-3"]));
+  });
+
+  it("makes master the expert set with nothing under three cells", () => {
+    const small = BLOCKUDOKU_PIECE_SETS.expert.filter((entry) => entry.cells.length <= 2).map((entry) => entry.id);
+    expect(small).toEqual(["single", "domino-h", "domino-v"]);
+    expect(ids("master")).toEqual(ids("expert").filter((id) => !small.includes(id)));
+  });
+
+  it("names every shape once, anchored at its top-left, with no cell twice", () => {
+    const all = ids("expert");
+    expect(new Set(all).size).toBe(all.length);
+    for (const entry of BLOCKUDOKU_PIECE_SETS.expert) {
+      expect(Math.min(...entry.cells.map(([row]) => row))).toBe(0);
+      expect(Math.min(...entry.cells.map(([, col]) => col))).toBe(0);
+      expect(new Set(entry.cells.map(([row, col]) => `${row},${col}`)).size).toBe(entry.cells.length);
+      expect(blockudokuShapeById(entry.id)).toBe(entry);
+    }
+    expect(blockudokuShapeById("nope")).toBeNull();
+  });
+
+  it("recognises only the known set names", () => {
+    expect(isBlockudokuPieceSet("classic")).toBe(true);
+    expect(isBlockudokuPieceSet("expert")).toBe(true);
+    expect(isBlockudokuPieceSet("master")).toBe(true);
+    expect(isBlockudokuPieceSet("hardcore")).toBe(false);
+  });
+});
+
+describe("dealing by piece set", () => {
+  /** Every piece dealt over many refills of a round that plays singles on an empty board. */
+  function dealt(round: BlockudokuRound): Set<string> {
+    const seen = new Set<string>();
+    for (let entropy = 1; entropy <= 300; entropy += 1) {
+      const refilled = placeBlockudokuPiece(
+        { ...round, board: new Array(GRID_CELLS).fill(0), inventory: [shape("single"), null, null] },
+        0,
+        4,
+        4,
+        NOW,
+        entropy * 2654435761,
+      );
+      for (const piece of refilled.inventory) if (piece) seen.add(piece.id);
+    }
+    return seen;
+  }
+
+  it("deals the classic set by default, with the same stream as before sets existed", () => {
+    const round = startBlockudokuRound(42);
+    expect(round.pieceSet).toBe("classic");
+    expect(round.inventory.map((piece) => piece?.id)).toEqual(["tetromino-i-v", "tromino-l-3", "tetromino-z"]);
+  });
+
+  it("stores the set on the round and refills from it", () => {
+    const round = startBlockudokuRound(7, "expert");
+    expect(round.pieceSet).toBe("expert");
+    const seen = dealt(round);
+    const expert = new Set(BLOCKUDOKU_PIECE_SETS.expert.map((entry) => entry.id));
+    for (const id of seen) expect(expert.has(id)).toBe(true);
+    expect([...seen].some((id) => !BLOCKUDOKU_SHAPES.some((entry) => entry.id === id))).toBe(true);
+  });
+
+  it("refills a round stored before sets existed from the classic set", () => {
+    const legacy = withInventory([shape("single"), null, null]);
+    expect(legacy.pieceSet).toBeUndefined();
+    const classic = new Set(BLOCKUDOKU_SHAPES.map((entry) => entry.id));
+    for (const id of dealt(legacy)) expect(classic.has(id)).toBe(true);
+  });
+
+  it("jams on a board with no room for a 3x3 block", () => {
+    // Only the middle cell of each box is filled, so nothing needing a clean 3x3 fits.
+    const round = withInventory([shape("single"), blockudokuShapeById("square-3"), null]);
+    for (const box of [10, 13, 16, 37, 40, 43, 64, 67, 70]) round.board[box] = 1;
+    const next = placeBlockudokuPiece(round, 0, 0, 0, NOW);
+    expect(next.status).toBe("over");
   });
 });

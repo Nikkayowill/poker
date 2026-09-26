@@ -11,13 +11,15 @@ import { useAppShell } from "@/components/shell/app-shell";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
+import { StakePressureNote } from "@/components/arcade/stake-pressure-note";
 import { useActionQueue } from "@/components/shared/use-action-queue";
 import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
-  ANTE_UP_MEMORY_MAX_TURNS,
+  MEMORY_PRESSURE_RULES,
   MIN_ANTE_UP_WAGER,
+  memoryStakeRules,
   wagerMultiplierForTurns,
   type AnteUpMemorySnapshot,
 } from "@/lib/arcade/ante-up-memory";
@@ -215,7 +217,9 @@ export function AnteUpMemory() {
     wager === 0 || (wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance >= wager);
   // Narrower than !canAfford; see ante-up-sudoku.tsx's own note on the same check.
   const insufficientGold = wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance < wager;
-  const turnsLeft = attempt ? Math.max(0, attempt.maxTurns - attempt.turns) : ANTE_UP_MEMORY_MAX_TURNS;
+  // What the chosen wager would deal, for the lobby copy before a board exists.
+  const lobbyRules = memoryStakeRules(wager);
+  const turnsLeft = attempt ? Math.max(0, attempt.maxTurns - attempt.turns) : lobbyRules.maxTurns;
   // A forfeit can only come from the turn cap or a resignation; the turn
   // count is what tells them apart, since both settle as "lost".
   const ranOutOfTurns = attempt !== null && attempt.status === "lost" && attempt.turns >= attempt.maxTurns;
@@ -225,7 +229,7 @@ export function AnteUpMemory() {
   // the live version of the lobby's own "the fewer turns it takes, the more
   // it pays" promise. Once settled, attempt.payout is the true, final number.
   const projectedPayout = attempt && active
-    ? Math.round(attempt.wager * wagerMultiplierForTurns(attempt.turns))
+    ? Math.round(attempt.wager * wagerMultiplierForTurns(attempt.turns, attempt.rungs))
     : attempt?.payout ?? 0;
 
   return (
@@ -253,15 +257,20 @@ export function AnteUpMemory() {
       {showHelp && (
         <HowToPlayModal title="Memory Match" onClose={() => setShowHelp(false)}>
           <p>
-            Flip tiles two at a time to find all eight matching pairs. Wager Gold or play free,
+            Flip tiles two at a time to find every matching pair. Wager Gold or play free,
             any time — there&apos;s no daily board to gate here, so a fresh layout deals on every
             attempt.
           </p>
           <p>
-            Clear all eight pairs within {ANTE_UP_MEMORY_MAX_TURNS} turns to win and cash out;
+            Clear all eight pairs within {memoryStakeRules(0).maxTurns} turns to win and cash out;
             run past that cap, or give up early, and the wager is gone. Speed is what pays: a
             fast clear multiplies the wager, a slow one can pay back less than you staked, so
             clearing the board isn&apos;t by itself a profit.
+          </p>
+          <p>
+            Bigger wagers deal bigger boards: 10 pairs from 10,000 Gold, 12 from 100,000 and 15
+            from 1,000,000, each with more turns to match. On the 15-pair board aces and kings
+            come as a black pair and a red pair, so the colour has to match as well as the rank.
           </p>
         </HowToPlayModal>
       )}
@@ -278,7 +287,7 @@ export function AnteUpMemory() {
           <div className="ante-lobby-heading">
             <h1>Memory Match, against yourself</h1>
             <p>
-              Wager on your own memory. Clear all eight pairs before your {ANTE_UP_MEMORY_MAX_TURNS}th turn
+              Wager on your own memory. Clear all {lobbyRules.pairs} pairs by turn {lobbyRules.maxTurns}
               and cash out -- the fewer turns it takes, the more it pays.
             </p>
           </div>
@@ -299,8 +308,9 @@ export function AnteUpMemory() {
                 ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
                 : wager > ceiling
                   ? `Memory Match caps at ${ceiling.toLocaleString()} Gold a wager.`
-                  : `Clear the board inside ${ANTE_UP_MEMORY_MAX_TURNS} turns. Speed is what pays: a fast clear multiplies the wager, a slow one returns less than you staked, and running past the cap loses it outright.`}
+                  : `Clear the board inside ${lobbyRules.maxTurns} turns. Speed is what pays: a fast clear multiplies the wager, a slow one returns less than you staked, and running past the cap loses it outright.`}
           </p>
+          <StakePressureNote wager={wager} rules={MEMORY_PRESSURE_RULES} />
 
           <button
             type="button"

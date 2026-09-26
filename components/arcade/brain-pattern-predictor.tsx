@@ -39,6 +39,12 @@ function Controls() {
   );
 }
 
+const PRESSURE_RULES = {
+  1: ["Starts 6 rounds in: Fibonacci-style sums, interleaved sequences, multiply-then-add."],
+  2: ["Starts 10 rounds in, with the hardest rules: mixed operations, cubes, doubling gaps."],
+  3: ["Starts 14 rounds in: the hardest rules with bigger numbers."],
+} as const;
+
 export function BrainPatternPredictor() {
   return (
     <BrainStreak
@@ -50,9 +56,10 @@ export function BrainPatternPredictor() {
       helpBody={
         <>
           <p>
-            Four numbers follow a hidden rule — adding the same amount each time, multiplying by
-            the same amount, or alternating up and down. Pick which of the four options continues
-            it. Guess right and a new, trickier pattern appears; guess wrong and the run ends.
+            A row of numbers follows a hidden rule. Early on it&apos;s adding or multiplying by the
+            same amount; later come squares, Fibonacci-style sums, two sequences woven together and
+            more. Pick which of the four options continues it. Guess right and a trickier pattern
+            appears; guess wrong and the run ends.
           </p>
           <p>Wager Gold or play free, any time. Your streak decides the payout.</p>
         </>
@@ -60,6 +67,7 @@ export function BrainPatternPredictor() {
       scoreNoun="in a row"
       promptSlot={<Prompt />}
       controlsSlot={<Controls />}
+      pressureRules={PRESSURE_RULES}
     />
   );
 }

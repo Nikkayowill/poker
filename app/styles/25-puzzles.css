@@ -199,6 +199,19 @@
 .word-stack-key-correct { background: #2f7d4f; border-color: transparent; }
 .word-stack-key-present { background: #b8952f; border-color: transparent; }
 .word-stack-key-absent { background: #262e3a; color: var(--muted-slate); border-color: transparent; }
+.word-stack-hard-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 138, 60, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 138, 60, 0.45);
+  color: #ffb27a;
+  font: 700 11px/1.5 system-ui, sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
 
 /* ---- Connections board ---- */
 

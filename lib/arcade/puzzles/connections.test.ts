@@ -228,3 +228,36 @@ describe("toConnectionsSnapshot", () => {
     expect(toConnectionsSnapshot(round, meta).revealed.map((group) => group.level)).toEqual([2, 0]);
   });
 });
+
+describe("a lowered mistake limit", () => {
+  const wrong = [
+    ["LION", "HEART", "CARD", "VIPER"],
+    ["TIGER", "SPADE", "POOL", "BEETLE"],
+    ["LEOPARD", "CLUB", "LOAN", "COBRA"],
+  ];
+  const meta = { day: "2026-09-25", puzzleNumber: 1, version: 1 };
+
+  it("ends the round at the limit it opened with", () => {
+    const start = startConnectionsRound(PUZZLE, noShuffle, { maxMistakes: 2 });
+    const one = submitConnectionsGuess(start, wrong[0]);
+    expect(one.status).toBe("active");
+    expect(toConnectionsSnapshot(one, meta).mistakesAllowed).toBe(2);
+    const two = submitConnectionsGuess(one, wrong[1]);
+    expect(two.status).toBe("lost");
+    expect(two.maxMistakes).toBe(2);
+  });
+
+  it("allows three at a limit of three", () => {
+    const start = startConnectionsRound(PUZZLE, noShuffle, { maxMistakes: 3 });
+    expect(wrong.slice(0, 2).reduce(submitConnectionsGuess, start).status).toBe("active");
+    expect(wrong.reduce(submitConnectionsGuess, start).status).toBe("lost");
+  });
+
+  it("gives a round stored before the limit existed the old four", () => {
+    const legacy: ConnectionsRound = { ...open() };
+    delete legacy.maxMistakes;
+    const three = wrong.reduce(submitConnectionsGuess, legacy);
+    expect(three.status).toBe("active");
+    expect(toConnectionsSnapshot(three, meta).mistakesAllowed).toBe(CONNECTIONS_MAX_MISTAKES);
+  });
+});

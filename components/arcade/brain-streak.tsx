@@ -9,6 +9,7 @@ import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { useAppShell } from "@/components/shell/app-shell";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
+import { StakePressureNote } from "@/components/arcade/stake-pressure-note";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { maxAnteUpWager, type AnteUpGame } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
@@ -16,10 +17,13 @@ import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   BRAIN_STREAK_RULES,
   MIN_ANTE_UP_WAGER,
+  brainStreakLadder,
+  brainStreakMaxMisses,
   streakMultiplierForScore,
   type BrainStreakGame,
   type BrainStreakSnapshot,
 } from "@/lib/arcade/brain-streak";
+import { stakePressure, type StakePressure } from "@/lib/arcade/stake-pressure";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 /**
@@ -118,6 +122,8 @@ export interface BrainStreakProps {
   promptSlot: ReactNode;
   /** Rendered where the round's answer controls go; reads the round via useBrainStreakRound(). */
   controlsSlot: ReactNode;
+  /** What each stake band changes, shown in the lobby once the wager reaches it. */
+  pressureRules: Partial<Record<Exclude<StakePressure, 0>, readonly string[]>>;
 }
 
 export function BrainStreak({
@@ -130,6 +136,7 @@ export function BrainStreak({
   scoreNoun,
   promptSlot,
   controlsSlot,
+  pressureRules,
 }: BrainStreakProps) {
   const [wager, setWager] = useState<number>(MIN_ANTE_UP_WAGER);
   const [attempt, setAttempt] = useState<BrainStreakSnapshot | null>(null);
@@ -305,8 +312,10 @@ export function BrainStreak({
   const clockOut = active && msRemainingLive === 0;
 
   // A live run pays on the ladder it opened with, which a retune can't change.
-  const ladder = attempt?.ladder ?? BRAIN_STREAK_RULES[gameId].ladder;
-  const maxMisses = attempt?.maxMisses ?? BRAIN_STREAK_RULES[gameId].maxMisses ?? null;
+  // The lobby shows the ladder the chosen wager would open.
+  const lobbyPressure = stakePressure(wager);
+  const ladder = attempt?.ladder ?? brainStreakLadder(BRAIN_STREAK_RULES[gameId], lobbyPressure);
+  const maxMisses = attempt ? attempt.maxMisses : brainStreakMaxMisses(BRAIN_STREAK_RULES[gameId], lobbyPressure);
   const lowestRung = ladder[ladder.length - 1];
   const nextRung = attempt ? [...ladder].reverse().find((rung) => rung.min > attempt.score) ?? null : null;
   const projectedPayout = attempt ? Math.round(attempt.wager * streakMultiplierForScore(ladder, attempt.score)) : 0;
@@ -358,6 +367,7 @@ export function BrainStreak({
             leading={{ label: "Free", value: 0 }}
             onChange={(next) => { selectSound(); setWager(next); }}
           />
+          <StakePressureNote wager={wager} rules={pressureRules} />
           <p className="puzzle-verdict">
             {wager === 0
               ? "Free practice — no payout on a run, but there's no fun in that."

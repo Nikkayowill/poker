@@ -21,8 +21,12 @@
 import { mulberry32 } from "@/lib/seeded-random";
 import { clearedSlotGuesses, placedSlotGuesses, slotFilled, slotWord } from "./word-fill-in-grid";
 
+/** The regular grid's side. A large grid is LARGE_GRID_SIZE; a round's own size comes from its template. */
 export const GRID_SIZE = 9;
-const CELL_COUNT = GRID_SIZE * GRID_SIZE;
+export const LARGE_GRID_SIZE = 11;
+
+/** Which pool of templates a round draws from. */
+export type WordFillInGridKind = "regular" | "large";
 
 export type WordFillInRoundStatus = "active" | "solved" | "abandoned";
 
@@ -41,12 +45,24 @@ const RAW_WORDS: readonly string[] = [
   "CAT", "DOG", "SUN", "RUN", "BIG", "RED", "TOP", "BOX", "CUP", "MAP",
   "BAT", "HAT", "PEN", "KEY", "LEG", "ARM", "EAR", "EYE", "JAW", "RIB",
   "TOE", "WEB", "ZOO", "BEE", "ANT", "OWL", "FOX", "COW", "PIG", "HEN",
+  "ACE", "AIR", "APE", "ASH", "AXE", "BAG", "BED", "BUS", "CAN", "CAP",
+  "CAR", "DEN", "DEW", "EGG", "ELF", "ELK", "ELM", "EMU", "FAN", "FIG",
+  "FIN", "FOG", "GEM", "HAM", "HUT", "ICE", "INK", "JAM", "JAR", "JET",
+  "LID", "LOG", "MAT", "MUD", "MUG", "NET", "NUT", "OAK", "OAR", "PAN",
+  "PEA", "PIE", "PIN", "POT", "RAT", "SEA", "SKY", "TEA", "TIN", "TOY",
+  "TUB", "VAN", "WAX", "YAK", "YAM",
   // 4
   "TREE", "BIRD", "FISH", "LAKE", "WIND", "RAIN", "SNOW", "STAR", "MOON", "ROCK",
   "SAND", "LEAF", "SEED", "ROOT", "VINE", "WOLF", "BEAR", "DEER", "GOAT", "LAMB",
   "MULE", "HAWK", "CROW", "DUCK", "SWAN", "FROG", "TOAD", "CRAB", "CLAM", "SHIP",
   "BOAT", "CAKE", "SOUP", "RICE", "BEEF", "MILK", "SALT", "BEAN", "CORN", "PEAR",
   "PLUM", "LIME", "MINT", "HERB", "WOOD", "IRON", "GOLD", "COAL", "FIRE",
+  "BARN", "BELL", "BIKE", "BONE", "BOOK", "BOOT", "BOWL", "CAMP", "CAVE", "COAT",
+  "DESK", "DISH", "DOOR", "DRUM", "FARM", "FERN", "FLAG", "FORK", "GATE", "GIFT",
+  "HARP", "HILL", "HIVE", "HOOK", "HORN", "KITE", "KNOT", "LAMP", "LOAF", "LOCK",
+  "MAZE", "MOSS", "NEST", "OVEN", "PALM", "PARK", "PEAK", "POND", "POOL", "ROAD",
+  "ROPE", "ROSE", "SAIL", "SEAL", "SOAP", "SOCK", "TENT", "TIDE", "TOWN", "TUNA",
+  "VASE", "WAVE", "WELL", "WING", "YARN",
   // 5
   "APPLE", "GRAPE", "LEMON", "MANGO", "MELON", "PEACH", "OCEAN", "RIVER", "STORM", "CLOUD",
   "EARTH", "PLANT", "GRASS", "STONE", "BRICK", "GLASS", "METAL", "PAPER", "CLOTH", "CHAIR",
@@ -54,22 +70,42 @@ const RAW_WORDS: readonly string[] = [
   "STEAK", "ONION", "MOUSE", "HORSE", "TIGER", "ZEBRA", "SNAKE", "WHALE", "SHARK", "EAGLE",
   "ROBIN", "TRAIN", "PLANE", "TRUCK", "WHEEL", "ROBOT", "MUSIC", "DANCE", "PAINT", "BRUSH",
   "QUEEN", "CROWN", "SWORD", "FIELD", "BEACH", "RIDGE", "CANOE",
+  "ACORN", "ALARM", "ARROW", "BACON", "BADGE", "BENCH", "BERRY", "BLOCK", "CABIN", "CAMEL",
+  "CANDY", "CHALK", "CHESS", "CLOCK", "CORAL", "CRANE", "DAISY", "DRESS", "FEAST", "FENCE",
+  "FERRY", "FLAME", "FLOUR", "FROST", "GHOST", "GLOVE", "HONEY", "JEWEL", "KOALA", "LLAMA",
+  "MAPLE", "MARSH", "MEDAL", "OLIVE", "OTTER", "PANDA", "PIANO", "PIZZA", "PLATE", "QUILT",
+  "RADIO", "SALAD", "SCARF", "SHELL", "SHIRT", "SKATE", "SLIDE", "SPOON", "STOOL", "TOWEL",
+  "TOWER", "TRAIL", "WAGON", "YACHT",
   // 6
   "CHERRY", "FLOWER", "GARLIC", "PENCIL", "KNIGHT", "SHIELD", "FOREST", "VALLEY", "ISLAND", "BRIDGE",
   "CASTLE", "DRAGON", "WIZARD", "GOBLIN", "ANIMAL", "INSECT", "SPIDER", "BEETLE", "RABBIT", "TURTLE",
   "LIZARD", "PYTHON", "FALCON", "PIGEON", "PARROT", "TOUCAN", "SALMON", "GINGER", "PEPPER", "BUTTER",
   "CARROT", "POTATO", "TOMATO", "ORANGE", "BANANA", "WALNUT", "PEANUT",
+  "ANCHOR", "BASKET", "BOTTLE", "BUCKET", "BUTTON", "CANDLE", "CANYON", "CARPET", "CIRCUS", "COOKIE",
+  "COTTON", "DONKEY", "GARDEN", "GUITAR", "HAMMER", "HELMET", "JACKET", "JUNGLE", "KETTLE", "KITTEN",
+  "LADDER", "MAGNET", "MEADOW", "MIRROR", "MUFFIN", "NAPKIN", "PADDLE", "PEBBLE", "PICNIC", "PILLOW",
+  "PLANET", "POCKET", "PUPPET", "ROCKET", "SADDLE", "SHOVEL", "SPONGE", "TICKET", "TUNNEL", "VIOLIN",
+  "WINDOW", "WINTER", "ZIPPER",
   // 7
   "DOLPHIN", "PENGUIN", "SPARROW", "REPTILE", "CRICKET", "PANTHER", "LEOPARD", "GIRAFFE", "GORILLA", "HAMSTER",
   "RACCOON", "CHICKEN", "OSTRICH", "PELICAN", "HALIBUT", "LOBSTER", "CABBAGE", "PUMPKIN", "SPINACH", "AVOCADO",
   "APRICOT", "COCONUT", "PRETZEL", "BISCUIT", "POPCORN",
+  "BLANKET", "CAPTAIN", "CARAVAN", "CEILING", "CHIMNEY", "COMPASS", "CRYSTAL", "CUPCAKE", "CURTAIN", "DIAMOND",
+  "FEATHER", "GLACIER", "HARVEST", "JOURNEY", "KITCHEN", "LANTERN", "LIBRARY", "MONSTER", "OCTOPUS", "ORCHARD",
+  "PAINTER", "PYRAMID", "RAINBOW", "SAUSAGE", "SCOOTER", "SHELTER", "TEACHER", "THUNDER", "TRACTOR", "TRUMPET",
+  "VOLCANO", "WEATHER", "WHISTLE",
   // 8
   "ELEPHANT", "MACKEREL", "SANDWICH", "DINOSAUR", "ANTELOPE", "MOUNTAIN", "HOSPITAL", "AIRPLANE", "BASEBALL", "FOOTBALL",
   "CAMPFIRE", "SUNSHINE", "SNOWFALL", "DAUGHTER", "BIRTHDAY", "STAIRWAY", "DOORBELL", "KEYBOARD", "NOTEBOOK", "UMBRELLA",
   "MUSHROOM",
+  "BACKPACK", "BLIZZARD", "CHAMPION", "COMPUTER", "CUCUMBER", "DOORSTEP", "FIREWORK", "HAYSTACK", "HEDGEHOG", "HOMEWORK",
+  "KANGAROO", "LEMONADE", "MEATBALL", "PAINTING", "RAINCOAT", "SEASHELL", "SKELETON", "SNOWBALL", "SQUIRREL", "STARFISH",
+  "TOMORROW", "TREASURE", "VACATION", "WOODLAND",
   // 9
   "BUTTERFLY", "CROCODILE", "WATERFALL", "RASPBERRY", "BLUEBERRY", "PINEAPPLE", "CHOCOLATE", "VEGETABLE", "TELEPHONE",
   "ADVENTURE", "SUBMARINE", "NEWSPAPER", "DIRECTION",
+  "DRAGONFLY", "JELLYFISH", "SUNFLOWER", "SNOWFLAKE", "HAMBURGER", "SCARECROW", "SPACESHIP", "BUMBLEBEE", "FIREPLACE", "GRASSLAND",
+  "LANDSCAPE", "LIGHTNING", "PORCUPINE", "SNOWSTORM", "BOOKSHELF", "CORNFIELD", "HAIRBRUSH", "NIGHTFALL",
 ];
 
 /** Deduplicated and bucketed by length; generation only ever reads this. */
@@ -97,6 +133,7 @@ interface StripDef {
 }
 
 interface Template {
+  readonly size: number;
   readonly strips: readonly StripDef[];
 }
 
@@ -107,13 +144,14 @@ interface Slot {
 }
 
 /**
- * Three black-cell layouts, each a lattice of two long spine strips crossing
+ * The regular grids: three black-cell layouts, each a lattice of two long spine strips crossing
  * several short strips. Cells belong to a strip because a strip claims them
  * here, not because a scan of the grid found a gap of the right length, so a
  * template can never produce an open cell with nowhere to get a letter from.
  */
-const TEMPLATES: readonly Template[] = [
+const REGULAR_TEMPLATES: readonly Template[] = [
   {
+    size: GRID_SIZE,
     strips: [
       { orientation: "H", index: 1, start: 0, end: 3 },
       { orientation: "H", index: 1, start: 5, end: 8 },
@@ -128,6 +166,7 @@ const TEMPLATES: readonly Template[] = [
     ],
   },
   {
+    size: GRID_SIZE,
     strips: [
       { orientation: "H", index: 0, start: 0, end: 2 },
       { orientation: "H", index: 0, start: 4, end: 8 },
@@ -144,6 +183,7 @@ const TEMPLATES: readonly Template[] = [
     ],
   },
   {
+    size: GRID_SIZE,
     strips: [
       { orientation: "H", index: 1, start: 0, end: 3 },
       { orientation: "H", index: 1, start: 5, end: 8 },
@@ -157,7 +197,124 @@ const TEMPLATES: readonly Template[] = [
   },
 ];
 
-export const TEMPLATE_COUNT = TEMPLATES.length;
+/**
+ * Reads a grid drawn as rows of '.' (open) and '#' (black). Every run of
+ * three or more open cells, across or down, is a word. A run of exactly two,
+ * or an open cell no word covers, is a drawing mistake and throws at load.
+ */
+function templateFromRows(rows: readonly string[]): Template {
+  const size = rows.length;
+  const open = (row: number, col: number) =>
+    row >= 0 && row < size && col >= 0 && col < size && rows[row][col] === ".";
+  const strips: StripDef[] = [];
+  const covered = new Set<number>();
+  for (const orientation of ["H", "V"] as const) {
+    for (let index = 0; index < size; index += 1) {
+      let start = -1;
+      for (let offset = 0; offset <= size; offset += 1) {
+        const isOpen = orientation === "H" ? open(index, offset) : open(offset, index);
+        if (isOpen && start === -1) start = offset;
+        if (!isOpen && start !== -1) {
+          const length = offset - start;
+          if (length === 2) throw new Error(`word fill-in template: two-cell run at ${orientation}${index}:${start}`);
+          if (length >= 3) {
+            strips.push({ orientation, index, start, end: offset - 1 });
+            for (let cell = start; cell < offset; cell += 1) {
+              covered.add(orientation === "H" ? index * size + cell : cell * size + index);
+            }
+          }
+          start = -1;
+        }
+      }
+    }
+  }
+  rows.forEach((line, row) => {
+    if (line.length !== size) throw new Error("word fill-in template: rows must be square");
+    for (let col = 0; col < size; col += 1) {
+      if (open(row, col) && !covered.has(row * size + col)) {
+        throw new Error(`word fill-in template: open cell ${row},${col} is in no word`);
+      }
+    }
+  });
+  return { size, strips };
+}
+
+/** The same drawing turned a quarter turn clockwise. */
+function rotated(rows: readonly string[]): string[] {
+  const size = rows.length;
+  return rows.map((_, row) =>
+    Array.from({ length: size }, (_unused, col) => rows[size - 1 - col][row]).join(""),
+  );
+}
+
+/** The same drawing mirrored left to right. */
+function mirrored(rows: readonly string[]): string[] {
+  return rows.map((line) => line.split("").reverse().join(""));
+}
+
+/**
+ * Marathon grids: 11x11 with sixteen words and sixteen crossings, against
+ * eight to twelve words on a regular grid. Three or four long down words
+ * each cross five across words, so a wrong guess shows up as a clash in
+ * several places at once instead of one, and every length comes in groups
+ * big enough that a word can't be placed by its length alone.
+ */
+const LARGE_SPINES: readonly string[] = [
+  ".....#.....",
+  "#.#######.#",
+  ".......#...",
+  "#.###.###.#",
+  "....#......",
+  "#.###.###.#",
+  "...#.......",
+  "#.###.#####",
+  "......#....",
+  "#####.###.#",
+  "....#......",
+];
+
+const LARGE_OFFSET: readonly string[] = [
+  "......#....",
+  "###.######.",
+  "....#......",
+  "###.###.##.",
+  "#.....#....",
+  "###.###.###",
+  "......#....",
+  ".##.###.###",
+  ".....#.....",
+  ".######.###",
+  "...#.......",
+];
+
+const LARGE_TEMPLATES: readonly Template[] = [
+  templateFromRows(LARGE_SPINES),
+  templateFromRows(LARGE_OFFSET),
+  templateFromRows(rotated(rotated(rotated(LARGE_SPINES)))),
+  templateFromRows(mirrored(LARGE_OFFSET)),
+];
+
+/**
+ * Every template, regular first. A round stores its index into this list, so
+ * the regular three keep indices 0-2 and rounds stored before large grids
+ * existed still find their shape.
+ */
+const TEMPLATES: readonly Template[] = [...REGULAR_TEMPLATES, ...LARGE_TEMPLATES];
+
+/** How many regular templates there are; regular rounds use indices below this. */
+export const TEMPLATE_COUNT = REGULAR_TEMPLATES.length;
+export const LARGE_TEMPLATE_COUNT = LARGE_TEMPLATES.length;
+
+function templatePool(kind: WordFillInGridKind): { first: number; count: number } {
+  return kind === "large"
+    ? { first: REGULAR_TEMPLATES.length, count: LARGE_TEMPLATES.length }
+    : { first: 0, count: REGULAR_TEMPLATES.length };
+}
+
+/** The side of the grid a template draws. Unknown indices read as regular. */
+export function wordFillInTemplateSize(templateIndex: number): number {
+  return TEMPLATES[templateIndex]?.size ?? GRID_SIZE;
+}
 
 function slotsForTemplate(template: Template): Slot[] {
   return template.strips.map((strip) => {
@@ -165,7 +322,7 @@ function slotsForTemplate(template: Template): Slot[] {
     for (let offset = strip.start; offset <= strip.end; offset += 1) {
       const row = strip.orientation === "H" ? strip.index : offset;
       const col = strip.orientation === "H" ? offset : strip.index;
-      cells.push(row * GRID_SIZE + col);
+      cells.push(row * template.size + col);
     }
     return { cells, length: cells.length };
   });
@@ -173,7 +330,7 @@ function slotsForTemplate(template: Template): Slot[] {
 
 /** '#' for black, '.' for open -- the shape of the grid, no letters yet. */
 function patternStringFor(template: Template): string {
-  const cells = new Array<string>(CELL_COUNT).fill("#");
+  const cells = new Array<string>(template.size * template.size).fill("#");
   for (const slot of slotsForTemplate(template)) {
     for (const cell of slot.cells) cells[cell] = ".";
   }
@@ -188,40 +345,31 @@ function blankGuessesFor(pattern: string): string {
     .join("");
 }
 
-/** Slots placed first, since they are the hardest to satisfy later. */
-function orderedSlotIndices(slots: readonly Slot[]): number[] {
-  const cellUsage = new Map<number, number>();
-  for (const slot of slots) {
-    for (const cell of slot.cells) cellUsage.set(cell, (cellUsage.get(cell) ?? 0) + 1);
-  }
-  const crossingCount = slots.map(
-    (slot) => slot.cells.filter((cell) => (cellUsage.get(cell) ?? 0) > 1).length,
-  );
-  return slots
-    .map((_, index) => index)
-    .sort((a, b) => crossingCount[b] - crossingCount[a] || slots[b].length - slots[a].length);
-}
-
 /**
- * How many backtracking steps to try before giving up on a template. The
- * template/word-list sizes here make failure essentially impossible, but a
- * cap still exists so a pathological seed can never hang the request; see
- * minesweeper.ts's MAX_LAYOUT_ATTEMPTS for the same reasoning.
+ * How many backtracking steps to try before giving up on a template. Failure
+ * is rare with the word list this size, but a cap still exists so a
+ * pathological seed can never hang the request; see minesweeper.ts's
+ * MAX_LAYOUT_ATTEMPTS for the same reasoning.
  */
 const MAX_BACKTRACK_STEPS = 20000;
 
-/** Fills every slot with a word, or returns null if it ran out of budget. */
+/**
+ * Fills every slot with a word, or returns null if it ran out of budget.
+ * Always fills whichever open slot has the fewest words left that fit, and
+ * backs off as soon as any slot has none. The large grids need that; a fixed
+ * order stalls on their long crossing words.
+ */
 function fillTemplate(template: Template, seed: number): string | null {
   const slots = slotsForTemplate(template);
   const grid = patternStringFor(template).split("");
   const random = mulberry32(seed);
   const usedWords = new Set<string>();
-  const order = orderedSlotIndices(slots);
+  const done = slots.map(() => false);
   let steps = 0;
 
-  function candidatesFor(slot: Slot): string[] {
+  function fitting(slot: Slot): string[] {
     const pool = WORDS_BY_LENGTH[slot.length] ?? [];
-    const matches = pool.filter((word) => {
+    return pool.filter((word) => {
       if (usedWords.has(word)) return false;
       for (let i = 0; i < slot.length; i += 1) {
         const current = grid[slot.cells[i]];
@@ -229,36 +377,49 @@ function fillTemplate(template: Template, seed: number): string | null {
       }
       return true;
     });
-    // Fisher-Yates, seeded, so the same template fills differently per seed.
-    for (let i = matches.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(random() * (i + 1));
-      const tmp = matches[i];
-      matches[i] = matches[j];
-      matches[j] = tmp;
-    }
-    return matches;
   }
 
-  function backtrack(position: number): boolean {
+  function backtrack(remaining: number): boolean {
     steps += 1;
     if (steps > MAX_BACKTRACK_STEPS) return false;
-    if (position >= order.length) return true;
+    if (remaining === 0) return true;
 
-    const slot = slots[order[position]];
-    for (const word of candidatesFor(slot)) {
+    let pick = -1;
+    let candidates: string[] = [];
+    for (let index = 0; index < slots.length; index += 1) {
+      if (done[index]) continue;
+      const matches = fitting(slots[index]);
+      if (matches.length === 0) return false;
+      if (pick === -1 || matches.length < candidates.length) {
+        pick = index;
+        candidates = matches;
+      }
+    }
+    // Fisher-Yates, seeded, so the same template fills differently per seed.
+    for (let i = candidates.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(random() * (i + 1));
+      const tmp = candidates[i];
+      candidates[i] = candidates[j];
+      candidates[j] = tmp;
+    }
+
+    const slot = slots[pick];
+    for (const word of candidates) {
       const previous = slot.cells.map((cell) => grid[cell]);
       for (let i = 0; i < slot.length; i += 1) grid[slot.cells[i]] = word[i];
       usedWords.add(word);
+      done[pick] = true;
 
-      if (backtrack(position + 1)) return true;
+      if (backtrack(remaining - 1)) return true;
 
+      done[pick] = false;
       usedWords.delete(word);
       for (let i = 0; i < slot.length; i += 1) grid[slot.cells[i]] = previous[i];
     }
     return false;
   }
 
-  return backtrack(0) ? grid.join("") : null;
+  return backtrack(slots.length) ? grid.join("") : null;
 }
 
 function wordsUsed(solution: string, template: Template): string[] {
@@ -272,11 +433,11 @@ function wordsUsed(solution: string, template: Template): string[] {
 export interface WordFillInRound {
   seed: number;
   templateIndex: number;
-  /** GRID_SIZE * GRID_SIZE characters: '#' black, '.' open. */
+  /** size * size characters (size from the template): '#' black, '.' open. */
   pattern: string;
-  /** GRID_SIZE * GRID_SIZE characters: '#' black, A-Z the answer letter. Never sent while active. */
+  /** Same length as the pattern: '#' black, A-Z the answer letter. Never sent while active. */
   solution: string;
-  /** GRID_SIZE * GRID_SIZE characters: '#' black, '_' blank, else the player's guessed letter. */
+  /** Same length as the pattern: '#' black, '_' blank, else the player's guessed letter. */
   guesses: string;
   /** Every word placed in the grid, sorted, with no positions -- that's the whole "no clue" mechanic. */
   words: string[];
@@ -292,11 +453,12 @@ export interface WordFillInRound {
  * happens if every template failed, which is a generation-time problem for
  * the caller to retry with a different seed, never a state a player reaches.
  */
-export function startWordFillInRound(seed: number): WordFillInRound {
+export function startWordFillInRound(seed: number, kind: WordFillInGridKind = "regular"): WordFillInRound {
   const normalizedSeed = seed >>> 0;
+  const pool = templatePool(kind);
 
-  for (let offset = 0; offset < TEMPLATES.length; offset += 1) {
-    const templateIndex = (normalizedSeed + offset) % TEMPLATES.length;
+  for (let offset = 0; offset < pool.count; offset += 1) {
+    const templateIndex = pool.first + ((normalizedSeed + offset) % pool.count);
     const template = TEMPLATES[templateIndex];
     const fillSeed = (normalizedSeed ^ Math.imul(offset + 1, 0x9e3779b9)) >>> 0;
     const solution = fillTemplate(template, fillSeed);
@@ -320,8 +482,8 @@ export function startWordFillInRound(seed: number): WordFillInRound {
   throw new Error("word fill-in: no template could be filled from the embedded word list");
 }
 
-function inBounds(index: number): boolean {
-  return Number.isInteger(index) && index >= 0 && index < CELL_COUNT;
+function inBounds(round: WordFillInRound, index: number): boolean {
+  return Number.isInteger(index) && index >= 0 && index < round.pattern.length;
 }
 
 export function wordFillInGuessProblem(
@@ -330,7 +492,7 @@ export function wordFillInGuessProblem(
   letter: string,
 ): WordFillInGuessProblem | null {
   if (round.status !== "active") return "finished";
-  if (!inBounds(index)) return "out-of-bounds";
+  if (!inBounds(round, index)) return "out-of-bounds";
   if (round.pattern[index] === "#") return "black-cell";
   if (typeof letter !== "string" || !/^[A-Za-z]$/.test(letter)) return "invalid-letter";
   return null;
@@ -486,6 +648,8 @@ export function resignWordFillInRound(round: WordFillInRound, now: Date): WordFi
 
 export interface WordFillInView {
   templateIndex: number;
+  /** The grid's side, from its template. */
+  size: number;
   pattern: string;
   status: WordFillInRoundStatus;
   guesses: string;
@@ -504,6 +668,7 @@ export function wordFillInView(round: WordFillInRound): WordFillInView {
   const over = round.status !== "active";
   return {
     templateIndex: round.templateIndex,
+    size: wordFillInTemplateSize(round.templateIndex),
     pattern: round.pattern,
     status: round.status,
     guesses: round.guesses,

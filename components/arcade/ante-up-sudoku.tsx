@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { Coins, Eraser, HelpCircle, Pencil, X } from "lucide-react";
+import { Coins, Eraser, HelpCircle, Lock, Pencil, X } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
+import { StakePressureNote } from "@/components/arcade/stake-pressure-note";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { useAppShell } from "@/components/shell/app-shell";
@@ -12,8 +13,19 @@ import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { useActionQueue } from "@/components/shared/use-action-queue";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
-import { ANTE_UP_TIERS, MIN_ANTE_UP_WAGER, type AnteUpSnapshot } from "@/lib/arcade/ante-up";
-import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
+import {
+  ANTE_UP_TIERS,
+  MIN_ANTE_UP_WAGER,
+  anteUpTimeLimitMs,
+  type AnteUpSnapshot,
+} from "@/lib/arcade/ante-up";
+import {
+  ANTE_UP_TIER_LADDERS,
+  anteUpStakeProblem,
+  anteUpTierAllowed,
+  maxAnteUpWager,
+} from "@/lib/arcade/ante-up-stakes";
+import { lowestTierFor, stakePressureThreshold } from "@/lib/arcade/stake-pressure";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import {
   SUDOKU_CELLS,
@@ -22,6 +34,7 @@ import {
   boxOf,
   columnOf,
   formatDuration,
+  isSudokuDifficulty,
   rowOf,
   type SudokuDifficulty,
 } from "@/lib/arcade/puzzles/sudoku";
@@ -46,6 +59,38 @@ import { createRequestSequence } from "@/lib/ui/request-sequence";
  */
 const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 25_000, 100_000, 500_000] as const;
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+/** "5 min" for whole minutes, "2:30" otherwise. */
+function clockLabel(ms: number): string {
+  return ms % 60_000 === 0 ? `${ms / 60_000} min` : formatDuration(ms);
+}
+
+/** What each stake band asks of the grid, for the lobby note. */
+const STAKE_RULES = {
+  1: [`Medium grid or harder. Medium runs ${clockLabel(ANTE_UP_TIERS.medium.rankedTimeLimitMs)}.`],
+  2: [`Hard grid or harder, on a ${clockLabel(ANTE_UP_TIERS.hard.rankedTimeLimitMs)} clock. Every one needs hidden singles.`],
+  3: [
+    "Expert grid only. Singles alone won't finish it.",
+    "Expect to need pairs, pointing and wings.",
+  ],
+} as const;
+
+/** The grid a stake needs: the current one if it's still allowed, else the easiest that is. */
+function difficultyForStake(current: SudokuDifficulty, wager: number): SudokuDifficulty {
+  const ladder = ANTE_UP_TIER_LADDERS.sudoku;
+  if (!ladder || anteUpTierAllowed("sudoku", current, wager)) return current;
+  const lowest = lowestTierFor(ladder, wager);
+  return isSudokuDifficulty(lowest) ? lowest : current;
+}
+
+/** "10k" for a grid a stake of 10k or more can't be played on. Null if no stake locks it. */
+function stakeLockedFrom(difficulty: SudokuDifficulty): string | null {
+  const ladder = ANTE_UP_TIER_LADDERS.sudoku;
+  if (!ladder) return null;
+  const index = ladder.tiers.indexOf(difficulty);
+  const band = ([1, 2, 3] as const).find((pressure) => ladder.minTierByPressure[pressure] > index);
+  return band ? stakePressureThreshold(band).replace("+", "") : null;
+}
 
 interface AnteUpResponse {
   attempt: AnteUpSnapshot | null;
@@ -409,6 +454,7 @@ export function AnteUpSudoku() {
   // which "earn more Gold" would not fix. Only an actual shortfall gets the hint.
   const insufficientGold = wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance < wager;
   const tier = ANTE_UP_TIERS[difficulty];
+  const stakeProblem = anteUpStakeProblem("sudoku", difficulty, wager);
   // What the attempt did to the balance, not what it credited: the slow
   // rungs can pay back less than was staked. See lib/arcade/ante-up-result.ts.
   const result = anteUpResultLine(attempt?.wager ?? 0, attempt?.payout ?? 0);
@@ -417,7 +463,7 @@ export function AnteUpSudoku() {
   // a second or two of network latency on the clock right after starting.
   // Minesweeper/Nonogram already clamp their own countdowns for this reason.
   const msRemaining = attempt
-    ? Math.min(ANTE_UP_TIERS[attempt.difficulty].timeLimitMs, Math.max(0, Date.parse(attempt.expiresAt) - now))
+    ? Math.min(attempt.timeLimitMs, Math.max(0, Date.parse(attempt.expiresAt) - now))
     : 0;
 
   return (
@@ -452,9 +498,10 @@ export function AnteUpSudoku() {
           <p>
             Pick a difficulty, then wager Gold or play free. Beat the grid before its clock runs
             out and you win; let the clock expire or give up and the wager is gone. A wrong digit
-            costs a mistake, and the third mistake ends the grid. Harder difficulties run a longer clock,
-            pay more on a win, and let you stake more — your wager and its payout are locked in
-            the moment you ante up.
+            costs a mistake, and the third mistake ends the grid. Harder difficulties run a longer clock
+            and pay more on a win. Bigger stakes need harder grids: 10k and up plays Medium or
+            harder, 100k Hard or harder, and 1M Expert only, and from 10k some clocks are
+            tighter. Your wager, clock and payout are locked in the moment you ante up.
           </p>
         </HowToPlayModal>
       )}
@@ -472,19 +519,21 @@ export function AnteUpSudoku() {
             <h1>Sudoku, against the clock</h1>
             <p>
               Wager on your own ability. Beat the grid before time runs out and cash out up to{" "}
-              {ANTE_UP_TIERS.expert.multiplier}x. The harder the grid, the more it pays and the more you may stake.
+              {ANTE_UP_TIERS.expert.multiplier}x. The harder the grid, the more it pays. Big stakes play the hard ones.
             </p>
           </div>
 
-          <div className="ante-difficulties" role="group" aria-label="Difficulty">
+          <div className="ante-difficulties sk-difficulties" role="group" aria-label="Difficulty">
             {SUDOKU_DIFFICULTIES.map((entry) => {
               const entryTier = ANTE_UP_TIERS[entry];
+              const locked = !anteUpTierAllowed("sudoku", entry, wager);
               return (
                 <button
                   key={entry}
                   type="button"
                   className={clsx("ante-difficulty", entry === difficulty && "ante-difficulty-active")}
                   aria-pressed={entry === difficulty}
+                  disabled={locked}
                   onClick={() => {
                     selectSound();
                     setDifficulty(entry);
@@ -495,7 +544,13 @@ export function AnteUpSudoku() {
                   }}
                 >
                   <strong>{entry[0].toUpperCase() + entry.slice(1)}</strong>
-                  <span>{Math.round(entryTier.timeLimitMs / 60_000)} min · {entryTier.multiplier}x</span>
+                  {locked ? (
+                    <span className="ante-difficulty-lock">
+                      <Lock size={10} aria-hidden="true" /> Under {stakeLockedFrom(entry)} stakes
+                    </span>
+                  ) : (
+                    <span>{clockLabel(anteUpTimeLimitMs(entry, wager))} · {entryTier.multiplier}x</span>
+                  )}
                 </button>
               );
             })}
@@ -508,34 +563,43 @@ export function AnteUpSudoku() {
             min={0}
             max={ceiling}
             leading={{ label: "Free", value: 0 }}
-            onChange={(next) => { selectSound(); setWager(next); }}
+            onChange={(next) => {
+              selectSound();
+              setWager(next);
+              setDifficulty((current) => difficultyForStake(current, next));
+            }}
           />
+          <StakePressureNote wager={wager} rules={STAKE_RULES} />
           <p className="puzzle-verdict">
             {wager === 0
               ? "Free practice — no payout on a win, but there's no fun in that."
               : wager < MIN_ANTE_UP_WAGER
                 ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
-                : wager > ceiling
-                  ? `${difficulty[0].toUpperCase() + difficulty.slice(1)} caps at ${ceiling.toLocaleString()} Gold a wager. Step up a difficulty to stake more.`
-                  : `Beat ${difficulty} inside ${Math.round(tier.timeLimitMs / 60_000)} minutes and cash out ${Math.round(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Miss it and the wager is gone.`}
+                : stakeProblem
+                  ? stakeProblem
+                  : wager > ceiling
+                    ? `${difficulty[0].toUpperCase() + difficulty.slice(1)} caps at ${ceiling.toLocaleString()} Gold a wager. Step up a difficulty to stake more.`
+                    : `Beat ${difficulty} inside ${clockLabel(anteUpTimeLimitMs(difficulty, wager))} and cash out ${Math.round(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Miss it and the wager is gone.`}
           </p>
 
           <button
             type="button"
             className="puzzle-share-button"
-            disabled={busy || !loaded || !canAfford}
+            disabled={busy || !loaded || !canAfford || stakeProblem !== null}
             onClick={() => { selectSound(); start(); }}
           >
             <Coins size={15} aria-hidden="true" />
             {!loaded
               ? "…"
-              : wager > ceiling
-                ? "Over the cap"
-                : !canAfford
-                  ? "Not enough Gold"
-                  : busy
-                    ? "Dealing…"
-                    : "Ante up"}
+              : stakeProblem
+                ? "Pick a harder grid"
+                : wager > ceiling
+                  ? "Over the cap"
+                  : !canAfford
+                    ? "Not enough Gold"
+                    : busy
+                      ? "Dealing…"
+                      : "Ante up"}
           </button>
           {loaded && insufficientGold && <GoldShortfallHint needed={wager} compact />}
         </section>

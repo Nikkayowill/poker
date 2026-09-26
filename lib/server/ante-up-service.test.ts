@@ -115,22 +115,56 @@ describe("wagering", () => {
   /**
    * The wager ceiling that used to live here (git history /
    * 20260827090000_ante_up_wager_tier_ceiling.sql) has been removed: a solo
-   * wager is now bounded only by the player's own balance, same as any other
-   * stake in the app. `maxAnteUpWager`/`anteUpWagerCeilingProblem` are kept as
-   * always-unbounded no-ops so a future ceiling has somewhere to land.
+   * wager is bounded only by the player's own balance. What a big stake
+   * changes instead is which grids it may be played on.
    */
-  it("allows a wager on the easy grid the old ceiling would have refused", async () => {
-    const { token } = await funded(5_000_000);
-    const { attempt } = await openAnteUpAttempt(token, "easy", 1_000_000);
-    expect(attempt.wager).toBe(1_000_000);
-  });
-
-  it("has no upper bound beyond the player's own balance", async () => {
-    expect(maxAnteUpWager("sudoku", "easy")).toBe(Number.POSITIVE_INFINITY);
+  it("has no upper bound beyond the player's own balance, on a grid hard enough for it", async () => {
+    expect(maxAnteUpWager("sudoku", "expert")).toBe(Number.POSITIVE_INFINITY);
 
     const { token } = await funded(50_000_000);
-    const { attempt } = await openAnteUpAttempt(token, "easy", 5_000_000);
+    const { attempt } = await openAnteUpAttempt(token, "expert", 5_000_000);
     expect(attempt.wager).toBe(5_000_000);
+  });
+});
+
+describe("stake pressure", () => {
+  it("refuses a grid too easy for the stake, with the reason, and leaves the wallet alone", async () => {
+    const { token } = await funded(5_000_000);
+    const cases = [
+      ["easy", 10_000, "Medium"],
+      ["medium", 100_000, "Hard"],
+      ["hard", 1_000_000, "Expert"],
+    ] as const;
+    for (const [tier, wager, needs] of cases) {
+      const attempt = openAnteUpAttempt(token, tier, wager);
+      await expect(attempt).rejects.toBeInstanceOf(AnteUpRequestError);
+      await expect(attempt).rejects.toThrow(`plays ${needs} or harder`);
+    }
+    expect(await balance(token)).toBe(5_000_000);
+  });
+
+  it("opens the lowest grid each band allows", async () => {
+    const cases = [
+      ["medium", 10_000],
+      ["hard", 100_000],
+      ["expert", 1_000_000],
+    ] as const;
+    for (const [tier, wager] of cases) {
+      const { token } = await funded(5_000_000);
+      const { attempt } = await openAnteUpAttempt(token, tier, wager);
+      expect(attempt.difficulty).toBe(tier);
+      expect(attempt.wager).toBe(wager);
+    }
+  });
+
+  it("leaves free play and small stakes on every grid", async () => {
+    for (const tier of ["easy", "medium", "hard", "expert"] as const) {
+      for (const wager of [0, 500, 9_999]) {
+        const { token } = await funded();
+        const { attempt } = await openAnteUpAttempt(token, tier, wager);
+        expect(attempt.difficulty).toBe(tier);
+      }
+    }
   });
 });
 

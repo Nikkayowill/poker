@@ -160,6 +160,15 @@ describe("placeBlockudokuPiece", () => {
     expect(third.rngState).not.toBe(round.rngState);
   });
 
+  it("mixes entropy into a refill, so the same history can deal different pieces", () => {
+    const round = withInventory([shape("single"), null, null]);
+    const dealsFor = (entropy: number) =>
+      placeBlockudokuPiece(round, 0, 0, 0, NOW, entropy).inventory.map((piece) => piece?.id).join();
+    const deals = new Set([0, 1, 0xdeadbeef, 123456789, 42, 7].map(dealsFor));
+    expect(deals.size).toBeGreaterThan(1);
+    expect(dealsFor(0)).toBe(dealsFor(0));
+  });
+
   it("ends the round when nothing in the inventory can be placed anywhere", () => {
     // Checkerboard: fill every cell where (row+col) is odd, leaving isolated
     // empty cells nothing bigger than a single block can ever reach.

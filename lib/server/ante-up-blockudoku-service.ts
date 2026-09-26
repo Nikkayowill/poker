@@ -112,8 +112,12 @@ async function payOutWin(
       console.error("ante-up-blockudoku.payout_credit_failed", { profileId, payout, error });
     }
   }
-  await applyMissionEvent(profileId, { kind: "puzzle_completed" });
-  await applyAchievementEvent(profileId, { kind: "puzzle_completed" });
+  // Free runs don't count: puzzles_completed pays Gold through achievements,
+  // and a free board costs nothing to farm.
+  if (attempt.wager > 0) {
+    await applyMissionEvent(profileId, { kind: "puzzle_completed" });
+    await applyAchievementEvent(profileId, { kind: "puzzle_completed" });
+  }
   return credited;
 }
 
@@ -301,7 +305,8 @@ export async function placeAnteUpBlockudoku(
     });
   }
 
-  const next = placeAnteUpBlockudokuPiece(current.state, input.slot, input.row, input.col, now);
+  // Fresh entropy for any refill this placement triggers; see the puzzle file's header.
+  const next = placeAnteUpBlockudokuPiece(current.state, input.slot, input.row, input.col, now, randomInt(2 ** 32));
   const stored = await advanceAnteUpAttempt(current, next);
   if (!stored) {
     // Rule 2: a lost race did not happen.

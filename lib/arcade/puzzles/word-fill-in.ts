@@ -19,6 +19,7 @@
  */
 
 import { mulberry32 } from "@/lib/seeded-random";
+import { clearedSlotGuesses, placedSlotGuesses, slotFilled, slotWord } from "./word-fill-in-grid";
 
 export const GRID_SIZE = 9;
 const CELL_COUNT = GRID_SIZE * GRID_SIZE;
@@ -394,14 +395,6 @@ function slotAt(round: WordFillInRound, slotIndex: number): number[] | null {
   return wordFillInSlotCells(round.templateIndex)[slotIndex] ?? null;
 }
 
-function slotWord(guesses: string, cells: readonly number[]): string {
-  return cells.map((cell) => guesses[cell]).join("");
-}
-
-function slotFilled(guesses: string, cells: readonly number[]): boolean {
-  return cells.every((cell) => /^[A-Z]$/.test(guesses[cell]));
-}
-
 /**
  * Solved when every slot spells a list word and the list is used exactly
  * once. Checked against the words rather than the stored solution, so a grid
@@ -416,18 +409,8 @@ export function isWordFillInFilledFromList(round: WordFillInRound, guesses: stri
   return placed.every((word, i) => word === wanted[i]);
 }
 
-/** Blanks a slot, except letters a different fully filled slot still uses. */
 function clearedGuesses(round: WordFillInRound, guesses: string, slotIndex: number): string {
-  const slots = wordFillInSlotCells(round.templateIndex);
-  const keep = new Set<number>();
-  slots.forEach((cells, index) => {
-    if (index !== slotIndex && slotFilled(guesses, cells)) cells.forEach((cell) => keep.add(cell));
-  });
-  const next = guesses.split("");
-  for (const cell of slots[slotIndex] ?? []) {
-    if (!keep.has(cell)) next[cell] = "_";
-  }
-  return next.join("");
+  return clearedSlotGuesses(guesses, wordFillInSlotCells(round.templateIndex), slotIndex);
 }
 
 function withGuesses(round: WordFillInRound, guesses: string, now: Date): WordFillInRound {
@@ -469,20 +452,8 @@ export function placeWordFillInWord(
   now: Date,
 ): WordFillInRound {
   if (wordFillInPlaceProblem(round, slotIndex, word)) return round;
-  const upper = word.toUpperCase();
   const slots = wordFillInSlotCells(round.templateIndex);
-
-  let guesses = round.guesses;
-  const elsewhere = slots.findIndex(
-    (cells, index) => index !== slotIndex && slotWord(guesses, cells) === upper,
-  );
-  if (elsewhere !== -1) guesses = clearedGuesses(round, guesses, elsewhere);
-
-  const next = guesses.split("");
-  slots[slotIndex].forEach((cell, i) => {
-    next[cell] = upper[i];
-  });
-  return withGuesses(round, next.join(""), now);
+  return withGuesses(round, placedSlotGuesses(round.guesses, slots, slotIndex, word.toUpperCase()), now);
 }
 
 export function wordFillInClearProblem(

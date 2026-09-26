@@ -16,15 +16,22 @@ import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   LIGHTS_OUT_MAX_MOVES,
   MIN_ANTE_UP_WAGER,
+  toggleLightsOut,
   wagerMultiplierForMoves,
   type BrainLightsOutSnapshot,
 } from "@/lib/arcade/brain-lights-out";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { useActionQueue } from "@/components/shared/use-action-queue";
+import { createRequestSequence } from "@/lib/ui/request-sequence";
 
 /**
  * Lights Out, the solo wager. Same shape as ante-up-memory.tsx: no
  * server-driven clock (the forfeit condition is moves, not time), so no
  * polling loop -- a tap response is authoritative the instant it lands.
+ *
+ * Taps flip on screen straight away and queue behind any still in flight
+ * (useActionQueue). The rules are public, so showing a tap early gives nothing
+ * away, and the server still decides the board.
  */
 
 const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000, 25_000] as const;
@@ -55,28 +62,31 @@ export function BrainLightsOut() {
   const sending = useRef(false);
   const mounted = useRef(true);
   useEffect(() => () => { mounted.current = false; }, []);
+  const [sequence] = useState(() => createRequestSequence<BrainLightsOutSnapshot>());
 
   const applyResponse = useCallback((data: Partial<Response>) => {
     if (data.profile) setProfile(data.profile);
-    if (data.attempt !== undefined) setAttempt(data.attempt ?? null);
-  }, [setProfile]);
+    if (data.attempt !== undefined && sequence.admit(data.attempt)) setAttempt(data.attempt ?? null);
+  }, [sequence, setProfile]);
 
   const refresh = useCallback(async () => {
-    if (sending.current) return;
+    const ticket = sequence.beginRead();
+    if (!ticket) return;
     try {
       const response = await fetch("/api/brain-lights-out", { cache: "no-store" });
       const data = (await response.json()) as Partial<Response>;
-      if (!mounted.current || sending.current) return;
+      if (!mounted.current || !sequence.acceptRead(ticket)) return;
       if (response.ok) applyResponse(data);
     } catch {
       // A dropped read is not worth a banner; the player can just try an action.
     } finally {
       if (mounted.current) setLoaded(true);
     }
-  }, [applyResponse]);
+  }, [applyResponse, sequence]);
 
   const send = useCallback(async (url: string, body: unknown) => {
     sending.current = true;
+    const done = sequence.beginWrite();
     setBusy(true);
     setError(null);
     try {
@@ -86,10 +96,10 @@ export function BrainLightsOut() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = (await response.json()) as Partial<Response> & { round?: BrainLightsOutSnapshot };
+      const data = (await response.json().catch(() => ({}))) as Partial<Response> & { round?: BrainLightsOutSnapshot };
       if (!mounted.current) return;
       if (!response.ok) {
-        if (data.round) setAttempt(data.round);
+        if (data.round) applyResponse({ attempt: data.round });
         setError(data.error ?? "That did not go through.");
         return;
       }
@@ -98,9 +108,39 @@ export function BrainLightsOut() {
       if (mounted.current) setError("Could not reach the board. Check your connection.");
     } finally {
       sending.current = false;
+      done();
       if (mounted.current) setBusy(false);
     }
-  }, [applyResponse]);
+  }, [applyResponse, sequence]);
+
+  /** Sends one queued move against the newest version. A refusal drops the rest of the queue. */
+  const sendMove = useCallback(async (move: number): Promise<boolean> => {
+    if (!mounted.current) return false;
+    try {
+      const response = await fetch("/api/brain-lights-out/actions", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "tap", version: sequence.version(), index: move }),
+      });
+      const data = (await response.json().catch(() => ({}))) as Partial<Response> & { round?: BrainLightsOutSnapshot };
+      if (!mounted.current) return false;
+      if (response.ok) {
+        applyResponse(data);
+        return data.attempt?.status === "active";
+      }
+      if (data.round) applyResponse({ attempt: data.round });
+      // A board that finished under a queued tap already shows why.
+      const ordinary = !!data.round && data.round.status !== "active";
+      if (!ordinary) setError(data.error ?? "That tap did not go through.");
+      return false;
+    } catch {
+      if (mounted.current) setError("Could not reach the board. Check your connection.");
+      return false;
+    }
+  }, [applyResponse, sequence]);
+
+  const { pending, push: enqueue } = useActionQueue<number>(sequence, sendMove);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void refresh(), 0);
@@ -123,13 +163,19 @@ export function BrainLightsOut() {
     void send("/api/brain-lights-out", { wager });
   };
 
+  // What the board looks like once every queued tap lands.
+  const shownLights = attempt ? pending.reduce<boolean[]>((lights, index) => toggleLightsOut(lights, index), attempt.lights) : [];
+  const shownMoves = (attempt?.moves ?? 0) + pending.length;
+  const shownCleared = attempt !== null && shownLights.every((on) => !on);
+
   const tap = (index: number) => {
-    if (!attempt || sending.current || !active) return;
-    void send("/api/brain-lights-out/actions", { action: "tap", version: attempt.version, index });
+    if (!attempt || !active || busy || shownCleared || shownMoves >= attempt.maxMoves) return;
+    tapSound();
+    enqueue(index);
   };
 
   const resign = () => {
-    if (sending.current) return;
+    if (sending.current || pending.length > 0) return;
     void send("/api/brain-lights-out/actions", { action: "resign" });
   };
   const playAgain = () => setAttempt(null);
@@ -139,9 +185,9 @@ export function BrainLightsOut() {
   const ceiling = maxAnteUpWager("lights-out" as AnteUpGame, null);
   const canAfford = wager === 0 || (wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance >= wager);
   const insufficientGold = wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance < wager;
-  const movesLeft = attempt ? Math.max(0, attempt.maxMoves - attempt.moves) : LIGHTS_OUT_MAX_MOVES;
+  const movesLeft = attempt ? Math.max(0, attempt.maxMoves - shownMoves) : LIGHTS_OUT_MAX_MOVES;
   const ranOutOfMoves = attempt !== null && attempt.status === "lost" && attempt.moves >= attempt.maxMoves;
-  const projectedPayout = attempt && active ? Math.round(attempt.wager * wagerMultiplierForMoves(attempt.moves)) : attempt?.payout ?? 0;
+  const projectedPayout = attempt && active ? Math.round(attempt.wager * wagerMultiplierForMoves(shownMoves)) : attempt?.payout ?? 0;
 
   return (
     <main className="duel-shell ante-shell">
@@ -234,14 +280,14 @@ export function BrainLightsOut() {
           </div>
 
           <div className="lo-grid" style={{ "--lo-size": attempt.size } as React.CSSProperties}>
-            {attempt.lights.map((on, index) => (
+            {shownLights.map((on, index) => (
               <button
                 key={index}
                 type="button"
                 className={clsx("lo-tile", on && "lo-tile-on")}
-                disabled={busy || !active}
+                disabled={!active}
                 aria-label={on ? "Light on" : "Light off"}
-                onClick={() => { tapSound(); tap(index); }}
+                onClick={() => tap(index)}
               />
             ))}
           </div>
@@ -256,7 +302,7 @@ export function BrainLightsOut() {
             </div>
           ) : (
             <div className="duel-controls">
-              <button type="button" className="duel-resign" disabled={busy} onClick={() => void resign()}>
+              <button type="button" className="duel-resign" disabled={busy || pending.length > 0} onClick={() => void resign()}>
                 Give up
               </button>
             </div>

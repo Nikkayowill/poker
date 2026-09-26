@@ -13,7 +13,13 @@ import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { maxAnteUpWager, type AnteUpGame } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
-import { MIN_ANTE_UP_WAGER, type BrainStreakSnapshot } from "@/lib/arcade/brain-streak";
+import {
+  BRAIN_STREAK_RULES,
+  MIN_ANTE_UP_WAGER,
+  streakMultiplierForScore,
+  type BrainStreakGame,
+  type BrainStreakSnapshot,
+} from "@/lib/arcade/brain-streak";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 /**
@@ -52,9 +58,15 @@ interface BrainStreakResponse {
  */
 interface BrainStreakRound {
   prompt: Record<string, unknown>;
+  /** Changes with every answered round, even when two prompts look alike. */
+  roundKey: number;
   submit: (given: string) => void;
+  /** An answer is on its way. Ignore input, but don't grey the controls out for it. */
   busy: boolean;
+  /** The run can't take answers at all (settled, or the clock hit zero). */
   disabled: boolean;
+  /** How the last answer went, keyed so the same verdict twice still replays. */
+  verdict: { key: number; correct: boolean } | null;
 }
 
 const BrainStreakRoundContext = createContext<BrainStreakRound | null>(null);
@@ -66,8 +78,35 @@ export function useBrainStreakRound(): BrainStreakRound {
   return round;
 }
 
+/**
+ * Lets a physical keyboard answer. `onKey` returns true when it used the key,
+ * which stops the browser acting on it too. Keys typed into a field, aimed at
+ * a focused button outside the game, or pressed while the help dialog is open
+ * are left alone.
+ */
+export function useAnswerKeys(onKey: (key: string) => boolean) {
+  const handler = useRef(onKey);
+  useEffect(() => {
+    handler.current = onKey;
+  });
+  useEffect(() => {
+    const listen = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      // A focused link or button outside the game's own controls (Cash out,
+      // How to play) keeps its Enter and Space.
+      if (target?.closest("a, button") && !target.closest(".brain-controls, .wg-keyboard")) return;
+      if (document.querySelector("[role='dialog']")) return;
+      if (handler.current(event.key)) event.preventDefault();
+    };
+    window.addEventListener("keydown", listen);
+    return () => window.removeEventListener("keydown", listen);
+  }, []);
+}
+
 export interface BrainStreakProps {
-  gameId: string;
+  gameId: BrainStreakGame;
   apiPath: string;
   title: string;
   lobbyBlurb: ReactNode;
@@ -100,6 +139,7 @@ export function BrainStreak({
   const [error, setError] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [verdict, setVerdict] = useState<BrainStreakRound["verdict"]>(null);
 
   const play = useArcadeSound({ gameSounds: true });
   const active = attempt?.status === "active";
@@ -139,7 +179,7 @@ export function BrainStreak({
     return null;
   }, [apiPath, applyResponse]);
 
-  const send = useCallback(async (url: string, body: unknown) => {
+  const send = useCallback(async (url: string, body: unknown): Promise<BrainStreakSnapshot | null> => {
     sending.current = true;
     setBusy(true);
     setError(null);
@@ -150,22 +190,22 @@ export function BrainStreak({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = (await response.json()) as Partial<BrainStreakResponse> & { round?: BrainStreakSnapshot };
-      if (!mounted.current) return;
+      // A proxy or platform error page isn't JSON; that is a server fault, not a dropped connection.
+      const data = (await response.json().catch(() => ({}))) as Partial<BrainStreakResponse> & { round?: BrainStreakSnapshot };
+      if (!mounted.current) return null;
       if (!response.ok) {
         if (data.round) setAttempt(data.round);
-        // A miss (survival) or a clock that ran out mid-answer (sprint) is
-        // ordinary play, not a fault -- the settled result screen already
-        // says the run is over, so a banner on top of it would be a second,
-        // redundant way of saying the same thing.
-        const ordinary =
-          data.round && (data.round.status === "active" || data.error === "That ended the run." || data.error === "Time's up.");
-        if (!ordinary) setError(data.error ?? "That did not go through.");
-        return;
+        // A refusal that carries the run ("moved on", "already over") only
+        // means this screen was behind. Repainting from it is the whole fix,
+        // and the board or result screen already shows where things stand.
+        if (!data.round) setError(data.error ?? "That did not go through.");
+        return data.round ?? null;
       }
       applyResponse(data);
+      return data.attempt ?? null;
     } catch {
       if (mounted.current) setError("Could not reach the game. Check your connection.");
+      return null;
     } finally {
       sending.current = false;
       if (mounted.current) setBusy(false);
@@ -202,6 +242,15 @@ export function BrainStreak({
     return () => window.clearInterval(timer);
   }, [active, sprint]);
 
+  // Fetch the settled run as soon as the clock runs out rather than on the
+  // next 2s poll, so the result shows the moment the countdown ends.
+  const expiresAt = active ? attempt?.expiresAt ?? null : null;
+  useEffect(() => {
+    if (!expiresAt) return;
+    const timer = window.setTimeout(() => void refresh(), Math.max(0, Date.parse(expiresAt) - Date.now()) + 150);
+    return () => window.clearTimeout(timer);
+  }, [expiresAt, refresh]);
+
   const scoreHeard = useRef(0);
   useEffect(() => {
     if (!attempt) {
@@ -216,19 +265,27 @@ export function BrainStreak({
 
   const start = () => {
     if (sending.current) return;
+    setVerdict(null);
     void send(apiPath, { wager });
   };
 
   const submit = (given: string) => {
-    if (!attempt || sending.current || !active) return;
-    void send(`${apiPath}/actions`, { action: "answer", version: attempt.version, given });
+    if (!attempt || sending.current || !active || clockOut) return;
+    const before = attempt;
+    void send(`${apiPath}/actions`, { action: "answer", version: before.version, given }).then((next) => {
+      if (!next || next.id !== before.id || next.version === before.version) return;
+      setVerdict({ key: next.version, correct: next.score > before.score });
+    });
   };
 
   const resign = () => {
     if (sending.current) return;
     void send(`${apiPath}/actions`, { action: "resign" });
   };
-  const playAgain = () => setAttempt(null);
+  const playAgain = () => {
+    setVerdict(null);
+    setAttempt(null);
+  };
 
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;
   const result = anteUpResultLine(attempt?.wager ?? 0, attempt?.payout ?? 0);
@@ -242,6 +299,17 @@ export function BrainStreak({
   // own clock does.
   const msRemainingLive = attempt?.expiresAt ? Math.max(0, Date.parse(attempt.expiresAt) - now) : null;
   const secondsLeft = msRemainingLive !== null ? Math.ceil(msRemainingLive / 1000) : null;
+  const msTotal = attempt?.expiresAt ? Date.parse(attempt.expiresAt) - Date.parse(attempt.startedAt) : null;
+  // The server settles the run; this only stops taking answers the moment the
+  // visible clock reads zero instead of letting one more go out to be refused.
+  const clockOut = active && msRemainingLive === 0;
+
+  // A live run pays on the ladder it opened with, which a retune can't change.
+  const ladder = attempt?.ladder ?? BRAIN_STREAK_RULES[gameId].ladder;
+  const maxMisses = attempt?.maxMisses ?? BRAIN_STREAK_RULES[gameId].maxMisses ?? null;
+  const lowestRung = ladder[ladder.length - 1];
+  const nextRung = attempt ? [...ladder].reverse().find((rung) => rung.min > attempt.score) ?? null : null;
+  const projectedPayout = attempt ? Math.round(attempt.wager * streakMultiplierForScore(ladder, attempt.score)) : 0;
 
   return (
     <main className="duel-shell ante-shell">
@@ -295,8 +363,19 @@ export function BrainStreak({
               ? "Free practice — no payout on a run, but there's no fun in that."
               : wager < MIN_ANTE_UP_WAGER
                 ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
-                : `The longer your streak, the more it pays — a short run forfeits the wager.`}
+                : `Score under ${lowestRung.min} and the wager is gone.`}
           </p>
+          <ol className="brain-ladder" aria-label="Payouts">
+            {[...ladder].reverse().map((rung) => (
+              <li key={rung.min}>
+                <span>{rung.min}+ {scoreNoun}</span>
+                <strong>
+                  {rung.multiplier}×
+                  {wager > 0 && <small> {Math.round(wager * rung.multiplier).toLocaleString()}</small>}
+                </strong>
+              </li>
+            ))}
+          </ol>
 
           <button
             type="button"
@@ -312,36 +391,57 @@ export function BrainStreak({
       ) : (
         <div className="duel-match ante-match">
           <div className="duel-scoreline ante-scoreline">
-            <span className="ante-clock" aria-live="polite">
-              {active
-                ? secondsLeft !== null
-                  ? `${secondsLeft}s left · ${attempt.score} ${scoreNoun}`
-                  : `${attempt.score} ${scoreNoun}`
-                : `${attempt.score} ${scoreNoun}`}
+            <span className={clsx("ante-clock", active && secondsLeft !== null && secondsLeft <= 10 && "brain-clock-low")}>
+              {active && secondsLeft !== null ? `${secondsLeft}s` : `${attempt.score} ${scoreNoun}`}
             </span>
             <span className="duel-pot">
               <Coins size={12} aria-hidden="true" />
               <strong>{attempt.wager.toLocaleString()}</strong>
+              {attempt.wager > 0 && active && <small>→ {projectedPayout.toLocaleString()}</small>}
             </span>
           </div>
+          {active && msRemainingLive !== null && msTotal !== null && (
+            <div className="brain-timebar" aria-hidden="true">
+              <span style={{ transform: `scaleX(${msRemainingLive / msTotal})` }} />
+            </div>
+          )}
+          {active && (
+            <p className="brain-progress" aria-live="polite">
+              {/* Survival's pill already shows the streak; sprint's shows the clock. */}
+              {sprint && <><strong>{attempt.score}</strong> {scoreNoun} · </>}
+              {nextRung ? `${nextRung.min - attempt.score} more for ${nextRung.multiplier}×` : "Top payout reached"}
+              {maxMisses !== null && ` · ${maxMisses - attempt.misses} ${maxMisses - attempt.misses === 1 ? "miss" : "misses"} left`}
+            </p>
+          )}
 
           {settled ? (
             <div className={clsx("duel-result", result.profited && "duel-result-won")}>
               <WinCelebration active={result.profited} amount={result.net} />
               <strong>Run over</strong>
-              <span>{attempt.score} {scoreNoun}</span>
+              <span>
+                {attempt.score} {scoreNoun}
+                {maxMisses !== null && attempt.misses >= maxMisses && " · out of misses"}
+              </span>
               <span className="duel-result-gold">{result.label}</span>
               <button type="button" className="floor-play" onClick={playAgain}>Play again</button>
             </div>
           ) : (
             <BrainStreakRoundContext.Provider
-              value={{ prompt: attempt.prompt, submit, busy, disabled: busy || !active }}
+              value={{
+                prompt: attempt.prompt,
+                roundKey: attempt.version,
+                submit,
+                busy,
+                disabled: !active || clockOut,
+                verdict,
+              }}
             >
               <div className="brain-prompt">{promptSlot}</div>
               <div className="brain-controls">{controlsSlot}</div>
               <div className="duel-controls">
                 <button type="button" className="duel-resign" disabled={busy} onClick={() => void resign()}>
-                  Cash out
+                  {/* Below the first rung, stopping pays nothing, so it isn't a cash out. */}
+                  {projectedPayout > 0 ? `Cash out ${projectedPayout.toLocaleString()}` : "Give up"}
                 </button>
               </div>
             </BrainStreakRoundContext.Provider>

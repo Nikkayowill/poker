@@ -102,8 +102,12 @@ async function payOutWin(
       console.error("ante-up-word-fill-in.payout_credit_failed", { profileId, payout, error });
     }
   }
-  await applyMissionEvent(profileId, { kind: "puzzle_completed" });
-  await applyAchievementEvent(profileId, { kind: "puzzle_completed" });
+  // Free runs don't count: puzzles_completed pays Gold through achievements,
+  // and a free board costs nothing to farm.
+  if (attempt.wager > 0) {
+    await applyMissionEvent(profileId, { kind: "puzzle_completed" });
+    await applyAchievementEvent(profileId, { kind: "puzzle_completed" });
+  }
   return credited;
 }
 

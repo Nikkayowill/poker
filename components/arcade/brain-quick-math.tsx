@@ -1,7 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { BrainStreak, useBrainStreakRound } from "./brain-streak";
+import { useState } from "react";
+import clsx from "clsx";
+import { Delete } from "lucide-react";
+import { BrainStreak, useAnswerKeys, useBrainStreakRound } from "./brain-streak";
+
+/** Longest answer the pad accepts. The biggest product a long run deals stays well under this. */
+const MAX_DIGITS = 5;
+const PAD_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"] as const;
 
 function Prompt() {
   const { prompt } = useBrainStreakRound();
@@ -13,53 +19,84 @@ function Prompt() {
 }
 
 /**
- * One problem's answer box. Keyed by the problem in the parent (see
- * Controls below), so a new problem remounts this fresh instead of an
- * effect resetting `value`, which the ref-safety lint rule refuses for a
- * synchronous setState.
+ * The answer readout and its keypad. There is no text box on purpose: a
+ * phone's number keyboard has no Enter key, so answering meant tapping a
+ * button, which blurred the box and closed the keyboard every problem. The
+ * pad never loses anything to focus, and a physical keyboard drives the same
+ * state through a window listener, so desktop players never click either.
+ *
+ * Keyed by round in Controls below, so a new problem starts from an empty
+ * readout without an effect resetting it.
  */
-function AnswerBox({ submit, busy, disabled }: { submit: (given: string) => void; busy: boolean; disabled: boolean }) {
+function AnswerPad({
+  submit,
+  busy,
+  disabled,
+  verdict,
+}: {
+  submit: (given: string) => void;
+  busy: boolean;
+  disabled: boolean;
+  verdict: { key: number; correct: boolean } | null;
+}) {
   const [value, setValue] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+  const locked = busy || disabled;
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
+  const press = (digit: string) => {
+    if (locked) return;
+    setValue((current) => (current.length >= MAX_DIGITS ? current : current + digit));
+  };
+  const erase = () => {
+    if (locked) return;
+    setValue((current) => current.slice(0, -1));
+  };
   const send = () => {
-    if (!value.trim() || disabled) return;
-    submit(value.trim());
-    setValue("");
+    if (locked || !value) return;
+    submit(value);
   };
 
+  useAnswerKeys((key) => {
+    if (/^[0-9]$/.test(key)) press(key);
+    else if (key === "Backspace") erase();
+    else if (key === "Enter") send();
+    else return false;
+    return true;
+  });
+
   return (
-    <form
-      className="brain-answer-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        send();
-      }}
-    >
-      <input
-        ref={inputRef}
-        type="number"
-        inputMode="numeric"
-        className="brain-answer-input"
-        value={value}
-        disabled={busy || disabled}
-        onChange={(event) => setValue(event.target.value)}
+    <div className="brain-math-pad">
+      <output
+        className={clsx(
+          "brain-math-readout",
+          verdict && (verdict.correct ? "brain-verdict-right" : "brain-verdict-wrong"),
+        )}
         aria-label="Your answer"
-      />
-      <button type="submit" className="brain-answer-submit" disabled={busy || disabled || !value.trim()}>
-        Answer
-      </button>
-    </form>
+      >
+        {value || <span className="brain-math-caret" aria-hidden="true" />}
+      </output>
+      <div className="brain-keypad">
+        {PAD_KEYS.map((digit) => (
+          <button key={digit} type="button" className="brain-key" disabled={disabled} onClick={() => press(digit)}>
+            {digit}
+          </button>
+        ))}
+        <button type="button" className="brain-key brain-key-erase" disabled={disabled} onClick={erase} aria-label="Delete">
+          <Delete size={20} aria-hidden="true" />
+        </button>
+        <button type="button" className="brain-key" disabled={disabled} onClick={() => press("0")}>
+          0
+        </button>
+        <button type="button" className="brain-key brain-key-go" disabled={disabled || !value} onClick={send}>
+          Go
+        </button>
+      </div>
+    </div>
   );
 }
 
 function Controls() {
-  const { prompt, submit, busy, disabled } = useBrainStreakRound();
-  return <AnswerBox key={`${prompt.a}-${prompt.b}-${prompt.op}`} submit={submit} busy={busy} disabled={disabled} />;
+  const { roundKey, submit, busy, disabled, verdict } = useBrainStreakRound();
+  return <AnswerPad key={roundKey} submit={submit} busy={busy} disabled={disabled} verdict={verdict} />;
 }
 
 export function BrainQuickMath() {
@@ -78,7 +115,8 @@ export function BrainQuickMath() {
             scoring it, so answer fast and keep going.
           </p>
           <p>
-            Wager Gold or play free, any time. How many you get right decides the payout.
+            Tap the keypad, or just type on a keyboard and press Enter. Wager Gold or play free, any
+            time. How many you get right decides the payout.
           </p>
         </>
       }

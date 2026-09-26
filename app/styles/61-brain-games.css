@@ -3,7 +3,7 @@
  *
  * After 36-duels.css and 43-ante-up.css: the shell, wager step, scoreline and
  * result block all come from those two. What's here is only what's unique to
- * these six -- the flash pads, the answer box, the multiple-choice/true-false
+ * these six -- the flash pads, the math keypad, the multiple-choice/true-false
  * buttons, the Lights Out grid and the Word Guess keyboard.
  */
 
@@ -34,6 +34,12 @@
   line-height: 1.4;
 }
 
+/* .duel-match centres its children, which also shrinks them to their
+   content; these three need the full column to lay out. */
+.brain-controls,
+.brain-timebar,
+.brain-progress { width: 100%; }
+
 .brain-controls {
   display: flex;
   flex-direction: column;
@@ -51,13 +57,50 @@
   aspect-ratio: 1;
 }
 
+.brain-sequence {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+}
+
+.brain-turn {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.brain-turn-yours { color: var(--brand-gold-light); }
+
 .brain-pad {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 8px;
   border: 0;
   border-radius: 12px;
   opacity: .45;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   transition: opacity .12s ease, transform .12s ease;
 }
+
+.brain-sequence-dots {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.brain-sequence-dots li {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--brand-surface-2);
+}
+.brain-sequence-dots .brain-dot-done { background: var(--brand-gold-light); }
 
 .brain-pad:disabled {
   cursor: default;
@@ -73,38 +116,156 @@
 .pad-green { background: #3fae5c; }
 .pad-yellow { background: #d6b83d; }
 
-/* ---- Quick Math Sprint's answer box ------------------------------------ */
+/* ---- Shared streak furniture: payout ladder, clock bar, progress -------- */
 
-.brain-answer-form {
+.brain-ladder {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.brain-ladder li {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: var(--radius-control, 10px);
+  background: var(--brand-surface);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.brain-ladder strong {
+  color: var(--brand-gold-light);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.brain-ladder small {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.brain-timebar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--brand-surface-2);
+  overflow: hidden;
+}
+.brain-timebar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--neon-purple), var(--brand-gold-light));
+  transform-origin: left center;
+  transition: transform .25s linear;
+}
+
+.brain-clock-low {
+  color: #ff8a80;
+  box-shadow: inset 0 0 0 1px rgba(220, 20, 19, .5);
+}
+
+.brain-progress {
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.brain-progress strong {
+  color: var(--text-primary);
+  font-size: 15px;
+}
+
+/* A quick flash on whatever holds the answer: green for right, a shake for wrong. */
+.brain-verdict-right { animation: brain-right .45s ease-out; }
+.brain-verdict-wrong { animation: brain-wrong .35s ease-out; }
+@keyframes brain-right {
+  0% { box-shadow: 0 0 0 2px rgba(80, 220, 130, .8), 0 0 18px rgba(80, 220, 130, .45); }
+  100% { box-shadow: 0 0 0 2px transparent, 0 0 0 transparent; }
+}
+@keyframes brain-wrong {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+
+.brain-options kbd,
+.brain-pad kbd {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .08);
+  color: var(--text-muted);
+  font: 600 10px/1.4 ui-monospace, monospace;
+}
+@media (hover: none) {
+  .brain-options kbd,
+  .brain-pad kbd { display: none; }
+}
+
+/* ---- Quick Math Sprint's readout and keypad ---------------------------- */
+
+.brain-math-pad {
+  display: grid;
+  gap: 10px;
+  width: min(100%, 320px);
+}
+
+.brain-math-readout {
   display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 58px;
+  border-radius: 12px;
+  background: rgba(9, 6, 20, .6);
+  box-shadow: var(--accent-edge);
+  font-size: 30px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .04em;
+}
+
+.brain-math-caret {
+  width: 2px;
+  height: 30px;
+  background: var(--brand-gold-light);
+  animation: brain-caret 1s steps(1) infinite;
+}
+@keyframes brain-caret { 50% { opacity: 0; } }
+
+.brain-math-blank { color: var(--brand-gold-light); }
+
+.brain-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
 
-.brain-answer-input {
-  width: 8em;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, .2);
-  background: rgba(9, 6, 20, .6);
-  color: inherit;
-  font-size: 18px;
-  text-align: center;
-}
-
-.brain-answer-submit {
-  padding: 10px 18px;
-  border-radius: 8px;
+.brain-key {
+  min-height: 54px;
   border: 0;
-  background: var(--gold, #d6b83d);
-  color: #1a1220;
+  border-radius: 10px;
+  background: var(--brand-surface-2);
+  color: var(--text-primary);
+  font-size: 22px;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .1s ease, transform .06s ease;
 }
-
-.brain-answer-submit:disabled {
-  opacity: .5;
-  cursor: default;
+.brain-key:active:not(:disabled) { transform: scale(.96); background: rgba(155, 63, 240, .28); }
+.brain-key:focus-visible { outline: 2px solid var(--brand-gold-light); outline-offset: 2px; }
+.brain-key:disabled { opacity: .35; cursor: default; }
+.brain-key-erase { display: flex; align-items: center; justify-content: center; color: var(--text-secondary); }
+.brain-key-go {
+  background: var(--brand-gold-light);
+  color: #1a1220;
+  font-size: 18px;
 }
+.brain-key-go:active:not(:disabled) { background: var(--neon-yellow); }
 
 /* ---- Pattern Predictor's options / Trivia Blitz's true-false ---------- */
 
@@ -117,24 +278,41 @@
 
 .brain-option {
   min-width: 64px;
+  min-height: 52px;
   padding: 12px 18px;
+  border: 0;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, .18);
-  background: rgba(9, 6, 20, .5);
-  color: inherit;
-  font-size: 17px;
-  font-weight: 600;
+  background: var(--brand-surface-2);
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .1s ease, transform .06s ease;
 }
-
+.brain-option:hover:not(:disabled) { box-shadow: var(--accent-edge); }
+.brain-option:active:not(:disabled) { transform: scale(.97); }
 .brain-option:disabled {
   opacity: .5;
   cursor: default;
 }
 
-.brain-truefalse .brain-option {
-  min-width: 100px;
+.brain-options-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  width: min(100%, 320px);
 }
+
+.brain-truefalse {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: min(100%, 360px);
+}
+.brain-truefalse .brain-option { min-height: 64px; }
+.brain-option-true { background: rgba(63, 174, 92, .22); }
+.brain-option-false { background: rgba(214, 69, 69, .22); }
 
 /* ---- Lights Out's grid ------------------------------------------------- */
 
@@ -152,6 +330,8 @@
 
 .lo-tile {
   border: 0;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   border-radius: 4px;
   background: rgba(255, 255, 255, .08);
   cursor: pointer;
@@ -197,22 +377,56 @@
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 6px;
+  width: 100%;
   max-width: 380px;
   margin: 0 auto;
 }
 
 .wg-key {
+  min-height: 44px;
   padding: 8px 0;
+  border: 0;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, .15);
-  background: rgba(9, 6, 20, .5);
-  color: inherit;
-  font-weight: 600;
+  background: var(--brand-surface-2);
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 700;
   text-transform: uppercase;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .wg-key:disabled {
-  opacity: .35;
   cursor: default;
+}
+
+.wg-key-hit { background: rgba(63, 174, 92, .55); color: #fff; }
+.wg-key-miss { opacity: .3; text-decoration: line-through; }
+.wg-key-pending { box-shadow: var(--accent-edge); opacity: .6; }
+
+@media (prefers-reduced-motion: reduce) {
+  .brain-verdict-right,
+  .brain-verdict-wrong,
+  .brain-math-caret { animation: none; }
+  .brain-timebar span { transition: none; }
+}
+
+/* ---- Trivia Blitz's question and proposed answer ------------------------ */
+
+.brain-trivia {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+.brain-trivia-claim {
+  margin: 0;
+  padding: 8px 16px;
+  border-radius: 10px;
+  background: var(--brand-surface-2);
+  box-shadow: var(--accent-edge);
+  color: var(--brand-gold-light);
+  font-size: clamp(18px, 5vw, 24px);
+  font-weight: 700;
+  text-align: center;
 }

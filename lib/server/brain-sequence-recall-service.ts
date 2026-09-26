@@ -1,5 +1,5 @@
 import "server-only";
-import { SEQUENCE_RECALL_CONFIG } from "@/lib/arcade/brain-streak";
+import { SEQUENCE_RECALL_CONFIG } from "@/lib/arcade/brain-streak-rounds";
 import { createBrainStreakService } from "./brain-streak-service";
 
 /** This game's id in ante_up_attempts; see lib/server/ante-up-store.ts. */

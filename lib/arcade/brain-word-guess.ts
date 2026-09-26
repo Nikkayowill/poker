@@ -9,22 +9,10 @@
  * wrong guesses it took to solve, same idea as wagerMultiplierForTurns.
  */
 
-import type { RandomInt } from "@/lib/game/deck";
-
 export const MIN_ANTE_UP_WAGER = 500;
 
 /** Classic six -- one per limb of the drawing. */
 export const WORD_GUESS_MAX_MISSES = 6;
-
-/** Everyday words, several categories, nothing that needs specialist knowledge. */
-const WORD_GUESS_BANK: readonly string[] = [
-  "guitar", "elephant", "sandwich", "volcano", "umbrella", "penguin", "mountain",
-  "blanket", "dolphin", "carousel", "backpack", "sunflower", "pancake", "hammock",
-  "lighthouse", "butterfly", "avocado", "trumpet", "kangaroo", "waterfall",
-  "campfire", "notebook", "raincoat", "pretzel", "octopus", "telescope", "cactus",
-  "blizzard", "harmonica", "pyramid", "compass", "marshmallow", "tornado",
-  "raccoon", "seashell", "bicycle", "jigsaw", "lantern", "peacock", "snowflake",
-];
 
 export type BrainWordGuessStatus = "active" | "won" | "lost";
 
@@ -38,10 +26,11 @@ export interface BrainWordGuessAttempt {
   finishedAt: string | null;
 }
 
-export function startBrainWordGuess(randomInt: RandomInt, wager: number, now: Date): BrainWordGuessAttempt {
+/** `word` comes from the server-only bank in brain-word-guess-words.ts. */
+export function startBrainWordGuess(word: string, wager: number, now: Date): BrainWordGuessAttempt {
   return {
     wager,
-    word: WORD_GUESS_BANK[randomInt(WORD_GUESS_BANK.length)],
+    word,
     guessed: [],
     misses: 0,
     status: "active",

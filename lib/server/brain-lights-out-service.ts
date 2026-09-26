@@ -50,16 +50,19 @@ function snapshot(stored: StoredAnteUpAttempt<BrainLightsOutAttempt>): BrainLigh
   return toBrainLightsOutSnapshot(stored.state, { id: stored.id, version: stored.version });
 }
 
-async function payOutWin(profileId: string, attempt: Pick<BrainLightsOutAttempt, "wager" | "status" | "moves">): Promise<void> {
+/** Returns the credited profile, or null when nothing was paid, so the reply shows the new balance. */
+async function payOutWin(profileId: string, attempt: Pick<BrainLightsOutAttempt, "wager" | "status" | "moves">): Promise<PlayerProfile | null> {
   const payout = brainLightsOutPayout(attempt);
-  if (payout <= 0) return;
+  if (payout <= 0) return null;
+  let credited: PlayerProfile | null = null;
   try {
-    await creditGoldByProfile(profileId, payout);
+    credited = await creditGoldByProfile(profileId, payout);
   } catch (error) {
     console.error("brain-lights-out.payout_credit_failed", { profileId, payout, error });
   }
   await applyMissionEvent(profileId, { kind: "puzzle_completed" });
   await applyAchievementEvent(profileId, { kind: "puzzle_completed" });
+  return credited;
 }
 
 export async function readBrainLightsOut(
@@ -162,9 +165,9 @@ export async function tapBrainLightsOutAttempt(
     throw new BrainLightsOutRequestError("That board moved on.", 409, { round: snapshot(live) });
   }
 
-  if (stored.state.status === "won") await payOutWin(profile.id, stored.state);
+  const paid = stored.state.status === "won" ? await payOutWin(profile.id, stored.state) : null;
 
-  return { attempt: snapshot(stored), profile };
+  return { attempt: snapshot(stored), profile: paid ?? profile };
 }
 
 export async function resignBrainLightsOutAttempt(

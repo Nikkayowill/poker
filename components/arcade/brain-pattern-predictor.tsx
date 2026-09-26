@@ -1,31 +1,38 @@
 "use client";
 
-import { BrainStreak, useBrainStreakRound } from "./brain-streak";
+import clsx from "clsx";
+import { BrainStreak, useAnswerKeys, useBrainStreakRound } from "./brain-streak";
 
 function Prompt() {
   const { prompt } = useBrainStreakRound();
   const terms = prompt.terms as number[];
   return (
     <p className="brain-math-problem" aria-live="polite">
-      {terms.join(",  ")}, ?
+      {terms.join(", ")}, <span className="brain-math-blank">?</span>
     </p>
   );
 }
 
 function Controls() {
-  const { prompt, submit, busy, disabled } = useBrainStreakRound();
+  const { prompt, submit, busy, disabled, verdict } = useBrainStreakRound();
   const options = prompt.options as number[];
+  const answer = (option: number) => {
+    if (!busy && !disabled) submit(String(option));
+  };
+  useAnswerKeys((key) => {
+    const index = Number(key) - 1;
+    if (!Number.isInteger(index) || index < 0 || index >= options.length) return false;
+    answer(options[index]);
+    return true;
+  });
   return (
-    <div className="brain-options">
+    <div
+      className={clsx("brain-options brain-options-grid", verdict && (verdict.correct ? "brain-verdict-right" : "brain-verdict-wrong"))}
+      key={verdict?.key}
+    >
       {options.map((option, i) => (
-        <button
-          key={i}
-          type="button"
-          className="brain-option"
-          disabled={busy || disabled}
-          onClick={() => submit(String(option))}
-        >
-          {option}
+        <button key={i} type="button" className="brain-option" disabled={disabled} onClick={() => answer(option)}>
+          {option} <kbd>{i + 1}</kbd>
         </button>
       ))}
     </div>

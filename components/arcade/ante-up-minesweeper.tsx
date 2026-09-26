@@ -349,6 +349,9 @@ export function AnteUpMinesweeper() {
     deadline !== null && attempt
       ? Math.min(attempt.timeLimitMs, Math.max(0, deadline - now))
       : attempt?.timeLimitMs ?? 0;
+  // A timeout is stamped when a read settles it, which can be long after the
+  // clock ran out, so the finish time is capped at the limit.
+  const finalMs = attempt ? Math.min(attempt.elapsedMs, attempt.timeLimitMs) : 0;
 
   return (
     <main className="duel-shell ante-shell">
@@ -479,7 +482,7 @@ export function AnteUpMinesweeper() {
               <strong>{view.minesLeft}</strong>
             </span>
             <span className="ante-clock" aria-live="polite">
-              {active ? formatDuration(displayedMs) : formatDuration(attempt.elapsedMs)}
+              {active ? formatDuration(displayedMs) : formatDuration(finalMs)}
             </span>
             <span className="duel-pot">
               <Coins size={12} aria-hidden="true" />
@@ -525,7 +528,15 @@ export function AnteUpMinesweeper() {
                     `Row ${row}, column ${column}, ` +
                     (open ? (cell === 0 ? "empty" : `${cell}`) : flagged ? "flagged" : "unopened")
                   }
-                  onContextMenu={(event) => { event.preventDefault(); flag(index); }}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    endPress();
+                    // Android fires this on a long-press too, after the timer
+                    // already flagged the square; a second flag would unflag it.
+                    if (handled.current) return;
+                    handled.current = true;
+                    flag(index);
+                  }}
                   onPointerDown={() => beginPress(index)}
                   onPointerUp={endPress}
                   onPointerLeave={endPress}
@@ -562,7 +573,7 @@ export function AnteUpMinesweeper() {
                       ? "Boom"
                       : "Gave up"}
               </strong>
-              <span>{formatDuration(attempt.elapsedMs)} · {difficultyLabel(attempt.difficulty)}</span>
+              <span>{formatDuration(finalMs)} · {difficultyLabel(attempt.difficulty)}</span>
               <span className="duel-result-gold">
                 {result.label}
               </span>

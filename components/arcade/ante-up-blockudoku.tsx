@@ -10,6 +10,7 @@ import { useAppShell } from "@/components/shell/app-shell";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
+import { useActionQueue } from "@/components/shared/use-action-queue";
 import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
@@ -19,7 +20,7 @@ import {
   type AnteUpBlockudokuSnapshot,
   type BlockudokuDifficulty,
 } from "@/lib/arcade/ante-up-blockudoku";
-import { GRID_CELLS, GRID_SIDE, type BlockudokuShape } from "@/lib/arcade/puzzles/blockudoku";
+import { GRID_SIDE, type BlockudokuShape } from "@/lib/arcade/puzzles/blockudoku";
 import { formatDuration } from "@/lib/arcade/puzzles/sudoku";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { createRequestSequence } from "@/lib/ui/request-sequence";
@@ -29,7 +30,8 @@ import { createRequestSequence } from "@/lib/ui/request-sequence";
  *
  * Same request shape as Minesweeper: every placement is a request carrying
  * only a tray slot and a cell, the server decides what fits and what clears,
- * and the piece stream's seed never crosses the wire. Reuses the `.duel-*`
+ * and the piece stream's seed never crosses the wire. Placements made while
+ * an earlier one is on the wire queue up and go out in order. Reuses the `.duel-*`
  * and `.ante-*` shell classes; only the board and tray live in
  * 59-blockudoku.css.
  *
@@ -75,6 +77,14 @@ interface AnteUpBlockudokuResponse {
 interface Anchor {
   row: number;
   col: number;
+}
+
+/** A placement waiting its turn. `cells` is kept so the board can paint it before the server answers. */
+interface PendingPlacement {
+  slot: number;
+  row: number;
+  col: number;
+  cells: readonly number[];
 }
 
 interface DragState {
@@ -215,8 +225,6 @@ export function AnteUpBlockudoku() {
   const [selected, setSelected] = useState<number | null>(null);
   const [aim, setAim] = useState<Anchor | null>(null);
   const [dragging, setDragging] = useState(false);
-  // Painted over the board while a placement is in flight, then replaced by the server's answer.
-  const [pending, setPending] = useState<readonly number[]>([]);
   const [clearing, setClearing] = useState<ReadonlySet<number>>(() => new Set());
   const [gain, setGain] = useState<{ points: number; key: number } | null>(null);
 
@@ -228,10 +236,11 @@ export function AnteUpBlockudoku() {
     setImmersive(Boolean(attempt));
   }, [attempt, setImmersive]);
 
-  // True while the player's own action is in flight, so a second tap waits.
+  // Guards start and resign against a double click, and stops placements once
+  // a resign is on the wire. Read ordering and board versions live in
+  // `sequence`, which also covers the queued placements.
   const sending = useRef(false);
   const mounted = useRef(true);
-  // Keeps a poll that left before an action from painting over the action's result.
   const [sequence] = useState(() => createRequestSequence<AnteUpBlockudokuSnapshot>());
   useEffect(() => {
     mounted.current = true;
@@ -271,14 +280,8 @@ export function AnteUpBlockudoku() {
     return null;
   }, [applyResponse, sequence]);
 
-  /**
-   * A player-initiated action. A refused move still carries the true board,
-   * which is painted without a banner. Returns the fresh snapshot on success.
-   */
-  const send = useCallback(async (
-    url: string,
-    body: unknown,
-  ): Promise<AnteUpBlockudokuSnapshot | null> => {
+  /** A player-initiated action: start or resign. A refusal still carries the true board, painted without a banner. */
+  const send = useCallback(async (url: string, body: unknown) => {
     sending.current = true;
     const done = sequence.beginWrite();
     setBusy(true);
@@ -293,23 +296,85 @@ export function AnteUpBlockudoku() {
       const data = (await response.json()) as Partial<AnteUpBlockudokuResponse> & {
         round?: AnteUpBlockudokuSnapshot;
       };
-      if (!mounted.current) return null;
+      if (!mounted.current) return;
       if (!response.ok) {
         if (data.round) applyResponse({ attempt: data.round });
         else setError(data.error ?? "That did not go through.");
-        return null;
+        return;
       }
       applyResponse(data);
-      return data.attempt ?? null;
     } catch {
       if (mounted.current) setError("Could not reach the table. Check your connection.");
-      return null;
     } finally {
       sending.current = false;
       done();
       if (mounted.current) setBusy(false);
     }
   }, [applyResponse, sequence]);
+
+  /**
+   * Sends one queued placement against the newest board. A refusal drops the
+   * rest of the queue, since each later placement was aimed at a board that
+   * included this one.
+   */
+  const sendPlace = useCallback(async ({ slot, row, col }: PendingPlacement): Promise<boolean> => {
+    if (!mounted.current) return false;
+    const before = sequence.latest();
+    try {
+      const response = await fetch("/api/ante-up-blockudoku/actions", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "place", version: sequence.version(), slot, row, col }),
+      });
+      const data = (await response.json()) as Partial<AnteUpBlockudokuResponse> & {
+        round?: AnteUpBlockudokuSnapshot;
+      };
+      if (!mounted.current) return false;
+      if (!response.ok) {
+        if (data.round) applyResponse({ attempt: data.round });
+        else setError(data.error ?? "That did not go through.");
+        return false;
+      }
+      applyResponse(data);
+      // The score is the server's to work out, so the gain shows when it lands.
+      const next = data.attempt;
+      const points = next && before ? next.board.score - before.board.score : 0;
+      if (next && points > 0) setGain({ points, key: next.version });
+      return true;
+    } catch {
+      if (mounted.current) setError("Could not reach the table. Check your connection.");
+      return false;
+    }
+  }, [applyResponse, sequence]);
+
+  const placements = useActionQueue<PendingPlacement>(sequence, sendPlace);
+
+  /**
+   * The server's board with every queued placement drawn on top. Fits and
+   * line clears follow fixed rules, so those show at once. The next three
+   * pieces are dealt from a seed only the server holds, so an emptied tray
+   * just waits for them.
+   */
+  const view = useMemo(() => {
+    if (!attempt) return null;
+    const board = attempt.board.board.slice();
+    const inventory = attempt.board.inventory.slice();
+    const placed = new Set<number>();
+    for (const move of placements.pending) {
+      for (const index of move.cells) {
+        board[index] = 1;
+        placed.add(index);
+      }
+      for (const index of fullLines(board)) {
+        board[index] = 0;
+        placed.delete(index);
+      }
+      inventory[move.slot] = null;
+    }
+    const dealing = placements.pending.length > 0 && inventory.every((piece) => piece === null);
+    return { board, inventory, placed, dealing };
+  }, [attempt, placements.pending]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void refresh(), 0);
@@ -345,8 +410,8 @@ export function AnteUpBlockudoku() {
     if (clearTimer.current !== null) window.clearTimeout(clearTimer.current);
   }, []);
 
-  const board = attempt?.board.board ?? null;
-  const inventory = attempt?.board.inventory ?? null;
+  const board = view?.board ?? null;
+  const inventory = view?.inventory ?? null;
   const selectedShape = selected !== null && inventory ? inventory[selected] ?? null : null;
 
   // A slot the server has since emptied (or a finished board) drops the selection.
@@ -369,41 +434,26 @@ export function AnteUpBlockudoku() {
     if (sending.current) return;
     setSelected(null);
     setAim(null);
+    placements.clear();
     void send("/api/ante-up-blockudoku", { difficulty, wager });
   };
 
-  const place = async (slot: number, anchor: Anchor) => {
-    if (!attempt || !active || sending.current || !board) return;
-    const shape = attempt.board.inventory[slot];
+  // Queued rather than refused while an earlier placement is on the wire, so
+  // quick drops all land in order.
+  const place = (slot: number, anchor: Anchor) => {
+    if (!active || sending.current || !board || !inventory) return;
+    const shape = inventory[slot];
     if (!shape || !fits(board, shape, anchor)) return;
 
     const cells = cellsAt(shape, anchor);
-    const before = board.slice();
-    for (const index of cells) before[index] = 1;
-    const scoreBefore = attempt.board.score;
+    const after = board.slice();
+    for (const index of cells) after[index] = 1;
+    const cleared = fullLines(after);
 
     play("ui");
     setSelected(null);
     setAim(null);
-    setPending(cells);
-    const next = await send("/api/ante-up-blockudoku/actions", {
-      action: "place",
-      version: attempt.version,
-      slot,
-      row: anchor.row,
-      col: anchor.col,
-    });
-    if (!mounted.current) return;
-    setPending([]);
-    if (!next) return;
-
-    // Whatever was filled a moment ago and is empty now is what the placement cleared.
-    const cleared = new Set<number>();
-    for (let index = 0; index < GRID_CELLS; index += 1) {
-      if (before[index] === 1 && next.board.board[index] === 0) cleared.add(index);
-    }
-    const points = next.board.score - scoreBefore;
-    if (points > 0) setGain({ points, key: next.version });
+    placements.push({ slot, row: anchor.row, col: anchor.col, cells });
     if (cleared.size > 0) {
       tapSound();
       setClearing(cleared);
@@ -429,11 +479,11 @@ export function AnteUpBlockudoku() {
    * a mouse click always lands on the cell its own hover just aimed from.
    */
   const tapCell = (index: number) => {
-    if (!active || !selectedShape || selected === null || sending.current) return;
+    if (!active || !selectedShape || selected === null) return;
     const next = anchorFor(selectedShape, Math.floor(index / GRID_SIDE), index % GRID_SIDE);
     const sameAim = ghost !== null && ghost.anchor.row === next.row && ghost.anchor.col === next.col;
     if (ghost && ghost.legal && (ghost.cells.has(index) || sameAim)) {
-      void place(selected, ghost.anchor);
+      place(selected, ghost.anchor);
       return;
     }
     tapSound();
@@ -462,7 +512,7 @@ export function AnteUpBlockudoku() {
     // A touch drag ends with no click at all, so a swallow left over from one
     // would eat this new press's tap. A fresh press always starts clean.
     swallowClick.current = false;
-    if (!active || !inventory?.[slot] || sending.current) return;
+    if (!active || !inventory?.[slot]) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
     drag.current = {
       pointerId: event.pointerId,
@@ -503,7 +553,7 @@ export function AnteUpBlockudoku() {
     swallowClick.current = true;
     setDragging(false);
     if (drop && ghost && ghost.legal) {
-      void place(state.slot, ghost.anchor);
+      place(state.slot, ghost.anchor);
     } else {
       setAim(null);
     }
@@ -518,7 +568,7 @@ export function AnteUpBlockudoku() {
   };
 
   const resign = () => {
-    if (sending.current) return;
+    if (sending.current || placements.queued().length > 0) return;
     setSelected(null);
     setAim(null);
     void send("/api/ante-up-blockudoku/actions", { action: "resign" });
@@ -560,7 +610,7 @@ export function AnteUpBlockudoku() {
   const lowTime = active && deadline !== null && displayedMs <= LOW_TIME_MS;
 
   const progress = attempt ? Math.min(1, attempt.board.score / attempt.targetScore) : 0;
-  const pendingSet = new Set(pending);
+  const placedSet = view?.placed ?? new Set<number>();
 
   return (
     <main className={clsx("duel-shell ante-shell", attempt && "bk-shell-playing")}>
@@ -716,8 +766,8 @@ export function AnteUpBlockudoku() {
                     className={clsx(
                       "bk-cell",
                       isShadedBox(index) && "bk-cell-shade",
-                      (cell === 1 || pendingSet.has(index)) && "bk-cell-filled",
-                      pendingSet.has(index) && "bk-cell-pending",
+                      cell === 1 && "bk-cell-filled",
+                      placedSet.has(index) && "bk-cell-pending",
                       inGhost && (ghost?.legal ? "bk-cell-ghost" : "bk-cell-ghost-bad"),
                       ghost?.legal && ghost.completes.has(index) && "bk-cell-will-clear",
                       clearing.has(index) && "bk-cell-clearing",
@@ -732,7 +782,12 @@ export function AnteUpBlockudoku() {
             </div>
 
             {!settled && inventory && (
-              <div className="bk-tray" role="group" aria-label="Pieces">
+              <div
+                className={clsx("bk-tray", view?.dealing && "bk-tray-dealing")}
+                role="group"
+                aria-label="Pieces"
+                aria-busy={view?.dealing ?? false}
+              >
                 {inventory.map((piece, slot) => {
                   const stuck = piece !== null && board !== null && !fitsAnywhere(board, piece);
                   return (
@@ -744,7 +799,7 @@ export function AnteUpBlockudoku() {
                         selected === slot && piece && "bk-slot-selected",
                         stuck && "bk-slot-stuck",
                       )}
-                      disabled={!active || piece === null || busy}
+                      disabled={!active || piece === null}
                       aria-pressed={selected === slot && piece !== null}
                       aria-label={piece ? `Piece ${slot + 1}${stuck ? ", fits nowhere" : ""}` : `Piece ${slot + 1}, played`}
                       onPointerDown={(event) => onTrayPointerDown(slot, event)}
@@ -784,7 +839,9 @@ export function AnteUpBlockudoku() {
             <>
               <p className="bk-hint">
                 {selectedShape === null
-                  ? "Tap a piece, or drag it onto the board."
+                  ? view?.dealing
+                    ? "Dealing the next pieces."
+                    : "Tap a piece, or drag it onto the board."
                   : ghost === null
                     ? "Tap the board to aim the piece."
                     : ghost.legal
@@ -792,7 +849,12 @@ export function AnteUpBlockudoku() {
                       : "It does not fit there. Tap somewhere else."}
               </p>
               <div className="duel-controls">
-                <button type="button" className="duel-resign" disabled={busy} onClick={resign}>
+                <button
+                  type="button"
+                  className="duel-resign"
+                  disabled={busy || placements.pending.length > 0}
+                  onClick={resign}
+                >
                   Give up
                 </button>
               </div>

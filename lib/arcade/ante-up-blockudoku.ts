@@ -156,9 +156,10 @@ export function placeAnteUpBlockudokuPiece(
   anchorRow: number,
   anchorCol: number,
   now: Date,
+  entropy = 0,
 ): AnteUpBlockudokuAttempt {
   if (anteUpBlockudokuPlacementProblem(attempt, slot, anchorRow, anchorCol, now)) return attempt;
-  return afterMove(attempt, placeBlockudokuPiece(attempt.board, slot, anchorRow, anchorCol, now));
+  return afterMove(attempt, placeBlockudokuPiece(attempt.board, slot, anchorRow, anchorCol, now, entropy));
 }
 
 /** Gives up early. The wager is already spent; this only records how it ended. */

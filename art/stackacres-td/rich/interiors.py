@@ -87,6 +87,6 @@ def house(for_game=False):
     return _area("farmhouse", L.house(), (481, 300))
 
 
-# The city grocery. The city isn't built yet, so for now its door lets out onto the Far Field by the bridge.
+# The city grocery. Its door lets out onto the City's market square, just in front of the shop (areas/rig/city.py).
 def grocery(for_game=False):
-    return _area("grocery", L.grocery(), (40, 240), to="empire")
+    return _area("grocery", L.grocery(), (498, 378), to="city")

@@ -41,14 +41,14 @@ export type TopdownArea =
   | "barn"
   | "workshop"
   | "farmhouse"
-  // The second map's own district (docs/stackacres-second-map-direction.md
-  // section 6a): reached by crossing a bridge off the Homestead, gated by
-  // EMPIRE_ENABLED in scene.ts rather than the SectorId/ZoneId ladder --
-  // there is nothing to clear or buy here yet, just a bridge to walk.
+  // The Far Field (docs/stackacres-second-map-direction.md section 6a). Nothing
+  // leads here any more: the Homestead's west bridge goes to the City now. It
+  // stays until the old maps are cleared out.
   | "empire"
-  // The city grocery (docs/stackacres-second-map-direction.md): drawn and simulated, loaded only in
-  // development until the city it stands in exists.
-  | "grocery";
+  // The city grocery (docs/stackacres-second-map-direction.md), walked into from the City's square.
+  | "grocery"
+  // The City, the old market town over the Homestead's west bridge (art/stackacres-td/areas/rig/city.py).
+  | "city";
 
 export interface MapPoint {
   area: TopdownArea;

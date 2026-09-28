@@ -1,6 +1,7 @@
 # StackAcres room art: credits
 
-The inside of the house, the barn, the workshop and the city grocery is built from **LPC Revised** by Eliza Wyatt and the
+The inside of the house, the barn, the workshop and the city grocery, and the City's street lamps, planters,
+tables, barrels and shop goods, are built from **LPC Revised** by Eliza Wyatt and the
 Liberated Pixel Cup artists (https://github.com/ElizaWy/LPC). Every sheet used is listed below with its
 artists, licence and original source, as its own Credits.txt gives them. All are OGA-BY 3.0
 (https://static.opengameart.org/OGA-BY-3.0.txt), some with CC0 originals. The sheets are vendored under
@@ -11,6 +12,7 @@ and the grocery's notice board (a sign panel) to cork; nothing else is changed.
 - **Objects/Furniture/Beds/Beds, Double C.png**: Lanea Zimmerman (Sharm), BlueCarrot16, Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-upholstery
 - **Objects/Furniture/Beds/Beds, Double Headboards.png**: Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-modified-base-tiles
 - **Objects/Furniture/Beds/Beds, Double Mattresses.png**: Eliza Wyatt (DeathsDarling), Lanea Zimmerman (Sharm), BlueCarrot16. OGA-BY 3.0. https://opengameart.org/content/lpc-upholstery
+- **Objects/Furniture/Bin.png**: Eliza Wyatt (DeathsDarling). OGA-BY 3.0. 
 - **Objects/Furniture/Cabinet.png**: Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-modified-base-tiles
 - **Objects/Furniture/Chest.png**: Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
 - **Objects/Furniture/Clock, Grandfather.png**: Lanea Zimmerman (Sharm). OGA-BY 3.0. https://opengameart.org/content/lpc-interior-castle-tiles
@@ -21,6 +23,7 @@ and the grocery's notice board (a sign panel) to cork; nothing else is changed.
 - **Objects/Furniture/Fireplace.png**: Lanea Zimmerman (aka Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-modified-base-tiles
 - **Objects/Furniture/Fridge.png**: Eliza Wyatt (DeathsDarling). OGA-BY 3.0.
 - **Objects/Furniture/Lighting, Floor.png**: Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-modified-base-tiles, https://opengameart.org/content/lpc-interior-castle-tiles
+- **Objects/Furniture/Lighting, Outdoors.png**: Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-modified-base-tiles
 - **Objects/Furniture/Planter.png**: Lanea Zimmerman (Sharm). OGA-BY 3.0. https://opengameart.org/content/lpc-interior-castle-tiles
 - **Objects/Furniture/Rugs/Diamond Rug, tiling.png**: Eliza Wyatt (DeathsDarling). OGA-BY 3.0. 
 - **Objects/Furniture/Sawhorse.png**: BlueCarrot16. OGA-BY 3.0. https://opengameart.org/content/lpc-woodshop
@@ -40,6 +43,7 @@ and the grocery's notice board (a sign panel) to cork; nothing else is changed.
 - **Objects/Small Items/Baskets A.png**: BlueCarrot16, Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-tailor
 - **Objects/Small Items/Buckets.png**: Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
 - **Objects/Small Items/Dishes A.png**: Richard Kettering (Jetrel), BlueCarrot16, Eliza Wyatt (DeathsDarling). OGA-BY 3.0 (Original art CC0). https://opengameart.org/content/rpg-item-set, https://opengameart.org/content/lpc-meals
+- **Objects/Small Items/Fabric/Fabric Rolls, Groups.png**: BlueCarrot16, Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-tailor
 - **Objects/Small Items/Flowers.png**: Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling). OGA-BY 3.0. https://opengameart.org/content/lpc-interior-castle-tiles
 - **Objects/Small Items/Food/Bread B.png**: BlueCarrot16, Eliza Wyatt (DeathsDarling). OGA-BY 3.0 (Original art CC0). https://opengameart.org/content/lpc-food
 - **Objects/Small Items/Food/Cheese A.png**: Thekingphoenix, BlueCarrot16, Eliza Wyatt (DeathsDarling). OGA-BY 3.0 (Original art CC0). http://opengameart.org/content/icons-food

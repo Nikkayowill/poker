@@ -182,8 +182,10 @@ export interface StoryQuestSegment {
  * reach this quest. `friendship` only names an NPC in `FRIENDSHIP_NPCS`
  * (../friendship.ts) -- most travelers have no friendship track at all, so
  * this cannot gate an arbitrary traveler's own quest on itself.
- * `traveler-done` reads the same `travelersHome` set ./unlocks.ts's
- * `finale` gate already reads, not a second one.
+ * `traveler-done` reads the same `travelersHome` set ./state.ts's
+ * `questRequirementMet` is passed, not a second one. Unused by any quest
+ * right now (nobody's line waits on another's), but a real gate a future
+ * traveler's line can reach for.
  */
 export type QuestRequirement =
   | { readonly kind: "friendship"; readonly npc: NpcId; readonly points: number }
@@ -306,80 +308,6 @@ export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>
       turnInLabel: "Present the cake",
     },
   ],
-  miles: [
-    {
-      id: "miles.q1",
-      title: "Scene of the Anomaly",
-      objectives: [{ kind: "secret-zones", target: 3 }],
-      turnInLabel: "Report what you found",
-    },
-    {
-      id: "miles.q2",
-      title: "Heavy Evidence",
-      objectives: [{ kind: "clear-sector", target: 1 }],
-      turnInLabel: "Show him the cleared ground",
-    },
-  ],
-  skye: [
-    {
-      id: "skye.q1",
-      title: "Organic Pigment",
-      objectives: [
-        { kind: "deliver", item: "radish", target: 6 },
-        { kind: "deliver", item: "tomato", target: 6 },
-      ],
-      turnInLabel: "Hand over the dye crops",
-    },
-    {
-      id: "skye.q2",
-      title: "Canvas",
-      objectives: [{ kind: "process", recipe: "cloth", target: 2 }],
-      turnInLabel: "Bring the cloth",
-    },
-  ],
-  barnaby: [
-    {
-      id: "barnaby.q1",
-      title: "Sounding the Depths",
-      objectives: [{ kind: "fish", target: 3 }],
-      turnInLabel: "Show him the catch",
-    },
-    {
-      id: "barnaby.q2",
-      title: "Pressure Lines",
-      objectives: [{ kind: "water", target: 25 }],
-      turnInLabel: "Show him the rounds",
-    },
-  ],
-  arthur: [
-    {
-      id: "arthur.q1",
-      title: "Provisions for the Garrison",
-      objectives: [{ kind: "deliver", item: "wheat", target: 10 }],
-      turnInLabel: "Deliver the grain",
-    },
-    {
-      id: "arthur.q2",
-      title: "The Town's Trust",
-      objectives: [{ kind: "contracts", target: 2 }],
-      turnInLabel: "Report to the knight",
-    },
-  ],
-  brayden: [
-    {
-      id: "brayden.q1",
-      title: "Iron Tools",
-      objectives: [{ kind: "hold-tool", tool: "iron-shovel", target: 1 }],
-      turnInLabel: "Show him the shovel",
-      rewards: ["cubic_pickaxe_head", "sample_bag_of_curved_ore"],
-    },
-    {
-      id: "brayden.q2",
-      title: "A Better Edge",
-      objectives: [{ kind: "forge", target: 1 }],
-      turnInLabel: "Show him the enchantment",
-    },
-  ],
   ivy: [
     {
       id: "ivy.q1",
@@ -392,58 +320,6 @@ export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>
       title: "Maritime Strains",
       objectives: [{ kind: "crossbreed", target: 3 }],
       turnInLabel: "Show her the results",
-    },
-  ],
-  wes: [
-    {
-      id: "wes.q1",
-      title: "Hay in the Loft",
-      objectives: [
-        { kind: "buy-feed", target: 12 },
-        { kind: "feed", target: 6 },
-      ],
-      turnInLabel: "Show him the stocked barn",
-    },
-    {
-      id: "wes.q2",
-      title: "Working Stock",
-      objectives: [{ kind: "collect-livestock", target: 8 }],
-      turnInLabel: "Show him the yield",
-    },
-  ],
-  bea: [
-    {
-      id: "bea.q1",
-      title: "Fields of Flowers",
-      objectives: [{ kind: "harvest", crops: ["bell_pepper", "green_bean"], target: 16 }],
-      turnInLabel: "Show her the blooms",
-    },
-    {
-      id: "bea.q2",
-      title: "Keep Them Wet",
-      objectives: [{ kind: "water", target: 20 }],
-      turnInLabel: "Tell her the fields are wet",
-    },
-  ],
-  leo: [
-    {
-      id: "leo.q1",
-      title: "Beacon Components",
-      objectives: [
-        { kind: "deliver", item: "flour", target: 5 },
-        { kind: "deliver", item: "cheese", target: 5 },
-        { kind: "deliver", item: "cloth", target: 5 },
-      ],
-      turnInLabel: "Hand over the components",
-    },
-    {
-      id: "leo.q2",
-      title: "Light the Beacon",
-      objectives: [
-        { kind: "contracts", target: 3 },
-        { kind: "forge", target: 1 },
-      ],
-      turnInLabel: "Light it",
     },
   ],
 };

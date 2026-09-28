@@ -52,9 +52,13 @@ export interface LandObstacle {
   readonly ground: ClearingGround;
 }
 
-/** The sectors that are taken by clearing them. The wild places (the Oak,
- *  the Coast, the Mine, the Town) open when their traveler arrives instead,
- *  and are not cleared at all. */
+/**
+ * The two sectors this mechanic knows how to take. Wild ground nobody can
+ * reach right now -- their own maps are gone (2026-09-28, ../story/travelers.ts's
+ * own header) and swinging needs somewhere to stand -- but the swing mechanic
+ * itself is untouched, ready for a place-it-yourself building to bring them
+ * back onto real ground.
+ */
 export const CLEARABLE_SECTORS = ["wallow", "oxfields"] as const satisfies readonly SectorId[];
 export type ClearableSectorId = (typeof CLEARABLE_SECTORS)[number];
 

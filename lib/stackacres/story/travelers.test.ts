@@ -5,19 +5,20 @@ import { STACKACRES_TOOL_TIERS } from "../equipment";
 import { MACHINE_PROCESSED_ITEMS, MACHINE_RAW_ITEMS } from "../machine-items";
 import { RECIPE_IDS } from "../recipes";
 import { isStackAcresCrop } from "../catalogue";
-import { ZONE_IDS } from "../zones";
 import { STORY_ITEM_IDS, isStoryItemId } from "./items";
 import { ALL_STORY_QUESTS, TRAVELER_QUESTS, objectiveLabel, questFlatObjectives } from "./quests";
-import { TRAVELERS_IN_FINALE, TRAVELER_CATALOGUE, TRAVELER_IDS, TRAVELER_PORTRAIT, isTravelerId } from "./travelers";
+import { TRAVELER_CATALOGUE, TRAVELER_IDS, TRAVELER_PORTRAIT, isTravelerId } from "./travelers";
 
 const MACHINE_ITEM_IDS: readonly string[] = [...STACKACRES_ITEMS, ...MACHINE_RAW_ITEMS, ...MACHINE_PROCESSED_ITEMS];
 
 describe("TRAVELER_IDS", () => {
-  it("is eleven, unique, and Ray comes first", () => {
-    expect(TRAVELER_IDS).toHaveLength(11);
-    expect(new Set(TRAVELER_IDS).size).toBe(11);
+  it("is three, unique, and Ray comes first", () => {
+    // Shrunk 2026-09-28: eight of the eleven stood in the six districts
+    // removed the same day (this module's own header). Ray, Pierre and Ivy
+    // are what remain.
+    expect(TRAVELER_IDS).toHaveLength(3);
+    expect(new Set(TRAVELER_IDS).size).toBe(3);
     expect(TRAVELER_IDS[0]).toBe("ray");
-    expect(TRAVELERS_IN_FINALE).toBe(10);
   });
 
   it("isTravelerId accepts the cast and nothing else", () => {
@@ -25,6 +26,7 @@ describe("TRAVELER_IDS", () => {
     expect(isTravelerId("bleep")).toBe(false);
     expect(isTravelerId("")).toBe(false);
     expect(isTravelerId(3)).toBe(false);
+    expect(isTravelerId("leo")).toBe(false);
   });
 });
 
@@ -40,24 +42,10 @@ describe("TRAVELER_CATALOGUE", () => {
     expect([...keepsakes, ...questRewards].sort()).toEqual([...STORY_ITEM_IDS].sort());
   });
 
-  it("stands every traveler in a real district", () => {
-    for (const id of TRAVELER_IDS) expect(ZONE_IDS).toContain(TRAVELER_CATALOGUE[id].zone);
-  });
-
   it("maps the brief's unlock requirements onto derived facts", () => {
     expect(TRAVELER_CATALOGUE.ray.unlock).toEqual({ kind: "always" });
     expect(TRAVELER_CATALOGUE.pierre.unlock).toEqual({ kind: "milestone", count: 1 });
-    expect(TRAVELER_CATALOGUE.miles.unlock).toEqual({ kind: "milestone", count: 1 });
-    expect(TRAVELER_CATALOGUE.skye.unlock).toEqual({ kind: "milestone", count: 2 });
-    expect(TRAVELER_CATALOGUE.barnaby.unlock).toEqual({ kind: "milestone", count: 2 });
-    // Brayden arrives a rung before his cohort: he opens the Mine, and the
-    // Mine is the only Stone on the farm. See his entry for why.
-    expect(TRAVELER_CATALOGUE.brayden.unlock).toEqual({ kind: "milestone", count: 2 });
     expect(TRAVELER_CATALOGUE.ivy.unlock).toEqual({ kind: "milestone", count: 3 });
-    expect(TRAVELER_CATALOGUE.bea.unlock).toEqual({ kind: "milestone", count: 4 });
-    expect(TRAVELER_CATALOGUE.arthur.unlock).toEqual({ kind: "flag", flag: "town_trusted" });
-    expect(TRAVELER_CATALOGUE.wes.unlock).toEqual({ kind: "flag", flag: "cleared_oxfields" });
-    expect(TRAVELER_CATALOGUE.leo.unlock).toEqual({ kind: "finale" });
   });
 
   it("names a portrait file per traveler", () => {
@@ -113,11 +101,7 @@ describe("TRAVELER_QUESTS", () => {
       { kind: "deliver", item: "potato", target: 5 },
       { kind: "deliver", item: "carrot", target: 5 },
     ]);
-    expect(TRAVELER_QUESTS.brayden[0].objectives).toEqual([{ kind: "hold-tool", tool: "iron-shovel", target: 1 }]);
-    expect(TRAVELER_QUESTS.bea[0].objectives).toEqual([
-      { kind: "harvest", crops: ["bell_pepper", "green_bean"], target: 16 },
-    ]);
-    expect(questFlatObjectives(TRAVELER_QUESTS.leo[1]).map((objective) => objective.kind)).toEqual(["contracts", "forge"]);
+    expect(TRAVELER_QUESTS.ivy[0].objectives).toEqual([{ kind: "crossbreed", target: 1 }]);
   });
 
   it("labels objectives as one imperative line", () => {

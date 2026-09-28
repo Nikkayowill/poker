@@ -35,8 +35,8 @@ import {
   type StoryObjective,
   type StoryQuest,
 } from "./quests";
-import { TRAVELERS_IN_FINALE, TRAVELER_CATALOGUE, TRAVELER_IDS, type TravelerId } from "./travelers";
-import { storyLevel, storyUnlockHint, storyUnlockMet, type StoryProgress } from "./unlocks";
+import { TRAVELER_CATALOGUE, TRAVELER_IDS, type TravelerId } from "./travelers";
+import { storyLevel, storyUnlockHint, storyUnlockMet } from "./unlocks";
 
 /* ------------------------------------------------------------------ */
 /* Stored                                                              */
@@ -78,10 +78,6 @@ function travelersHome(story: StoredStory): ReadonlySet<TravelerId> {
   return new Set(TRAVELER_IDS.filter((id) => isTravelerDone(story.travelers[id], id)));
 }
 
-function withProgress(story: StoredStory, progress: StackAcresShopProgress): StoryProgress {
-  return { ...progress, travelersHome: travelersHome(story) };
-}
-
 function withTraveler(story: StoredStory, id: TravelerId, entry: StoredTravelerStory): StoredStory {
   return { ...story, travelers: { ...story.travelers, [id]: entry } };
 }
@@ -103,7 +99,7 @@ export function meetTraveler(story: StoredStory, id: TravelerId, progress: Stack
   const entry = story.travelers[id];
   if (entry.met) return { story, outcome: "already-met" };
   const unlock = TRAVELER_CATALOGUE[id].unlock;
-  if (!storyUnlockMet(unlock, withProgress(story, progress), TRAVELERS_IN_FINALE)) {
+  if (!storyUnlockMet(unlock, progress)) {
     return { story, outcome: "locked" };
   }
   const first = TRAVELER_QUESTS[id][0];
@@ -406,22 +402,10 @@ export interface TravelerStoryView {
   readonly questBlocked: boolean;
 }
 
-/** How close the farm is to Leo's finale gate. Read by Ray's own "home"
- *  dialogue to hint at the last hidden traveler once nobody else is left --
- *  see dialogueNodeFor in ./dialogue.ts. */
-export interface StackAcresStoryFinale {
-  /** Travelers whose whole line is done, Leo included once he joins them. */
-  readonly travelersHome: number;
-  /** How many of the other ten Leo's own gate asks for (TRAVELERS_IN_FINALE). */
-  readonly travelersNeeded: number;
-  readonly leoUnlocked: boolean;
-}
-
 export interface StackAcresStoryView {
   readonly level: number;
   readonly travelers: Readonly<Record<TravelerId, TravelerStoryView>>;
   readonly items: readonly StoryItemId[];
-  readonly finale: StackAcresStoryFinale;
 }
 
 /** One traveler's active-quest view: the current checkpoint's objectives for
@@ -457,30 +441,26 @@ export function storyView(
   facts: StoryFacts,
   friendshipPoints: Readonly<Partial<Record<NpcId, number>>> = {},
 ): StackAcresStoryView {
-  const full = withProgress(story, progress);
+  const home = travelersHome(story);
   const travelers = {} as Record<TravelerId, TravelerStoryView>;
-  let travelersHome = 0;
   for (const id of TRAVELER_IDS) {
     const entry = story.travelers[id];
     const unlock = TRAVELER_CATALOGUE[id].unlock;
     const quest = activeQuest(entry, id);
-    const done = isTravelerDone(entry, id);
-    if (done) travelersHome += 1;
     travelers[id] = {
-      unlocked: storyUnlockMet(unlock, full, TRAVELERS_IN_FINALE),
-      hint: storyUnlockHint(unlock, full, TRAVELERS_IN_FINALE),
+      unlocked: storyUnlockMet(unlock, progress),
+      hint: storyUnlockHint(unlock, progress),
       met: entry.met,
-      done,
+      done: isTravelerDone(entry, id),
       quest: quest === null ? null : questView(quest, entry, TRAVELER_QUESTS[id].length, inventory, facts),
       ready: quest !== null && questReady(quest, entry.counts, inventory, facts),
-      questBlocked: quest !== null && !questRequirementMet(quest, friendshipPoints, full.travelersHome),
+      questBlocked: quest !== null && !questRequirementMet(quest, friendshipPoints, home),
     };
   }
   return {
     level: storyLevel(progress),
     travelers,
     items: story.items,
-    finale: { travelersHome, travelersNeeded: TRAVELERS_IN_FINALE, leoUnlocked: travelers.leo.unlocked },
   };
 }
 

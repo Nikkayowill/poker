@@ -87,13 +87,7 @@ import {
   type HiddenZoneId,
   type SecretItemId,
 } from "@/lib/stackacres/secrets";
-import {
-  HOME_SECTOR,
-  isSectorUnlocked,
-  sectorClearCheck,
-  sectorLabel,
-  type SectorId,
-} from "@/lib/stackacres/sectors";
+import { HOME_SECTOR, isSectorUnlocked, sectorLabel, type SectorId } from "@/lib/stackacres/sectors";
 import { upkeepState, type StackAcresUpkeepState } from "@/lib/stackacres/upkeep";
 import { withLocalClockUnit, type StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
@@ -207,7 +201,7 @@ import { storyEventsForAction } from "@/lib/stackacres/story/predict";
 import type { StackAcresStoryView } from "@/lib/stackacres/story/state";
 import type { StoryIntent } from "@/lib/stackacres/story/dialogue";
 import type { QuestPlaceId } from "@/lib/stackacres/story/places";
-import { TRAVELER_CATALOGUE, WILD_AREA_TRAVELER, type TravelerId } from "@/lib/stackacres/story/travelers";
+import { TRAVELER_CATALOGUE, type TravelerId } from "@/lib/stackacres/story/travelers";
 import { type MapPlaceId } from "@/lib/stackacres/map-places";
 import { StackAcresMapSheet, mapPlaceStates } from "./stackacres-map-sheet";
 import { STORY_ITEM_CATALOGUE, isStoryItemId } from "@/lib/stackacres/story/items";
@@ -2472,12 +2466,9 @@ export function StackAcresFarm() {
     [clearing, landObstacles],
   );
 
-  /** Who a closed wild gate is waiting on, for its sheet. */
-  const clearingOpener = useMemo(() => {
-    const traveler = clearing ? WILD_AREA_TRAVELER[clearing] : undefined;
-    if (!traveler) return null;
-    return { name: TRAVELER_CATALOGUE[traveler].name, hint: story.view?.travelers[traveler].hint ?? null };
-  }, [clearing, story.view]);
+  // No wild sector is waiting on a traveler any more (2026-09-28: the four that
+  // were are gone, ../../../lib/stackacres/zones.ts's own header) -- the sheet's
+  // `opener` prop, for "this gate opens when X arrives", is always null now.
 
   // No effect needed to disarm the retire confirmation on district change:
   // StackAcresUnitRows only ever renders the current district's own units
@@ -2522,13 +2513,12 @@ export function StackAcresFarm() {
 
   /**
    * Ray carries two separate interactions: his own story line (he is one of
-   * the eleven travelers, `TRAVELER_IDS` in travelers.ts) and the
+   * the three travelers, `TRAVELER_IDS` in travelers.ts) and the
    * gift-giving loop `friendship.ts` only ever wired to him. Before this, a
-   * tap always opened gifts, so his story line could never
-   * start and Leo's finale, which needs all ten travelers plus Ray, could
-   * never be reached. Story first when he actually has something to say,
-   * same as every other traveler; gifts otherwise, so the everyday loop
-   * still works once his current beat is done.
+   * tap always opened gifts, so his story line could never start. Story
+   * first when he actually has something to say, same as every other
+   * traveler; gifts otherwise, so the everyday loop still works once his
+   * current beat is done.
    */
   const onWorldRayTap = useCallback(
     (at: TapPoint) => {
@@ -2772,28 +2762,19 @@ export function StackAcresFarm() {
     setShowMap(true);
   }, []);
 
-  /** Every place, in map order, with whose gate is shut and what opens it.
-   *  Only the Homestead and its own Crop Fields are on the map right now --
-   *  the other districts are staying off the map while polish focuses on the
-   *  Homestead alone (Kayo, 2026-09-22). */
+  /** Every place, in map order: the Homestead and its own Crop Fields, the
+   *  only two left on the map sheet since the six other districts (and the
+   *  gates they had) went (2026-09-28, ../../../lib/stackacres/map-places.ts's
+   *  own header). Both are always open, so this never has a locked label to
+   *  show. */
   const mapPlaces = useMemo(
     () =>
       mapPlaceStates(
-      mapHere,
-      // The Crop Fields are always walkable now; nothing is bought to open
-      // them, so they never carry a locked label either.
-      (id) => id === "cropfields" || isSectorUnlocked(id, sectors),
-      (id) => {
-        // Never reached for the Crop Fields -- they are open above -- but the
-        // map's id space is wider than a district's, so it is said here.
-        if (id === "cropfields") return null;
-        const traveler = WILD_AREA_TRAVELER[id];
-        if (traveler) return `Opens when ${TRAVELER_CATALOGUE[traveler].name} arrives`;
-        const check = sectorClearCheck(id, { unlocked: sectors, unitCount: units.length });
-        return `Clear for ${check.cost.toLocaleString()} Gold`;
-      },
-    ).filter((place) => place.id === "farmstead" || place.id === "cropfields"),
-    [mapHere, sectors, units.length],
+        mapHere,
+        () => true,
+        () => null,
+      ),
+    [mapHere],
   );
 
   // The view moving under whatever is pinned to it closes both screen-
@@ -3228,12 +3209,6 @@ export function StackAcresFarm() {
    * you already understand, and this is a permanent purchase with conditions
    * on it. It is worth stopping for.
    */
-  const onWorldLockedTap = useCallback((zone: ZoneId) => {
-    panelSound();
-    setPlace(zone);
-    setClearing(zone);
-  }, []);
-
   /**
    * The town board's two actions, handed down as promises rather than as
    * fire-and-forget calls: the sheet debits its own shelf before either goes
@@ -4209,8 +4184,6 @@ export function StackAcresFarm() {
               onTravelerTap={onWorldTravelerTap}
               onSecretZoneTap={onWorldSecretZoneTap}
               onQuestPlaceTap={onWorldQuestPlaceTap}
-              sectors={sectors}
-              onLockedSectorTap={onWorldLockedTap}
               onViewMoved={onViewMoved}
               onPlaceEntered={onPlaceEntered}
               soilTiles={mergedSoilTiles}
@@ -4860,7 +4833,7 @@ export function StackAcresFarm() {
           unlocked={sectors}
           unitCount={units.length}
           upkeepOutstanding={upkeep.due}
-          opener={clearingOpener}
+          opener={null}
           progress={clearingProgress}
           onClose={() => { panelSound(); setClearing(null); }}
         />

@@ -39,7 +39,6 @@ const RUNNING_FARM: StackAcresShopProgress = {
 /** A farm that has done none of the once-only work yet. */
 const BARE = { sectorsCleared: 0, soilBeds: 0, enchantments: 0, crossbreeds: 0 } as const;
 const TROWEL: StoryFacts = { tool: "trowel", ...BARE };
-const IRON: StoryFacts = { tool: "iron-shovel", ...BARE };
 
 /** Generous enough to clear any `requires` a real quest declares today
  *  (ray.q4 asks for 9). Driving a line to completion in these tests is about
@@ -158,15 +157,6 @@ describe("meetTraveler", () => {
     expect(again.outcome).toBe("already-met");
     expect(again.story).toBe(once);
   });
-
-  it("keeps Leo locked until the other ten are home", () => {
-    let story = freshStory();
-    expect(meetTraveler(story, "leo", RUNNING_FARM).outcome).toBe("locked");
-    for (const id of TRAVELER_IDS) {
-      if (id !== "leo") story = finish(story, id);
-    }
-    expect(meetTraveler(story, "leo", RUNNING_FARM).outcome).toBe("met");
-  });
 });
 
 describe("applyStoryEvent", () => {
@@ -189,63 +179,21 @@ describe("applyStoryEvent", () => {
     expect(applyStoryEvent(story, { kind: "fish-caught", species: "trout" })).toBe(story);
   });
 
-  it("ticks each open quest on its own events", () => {
+  it("ticks each open quest on its own events, and leaves a traveler with no counted objective alone", () => {
+    // Pierre's first quest is `deliver`, a live fact rather than a counted
+    // one (LIVE_OBJECTIVE_KINDS, ./quests.ts) -- his counts array stays [0]
+    // through any event and only moves at turn-in, off the inventory.
     let story = met(freshStory(), "ray", FRESH_FARM);
-    story = met(story, "bea");
+    story = met(story, "pierre");
     story = applyStoryEvent(story, { kind: "watered", count: 4 });
     expect(story.travelers.ray.counts).toEqual([3]);
-    expect(story.travelers.bea.counts).toEqual([0]);
-    story = applyStoryEvent(story, { kind: "harvested", stock: "bell_pepper", count: 4 });
-    expect(story.travelers.ray.counts).toEqual([3]);
-    expect(story.travelers.bea.counts).toEqual([4]);
+    expect(story.travelers.pierre.counts).toEqual([0, 0]);
   });
 
   it("never touches a deliver objective", () => {
     const story = met(freshStory(), "pierre");
     const after = applyStoryEvent(story, { kind: "harvested", stock: "potato", count: 5 });
     expect(after).toBe(story);
-  });
-});
-
-describe("work already done still counts", () => {
-  /**
-   * The softlock this fixes. Miles' second quest asks for a cleared district,
-   * and only two districts can ever be cleared. A player who cleared both
-   * before he turned up had nothing left to clear, and a counter that only
-   * ticks while the quest is open could never reach 1.
-   */
-  it("accepts a district cleared before the quest was ever offered", () => {
-    let story = met(freshStory(), "miles", RUNNING_FARM);
-    // Finish his first quest the ordinary way.
-    story = events(story, [
-      { kind: "secret-zone-tapped", zoneId: "loose-board" },
-      { kind: "secret-zone-tapped", zoneId: "wishing-well" },
-      { kind: "secret-zone-tapped", zoneId: "windmill-gear" },
-    ]);
-    story = applyTurnIn(story, "miles", {}, TROWEL).story;
-
-    // No `sector-cleared` event ever reaches this story: the clearing
-    // happened long before Miles arrived. The farm says so instead.
-    const cleared: StoryFacts = { ...TROWEL, sectorsCleared: 2 };
-    expect(applyTurnIn(story, "miles", {}, TROWEL).outcome).toBe("not-ready");
-    expect(applyTurnIn(story, "miles", {}, cleared).outcome).toBe("completed");
-  });
-
-  it("shows that work on the rendered view too, with nothing counted", () => {
-    let story = met(freshStory(), "miles", RUNNING_FARM);
-    story = events(story, [
-      { kind: "secret-zone-tapped", zoneId: "loose-board" },
-      { kind: "secret-zone-tapped", zoneId: "wishing-well" },
-      { kind: "secret-zone-tapped", zoneId: "windmill-gear" },
-    ]);
-    story = applyTurnIn(story, "miles", {}, TROWEL).story;
-    const view = storyView(story, RUNNING_FARM, {}, { ...TROWEL, sectorsCleared: 1 });
-    expect(view.travelers.miles.quest?.objectives[0]).toEqual({
-      label: "Clear a district of wild growth",
-      have: 1,
-      need: 1,
-    });
-    expect(view.travelers.miles.ready).toBe(true);
   });
 });
 
@@ -281,29 +229,11 @@ describe("applyTurnIn", () => {
     expect(result.inventory).toBe(inventory);
   });
 
-  it("reads a held tool live rather than waiting for an event", () => {
-    const story = met(freshStory(), "brayden");
-    expect(applyTurnIn(story, "brayden", {}, TROWEL).outcome).toBe("not-ready");
-    expect(applyTurnIn(story, "brayden", {}, IRON, "cubic_pickaxe_head").outcome).toBe("advanced");
-    expect(applyTurnIn(story, "brayden", {}, { tool: "golden-spade", ...BARE }, "cubic_pickaxe_head").outcome).toBe("advanced");
-  });
-
-  describe("a quest with 2+ rewards", () => {
-    it("refuses without a chosen reward, touching nothing", () => {
-      const story = met(freshStory(), "brayden");
-      const ready = applyTurnIn(story, "brayden", {}, IRON);
-      expect(ready.outcome).toBe("reward-required");
-      expect(ready.story).toBe(story);
-      expect(applyTurnIn(story, "brayden", {}, IRON, "aegis_plaza_token" as StoryItemId).outcome).toBe("reward-required");
-    });
-
-    it("grants only the chosen reward", () => {
-      const story = met(freshStory(), "brayden");
-      const result = applyTurnIn(story, "brayden", {}, IRON, "sample_bag_of_curved_ore");
-      expect(result.outcome).toBe("advanced");
-      expect(result.granted).toEqual(["sample_bag_of_curved_ore"]);
-      expect(result.story.items).toEqual(["sample_bag_of_curved_ore"]);
-    });
+  it("reads a live fact (crossbreeds) rather than waiting for an event", () => {
+    const story = met(freshStory(), "ivy");
+    expect(applyTurnIn(story, "ivy", {}, TROWEL).outcome).toBe("not-ready");
+    const crossed: StoryFacts = { ...TROWEL, crossbreeds: 1 };
+    expect(applyTurnIn(story, "ivy", {}, crossed).outcome).toBe("advanced");
   });
 
   it("grants the reward once, on the last quest", () => {
@@ -327,29 +257,10 @@ describe("applyTurnIn", () => {
     expect(last.story.items).toEqual(["rays_heritage_cap"]);
   });
 
-  it("grants a quest's own reward on every turn-in, not only the last quest", () => {
-    const story = met(freshStory(), "brayden");
-    const afterQ1 = applyTurnIn(story, "brayden", {}, IRON, "cubic_pickaxe_head");
-    expect(afterQ1.outcome).toBe("advanced");
-    expect(afterQ1.granted).toEqual(["cubic_pickaxe_head"]);
-    expect(afterQ1.story.items).toEqual(["cubic_pickaxe_head"]);
-    // brayden.q2 has no `rewards` of its own, only the line's final keepsake.
-    const forged: StoryFacts = { ...IRON, enchantments: 1 };
-    const afterQ2 = applyTurnIn(afterQ1.story, "brayden", {}, forged);
-    expect(afterQ2.outcome).toBe("completed");
-    expect(afterQ2.granted).toEqual(["glitched_drill_bit"]);
-    expect(afterQ2.story.items).toEqual(["cubic_pickaxe_head", "glitched_drill_bit"]);
-  });
-
   it("can finish every line", () => {
     let story = freshStory();
-    for (const id of TRAVELER_IDS) {
-      if (id !== "leo") story = finish(story, id);
-    }
-    story = finish(story, "leo");
-    // 11 traveler keepsakes plus brayden.q1's own reward (finish() always
-    // picks the first option when a quest offers a choice).
-    expect(story.items).toHaveLength(12);
+    for (const id of TRAVELER_IDS) story = finish(story, id);
+    expect(story.items).toHaveLength(TRAVELER_IDS.length);
   });
 });
 
@@ -375,7 +286,6 @@ describe("storyView", () => {
     expect(view.travelers.pierre.unlocked).toBe(false);
     expect(view.travelers.pierre.hint).toBe("Break ground in the Crop Fields");
     expect(view.travelers.pierre.quest).toBeNull();
-    expect(view.travelers.leo.hint).toBe("Send every other traveler home");
   });
 
   it("reads deliver progress off the inventory and flips ready", () => {
@@ -392,14 +302,6 @@ describe("storyView", () => {
     expect(view.travelers.ray.done).toBe(true);
     expect(view.travelers.ray.quest).toBeNull();
     expect(view.items).toEqual(["rays_heritage_cap"]);
-  });
-
-  it("counts finished lines toward the finale gate", () => {
-    const fresh = storyView(freshStory(), RUNNING_FARM, {}, TROWEL);
-    expect(fresh.finale).toEqual({ travelersHome: 0, travelersNeeded: 10, leoUnlocked: false });
-    const view = storyView(finish(freshStory(), "ray"), RUNNING_FARM, {}, TROWEL);
-    expect(view.finale.travelersHome).toBe(1);
-    expect(view.finale.travelersNeeded).toBe(10);
   });
 });
 
@@ -490,7 +392,7 @@ describe("questRequirementMet", () => {
     title: "Traveler-gated",
     objectives: [],
     turnInLabel: "Done",
-    requires: [{ kind: "traveler-done", traveler: "arthur" }],
+    requires: [{ kind: "traveler-done", traveler: "pierre" }],
   };
   const BOTH_GATES: StoryQuest = {
     id: "test.both",
@@ -513,13 +415,13 @@ describe("questRequirementMet", () => {
 
   it("checks a traveler-done requirement against the finished-lines set", () => {
     expect(questRequirementMet(TRAVELER_GATE, NO_FRIENDSHIP, new Set())).toBe(false);
-    expect(questRequirementMet(TRAVELER_GATE, NO_FRIENDSHIP, new Set(["arthur"]))).toBe(true);
-    expect(questRequirementMet(TRAVELER_GATE, NO_FRIENDSHIP, new Set(["bea"]))).toBe(false);
+    expect(questRequirementMet(TRAVELER_GATE, NO_FRIENDSHIP, new Set(["pierre"]))).toBe(true);
+    expect(questRequirementMet(TRAVELER_GATE, NO_FRIENDSHIP, new Set(["ivy"]))).toBe(false);
   });
 
   it("needs every requirement met when a quest declares more than one", () => {
     expect(questRequirementMet(BOTH_GATES, { ray: 10 }, new Set())).toBe(false);
-    expect(questRequirementMet(BOTH_GATES, { ray: 10 }, new Set(["arthur"]))).toBe(true);
+    expect(questRequirementMet(BOTH_GATES, { ray: 10 }, new Set(["pierre"]))).toBe(true);
   });
 });
 

@@ -14,7 +14,6 @@ import {
   withLandObstacleState,
   type LandObstacleKind,
 } from "./land-clearing";
-import { STACKACRES_SECTORS } from "./sectors";
 
 const NOW = new Date("2026-09-22T12:00:00.000Z");
 
@@ -37,8 +36,13 @@ function workToClear(kind: LandObstacleKind) {
 describe("what stands on a sector", () => {
   it("only lists the two sectors that are taken by clearing", () => {
     expect(CLEARABLE_SECTORS).toEqual(["wallow", "oxfields"]);
-    for (const id of CLEARABLE_SECTORS) expect(STACKACRES_SECTORS[id].state).toBe("claimable");
-    expect(isClearableSector("oak")).toBe(false);
+    // Both moved to STACKACRES_SECTORS' `wild` state 2026-09-28, alongside
+    // the six districts removed the same day (../story/travelers.ts's own
+    // header): there is no map left to walk onto and swing at, so this list
+    // is not the whole answer to "may this be cleared" any more -- only a
+    // record of which two districts the swing mechanic itself still knows,
+    // ready to resume once a place-it-yourself building brings them back.
+    expect(isClearableSector("farmstead")).toBe(false);
   });
 
   it("makes each one a job of several sittings, the later field the longer one", () => {

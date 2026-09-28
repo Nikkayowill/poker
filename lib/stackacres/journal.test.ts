@@ -357,9 +357,13 @@ describe("the expansion track", () => {
   });
 
   it("names the travelers pinned to a particular flag on that flag", () => {
+    // No remaining traveler (Ray, Pierre, Ivy) unlocks on a named flag --
+    // all three are milestone-gated (see ../story/travelers.ts). Knight
+    // Arthur and Cowboy Wes, who were, left with the six districts
+    // (../story/travelers.ts's own header), so every flag's `brings` is
+    // empty rather than naming someone.
     const view = journalView(FRESH);
-    expect(view.reach.find((step) => step.flag === "town_trusted")?.brings).toContain("Knight Arthur");
-    expect(view.reach.find((step) => step.flag === "cleared_oxfields")?.brings).toContain("Cowboy Wes");
+    for (const step of view.reach) expect(step.brings, step.flag).toEqual([]);
   });
 
   it("says what one more flag opens, whichever flag it turns out to be", () => {

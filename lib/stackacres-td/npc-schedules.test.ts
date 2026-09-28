@@ -153,17 +153,19 @@ describe("the farm's routines", () => {
         const plan = planDay(NPC_ROUTINES.ray, NPC_STATIONS, areas, 3_600_000, daySeed("ray", day));
         expect(poseAt(plan, 8).area, `day ${day}`).toBe("homestead");
         expect(poseAt(plan, 10.5).area, `day ${day}`).toBe("barn");
-        expect(poseAt(plan, 23).area, `day ${day}`).toBe("townsquare");
+        // Ray's own home station is on the Homestead now -- see NPC_STATIONS' own header on why.
+        expect(poseAt(plan, 23).area, `day ${day}`).toBe("homestead");
         const pilgrim = planDay(NPC_ROUTINES.pilgrim, NPC_STATIONS, areas, 3_600_000, daySeed("pilgrim", day));
         expect(poseAt(pilgrim, 10).area, `day ${day}`).toBe("homestead");
       }
     });
   });
 
-  it("has Ray on the Homestead at mid-morning and gone to town at night", () => {
+  it("has Ray on the Homestead at mid-morning and turned in for the night by the east gate", () => {
     const plan = planDay(NPC_ROUTINES.ray, NPC_STATIONS, areas, 3_600_000);
     expect(poseAt(plan, 8).area).toBe("homestead");
     expect(poseAt(plan, 10.5).area).toBe("barn");
-    expect(poseAt(plan, 23).area).toBe("townsquare");
+    expect(poseAt(plan, 23).area).toBe("homestead");
+    expect(poseAt(plan, 23).x).toBeGreaterThan(900);
   });
 });

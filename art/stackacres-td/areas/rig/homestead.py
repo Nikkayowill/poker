@@ -161,22 +161,17 @@ def _cleared(tx, ty):
 
 
 def _gates(a):
-    """The ways out, each shut until its place opens. Same destinations and arrival spots as before."""
-    a.add(kit.broken_cart(), 1000, 336, (18, 4), tag="locked:townsquare")
-    a.exit("townsquare", 1014, 304, 10, 32, (22, 216))
-    a.add(props.brambles(), 26, 334, (20, 3), tag="locked:oak")
-    a.exit("oak", 0, 304, 10, 32, (492, 216))
-    a.add(props.rockfall(), CAVE_X, HILL_FOOT + 12, (24, 4), tag="locked:mine")
-    a.exit("mine", CAVE_X - 16, HILL_FOOT - 4, 32, 12, (88, 334))
-    a.add(props.hedge_overgrown(), 1000, 494, (16, 3), tag="locked:wallow")
-    a.exit("fold", 1014, 464, 10, 32, (22, 184))
-    a.add(props.boardwalk_washed(), 512, MH * T - 14, tag="locked:coast")
-    a.exit("coast", 496, MH * T - 10, 32, 10, (312, 22))
+    """The two ways off the map: the City over the west bridge, the Far Field through the east gate.
+    The Fold, Cattle Pasture, Coastal Market, the Ancestral Oak, the Mine and Town Square -- the six
+    districts these gates used to lead to -- are gone (2026-09-28), and their own overgrowth props
+    (the broken cart, the brambles, the rockfall, the boardwalk) went with them."""
+    # The gap in the east treeline, across the yard from the City's bridge, leads to the Far Field.
+    a.exit("empire", 1014, 464, 10, 32, (48, 240))
     # The bridge on the west edge leads to the City (areas/rig/city.py), onto the road where it comes in from the east.
     a.exit("city", 0, 448, 10, 32, (928, 456))
 
 
-GAPS = {"east": [(304, 336), (464, 496)], "west": [(304, 336), (448, 480)], "south": [(496, 528)]}
+GAPS = {"east": [(464, 496)], "west": [(448, 480)]}
 
 
 def _hill(a):

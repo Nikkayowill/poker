@@ -1,22 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { STACKACRES_QUEST_LABELS } from "../shop-locks";
-import { TRAVELERS_IN_FINALE, TRAVELER_IDS, type TravelerId } from "./travelers";
-import {
-  STORY_MAX_LEVEL,
-  levelUnlock,
-  storyLevel,
-  storyUnlockHint,
-  storyUnlockMet,
-  type StoryProgress,
-} from "./unlocks";
+import { STORY_MAX_LEVEL, levelUnlock, storyLevel, storyUnlockHint, storyUnlockMet, type StoryProgress } from "./unlocks";
 
 const FRESH: StoryProgress = {
   sectors: ["farmstead"],
   influence: 0,
   greenhouseBuilt: false,
   cropFieldsUnlocked: false,
-  travelersHome: new Set(),
 };
 
 const EVERYTHING: StoryProgress = {
@@ -24,7 +15,6 @@ const EVERYTHING: StoryProgress = {
   influence: 10,
   greenhouseBuilt: true,
   cropFieldsUnlocked: true,
-  travelersHome: new Set(TRAVELER_IDS.filter((id): id is TravelerId => id !== "leo")),
 };
 
 describe("storyLevel", () => {
@@ -53,36 +43,24 @@ describe("levelUnlock", () => {
 describe("storyUnlockMet / storyUnlockHint", () => {
   it("counts milestones in any order", () => {
     const unlock = levelUnlock(3);
-    expect(storyUnlockMet(unlock, FRESH, TRAVELERS_IN_FINALE)).toBe(false);
-    expect(storyUnlockMet(unlock, { ...FRESH, influence: 5, greenhouseBuilt: true }, TRAVELERS_IN_FINALE)).toBe(true);
+    expect(storyUnlockMet(unlock, FRESH)).toBe(false);
+    expect(storyUnlockMet(unlock, { ...FRESH, influence: 5, greenhouseBuilt: true })).toBe(true);
   });
 
   it("hints at the first unearned flag while a milestone is short", () => {
-    expect(storyUnlockHint(levelUnlock(2), FRESH, TRAVELERS_IN_FINALE)).toBe(STACKACRES_QUEST_LABELS.crop_fields_unlocked);
-    expect(storyUnlockHint(levelUnlock(2), { ...FRESH, cropFieldsUnlocked: true }, TRAVELERS_IN_FINALE)).toBeNull();
-    expect(storyUnlockHint(levelUnlock(3), { ...FRESH, cropFieldsUnlocked: true }, TRAVELERS_IN_FINALE)).toBe(
-      STACKACRES_QUEST_LABELS.town_trusted,
-    );
+    expect(storyUnlockHint(levelUnlock(2), FRESH)).toBe(STACKACRES_QUEST_LABELS.crop_fields_unlocked);
+    expect(storyUnlockHint(levelUnlock(2), { ...FRESH, cropFieldsUnlocked: true })).toBeNull();
+    expect(storyUnlockHint(levelUnlock(3), { ...FRESH, cropFieldsUnlocked: true })).toBe(STACKACRES_QUEST_LABELS.town_trusted);
   });
 
   it("names the flag itself for a flag unlock", () => {
     const unlock = { kind: "flag", flag: "cleared_oxfields" } as const;
-    expect(storyUnlockMet(unlock, FRESH, TRAVELERS_IN_FINALE)).toBe(false);
-    expect(storyUnlockHint(unlock, FRESH, TRAVELERS_IN_FINALE)).toBe(STACKACRES_QUEST_LABELS.cleared_oxfields);
-    expect(storyUnlockMet(unlock, EVERYTHING, TRAVELERS_IN_FINALE)).toBe(true);
-  });
-
-  it("opens the finale only once every other traveler is home", () => {
-    const unlock = { kind: "finale" } as const;
-    expect(storyUnlockMet(unlock, FRESH, TRAVELERS_IN_FINALE)).toBe(false);
-    expect(storyUnlockHint(unlock, FRESH, TRAVELERS_IN_FINALE)).toBe("Send every other traveler home");
-    const nineHome = { ...EVERYTHING, travelersHome: new Set([...EVERYTHING.travelersHome].slice(0, 9)) };
-    expect(storyUnlockMet(unlock, nineHome, TRAVELERS_IN_FINALE)).toBe(false);
-    expect(storyUnlockMet(unlock, EVERYTHING, TRAVELERS_IN_FINALE)).toBe(true);
-    expect(storyUnlockHint(unlock, EVERYTHING, TRAVELERS_IN_FINALE)).toBeNull();
+    expect(storyUnlockMet(unlock, FRESH)).toBe(false);
+    expect(storyUnlockHint(unlock, FRESH)).toBe(STACKACRES_QUEST_LABELS.cleared_oxfields);
+    expect(storyUnlockMet(unlock, EVERYTHING)).toBe(true);
   });
 
   it("never hints for an always unlock", () => {
-    expect(storyUnlockHint({ kind: "always" }, FRESH, TRAVELERS_IN_FINALE)).toBeNull();
+    expect(storyUnlockHint({ kind: "always" }, FRESH)).toBeNull();
   });
 });

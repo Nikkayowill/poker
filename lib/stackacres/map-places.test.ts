@@ -14,19 +14,14 @@ describe("the world map's places", () => {
     expect(cells.size).toBe(MAP_PLACES.length);
   });
 
-  it("puts the Homestead in the middle, with every walk out of it on the right side", () => {
+  it("puts the Crop Fields and the Homestead side by side, the only two places left", () => {
+    // Six districts (and the gates that led to them) were removed 2026-09-28
+    // (../story/travelers.ts's own header); the Crop Fields, ground inside
+    // the Homestead rather than a district of their own, are all that is
+    // still a walk from it.
     const at = (id: string) => MAP_PLACES.find((place) => place.id === id)!;
-    const home = at("farmstead");
-    // The Homestead's own exits (areas/homestead/area.json): north to the Crop
-    // Fields, north-east to the Mine, west to the Oak, east to Town Square and
-    // the Fold, south to the Coast. The Pasture is reached through the Fold.
-    expect(at("cropfields").row).toBeLessThan(home.row);
-    expect(at("mine").row).toBeLessThan(home.row);
-    expect(at("mine").col).toBeGreaterThan(home.col);
-    expect(at("oak").col).toBeLessThan(home.col);
-    expect(at("townsquare").col).toBeGreaterThan(home.col);
-    expect(at("coast").row).toBeGreaterThan(home.row);
-    expect(at("wallow").col).toBeGreaterThan(home.col);
-    expect(at("oxfields").col).toBeGreaterThan(at("wallow").col);
+    expect(MAP_PLACES).toHaveLength(2);
+    expect(at("cropfields").row).toBe(at("farmstead").row);
+    expect(at("cropfields").col).toBeLessThan(at("farmstead").col);
   });
 });

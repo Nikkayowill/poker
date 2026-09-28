@@ -1,9 +1,9 @@
 import { expect, test, type BrowserContext, type Page } from "./fixtures";
 
 /**
- * The City's two ways in, walked in the real engine: over the Homestead's west bridge and back, and in through
- * the grocery's front doors on the square and back out. lib/stackacres-td/city-area.test.ts pins the same
- * exits in the map data; this checks the scene actually takes the farmer through them.
+ * The Far Field's way in, walked in the real engine: through the gap in the Homestead's east treeline, across the
+ * yard from the City's bridge, and back out over its west edge. lib/stackacres-td/empire-area.test.ts pins the
+ * same exits in the map data.
  */
 
 interface TopdownHandle {
@@ -63,40 +63,25 @@ async function arrived(page: Page, name: string) {
   await expect.poll(settled, { timeout: 10_000 }).toBe(name);
 }
 
-/** Whether the City's ground and one of its townsfolk are held in memory. */
-const cityLoaded = (page: Page) =>
-  page.evaluate(() => {
-    const { textures } = (window as unknown as Handle).__stackacres.scene;
-    return textures.exists("ground:city:0") && textures.exists("mabel");
-  });
+/** Whether the Far Field's ground is held in memory. */
+const farFieldLoaded = (page: Page) =>
+  page.evaluate(() => (window as unknown as Handle).__stackacres.scene.textures.exists("ground:empire:0"));
 
-test("the Homestead's west bridge leads to the City, and the road east leads back", async ({ context, page }) => {
+test("the Homestead's east gate leads to the Far Field, and its west edge leads back", async ({ context, page }) => {
   await openFarm(context, page);
-  // The City's pictures load on the way in and go on the way out, rather than with the game.
-  expect(await cityLoaded(page)).toBe(false);
+  expect(await farFieldLoaded(page)).toBe(false);
 
-  await place(page, "homestead", { x: 56, y: 464 });
-  await tapMap(page, 4, 464);
-  await arrived(page, "city");
-  await expect(page.locator(".sa-place-tag")).toHaveText("The City");
-  expect(await cityLoaded(page)).toBe(true);
+  await place(page, "homestead", { x: 976, y: 480 });
+  await tapMap(page, 1020, 480);
+  await arrived(page, "empire");
+  await expect(page.locator(".sa-place-tag")).toHaveText("The Far Field");
+  expect(await farFieldLoaded(page)).toBe(true);
 
-  await tapMap(page, 956, 456);
+  await tapMap(page, 4, 240);
   await arrived(page, "homestead");
-  expect(await cityLoaded(page)).toBe(false);
-});
-
-test("the grocery's front doors lead in from the square and back out onto it", async ({ context, page }) => {
-  await openFarm(context, page);
-
-  await place(page, "city", { x: 494, y: 384 });
-  await tapMap(page, 494, 352);
-  await arrived(page, "grocery");
-
-  await tapMap(page, 224, 284);
-  await arrived(page, "city");
-  // Out on the step in front of the doors he went in by, not somewhere else on the map.
+  expect(await farFieldLoaded(page)).toBe(false);
+  // Back just inside the gate he went out by.
   const pos = await page.evaluate(() => ({ ...(window as unknown as Handle).__stackacres.scene.pos }));
-  expect(Math.abs(pos.x - 498)).toBeLessThan(32);
-  expect(Math.abs(pos.y - 378)).toBeLessThan(32);
+  expect(Math.abs(pos.x - 984)).toBeLessThan(32);
+  expect(Math.abs(pos.y - 480)).toBeLessThan(32);
 });

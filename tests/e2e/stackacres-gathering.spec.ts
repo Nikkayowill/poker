@@ -23,9 +23,6 @@ const TREE_4_MIDDLE = { x: 728, y: 232 };
 const BUSH = { x: 250, y: 300 };
 /** Bush 2, picked by the forage test below so the walk-through test above keeps its own. */
 const FORAGE_BUSH = { x: 764, y: 300 };
-/** Boulders are shared by every player and the mining spec breaks the first, so this uses the third. It can only run once per server. */
-const MINE_3 = { x: 300, y: 236 };
-const MINE_3_TILE = { x: 296, y: 232 };
 const HOUSE_WALL = { x: 472, y: 248 };
 
 test.use({ viewport: { width: 932, height: 430 } });
@@ -173,32 +170,4 @@ test("picking a bush gives crop seed and leaves it picked over", async ({ contex
   expect(await sceneCall(page, "nodeDrawn", "forage:homestead-3")).toBe("standing");
   // And it is still walked through once picked.
   expect(await sceneCall(page, "isBlockedAt", FORAGE_BUSH)).toBe(false);
-});
-
-test("mining a boulder from the map pays Stone, and four swings leave rubble", async ({ context, page }) => {
-  await openStackAcres(context, page);
-  await sceneCall(page, "placeFarmer", "mine", { x: MINE_3.x, y: MINE_3.y + 40 });
-  await page.waitForTimeout(500);
-  expect(await sceneCall(page, "nodeDrawn", "stone:mine-3")).toBe("standing");
-  expect(await sceneCall(page, "isBlockedAt", MINE_3_TILE)).toBe(true);
-  const point = await sceneCall(page, "clientPointFor", MINE_3.x, MINE_3.y - 6);
-  await page.mouse.click(point.x, point.y);
-
-  // One tap, one pick swing, no popup.
-  await expect.poll(() => hitsLeft(page, "stoneNodes", "stone:mine-3"), { timeout: 10_000 }).toBe(3);
-  await expect
-    .poll(async () => {
-      const view = (await (await context.request.get("/api/stackacres")).json()) as { inventory?: Record<string, number> };
-      return view.inventory?.stone ?? 0;
-    })
-    .toBe(2);
-  for (const left of [2, 1, 0]) {
-    await page.waitForTimeout(700);
-    await page.mouse.click(point.x, point.y);
-    await expect.poll(() => hitsLeft(page, "stoneNodes", "stone:mine-3"), { timeout: 10_000 }).toBe(left);
-  }
-
-  await expect.poll(() => sceneCall(page, "nodeDrawn", "stone:mine-3")).toBe("spent");
-  expect(await sceneCall(page, "nodeDrawn", "stone:mine-1")).toBe("standing");
-  expect(await sceneCall(page, "isBlockedAt", MINE_3_TILE)).toBe(false);
 });

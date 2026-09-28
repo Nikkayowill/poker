@@ -1,5 +1,13 @@
 # StackAcres areas
 
+**SUPERSEDED (2026-09-28).** Written 2026-09-16, and already well out of date before this
+note: the map below is six of these eight areas (the Old Fields, the Fold, Cattle Pasture,
+the Coastal Market, the Ancestral Oak, Mine Entrance) plus every traveler who stood in them,
+all removed the same day as this note (`lib/stackacres/story/travelers.ts`'s own header). The
+current world is the Homestead, the City (over its west bridge) and the Far Field (through its
+east gate) -- see `docs/stackacres-second-map-direction.md` for what actually exists. Kept below
+for history only; nothing here should be read as current.
+
 Every place a player can visit in the top-down rewrite, how the places connect, and what
 opens each one. Written 2026-09-16 and checked against the live code in
 `lib/stackacres/` on that date. Map page: https://claude.ai/artifact/LFQwLCCQNfBTaku9CMnqov

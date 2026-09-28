@@ -154,6 +154,6 @@ as $$
 $$;
 
 comment on function public.stackacres_read_batch(uuid, date) is
-  'The ~37-table read fan-out stackacres-service.ts''s view() used to fire as separate PostgREST round trips, done here in one call and handed back as one JSON object. Read-only, whole rows. Service-role only.';
+  'Batched per-profile farm read for view() in stackacres-service.ts. Read-only. Service-role only.';
 
 revoke all on function public.stackacres_read_batch(uuid, date) from public, anon, authenticated;

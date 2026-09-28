@@ -123,11 +123,10 @@ import { fenceFrame, fenceKey, type FencePiece } from "@/lib/stackacres/fences";
 import { isWildMapTile, mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
 import { cropFieldObstaclePlacements } from "@/lib/stackacres/crop-field-obstacles";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
-import { STACKACRES_SECTORS, type SectorId } from "@/lib/stackacres/sectors";
 import { STACKACRES_HOUR_MS } from "@/lib/stackacres/clock";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { QuestPlaceId } from "@/lib/stackacres/story/places";
-import { WILD_AREA_TRAVELER, isTravelerId, type TravelerId } from "@/lib/stackacres/story/travelers";
+import { isTravelerId, type TravelerId } from "@/lib/stackacres/story/travelers";
 import { cropSpot, penFeedSpot, stockZone, type WorldPoint } from "@/lib/stackacres/world";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
 import type { ZoneId } from "@/lib/stackacres/zones";
@@ -161,18 +160,8 @@ import { WindSway } from "./wind-sway";
 import { SeeThrough } from "./see-through";
 import { drawNodeTextures } from "./node-textures";
 import { NODE_ART, gatherKindOfTag, spentForage, spentStones, spentTrees, type SpentNode } from "@/lib/stackacres-td/gather-nodes";
-import {
-  LAND_ART_SCALE,
-  LAND_TEXTURES,
-  dealLandObstacles,
-  landArt,
-  type LandObstaclePlacement,
-} from "@/lib/stackacres-td/land-obstacles";
-import {
-  LAND_OBSTACLES,
-  isClearableSector,
-  type LandObstacleSnapshot,
-} from "@/lib/stackacres/land-clearing";
+import { LAND_ART_SCALE, LAND_TEXTURES, landArt, type LandObstaclePlacement } from "@/lib/stackacres-td/land-obstacles";
+import type { LandObstacleSnapshot } from "@/lib/stackacres/land-clearing";
 import type { ForageNodeSnapshot } from "@/lib/stackacres/forage";
 import type { StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
 import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
@@ -207,23 +196,40 @@ const ASSETS = "/stackacres-td";
 const CROP_FIELDS_GATE = { x: 512, y: 520 } as const;
 
 const AREAS: TopdownArea[] = [
-  "homestead", "fold", "pasture", "coast", "oak", "mine", "townsquare", "barn", "workshop", "farmhouse",
+  "homestead", "barn", "workshop", "farmhouse",
   "empire",
   // The City, reached over the Homestead's west bridge, and the grocery on its square.
   "city", "grocery",
 ];
+/**
+ * Which place's pictures each area loads with. The Homestead's load with the game and stay. Every other place's
+ * load on the way in and are let go once he leaves, so the City's (about 38 MB decoded, with the grocery and its
+ * people) are only held while he's there. A room goes with the place its door is in, so the grocery doesn't
+ * reload the City on the way back out. Every area.json still loads up front: they're small, and people's routes
+ * are planned across all of them.
+ */
+const LOADS_WITH: Record<TopdownArea, TopdownArea> = {
+  homestead: "homestead", barn: "homestead", workshop: "homestead", farmhouse: "homestead",
+  empire: "empire",
+  city: "city", grocery: "city",
+};
+/** Atlases an area draws from beyond its own props sheet. */
+const AREA_ATLASES: Partial<Record<TopdownArea, readonly string[]>> = { grocery: ["decor"] };
+
+/** An area's own pictures: a ground per water frame, the water's mask, and its atlases. `file` is without ".png". */
+function areaArt(area: TopdownArea, spec: AreaSpec): { key: string; file: string; atlas: boolean }[] {
+  const dir = `${ASSETS}/areas/${area}`;
+  const art = Array.from({ length: spec.frames }, (_, f) => ({ key: `ground:${area}:${f}`, file: `${dir}/ground-${f}`, atlas: false }));
+  if (spec.water) art.push({ key: `water:${area}`, file: `${dir}/water`, atlas: false });
+  for (const sheet of ["props", ...(AREA_ATLASES[area] ?? [])]) art.push({ key: `${sheet}:${area}`, file: `${dir}/${sheet}`, atlas: true });
+  return art;
+}
 /** What the place tag says on arriving somewhere: the map's own names, plus the two rooms.
  *  Exported so the shell (stackacres-farm.tsx) can key its own per-place UI (the empire
  *  district's resource HUD) off the same name this scene hands `onPlaceEntered`, rather than
  *  a second copy of the string. */
 export const AREA_NAMES: Record<TopdownArea, string> = {
   homestead: "The Homestead",
-  fold: "The Fold",
-  pasture: "Cattle Pasture",
-  coast: "Coastal Market",
-  oak: "The Ancestral Oak",
-  mine: "Mine Entrance",
-  townsquare: "Town Square",
   barn: "Barn",
   workshop: "Workshop",
   farmhouse: "Your House",
@@ -241,6 +247,8 @@ const FENCE_FRAME = { width: 16, height: 32, foot: 12 } as const;
 const BEYOND = 1600;
 /** The forest picture is the pack's 32px-per-tile art, drawn at the map's 16. */
 const FOREST_SCALE = 0.5;
+/** How much smaller the forest's tile sprite is built than it's drawn, under WebGL (see `enterArea`). */
+const FOREST_SHRINK = 16;
 /** How fast a waterfall's water drops, in map units a second. */
 const FALL_SPEED = 40;
 
@@ -251,12 +259,13 @@ const SLEEP_BEAT_MS = 450;
 const SLEEP_FADE_MS = 900;
 const SLEEP_FADE_REDUCED_MS = 150;
 const SLEEP_DARK_MS = 700;
-const CHARACTERS = [
-  "farmer", "ray", "pilgrim", "pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo",
-  // The grocery's staff and shoppers. The shoppers also walk the City as its townsfolk.
-  ...STAFF_SPRITES, ...STORE_SHOPPERS,
-];
-const TRAVELERS_ON_MAP: readonly TravelerId[] = ["pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
+const CHARACTERS = ["farmer", "ray", "pilgrim", "pierre", "ivy"];
+/** People seen only in one place's areas, whose sheets load and go with its pictures (LOADS_WITH). The grocery's
+ *  staff and shoppers; the shoppers also walk the City as its townsfolk. */
+const PLACE_CHARACTERS: Partial<Record<TopdownArea, readonly string[]>> = {
+  city: [...STAFF_SPRITES, ...STORE_SHOPPERS],
+};
+const TRAVELERS_ON_MAP: readonly TravelerId[] = ["pierre", "ivy"];
 
 /** A pinned clock (setClock) keeps ticking for the people on their rounds, an hour an hour. */
 const PINNED_CLOCK_MS_PER_HOUR = 3_600_000;
@@ -265,42 +274,16 @@ function isEmoteTarget(name: string): name is EmoteTarget {
   return name === "ray" || name === "pilgrim" || (TRAVELERS_ON_MAP as readonly string[]).includes(name);
 }
 
-/** Every district with a scene of its own behind a gate on the Homestead (or the Fold). */
-const SECTOR_AREAS: Partial<Record<ZoneId, TopdownArea>> = {
-  wallow: "fold",
-  oxfields: "pasture",
-  coast: "coast",
-  oak: "oak",
-  mine: "mine",
-  townsquare: "townsquare",
-};
-/**
- * Whether the six districts are off the map (Kayo, 2026-09-22, PR #609).
- *
- * Polish is going into the Homestead alone for now, so nothing behind
- * AREA_SECTOR can be walked into and no overgrown gate opens. Everything
- * those fields need is built and tested behind it -- see `enterable` -- so
- * turning this off is the whole of bringing them back.
- */
-const HOMESTEAD_ONLY: boolean = true;
-
 /**
  * Whether the empire district (the Far Field) can be walked into (Kayo,
- * 2026-09-24; docs/stackacres-second-map-direction.md section 6a). A separate
- * flag from HOMESTEAD_ONLY on purpose: that one gates the six Gold-cleared/wild
- * districts on the SAME map. No exit leads to the Far Field since the
- * Homestead's west bridge went to the City (2026-09-27).
+ * 2026-09-24; docs/stackacres-second-map-direction.md section 6a). Its gate
+ * is the gap in the Homestead's east treeline, across the yard from the
+ * City's bridge. The six sector-gated districts this flag used to sit
+ * beside (Kayo, 2026-09-22, PR #609) are gone outright (2026-09-28), not
+ * merely gated, so there is nothing left for a second flag to gate.
  */
 const EMPIRE_ENABLED: boolean = true;
 
-const AREA_SECTOR: Partial<Record<TopdownArea, ZoneId>> = {
-  fold: "wallow",
-  pasture: "oxfields",
-  coast: "coast",
-  oak: "oak",
-  mine: "mine",
-  townsquare: "townsquare",
-};
 /**
  * Where a cast is thrown from: the far end of the lake dock, just east of the mooring post,
  * with open water to the west.
@@ -315,20 +298,11 @@ const DOCK_CAST_SPOT: Point = { x: 416, y: 44 };
  * on the post: the post is at the top of the map, under the HUD bar on a landscape phone.
  */
 const DOCK_PLANKS = new Phaser.Geom.Rectangle(400, 16, 32, 96);
-/** Where to stand on the Homestead in front of a district's gate while it is still closed. */
-const GATE_APPROACH: Partial<Record<ZoneId, Point>> = {
-  wallow: { x: 976, y: 480 },
-  coast: { x: 512, y: 788 },
-  oak: { x: 52, y: 320 },
-  mine: { x: 976, y: 176 },
-  townsquare: { x: 976, y: 320 },
-};
-
-/** Where each pen's animals stand: the area, its spots zone, and how the grid of them is laid out. */
+/** Where each pen's animals stand: the area, its spots zone, and how the grid of them is laid out.
+ *  Hen Haven is the only pen left (2026-09-28): the Fold's and Cattle Pasture's own rows went with
+ *  those two districts. */
 const PENS: Partial<Record<ZoneId, { area: TopdownArea; spots: string; cols: number; rowGap: number }>> = {
   henhaven: { area: "homestead", spots: "hen-spots", cols: 4, rowGap: 22 },
-  wallow: { area: "fold", spots: "sheep-spots", cols: 5, rowGap: 26 },
-  oxfields: { area: "pasture", spots: "cattle-spots", cols: 5, rowGap: 36 },
 };
 const WALK_SPEED = 72; // px/s
 /** The farmer's 8-frame walk (art/stackacres-td/pixellab) is timed for full walking speed, so it plays at 1x there. */
@@ -480,7 +454,6 @@ export interface TopdownCallbacks {
   onTravelerTap: (traveler: TravelerId, at: TapPoint) => void;
   onSecretZoneTap: (zoneId: HiddenZoneId, at: TapPoint) => void;
   onQuestPlaceTap: (placeId: QuestPlaceId, at: TapPoint) => void;
-  onLockedSectorTap: (zone: ZoneId, at: TapPoint) => void;
   onViewMoved: () => void;
   /** The farmer has just gone through a door or a gate: the shell shows where he has arrived. */
   onPlaceEntered: (name: string) => void;
@@ -548,6 +521,11 @@ export class TopdownScene extends Phaser.Scene {
   private readonly callbacks: TopdownCallbacks;
   private readonly host: HTMLElement;
   private specs = new Map<TopdownArea, AreaSpec>();
+  /** Places (LOADS_WITH) whose pictures are in, and the ones still loading with whoever is waiting on them. */
+  private placesLoaded = new Set<TopdownArea>(["homestead"]);
+  private placesLoading = new Map<TopdownArea, ((ok: boolean) => void)[]>();
+  /** Counts every `enterArea`, so a trip still loading can tell he was put somewhere else meanwhile. */
+  private moves = 0;
   private areaName: TopdownArea = "homestead";
   private area!: AreaSpec;
   private grid!: Grid;
@@ -663,7 +641,6 @@ export class TopdownScene extends Phaser.Scene {
   private soil: SoilTile[] = [];
   /** `soil` keyed by tile, built once per soil change rather than once per crop per draw. */
   private soilMap = createSoilMap([]);
-  private sectors: SectorId[] = [];
   private travelerUnlocks: Partial<Record<TravelerId, boolean>> = {};
   /** Tag of a tree or boulder that is spent (`tree:homestead-1`) -> when it grows back. */
   private spent = new Map<string, number>();
@@ -706,15 +683,12 @@ export class TopdownScene extends Phaser.Scene {
 
   preload(): void {
     for (const area of AREAS) {
-      // An area ships only as many ground frames as its water needs, so load them once its JSON says how many.
-      this.load.once(`filecomplete-json-area:${area}`, (_key: string, _type: string, data: AreaSpec) => {
-        for (let f = 0; f < data.frames; f++) this.load.image(`ground:${area}:${f}`, `${ASSETS}/areas/${area}/ground-${f}.png`);
-        if (data.water) this.load.image(`water:${area}`, `${ASSETS}/areas/${area}/water.png`);
-      });
+      // An area ships only as many ground frames as its water needs, so its pictures wait for its JSON.
+      if (LOADS_WITH[area] === "homestead") {
+        this.load.once(`filecomplete-json-area:${area}`, (_key: string, _type: string, data: AreaSpec) => this.queueAreaArt(area, data));
+      }
       this.load.json(`area:${area}`, `${ASSETS}/areas/${area}/area.json`);
-      this.load.atlas(`props:${area}`, `${ASSETS}/areas/${area}/props.png`, `${ASSETS}/areas/${area}/props.json`);
     }
-    this.load.atlas("decor:grocery", `${ASSETS}/areas/grocery/decor.png`, `${ASSETS}/areas/grocery/decor.json`);
     this.load.atlas("common", `${ASSETS}/common/sprites.png`, `${ASSETS}/common/sprites.json`);
     this.load.atlas("buildings", `${ASSETS}/common/buildings.png`, `${ASSETS}/common/buildings.json`);
     this.load.image("forest", `${ASSETS}/common/forest.png`);
@@ -914,13 +888,37 @@ export class TopdownScene extends Phaser.Scene {
     return true;
   }
 
-  /**
-   * Goes through a door or a gate: the outgoing view is grabbed, the next place is built underneath, and the grab
-   * pushes in (pulls back, leaving a room) while it dissolves, and the shell is told the place's name to show. If
-   * the grab never arrives (a hidden tab), the place still changes.
-   */
+  /** Goes through a door or a gate, once the place past it has its pictures in (LOADS_WITH). */
   private travelTo(to: TopdownArea, spawn: Point): void {
     this.travelling = true;
+    const moves = this.moves;
+    // A place whose pictures aren't in yet loads first, with him standing at its gate.
+    if (!this.placesLoaded.has(LOADS_WITH[to])) this.stand();
+    this.withArea(to, (ok) => {
+      // Put somewhere else meanwhile (the map sheet, a spec): that move wins.
+      if (this.moves !== moves) {
+        this.travelling = false;
+        return;
+      }
+      if (ok) {
+        this.crossTo(to, spawn);
+        return;
+      }
+      this.path = [];
+      this.pending = null;
+      this.clearMarker();
+      this.floatAt(this.mapToCss({ x: this.pos.x, y: this.pos.y - 40 }), `${AREA_NAMES[to]} didn't load. Try again`, "deny");
+      // A beat before the gate answers again, so a stick held into it doesn't retry every frame.
+      this.time.delayedCall(1500, () => (this.travelling = false));
+    });
+  }
+
+  /**
+   * The crossing itself: the outgoing view is grabbed, the next place is built underneath, and the grab pushes in
+   * (pulls back, leaving a room) while it dissolves, and the shell is told the place's name to show. If the grab
+   * never arrives (a hidden tab), the place still changes.
+   */
+  private crossTo(to: TopdownArea, spawn: Point): void {
     const leaving = this.area.indoor;
     if (leaving || this.specs.get(to)?.indoor) doorSound();
     let done = false;
@@ -967,39 +965,10 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   /** Whichever path the farmer found to its edge, some land still cannot be
-   *  walked into. */
+   *  walked into. Only the Far Field is gated at all now: the Homestead,
+   *  its rooms, the City and the grocery are always open. */
   private canEnter(area: TopdownArea): boolean {
-    if (area === "empire") return EMPIRE_ENABLED;
-    const sector = AREA_SECTOR[area];
-    return sector === undefined || this.enterable(sector);
-  }
-
-  /**
-   * Land the farmer may walk onto. Nothing is bought any more: ground you
-   * have not cleared is walked onto, since walking onto it is how the
-   * clearing gets done. The one order left is the map's own -- the Pasture
-   * is reached through the Fold, so the Fold opens first.
-   *
-   * SHUT AT THE TOP for now. Polish is only going into the Homestead, so the
-   * six districts are off the map (Kayo, 2026-09-22, PR #609) and the
-   * clearing built underneath this is dormant rather than gone. Dropping the
-   * HOMESTEAD_ONLY line is the whole of putting the Fold and the Pasture
-   * back, and it puts their overgrown gates back with them: `applyGates`
-   * reads the same answer, so a hedge never opens onto ground the farmer is
-   * then stopped at.
-   */
-  private enterable(zone: ZoneId): boolean {
-    if (HOMESTEAD_ONLY) return false;
-    if (this.opened(zone)) return true;
-    if (!isClearableSector(zone)) return false;
-    const requires = STACKACRES_SECTORS[zone].requires;
-    return requires === null || this.opened(requires);
-  }
-
-  /** A wild area opens with its traveler (the shell pushes `travelerUnlocks`); bought land opens when owned. */
-  private opened(zone: ZoneId): boolean {
-    const traveler = WILD_AREA_TRAVELER[zone];
-    return traveler ? this.travelerUnlocks[traveler] === true : this.sectors.includes(zone);
+    return area !== "empire" || EMPIRE_ENABLED;
   }
 
   private headingFor(dx: number, dy: number): Dir {
@@ -1059,7 +1028,62 @@ export class TopdownScene extends Phaser.Scene {
 
   // ------------------------------------------------------------------ areas
 
+  private queueAreaArt(area: TopdownArea, spec: AreaSpec): void {
+    for (const { key, file, atlas } of areaArt(area, spec)) {
+      if (atlas) this.load.atlas(key, `${file}.png`, `${file}.json`);
+      else this.load.image(key, `${file}.png`);
+    }
+  }
+
+  /** The texture keys a place's pictures are held under: its areas' own, and its people's sheets. */
+  private placeTextures(place: TopdownArea): string[] {
+    const keys = [...(PLACE_CHARACTERS[place] ?? [])];
+    for (const area of AREAS) {
+      if (LOADS_WITH[area] === place) keys.push(...areaArt(area, this.cache.json.get(`area:${area}`) as AreaSpec).map((art) => art.key));
+    }
+    return keys;
+  }
+
+  /**
+   * Calls `then` once `area`'s pictures are in (LOADS_WITH): straight away if they already are, else once they've
+   * loaded. `ok` is false if any of them didn't, and then none are kept.
+   */
+  private withArea(area: TopdownArea, then: (ok: boolean) => void): void {
+    const place = LOADS_WITH[area];
+    if (this.placesLoaded.has(place)) {
+      then(true);
+      return;
+    }
+    const waiting = this.placesLoading.get(place);
+    if (waiting) {
+      waiting.push(then);
+      return;
+    }
+    this.placesLoading.set(place, [then]);
+    for (const each of AREAS) if (LOADS_WITH[each] === place) this.queueAreaArt(each, this.cache.json.get(`area:${each}`) as AreaSpec);
+    for (const name of PLACE_CHARACTERS[place] ?? []) {
+      this.load.aseprite(name, `${ASSETS}/characters/${name}.png`, `${ASSETS}/characters/${name}.json`);
+    }
+    this.load.once(Phaser.Loader.Events.COMPLETE, () => {
+      const ok = this.placeTextures(place).every((key) => this.textures.exists(key));
+      if (ok) this.placesLoaded.add(place);
+      else this.dropPlace(place);
+      const waiters = this.placesLoading.get(place) ?? [];
+      this.placesLoading.delete(place);
+      for (const waiter of waiters) waiter(ok);
+    });
+    this.load.start();
+  }
+
+  private dropPlace(place: TopdownArea): void {
+    this.placesLoaded.delete(place);
+    for (const key of this.placeTextures(place)) if (this.textures.exists(key)) this.textures.remove(key);
+    // An aseprite sheet leaves its frame data in the JSON cache, and the loader won't load a key that's still there.
+    for (const name of PLACE_CHARACTERS[place] ?? []) this.cache.json.remove(name);
+  }
+
   private enterArea(name: TopdownArea, spawn: Point): void {
+    this.moves += 1;
     // A cast's bobber and line are kept objects on the old area's layer, so a
     // rebuild would leave the run pointing at destroyed sprites and the input
     // lock on forever. Dropping it here is the one place that cannot happen.
@@ -1113,14 +1137,18 @@ export class TopdownScene extends Phaser.Scene {
     // past it. One repeated picture, far enough out to cover the widest view at
     // the lowest zoom, drawn under everything. Rooms go without: a room is meant to
     // float in the dark.
+    // Phaser gives a tile sprite a canvas texture its own size, which WebGL never draws
+    // into: 68 MB on the Homestead. Built smaller and scaled back up, it draws the same.
     if (!this.area.indoor) {
       const w = this.area.width * this.area.tile;
       const h = this.area.height * this.area.tile;
+      const shrink = this.game.renderer.type === Phaser.WEBGL ? FOREST_SHRINK : 1;
       this.keep(
         this.add
-          .tileSprite(-BEYOND, -BEYOND, w + BEYOND * 2, h + BEYOND * 2, "forest")
+          .tileSprite(-BEYOND, -BEYOND, (w + BEYOND * 2) / shrink, (h + BEYOND * 2) / shrink, "forest")
           .setOrigin(0, 0)
-          .setTileScale(FOREST_SCALE)
+          .setScale(shrink)
+          .setTileScale(FOREST_SCALE / shrink)
           .setDepth(-20),
       );
     }
@@ -1233,6 +1261,8 @@ export class TopdownScene extends Phaser.Scene {
     this.drawGroceryGhost();
     if (name === "grocery" && !this.buildMode) this.openGrocery();
     this.drawUnits();
+    // Nothing of the place he left is drawn any more, so its pictures go (LOADS_WITH).
+    for (const place of [...this.placesLoaded]) if (place !== "homestead" && place !== LOADS_WITH[name]) this.dropPlace(place);
   }
 
   private keep<T extends Phaser.GameObjects.GameObject>(object: T): T {
@@ -1256,38 +1286,12 @@ export class TopdownScene extends Phaser.Scene {
   private buildLandObstacles(): void {
     // The Crop Fields' overgrowth is dealt where the server can see it too, since
     // it decides where the hoe may go (lib/stackacres/crop-field-obstacles.ts).
+    // The Homestead is the only area this ever deals onto now: the six districts
+    // that used to have their own dealt-on-arrival wild growth (LAND_OBSTACLES'
+    // per-sector tables) are gone (2026-09-28).
     if (this.areaName === "homestead") {
       for (const placement of cropFieldObstaclePlacements()) this.buildLandObstacle(placement);
-      return;
     }
-    const sector = AREA_SECTOR[this.areaName];
-    if (sector === undefined || !isClearableSector(sector)) return;
-    const { tile } = this.area;
-    const blocked = new Set<string>();
-    for (const [tx, ty] of this.area.blocked) blocked.add(tileKey(tx, ty));
-    for (const spec of this.area.props) for (const [tx, ty] of spec.blocks) blocked.add(tileKey(tx, ty));
-    // A doorway, and the tile he lands on coming through one, stay open: a
-    // boulder dealt onto the way in would wall the field off from itself.
-    const keepClear = this.area.exits.map((exit) => ({
-      x: exit.x - tile,
-      y: exit.y - tile,
-      width: exit.w + tile * 2,
-      height: exit.h + tile * 2,
-    }));
-    keepClear.push({ x: this.area.spawn.x - tile, y: this.area.spawn.y - tile, width: tile * 2, height: tile * 2 });
-    const placements = dealLandObstacles(
-      LAND_OBSTACLES[sector],
-      {
-        width: this.area.width,
-        height: this.area.height,
-        tile,
-        blocked,
-        keepClear,
-        from: { tx: Math.floor(this.area.spawn.x / tile), ty: Math.floor(this.area.spawn.y / tile) },
-      },
-      this.area.width * 31 + this.area.height,
-    );
-    for (const placement of placements) this.buildLandObstacle(placement);
   }
 
   /**
@@ -1374,15 +1378,11 @@ export class TopdownScene extends Phaser.Scene {
     const blocked = new Set(this.area.blocked.map(([tx, ty]) => tileKey(tx, ty)));
     for (const { spec, image, canopy, stump } of this.propImages) {
       const [kind, detail] = (spec.tag ?? "").split(":") as [string, ZoneId | undefined];
-      // Overgrowth across a gate stands until the land behind it can be
-      // walked onto -- which, for land that is cleared rather than bought, is
-      // from the first second (see `enterable`).
-      const cleared = kind === "locked" && detail !== undefined && SECTOR_AREAS[detail] !== undefined && this.enterable(detail);
       const isSpent = spec.tag !== undefined && gatherKindOfTag(spec.tag) !== null && this.spent.has(spec.tag);
       const down = kind === "land" && detail !== undefined && (this.landDown.has(detail) || this.bedOverObstacle(detail));
       // Something that came down mid-swing stands until the blade lands on it.
       const held = spec.tag !== undefined && this.holding.has(spec.tag);
-      const visible = held ? !stump : stump ? isSpent : !(cleared || isSpent || down);
+      const visible = held ? !stump : stump ? isSpent : !(isSpent || down);
       image.setVisible(visible);
       canopy?.setVisible(visible);
       if (visible) for (const [tx, ty] of spec.blocks) blocked.add(tileKey(tx, ty));
@@ -2563,12 +2563,6 @@ export class TopdownScene extends Phaser.Scene {
         return cb.onQuestPlaceTap(detail as QuestPlaceId, at);
       case "pen":
         return cb.onGroundTap(detail as ZoneId, at, penFeedSpot(detail as ZoneId));
-      case "locked":
-        if (this.sectors.includes(detail as SectorId)) {
-          this.floatAt(at, "That land isn't in this preview yet", "deny");
-          return;
-        }
-        return cb.onLockedSectorTap(detail as ZoneId, at);
     }
   }
 
@@ -3383,11 +3377,6 @@ export class TopdownScene extends Phaser.Scene {
     for (const id of fell) this.cameDown(`land:${id}`);
   }
 
-  setSectors(sectors: SectorId[]): void {
-    this.sectors = sectors;
-    if (this.booted) this.applyGates();
-  }
-
   setTravelerUnlocks(unlocked: TravelerUnlocks): void {
     this.travelerUnlocks = unlocked;
     if (!this.booted) return;
@@ -3645,30 +3634,13 @@ export class TopdownScene extends Phaser.Scene {
     if (this.booted) this.homeCamera();
   }
 
-  /** The district panel's travel buttons: the two home districts are on the Homestead; the rest aren't built yet. */
+  /** The map sheet's travel buttons: the Crop Fields and Hen Haven are ground on the Homestead itself. */
   focusZone(zone: MapPlaceId): void {
     if (!this.booted) return;
-    // The Crop Fields are ground on the Homestead rather than a district, so
-    // they are not in SECTOR_AREAS -- and they are not gated either, so this
-    // always walks straight out into the field.
     if (zone === "cropfields") {
       this.path = [];
       this.pending = null;
       this.enterArea("homestead", CROP_FIELDS_GATE);
-      this.callbacks.onViewMoved();
-      return;
-    }
-    const sectorArea = SECTOR_AREAS[zone];
-    if (sectorArea) {
-      this.path = [];
-      this.pending = null;
-      // Land that is cleared rather than bought is walked straight onto,
-      // overgrown or not. A district he cannot enter leaves him at its gate
-      // instead, and the Pasture's gate is inside the Fold -- so a shut Fold
-      // sends him to the Fold's own gate on the Homestead, never through it.
-      if (this.canEnter(sectorArea)) this.enterArea(sectorArea, this.specs.get(sectorArea)!.spawn);
-      else if (zone === "oxfields" && this.canEnter("fold")) this.enterArea("fold", { x: 396, y: 184 });
-      else this.enterArea("homestead", GATE_APPROACH[zone === "oxfields" ? "wallow" : zone]!);
       this.callbacks.onViewMoved();
       return;
     }
@@ -3715,20 +3687,30 @@ export class TopdownScene extends Phaser.Scene {
     return this.mapToCss(p);
   }
 
-  /** Puts the farmer straight down somewhere, so a spec needn't walk across the map first. */
-  placeFarmer(area: TopdownArea, at: Point): void {
+  /** Puts the farmer straight down somewhere, so a spec needn't walk across the map first. Settles once he's there. */
+  placeFarmer(area: TopdownArea, at: Point): Promise<void> {
     this.path = [];
     this.pending = null;
-    this.enterArea(area, at);
-    this.callbacks.onViewMoved();
-    // The shell keys what it shows (the Far Field's HUD, the grocery's buttons) off where he is.
-    this.callbacks.onPlaceEntered(AREA_NAMES[area]);
+    return new Promise((resolve, reject) =>
+      this.withArea(area, (ok) => {
+        if (!ok) {
+          reject(new Error(`${area} didn't load`));
+          return;
+        }
+        this.enterArea(area, at);
+        this.callbacks.onViewMoved();
+        // The shell keys what it shows (the Far Field's HUD, the grocery's buttons) off where he is.
+        this.callbacks.onPlaceEntered(AREA_NAMES[area]);
+        resolve();
+      }),
+    );
   }
 
-  /** Which map place the farmer is standing in, for the map sheet's "you are here". */
+  /** Which map place the farmer is standing in, for the map sheet's "you are here". Every area but the
+   *  Crop Fields (its own ground on the Homestead) reads as the Homestead itself -- the map sheet has
+   *  no button for the City or the Far Field yet. */
   currentPlace(): MapPlaceId {
-    if (this.onCropField(this.pos)) return "cropfields";
-    return AREA_SECTOR[this.areaName] ?? "farmstead";
+    return this.onCropField(this.pos) ? "cropfields" : "farmstead";
   }
 
   /** Whether a Homestead map point is out in the wild land round the yard, which is what the

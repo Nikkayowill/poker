@@ -2,10 +2,9 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 /**
- * The empire district's own map (docs/stackacres-second-map-direction.md
- * section 6a). The Homestead's west bridge leads to the City now
- * (city-area.test.ts), so nothing walks in here any more, but its area.json
- * still ships and its way out still has to land on open ground.
+ * The empire district's own map, the Far Field (docs/stackacres-second-map-direction.md
+ * section 6a), reached through the gap in the Homestead's east treeline, across
+ * the yard from the City's bridge (city-area.test.ts).
  */
 
 interface AreaExit {
@@ -74,6 +73,19 @@ const homestead = readArea("homestead");
 const empire = readArea("empire");
 const empirePropAtlas = readPropAtlas("empire");
 
+describe("the Homestead's east gate", () => {
+  it("leads to the Far Field from the Homestead's east edge", () => {
+    const gates = homestead.exits.filter((e) => e.to === "empire");
+    expect(gates).toHaveLength(1);
+    expect(gates[0].x + gates[0].w).toBe(homestead.width * homestead.tile);
+  });
+
+  it("lands the farmer on open Far Field ground on the way in", () => {
+    const gate = homestead.exits.find((e) => e.to === "empire")!;
+    expect(isWalkableWithProps(empire, gate.spawn.x, gate.spawn.y)).toBe(true);
+  });
+});
+
 describe("the empire district", () => {
   it("has an exit back to the Homestead", () => {
     const toHomestead = empire.exits.filter((e) => e.to === "homestead");
@@ -83,6 +95,14 @@ describe("the empire district", () => {
   it("lands the farmer on open Homestead ground on the way out", () => {
     const toHomestead = empire.exits.find((e) => e.to === "homestead")!;
     expect(isWalkable(homestead, toHomestead.spawn.x, toHomestead.spawn.y)).toBe(true);
+  });
+
+  it("sets the farmer down just inside the east gate he went out by", () => {
+    const gate = homestead.exits.find((e) => e.to === "empire")!;
+    const back = empire.exits.find((e) => e.to === "homestead")!.spawn;
+    expect(back.y).toBeGreaterThanOrEqual(gate.y);
+    expect(back.y).toBeLessThan(gate.y + gate.h);
+    expect(gate.x - back.x).toBeLessThanOrEqual(3 * homestead.tile);
   });
 
   it("starts the empire district with nothing built, only uncleared wilderness", () => {

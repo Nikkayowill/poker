@@ -73,7 +73,6 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   const {
     units,
     celebrate,
-    sectors,
     soilTiles,
     woodNodes,
     stoneNodes,
@@ -118,7 +117,6 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   const sceneUnits = useMemo(() => toSceneUnits(units), [units]);
   const latest = useRef({
     sceneUnits,
-    sectors,
     soilTiles,
     woodNodes,
     stoneNodes,
@@ -134,7 +132,6 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   useLayoutEffect(() => {
     latest.current = {
       sceneUnits,
-      sectors,
       soilTiles,
       woodNodes,
       stoneNodes,
@@ -191,7 +188,6 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onTravelerTap: (traveler, at) => p().onTravelerTap(traveler, at),
           onSecretZoneTap: (zoneId, at) => p().onSecretZoneTap(zoneId, at),
           onQuestPlaceTap: (placeId, at) => p().onQuestPlaceTap(placeId, at),
-          onLockedSectorTap: (zone, at) => p().onLockedSectorTap(zone, at),
           onViewMoved: () => p().onViewMoved(),
           onPlaceEntered: (name) => p().onPlaceEntered(name),
           onInputLocked: setCastLocked,
@@ -231,7 +227,6 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       scene.setZoom(first.zoom);
       const now = latest.current;
       scene.setUnits(now.sceneUnits);
-      scene.setSectors(now.sectors);
       scene.setSoil(now.soilTiles);
       scene.setWoodNodes(now.woodNodes);
       scene.setStoneNodes(now.stoneNodes);
@@ -413,10 +408,6 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   useLayoutEffect(() => {
     sceneRef.current?.setUnits(sceneUnits);
   }, [sceneUnits]);
-
-  useLayoutEffect(() => {
-    sceneRef.current?.setSectors(sectors);
-  }, [sectors]);
 
   useLayoutEffect(() => {
     sceneRef.current?.setSoil(soilTiles);

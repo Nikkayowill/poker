@@ -8,13 +8,15 @@
  * ... shouldnt even be there if the onboarding is good. all theyll need is
  * the map of this world to click on with their indicator").
  *
- * The grid below is not a drawing decision: it mirrors each area's own exits
- * in public/stackacres-td/areas/<area>/area.json. The Homestead sits in the
- * middle, and every other place sits on the side its gate is on -- the Crop
- * Fields through the north lane, the Mine off the north-east, the Oak west,
- * Town Square east, the Fold south-east with the Pasture beyond it, and the
- * Coast south. `map-places.test.ts` pins that against the area files, so a
- * re-laid map cannot leave this quietly wrong.
+ * SHRUNK 2026-09-28: the Mine, the Ancestral Oak, Town Square, the Coast,
+ * the Fold and Cattle Pasture all had their gates removed the same day (the
+ * six districts, ../story/travelers.ts's own header). The Fold and Cattle
+ * Pasture stay real, Gold-gated sectors (../sectors.ts) a player can still
+ * clear from the barn's Livestock tab -- they are just no longer a place
+ * with a gate to walk to, so they are off this map rather than a dead tap.
+ * The grid below still mirrors the Homestead's own exits in
+ * public/stackacres-td/areas/homestead/area.json: the Crop Fields, through
+ * the north lane. `map-places.test.ts` pins that against the area file.
  */
 
 import type { ZoneId } from "./zones";
@@ -31,17 +33,11 @@ export interface MapPlace {
   readonly row: number;
 }
 
-export const MAP_COLUMNS = 4;
-export const MAP_ROWS = 3;
+export const MAP_COLUMNS = 2;
+export const MAP_ROWS = 1;
 
 /** North is up. Every cell here is a place; the gaps are just grass. */
 export const MAP_PLACES: readonly MapPlace[] = [
-  { id: "cropfields", label: "Crop Fields", col: 1, row: 0 },
-  { id: "mine", label: "Mine Entrance", col: 2, row: 0 },
-  { id: "oak", label: "The Ancestral Oak", col: 0, row: 1 },
-  { id: "farmstead", label: "The Homestead", col: 1, row: 1 },
-  { id: "townsquare", label: "Town Square", col: 2, row: 1 },
-  { id: "coast", label: "Coastal Market", col: 1, row: 2 },
-  { id: "wallow", label: "The Fold", col: 2, row: 2 },
-  { id: "oxfields", label: "Cattle Pasture", col: 3, row: 2 },
+  { id: "cropfields", label: "Crop Fields", col: 0, row: 0 },
+  { id: "farmstead", label: "The Homestead", col: 1, row: 0 },
 ];

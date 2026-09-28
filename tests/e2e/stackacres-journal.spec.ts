@@ -100,7 +100,11 @@ test("the sheet shows both tracks: the buildings and the reach", async ({ contex
   ]) {
     await expect(sheet.locator(".sa-journal-reach")).toContainText(flag);
   }
-  await expect(sheet.locator(".sa-journal-reach")).toContainText("Brings Knight Arthur");
+  // No remaining traveler is pinned to a flag any more (all three are
+  // milestone-gated) -- Knight Arthur left with the six removed districts
+  // (lib/stackacres/story/travelers.ts's own header), so no reach step
+  // shows a "Brings" line now.
+  await expect(sheet.locator(".sa-journal-reach")).not.toContainText("Brings");
   await expect(sheet.locator(".sa-journal-reach")).toContainText("45,000 Gold");
   await expect(sheet.locator(".sa-journal-foot")).toContainText("Chef Pierre");
 });

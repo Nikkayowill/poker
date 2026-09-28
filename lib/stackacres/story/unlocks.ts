@@ -22,7 +22,6 @@ import {
   type StackAcresQuestFlag,
   type StackAcresShopProgress,
 } from "../shop-locks";
-import type { TravelerId } from "./travelers";
 
 export type StoryUnlock =
   /** Available from the first tap. Ray only. */
@@ -30,15 +29,10 @@ export type StoryUnlock =
   /** At least this many shop milestone flags earned. */
   | { readonly kind: "milestone"; readonly count: number }
   /** One named flag earned. */
-  | { readonly kind: "flag"; readonly flag: StackAcresQuestFlag }
-  /** Every other traveler sent home. Leo only. */
-  | { readonly kind: "finale" };
+  | { readonly kind: "flag"; readonly flag: StackAcresQuestFlag };
 
 /** Everything an unlock is allowed to look at. */
-export interface StoryProgress extends StackAcresShopProgress {
-  /** Travelers whose whole line is done. Only the finale reads it. */
-  readonly travelersHome: ReadonlySet<TravelerId>;
-}
+export type StoryProgress = StackAcresShopProgress;
 
 /** The highest level the farm can show. Level 1 is a fresh farm. */
 export const STORY_MAX_LEVEL = 1 + STACKACRES_MAX_MILESTONE;
@@ -55,7 +49,7 @@ export function levelUnlock(level: number): StoryUnlock {
   return level === 1 ? { kind: "always" } : { kind: "milestone", count: level - 1 };
 }
 
-export function storyUnlockMet(unlock: StoryUnlock, progress: StoryProgress, travelersInFinale: number): boolean {
+export function storyUnlockMet(unlock: StoryUnlock, progress: StoryProgress): boolean {
   switch (unlock.kind) {
     case "always":
       return true;
@@ -63,8 +57,6 @@ export function storyUnlockMet(unlock: StoryUnlock, progress: StoryProgress, tra
       return stackacresMilestone(progress) >= unlock.count;
     case "flag":
       return stackacresQuestFlags(progress).has(unlock.flag);
-    case "finale":
-      return progress.travelersHome.size >= travelersInFinale;
   }
 }
 
@@ -72,8 +64,8 @@ export function storyUnlockMet(unlock: StoryUnlock, progress: StoryProgress, tra
  * What a locked traveler's bubble says is missing. Imperative, one line,
  * the same register STACKACRES_QUEST_LABELS uses. Null when nothing is.
  */
-export function storyUnlockHint(unlock: StoryUnlock, progress: StoryProgress, travelersInFinale: number): string | null {
-  if (storyUnlockMet(unlock, progress, travelersInFinale)) return null;
+export function storyUnlockHint(unlock: StoryUnlock, progress: StoryProgress): string | null {
+  if (storyUnlockMet(unlock, progress)) return null;
   switch (unlock.kind) {
     case "always":
       return null;
@@ -84,7 +76,5 @@ export function storyUnlockHint(unlock: StoryUnlock, progress: StoryProgress, tr
     }
     case "flag":
       return STACKACRES_QUEST_LABELS[unlock.flag];
-    case "finale":
-      return "Send every other traveler home";
   }
 }

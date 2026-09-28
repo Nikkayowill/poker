@@ -1,16 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  HAPTIC_DOUBLE,
-  HAPTIC_FANFARE,
-  HAPTIC_TICK,
-  STORY_DIALOGUE,
-  dialogueNodeFor,
-  questProgressNodeId,
-  storyNode,
-} from "./dialogue";
+import { HAPTIC_DOUBLE, HAPTIC_FANFARE, HAPTIC_TICK, STORY_DIALOGUE, dialogueNodeFor, questProgressNodeId, storyNode } from "./dialogue";
 import { ALL_STORY_QUESTS, TRAVELER_QUESTS, type StoryQuest } from "./quests";
-import type { StackAcresStoryFinale, TravelerStoryView } from "./state";
+import type { TravelerStoryView } from "./state";
 import { TRAVELER_CATALOGUE, TRAVELER_IDS } from "./travelers";
 
 const LOCKED: TravelerStoryView = {
@@ -24,10 +16,6 @@ const LOCKED: TravelerStoryView = {
 };
 const UNMET: TravelerStoryView = { ...LOCKED, unlocked: true, hint: null };
 const DONE: TravelerStoryView = { ...UNMET, met: true, done: true };
-
-/** No one else home yet -- the ordinary case, matching every fixture above
- *  except the finale test below. */
-const NOT_FINALE: StackAcresStoryFinale = { travelersHome: 0, travelersNeeded: 10, leoUnlocked: false };
 
 function onQuest(index: number, ready: boolean, questBlocked = false): TravelerStoryView {
   return { ...UNMET, met: true, ready, questBlocked, quest: { index, total: 3, title: "", objectives: [] } };
@@ -52,9 +40,6 @@ describe("STORY_DIALOGUE", () => {
         }
       }
     }
-    // Ray alone also has the finale-hint variant of his `home` line.
-    expect(STORY_DIALOGUE.has("ray.home.finale-hint")).toBe(true);
-    expected += 1;
     expect(STORY_DIALOGUE.size).toBe(expected);
   });
 
@@ -72,16 +57,16 @@ describe("STORY_DIALOGUE", () => {
       const committing = node.choices.filter((choice) => choice.commits);
       // A `.done` node with 2+ rewards gets one committing choice per reward
       // instead of the usual single one; every other node still commits at
-      // most once.
+      // most once. No remaining quest (Ray, Pierre, Ivy) offers 2+ rewards,
+      // so `rewardCount` is always 0 here -- the multi-reward shape is still
+      // exercised by dialogue.ts's own buildNodes() logic, just not by real
+      // content since the eight travelers whose quests used it left with the
+      // six districts (../travelers.ts's own header).
       const questId = node.id.endsWith(".done") ? node.id.slice(0, -".done".length) : null;
       const rewardCount = questId !== null ? (questById.get(questId)?.rewards?.length ?? 0) : 0;
       const expectedCommitting = node.onComplete === null ? 0 : Math.max(1, rewardCount);
       expect(committing.length).toBe(expectedCommitting);
-      if (rewardCount >= 2) {
-        expect(committing.map((choice) => choice.reward)).toEqual(questById.get(questId as string)?.rewards);
-      } else {
-        expect(committing.every((choice) => choice.reward === undefined)).toBe(true);
-      }
+      expect(committing.every((choice) => choice.reward === undefined)).toBe(true);
     }
   });
 
@@ -108,19 +93,6 @@ describe("STORY_DIALOGUE", () => {
     expect(storyNode("pierre.home").onComplete).toBeNull();
   });
 
-  it("turns a quest's 2+ rewards into one committing choice each, plus a decline", () => {
-    const node = storyNode("brayden.q1.done");
-    const [cubicPickaxe, ore, decline] = node.choices;
-    expect(node.choices).toHaveLength(3);
-    expect(cubicPickaxe).toMatchObject({ commits: true, reward: "cubic_pickaxe_head" });
-    expect(ore).toMatchObject({ commits: true, reward: "sample_bag_of_curved_ore" });
-    expect(decline).toMatchObject({ commits: false });
-    expect(decline.reward).toBeUndefined();
-    // Every reward button posts the same base intent; the caller merges in
-    // the chosen reward (see use-stackacres-story.ts's choose()).
-    expect(node.onComplete).toEqual({ action: "story-turn-in", traveler: "brayden" });
-  });
-
   it("saves the fanfare for the last turn-in", () => {
     expect(storyNode("ray.q1.done").vibratePattern).toBe(HAPTIC_DOUBLE);
     expect(storyNode("ray.q4.done").vibratePattern).toBe(HAPTIC_FANFARE);
@@ -136,38 +108,23 @@ describe("STORY_DIALOGUE", () => {
 
 describe("dialogueNodeFor", () => {
   it("picks the node that matches the traveler's state", () => {
-    expect(dialogueNodeFor("ray", LOCKED, NOT_FINALE).id).toBe("ray.locked");
-    expect(dialogueNodeFor("ray", UNMET, NOT_FINALE).id).toBe("ray.hello");
-    expect(dialogueNodeFor("ray", onQuest(0, false), NOT_FINALE).id).toBe("ray.q1.progress");
-    expect(dialogueNodeFor("ray", onQuest(0, true), NOT_FINALE).id).toBe("ray.q1.done");
-    expect(dialogueNodeFor("ray", onQuest(2, true), NOT_FINALE).id).toBe("ray.q3.done");
-    expect(dialogueNodeFor("ray", DONE, NOT_FINALE).id).toBe("ray.home");
+    expect(dialogueNodeFor("ray", LOCKED).id).toBe("ray.locked");
+    expect(dialogueNodeFor("ray", UNMET).id).toBe("ray.hello");
+    expect(dialogueNodeFor("ray", onQuest(0, false)).id).toBe("ray.q1.progress");
+    expect(dialogueNodeFor("ray", onQuest(0, true)).id).toBe("ray.q1.done");
+    expect(dialogueNodeFor("ray", onQuest(2, true)).id).toBe("ray.q3.done");
+    expect(dialogueNodeFor("ray", DONE).id).toBe("ray.home");
   });
 
   it("returns the shared node object, so identity tracks the beat", () => {
-    expect(dialogueNodeFor("bea", onQuest(1, false), NOT_FINALE)).toBe(dialogueNodeFor("bea", onQuest(1, false), NOT_FINALE));
+    expect(dialogueNodeFor("ivy", onQuest(1, false))).toBe(dialogueNodeFor("ivy", onQuest(1, false)));
   });
 
   it("shows the blocked line for a gated quest, even once its objective is ready", () => {
     // Index 3 is ray.q4, the one real quest with a `requires` today.
-    expect(dialogueNodeFor("ray", onQuest(3, false, true), NOT_FINALE).id).toBe("ray.q4.blocked");
-    expect(dialogueNodeFor("ray", onQuest(3, true, true), NOT_FINALE).id).toBe("ray.q4.blocked");
-    expect(dialogueNodeFor("ray", onQuest(3, true, false), NOT_FINALE).id).toBe("ray.q4.done");
-  });
-
-  it("has Ray point at the hidden zones once he's the last one home and Leo hasn't turned up", () => {
-    const oneShort: StackAcresStoryFinale = { travelersHome: 9, travelersNeeded: 10, leoUnlocked: false };
-    expect(dialogueNodeFor("ray", DONE, oneShort).id).toBe("ray.home.finale-hint");
-  });
-
-  it("goes back to Ray's plain home line once Leo has unlocked", () => {
-    const leoUp: StackAcresStoryFinale = { travelersHome: 10, travelersNeeded: 10, leoUnlocked: true };
-    expect(dialogueNodeFor("ray", DONE, leoUp).id).toBe("ray.home");
-  });
-
-  it("never gives anyone but Ray the finale hint", () => {
-    const oneShort: StackAcresStoryFinale = { travelersHome: 9, travelersNeeded: 10, leoUnlocked: false };
-    expect(dialogueNodeFor("bea", DONE, oneShort).id).toBe("bea.home");
+    expect(dialogueNodeFor("ray", onQuest(3, false, true)).id).toBe("ray.q4.blocked");
+    expect(dialogueNodeFor("ray", onQuest(3, true, true)).id).toBe("ray.q4.blocked");
+    expect(dialogueNodeFor("ray", onQuest(3, true, false)).id).toBe("ray.q4.done");
   });
 });
 

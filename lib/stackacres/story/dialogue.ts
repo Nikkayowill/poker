@@ -26,7 +26,7 @@
 
 import { STORY_ITEM_CATALOGUE, type StoryItemId } from "./items";
 import { TRAVELER_QUESTS, questSegments, type StoryQuest } from "./quests";
-import type { StackAcresStoryFinale, TravelerStoryView } from "./state";
+import type { TravelerStoryView } from "./state";
 import { TRAVELER_CATALOGUE, TRAVELER_IDS, type PortraitExpression, type TravelerId } from "./travelers";
 
 /* ------------------------------------------------------------------ */
@@ -60,7 +60,6 @@ export interface StoryDialogueNode {
 
 /** The face a traveler's portrait wears for a node: glad to see you, weighing a task up, pleased it's done. */
 export function portraitExpression(node: Pick<StoryDialogueNode, "id">): PortraitExpression {
-  if (node.id.endsWith(".finale-hint")) return "surprised";
   if (node.id.endsWith(".hello") || node.id.endsWith(".done")) return "happy";
   if (node.id.endsWith(".progress") || node.id.endsWith(".locked")) return "thinking";
   return "neutral";
@@ -102,9 +101,6 @@ interface TravelerScript {
   readonly hello: string;
   readonly quests: readonly QuestBeats[];
   readonly home: string;
-  /** Ray only -- an alternate `home` line for when he's the last one done
-   *  and the finale traveler hasn't turned up yet. */
-  readonly homeFinaleHint?: string;
 }
 
 const SCRIPTS: Readonly<Record<TravelerId, TravelerScript>> = {
@@ -136,11 +132,6 @@ const SCRIPTS: Readonly<Record<TravelerId, TravelerScript>> = {
       },
     ],
     home: "Go on and see to your guests. Strange folk, but lost is lost, and we've always kept a door open here.",
-    /** Shown instead of `home` once every other traveler but one has gone
-     *  home and that last one hasn't turned up yet -- see `dialogueNodeFor`.
-     *  Points at the hidden zones without naming the odds or the item. */
-    homeFinaleHint:
-      "Go on and see to your guests. Though I hear there's still something buried on this land: a well, a loose board, the gear in that windmill. Might be worth a poke around before you call this place finished.",
   },
   pierre: {
     locked: "Non non, not yet. Ze kitchen is not ready, and neither, I think, are you.",
@@ -159,89 +150,6 @@ const SCRIPTS: Readonly<Record<TravelerId, TravelerScript>> = {
     ],
     home: "I am opening a bistro in ze square when I get home. Ze menu will have dirt on it.",
   },
-  miles: {
-    locked: "Not now, kid. I'm on a case, and the case is you not being ready yet.",
-    hello:
-      "Name's Miles. One minute I'm tailing a suspect down a rainy alley, next minute I'm standing in a field with more colours than my whole city. Something tore. I want to know where. Help me look?",
-    quests: [
-      {
-        progress:
-          "There's three spots on this farm that don't add up. A well, a loose board, a gear in the windmill. Poke at them. Tell me what you find.",
-        done: "Three anomalies, all humming the same note. That's not a coincidence, that's a pattern. Good work, partner.",
-      },
-      {
-        progress:
-          "The signal's strongest under the wild growth on the edge of the property. Clear a district and let me get a look at the ground.",
-        done: "Bare ground, and the trail runs right through it. Here, take the scanner. It'll tell you when you're close to the seam.",
-      },
-    ],
-    home: "Case closed, mostly. The last page always ends at the edge of the screen. I've made my peace with that.",
-  },
-  skye: {
-    locked: "Hold up, I'm not painting yet. Get the farm going and then we talk colour.",
-    hello:
-      "Yo. Skye. Where I'm from the walls repaint themselves every twelve frames, and here they just... stay. It's beautiful. I need pigment though. Real pigment. Radishes and tomatoes, grown, not spawned.",
-    quests: [
-      {
-        progress: "Six radishes for the reds, six tomatoes for the deep ones. Don't rush them, colour that grows fast fades fast.",
-        done: "Look at this red. You can't get this red from a palette, you have to grow it.",
-      },
-      {
-        progress: "Now I need something to paint on. Two bolts of cloth from the loom. Canvas, basically.",
-        done: "Done. First mural this world's ever had. Take this fence post, it flickers three colours, and no, I won't fix it.",
-      },
-    ],
-    home: "I'm leaving the mural. Every world should have at least one wall that changes.",
-  },
-  barnaby: {
-    locked: "Gurgle. Not yet. The oxygen bar's low and so is the tide.",
-    hello:
-      "Barnaby. Diver. I surfaced in your pond with my rig half-crushed and no timer ticking, which is new. There's fish in that water. Catch a few, I want to know what swims here.",
-    quests: [
-      {
-        progress: "Three fish. Bluegill, trout, catfish, I'm not particular. Just want to see what the water holds.",
-        done: "Trout! An actual trout, not a sprite that loops every eight frames. My rig's still wrecked, but my spirits aren't.",
-      },
-      {
-        progress: "The rig needs pressure lines. Lay four irrigation tiles and I'll borrow the fittings.",
-        done: "Pressure's holding. Rig's alive. Here, this waterwheel valve ran a whole reef once. It's yours now.",
-      },
-    ],
-    home: "I'm going to miss water that doesn't count down. Look after the pond.",
-  },
-  arthur: {
-    locked: "Hold, farmer. A knight does not treat with a land the town does not yet trust.",
-    hello:
-      "Arthur, of the Flat Kingdom. My realm scrolled in one direction forever, and now I find myself here, in a land that goes every way at once. I seek ground for a new garrison. It will need grain.",
-    quests: [
-      {
-        progress: "Ten wheat, for the stores. A garrison marches on bread.",
-        done: "Good grain. Heavier than ours ever was. The stores are begun.",
-      },
-      {
-        progress: "Now the town must speak for you. Fill two of its orders and I will call this ground held.",
-        done: "The town speaks for you, and so do I. Take this seal. Good for one honourable favour, whenever you need it.",
-      },
-    ],
-    home: "The garrison stands. It is small and it has no walls, and I have never been prouder of one.",
-  },
-  brayden: {
-    locked: "Nope. Not ready. You dig straight down without the right tools and you hit lava. Trust me.",
-    hello:
-      "Brayden. I dig. Or I did, until the shimmer put me next to your mine with nothing but my hands. Rocks here have curves. It's upsetting. I need iron tools.",
-    quests: [
-      {
-        progress: "Get yourself an iron shovel. Ray's store sells them. Can't dig curved rocks with a trowel.",
-        done: "That's iron. Real, non-cubic iron. Okay. Okay, we can work with this.",
-      },
-      {
-        progress:
-          "Now take it to the Sunlight Forge and put an edge on it. One enchantment. I want to see what this world does to a tool.",
-        done: "It glows and it's still not a cube. Take my spare bit, cuts perfect squares no matter what you point it at.",
-      },
-    ],
-    home: "I'm keeping one curved rock. Nobody back home is going to believe it.",
-  },
   ivy: {
     locked: "Not yet! My nursery grid's not initialised and neither is your farm.",
     hello:
@@ -257,54 +165,6 @@ const SCRIPTS: Readonly<Record<TravelerId, TravelerScript>> = {
       },
     ],
     home: "I'm going home to delete my old nursery. Everything in it was too tidy.",
-  },
-  wes: {
-    locked: "Whoa there. Pasture's not cleared. Can't run cattle on bush.",
-    hello:
-      "Wes. Wrangler. My cattle had twelve polygons each and one cloud to stand under. Yours have... a lot more. I can help you run them, but first the barn needs hay.",
-    quests: [
-      {
-        progress: "Stock the loft. Twelve servings of feed, and put six of them in front of an animal so I know it's good.",
-        done: "Loft's full and the stock's eating. That's a working barn.",
-      },
-      {
-        progress: "Now let's see them earn their keep. Eight collections. Eggs, milk, wool, whatever they give.",
-        done: "Eight. Good animals. I rigged this harness for a team of oxen I never met. It fits Ray's old yoke exact.",
-      },
-    ],
-    home: "Ranch back home has one cloud. I'm going to tell them about the rest of the sky.",
-  },
-  bea: {
-    locked: "Buzz off, kindly. The hive isn't awake and the farm isn't ready.",
-    hello:
-      "Bea. My bees were three pixels each and my flowers looped forever. Your flowers don't loop. They open. I need whole fields of them near my hive, and I'll show you what the bees make of it.",
-    quests: [
-      {
-        progress: "Bell pepper and green bean blossoms, sixteen between them. The bees aren't picky, but they are hungry.",
-        done: "Sixteen blooms and the hive's singing a note I've never heard.",
-      },
-      {
-        progress: "Keep the fields wet. Twenty waterings. Dry flowers make thin honey.",
-        done: "Thick as gold and it glows. Cross-dimensional pollen does that, apparently. Take a comb. Careful, it's warm.",
-      },
-    ],
-    home: "I'm taking a jar of your pollen home. My bees are about to become four pixels.",
-  },
-  leo: {
-    locked: "Not yet, pilot. The others need to be home before I can chart the way for all of us.",
-    hello:
-      "Leo. I was on the last stage when the shimmer took me, and I've been watching you send everyone else home one at a time. There's a faster way. A beacon. Help me build it and we open the door for good.",
-    quests: [
-      {
-        progress: "Components. Five flour, five cheese, five cloth. I know how it sounds. The beacon runs on whatever this world makes best.",
-        done: "Components received. It's holding a charge. A beacon made of bread and cheese and cloth, and it's holding a charge.",
-      },
-      {
-        progress: "Six irrigation tiles for the conduits, and one forged enchantment for the focusing core. Then we light it.",
-        done: "It's lit. The whole sky's the colour of the shimmer. Everyone's going home. I'm leaving you the core, so the way stays open.",
-      },
-    ],
-    home: "The door's open both ways now. Come visit. Bring Pierre's chowder.",
   },
 };
 
@@ -419,16 +279,6 @@ function buildNodes(): ReadonlyMap<string, StoryDialogueNode> {
       choices: CLOSE_ONLY("Take care"),
       onComplete: null,
     });
-    if (script.homeFinaleHint !== undefined) {
-      put({
-        id: `${id}.home.finale-hint`,
-        speakerName,
-        dialogueText: script.homeFinaleHint,
-        vibratePattern: HAPTIC_TICK,
-        choices: CLOSE_ONLY("Keep looking"),
-        onComplete: null,
-      });
-    }
   }
   return nodes;
 }
@@ -442,27 +292,11 @@ export function storyNode(id: string): StoryDialogueNode {
   return node;
 }
 
-/**
- * Which node a tap on `id` opens, given what the view says about them.
- *
- * `finale` only changes what Ray says once he's home: with every other
- * traveler done but one, and that one not unlocked yet, he points at the
- * hidden zones instead of his usual closing line -- the only in-game nudge
- * toward Leo now that a locked traveler doesn't stand around to be tapped
- * (see `paintTravelers`/`setTravelerUnlocks` in stackacres-scene.ts).
- */
-export function dialogueNodeFor(id: TravelerId, traveler: TravelerStoryView, finale: StackAcresStoryFinale): StoryDialogueNode {
+/** Which node a tap on `id` opens, given what the view says about them. */
+export function dialogueNodeFor(id: TravelerId, traveler: TravelerStoryView): StoryDialogueNode {
   if (!traveler.unlocked) return storyNode(`${id}.locked`);
   if (!traveler.met) return storyNode(`${id}.hello`);
   if (traveler.done || traveler.quest === null) {
-    if (
-      id === "ray" &&
-      !finale.leoUnlocked &&
-      finale.travelersHome === finale.travelersNeeded - 1 &&
-      STORY_DIALOGUE.has("ray.home.finale-hint")
-    ) {
-      return storyNode("ray.home.finale-hint");
-    }
     return storyNode(`${id}.home`);
   }
   const quest = TRAVELER_QUESTS[id][traveler.quest.index];

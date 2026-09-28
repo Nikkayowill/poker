@@ -194,17 +194,11 @@ const GROW_AREA: Readonly<Record<ZoneId, WorldRect>> = {
   henhaven: { x: -192, y: -416, width: 128, height: 128 },
   // Cattle Pasture, on the south road under the beds' east half. Same 192.
   oxfields: { x: 0, y: 288, width: 192, height: 192 },
-  // The Fold, on the east road level with the beds' top. Same 128.
+  // The Fold, on the east road level with the beds' top. Same 128. Wild as of
+  // 2026-09-28 (see ./sectors.ts's `SectorState`) -- like Cattle Pasture
+  // above, this box stays reserved rather than removed, since the record has
+  // to stay total and the district is still a real, Gold-priced sector.
   wallow: { x: 288, y: -256, width: 128, height: 128 },
-  // The four wild districts, at the bench's 3x3 cells (96 square, up from
-  // an 80 box that sat on no lattice). Nothing reads these until the pass
-  // that builds each place: they are permanently locked (see ./sectors.ts's
-  // `wild` state), and a locked district paints `sectorOvergrowth` instead
-  // of a grow area. They exist so the record stays total.
-  townsquare: { x: -192, y: 288, width: 96, height: 96 },
-  mine: { x: -400, y: -384, width: 96, height: 96 },
-  coast: { x: 288, y: -384, width: 96, height: 96 },
-  oak: { x: 288, y: -96, width: 96, height: 96 },
 };
 
 /**

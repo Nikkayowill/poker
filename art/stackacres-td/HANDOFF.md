@@ -1,5 +1,13 @@
 # StackAcres top-down rewrite: start here
 
+**Out of date (2026-09-28).** Written 2026-09-16, before HOMESTEAD_ONLY (2026-09-22) shut every
+district but the Homestead, and before six of those districts -- the Fold, Cattle Pasture, the
+Coastal Market, the Ancestral Oak, the Mine and Town Square -- were removed outright the same day
+as this note, along with the eight travelers who stood in them
+(`lib/stackacres/story/travelers.ts`'s own header). The current world is the Homestead, the City
+and the Far Field; see `docs/stackacres-second-map-direction.md`. `PIPELINE.md` (how the art is
+made) is still broadly accurate; `AREAS.md` (every area) is not -- read its own notice first.
+
 Handoff written 2026-09-16 at the end of a long session, so the next session can continue
 without the conversation. Read this, then `PIPELINE.md` (how the art is made) and
 `AREAS.md` (every area).

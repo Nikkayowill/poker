@@ -9,7 +9,6 @@ describe("portraitExpression", () => {
     expect(portraitExpression({ id: "pierre.locked" })).toBe("thinking");
     expect(portraitExpression({ id: "pierre-bread.done" })).toBe("happy");
     expect(portraitExpression({ id: "pierre.home" })).toBe("neutral");
-    expect(portraitExpression({ id: "pierre.home.finale-hint" })).toBe("surprised");
   });
 });
 

@@ -54,10 +54,6 @@ describe("the Homestead's west bridge", () => {
     expect(back.x + back.w).toBe(city.width * city.tile);
   });
 
-  it("no longer leads to the Far Field", () => {
-    expect(homestead.exits.filter((e) => e.to === "empire")).toHaveLength(0);
-  });
-
   it("lands the farmer on open ground at both ends", () => {
     const over = onlyExit(homestead, "city").spawn;
     expect(isWalkable(city, over.x, over.y)).toBe(true);

@@ -383,16 +383,46 @@ two maps, the Homestead and the City, with the Far Field dropped, and picked the
 The City is `art/stackacres-td/areas/rig/city.py`, exported by `rich/export_city.py`: the market square with
 the grocery on it (drawn from Kayo's whiteboard sketch, its interior walked into through the front doors), a
 lane of cottages and the manager's house, the river with a stone bridge, a quay and a watermill, and a green,
-a churchyard and allotments to the south. The Homestead's west bridge now leads there, so the Far Field has no
-way in. The City and the grocery load for every player; taking the grocery over stays development-only until
-the purchase story exists. The townsfolk have no names or stories yet, and the manager isn't a character yet.
+a churchyard and allotments to the south. The Homestead's west bridge now leads there. The City and the grocery
+load for every player; taking the grocery over stays development-only until the purchase story exists. The
+townsfolk have no names or stories yet, and the manager isn't a character yet.
+
+**The Far Field stays (2026-09-28).** Kayo: "The original single map should remain." Its way in moved to the gap
+in the Homestead's east treeline, across the yard from the City's bridge, where the Fold's overgrown hedge stood.
+You come out on the Far Field's west side, where its entrance was already drawn. The City's pictures (and the
+grocery's, and their people's) now load when you walk in and are let go when you leave, rather than at boot.
+
+**The six unbuilt districts are gone outright (2026-09-28).** The Fold, Cattle Pasture, the Coastal Market, the
+Ancestral Oak, the Mine and Town Square -- switched off behind `HOMESTEAD_ONLY` since PR #609 (2026-09-22) -- had
+their map files, gates and treeline openings deleted, not just re-hidden. With them went the eight travelers who
+stood in those districts (Miles, Skye, Barnaby, Arthur, Brayden, Wes, Bea, Leo) and everything only they used: their
+quests, dialogue and reward items, and Leo's whole "finale" mechanic. Ray, Pierre and Ivy remain, all three on the
+Homestead. The Map sheet now shows only the Crop Fields and the Homestead.
+
+Two things Kayo chose to KEEP rather than delete, both now stranded with no home:
+- **Sheep and Cattle Pens.** Kayo: "all livestock will be able to be named and also placed... right now I want
+  them to simply be behind a pay gold gate. and then u can place them depending on the users design of their
+  farm." The Gold-clearing ladder for `wallow`/`oxfields` (`lib/stackacres/sectors.ts`) is untouched and left
+  fully `claimable` -- same price, same requirements, same working capacity/hunger/feeding/harvest economy once
+  a row says a farm holds them, all of which a first pass at reclassifying them `wild` broke (dozens of
+  `stackacres-service.test.ts` cases) before it was reverted. What is actually gone is only the WAY to reach
+  `claimable`: clearing land means walking onto it and chopping what stands there
+  (`lib/stackacres/land-clearing.ts`), and there is no map left to walk onto. A place-it-yourself building (the
+  pattern `lib/stackacres/empire-buildings.ts` already has for the Far Field's Barn) is the planned way back in
+  -- not built yet.
+- **Hunting.** Found while removing the Oak: the wildlife-photography loop (`lib/stackacres/hunting.ts`,
+  `hunt-proximity.ts`, the scope minigame) was never gated by its own code -- its only trigger was a `"thicket"`
+  tag that existed nowhere but the Oak's own map. That means it has had no way to fire since HOMESTEAD_ONLY shut
+  the Oak on 2026-09-22, six days before this pass, independent of today's removal. The mechanic still compiles
+  and still holds its own tests; it just has nowhere to stand a player in front of a thicket any more. Worth a
+  real decision (drop it, or give it a thicket somewhere reachable) whenever that's picked back up.
 
 ## 8. OPEN — needs Kayo's answer before any of this is built
 
-1. **Scope authorization.** `feedback_stackacres_homestead_only_focus` currently says every map
-   besides the Homestead is off the table for new work. Kayo has been actively designing this
-   second map in conversation, which reads as an implicit yes, but that rule has never been
-   explicitly lifted for this scope. Confirm before starting build work, not just design docs.
+1. ~~**Scope authorization.**~~ **Resolved.** `feedback_stackacres_homestead_only_focus` is itself
+   superseded: the six districts it named are removed outright (2026-09-28), not merely off the
+   table, and Kayo has since directed and confirmed real build work on the City, the Far Field and
+   this removal in the same conversation.
 2. **Four-pillar relationship.** Personal / Relationships / Business / Fishing — one unified stat
    sheet, or four independent tracks? Not decided.
 3. **Second hireable NPC job.** The produce clerk is named; the second NPC role is not.

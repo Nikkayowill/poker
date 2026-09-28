@@ -13,10 +13,12 @@ import { describe, expect, it } from "vitest";
  * UP TO 2026-09-14, `view()` fired ~35 separate per-profile PostgREST round
  * trips in one flat `Promise.all`, one per table, and this file counted them
  * with a single `"(profile.id"` regex over that array literal. Since
- * `stackacres_read_batch` (migration 20260914000000), the live-Supabase path
- * collapses nearly all of those into ONE round trip; only three reads stay
- * separate because they are already their own aggregate/idle-sweep RPCs, not
- * a plain per-table select (see the migration's own header). Memory mode has
+ * `stackacres_read_batch` (migration 20260914000000, widened by
+ * 20261001000000), the live-Supabase path collapses nearly all of those into
+ * ONE round trip; only three reads stay separate -- two because they are
+ * already their own aggregate/idle-sweep RPCs, not a plain per-table select,
+ * and Stone's because it's a GLOBAL table, not per-profile (see the
+ * migration's own header). Memory mode has
  * no batch to speak of -- there is no network round trip to save there in
  * the first place -- and still runs every original individual read, so THAT
  * list is what a new farm table's read actually has to be added to; the
@@ -28,7 +30,7 @@ import { describe, expect, it } from "vitest";
 describe("the StackAcres read budget", () => {
   const SERVICE = readFileSync(join(process.cwd(), "lib/server/stackacres-service.ts"), "utf8");
   const MIGRATION = readFileSync(
-    join(process.cwd(), "supabase/migrations/20260927090000_stackacres_clock.sql"),
+    join(process.cwd(), "supabase/migrations/20261001000000_stackacres_read_batch_fold_far_field.sql"),
     "utf8",
   );
 
@@ -52,28 +54,34 @@ describe("the StackAcres read budget", () => {
     return body.slice(start, end);
   };
 
-  it("the memory-mode fallback still reads a player's farm in 33 per-profile round trips", () => {
+  it("the memory-mode fallback still reads a player's farm in 40 per-profile round trips", () => {
     // One line per read, so this counts the reads rather than the tables --
     // two of them (the secret ledger, friendship) are nested Promise.all's
     // over a list that is length 1 today and will not stay that way.
     // Meaningless for latency in memory mode (no network round trip exists
     // to save), but this is still the list a new farm table's read has to
     // join, or it silently only reads with a live Supabase configured.
-    expect(fallbackArray().split("(profile.id").length - 1).toBe(33);
+    expect(fallbackArray().split("(profile.id").length - 1).toBe(40);
   });
 
-  it("the live-Supabase branch reads the same farm in one batch call plus three RPC-only exceptions", () => {
+  it("the live-Supabase branch reads the same farm in one batch call plus exactly three exceptions", () => {
     const body = fanOut();
-    // Exactly one call: the whole point is that this replaces the ~30-way
+    // Exactly one call: the whole point is that this replaces the ~37-way
     // fan-out above with a single round trip when Supabase is configured.
     expect(body.split("readStackAcresBatch(").length - 1).toBe(1);
-    // The three reads the batch migration's own header says it deliberately
-    // leaves out (already their own aggregate/idle-sweep RPCs, not a plain
-    // per-table select) still have to actually run -- this is what would
-    // catch one of them being silently dropped in a future edit rather than
-    // properly folded in or left as its own call.
-    expect(body).toContain("listActiveSynergyArchetypes(profile.id)");
-    expect(body).toContain("readStackAcresLifetimeGross(profile.id)");
+    // Exactly three reads stay outside the batch: two are already their own
+    // aggregate/idle-sweep RPCs (not a plain per-table select), and Stone's
+    // is a GLOBAL table with no profile id to key a batch RPC on. Asserting
+    // the count, not just presence, is what catches a new table's read being
+    // added here instead of folded into the batch -- the exact drift that
+    // let this list grow from three exceptions to eleven unnoticed before
+    // the Far Field migration (20261001000000) folded six of them back in.
+    // 3, not 2: this also counts the batch call itself (`readStackAcresBatch(profile.id, ...)`).
+    const preFallback = body.slice(0, body.indexOf(": Promise.all([\n"));
+    expect(preFallback.split("(profile.id").length - 1).toBe(3);
+    expect(preFallback).toContain("listActiveSynergyArchetypes(profile.id)");
+    expect(preFallback).toContain("readStackAcresLifetimeGross(profile.id)");
+    expect(preFallback).toContain("readAllStoneNodes(now)");
   });
 
   it("still issues every branch's reads in parallel", () => {
@@ -94,10 +102,10 @@ describe("the StackAcres read budget", () => {
     // Supabase configured, exactly backwards from every other gap this file
     // exists to catch.
     // The latest definition of the batch function, not the whole file: the
-    // clock migration that redefines it also creates its table.
+    // Far Field migration that redefines it also creates its own tables.
     const batchFn = MIGRATION.slice(MIGRATION.indexOf("create or replace function public.stackacres_read_batch"));
     const keys = batchFn.match(/^\s{4}'[a-z_]+', /gm) ?? [];
-    expect(keys.length).toBe(35);
+    expect(keys.length).toBe(42);
   });
 
   it("returns the whole farm from the actions route too", () => {

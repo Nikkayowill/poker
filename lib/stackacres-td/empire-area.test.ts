@@ -2,11 +2,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 /**
- * The bridge onto the empire district (docs/stackacres-second-map-direction.md
- * section 6a): a small, static contract between the two area.json files that
- * a future hand-edit of either one could silently break -- the scene has no
- * type-level guarantee that an exit's `to` names a real area, or that a
- * spawn point lands on walkable ground rather than inside a wall.
+ * The empire district's own map (docs/stackacres-second-map-direction.md
+ * section 6a). The Homestead's west bridge leads to the City now
+ * (city-area.test.ts), so nothing walks in here any more, but its area.json
+ * still ships and its way out still has to land on open ground.
  */
 
 interface AreaExit {
@@ -75,21 +74,13 @@ const homestead = readArea("homestead");
 const empire = readArea("empire");
 const empirePropAtlas = readPropAtlas("empire");
 
-describe("the bridge to the empire district", () => {
-  it("gives the Homestead exactly one exit onto it", () => {
-    const toEmpire = homestead.exits.filter((e) => e.to === "empire");
-    expect(toEmpire).toHaveLength(1);
-  });
-
-  it("gives the empire district an exit straight back", () => {
+describe("the empire district", () => {
+  it("has an exit back to the Homestead", () => {
     const toHomestead = empire.exits.filter((e) => e.to === "homestead");
     expect(toHomestead).toHaveLength(1);
   });
 
-  it("lands the farmer on open ground on both sides of the crossing", () => {
-    const toEmpire = homestead.exits.find((e) => e.to === "empire")!;
-    expect(isWalkable(empire, toEmpire.spawn.x, toEmpire.spawn.y)).toBe(true);
-
+  it("lands the farmer on open Homestead ground on the way out", () => {
     const toHomestead = empire.exits.find((e) => e.to === "homestead")!;
     expect(isWalkable(homestead, toHomestead.spawn.x, toHomestead.spawn.y)).toBe(true);
   });

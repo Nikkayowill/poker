@@ -172,8 +172,8 @@ def _gates(a):
     a.exit("fold", 1014, 464, 10, 32, (22, 184))
     a.add(props.boardwalk_washed(), 512, MH * T - 14, tag="locked:coast")
     a.exit("coast", 496, MH * T - 10, 32, 10, (312, 22))
-    # The bridge onto the empire district, on the west edge (docs/stackacres-second-map-direction.md 6a).
-    a.exit("empire", 0, 448, 10, 32, (48, 240))
+    # The bridge on the west edge leads to the City (areas/rig/city.py), onto the road where it comes in from the east.
+    a.exit("city", 0, 448, 10, 32, (928, 456))
 
 
 GAPS = {"east": [(304, 336), (464, 496)], "west": [(304, 336), (448, 480)], "south": [(496, 528)]}

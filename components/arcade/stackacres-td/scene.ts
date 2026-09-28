@@ -127,7 +127,7 @@ import { STACKACRES_SECTORS, type SectorId } from "@/lib/stackacres/sectors";
 import { STACKACRES_HOUR_MS } from "@/lib/stackacres/clock";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { QuestPlaceId } from "@/lib/stackacres/story/places";
-import { WILD_AREA_TRAVELER, type TravelerId } from "@/lib/stackacres/story/travelers";
+import { WILD_AREA_TRAVELER, isTravelerId, type TravelerId } from "@/lib/stackacres/story/travelers";
 import { cropSpot, penFeedSpot, stockZone, type WorldPoint } from "@/lib/stackacres/world";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
 import type { ZoneId } from "@/lib/stackacres/zones";
@@ -209,8 +209,8 @@ const CROP_FIELDS_GATE = { x: 512, y: 520 } as const;
 const AREAS: TopdownArea[] = [
   "homestead", "fold", "pasture", "coast", "oak", "mine", "townsquare", "barn", "workshop", "farmhouse",
   "empire",
-  // No door leads to the grocery yet (its city isn't built), so players never load it.
-  ...(process.env.NODE_ENV !== "production" ? (["grocery"] as const) : []),
+  // The City, reached over the Homestead's west bridge, and the grocery on its square.
+  "city", "grocery",
 ];
 /** What the place tag says on arriving somewhere: the map's own names, plus the two rooms.
  *  Exported so the shell (stackacres-farm.tsx) can key its own per-place UI (the empire
@@ -231,6 +231,7 @@ export const AREA_NAMES: Record<TopdownArea, string> = {
   // item 4 leaves the empire layer's own name an open question.
   empire: "The Far Field",
   grocery: "The Grocery",
+  city: "The City",
 };
 /** Walking through a door or a gate: the old view pushes in (or pulls back on the way out) and dissolves. */
 const TRAVEL_MS = 320;
@@ -252,8 +253,8 @@ const SLEEP_FADE_REDUCED_MS = 150;
 const SLEEP_DARK_MS = 700;
 const CHARACTERS = [
   "farmer", "ray", "pilgrim", "pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo",
-  // The grocery's staff and shoppers, loaded only where the grocery is (development, for now).
-  ...(process.env.NODE_ENV !== "production" ? [...STAFF_SPRITES, ...STORE_SHOPPERS] : []),
+  // The grocery's staff and shoppers. The shoppers also walk the City as its townsfolk.
+  ...STAFF_SPRITES, ...STORE_SHOPPERS,
 ];
 const TRAVELERS_ON_MAP: readonly TravelerId[] = ["pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
 
@@ -284,13 +285,11 @@ const SECTOR_AREAS: Partial<Record<ZoneId, TopdownArea>> = {
 const HOMESTEAD_ONLY: boolean = true;
 
 /**
- * Whether the bridge to the empire district is open (Kayo, 2026-09-24;
- * docs/stackacres-second-map-direction.md section 6a authorizes this v1
- * scaffold specifically). A separate flag from HOMESTEAD_ONLY on purpose:
- * that one gates the six Gold-cleared/wild districts on the SAME map, none
- * of which this authorizes reopening. This one gates a single, always-free
- * walk onto a second, empty map -- flipping it off is the whole way to pull
- * the bridge back if the scope authorization is ever revoked.
+ * Whether the empire district (the Far Field) can be walked into (Kayo,
+ * 2026-09-24; docs/stackacres-second-map-direction.md section 6a). A separate
+ * flag from HOMESTEAD_ONLY on purpose: that one gates the six Gold-cleared/wild
+ * districts on the SAME map. No exit leads to the Far Field since the
+ * Homestead's west bridge went to the City (2026-09-27).
  */
 const EMPIRE_ENABLED: boolean = true;
 
@@ -715,9 +714,7 @@ export class TopdownScene extends Phaser.Scene {
       this.load.json(`area:${area}`, `${ASSETS}/areas/${area}/area.json`);
       this.load.atlas(`props:${area}`, `${ASSETS}/areas/${area}/props.png`, `${ASSETS}/areas/${area}/props.json`);
     }
-    if ((AREAS as readonly string[]).includes("grocery")) {
-      this.load.atlas("decor:grocery", `${ASSETS}/areas/grocery/decor.png`, `${ASSETS}/areas/grocery/decor.json`);
-    }
+    this.load.atlas("decor:grocery", `${ASSETS}/areas/grocery/decor.png`, `${ASSETS}/areas/grocery/decor.json`);
     this.load.atlas("common", `${ASSETS}/common/sprites.png`, `${ASSETS}/common/sprites.json`);
     this.load.atlas("buildings", `${ASSETS}/common/buildings.png`, `${ASSETS}/common/buildings.json`);
     this.load.image("forest", `${ASSETS}/common/forest.png`);
@@ -2517,7 +2514,8 @@ export class TopdownScene extends Phaser.Scene {
       const at = this.mapToCss(node ? { x: node.sprite.x, y: node.sprite.y - 20 } : target.anchor);
       if (target.name === "ray") cb.onRayTap(at);
       else if (target.name === "pilgrim") cb.onMonkTap(at);
-      else cb.onTravelerTap(target.name as TravelerId, at);
+      // The City's townsfolk turn to look at the farmer (talkTo above) but have no story of their own yet.
+      else if (isTravelerId(target.name)) cb.onTravelerTap(target.name, at);
       return;
     }
     if (target.kind !== "tag") return;

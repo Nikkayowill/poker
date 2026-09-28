@@ -378,6 +378,15 @@ Still open: the purchase story itself (deliveries, finding the manager, the pric
 (shipped-in goods now, the player's own crops later?), the bankruptcy/idle-worker state beyond "the wages ate the
 takings", and a real tuning pass on every number above.
 
+**The City (2026-09-26 and 2026-09-27, branch `design/stackacres-city-and-homestead`).** Kayo set the world as
+two maps, the Homestead and the City, with the Far Field dropped, and picked the City's shape (item 6 below).
+The City is `art/stackacres-td/areas/rig/city.py`, exported by `rich/export_city.py`: the market square with
+the grocery on it (drawn from Kayo's whiteboard sketch, its interior walked into through the front doors), a
+lane of cottages and the manager's house, the river with a stone bridge, a quay and a watermill, and a green,
+a churchyard and allotments to the south. The Homestead's west bridge now leads there, so the Far Field has no
+way in. The City and the grocery load for every player; taking the grocery over stays development-only until
+the purchase story exists. The townsfolk have no names or stories yet, and the manager isn't a character yet.
+
 ## 8. OPEN — needs Kayo's answer before any of this is built
 
 1. **Scope authorization.** `feedback_stackacres_homestead_only_focus` currently says every map
@@ -394,7 +403,11 @@ takings", and a real tuning pass on every number above.
    come off the store's own takings when the till is emptied, never from the wallet and never below nothing. It
    is separate from Land Maintenance and doesn't stack with it (the till isn't netted for upkeep). Far Field
    workers, when they exist, aren't decided.
-6. **Town scale, actually pinned down.** Section 3 confirms "many districts, many NPCs, many shops"
+6. ~~**Town scale, actually pinned down.**~~ **Resolved 2026-09-27 for v1:** a small town in three areas, in an
+   old English market town style: the market square with the grocery, a residential lane of named homes (the
+   manager's among them), and the riverside where the road from the Homestead comes in. See section 7's City
+   entry. The original question, kept for the later expansions:
+   Section 3 confirms "many districts, many NPCs, many shops"
    as a direction but not a count. How many districts at launch? How many NPCs? Is every shop in
    the reference's spirit (grocery, apparel, bar, bathhouse, library, barber, infirmary, fishing
    supplies, specialized crafting facilities) actually wanted, or is that upper-bound inspiration

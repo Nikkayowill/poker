@@ -42,6 +42,17 @@ function overlaps(a: { tx: number; ty: number; w: number; h: number }, b: { tx: 
   return a.tx < b.tx + b.w && b.tx < a.tx + a.w && a.ty < b.ty + b.h && b.ty < a.ty + a.h;
 }
 
+export function stackAcresEmpireBuildingFromBatchRow(row: {
+  id: unknown;
+  kind: unknown;
+  tx: number | string | null;
+  ty: number | string | null;
+}): EmpireBuilding | null {
+  const kind = String(row.kind);
+  if (!isEmpireBuildingKind(kind)) return null;
+  return { id: String(row.id), kind, tx: row.tx === null ? null : Number(row.tx), ty: row.ty === null ? null : Number(row.ty) };
+}
+
 export async function listEmpireBuildings(profileId: string): Promise<EmpireBuilding[]> {
   const supabase = adminClient();
   if (!supabase) return (memoryBuildings.get(profileId) ?? []).map(({ id, kind, tx, ty }) => ({ id, kind, tx, ty }));
@@ -52,9 +63,8 @@ export async function listEmpireBuildings(profileId: string): Promise<EmpireBuil
     .order("created_at", { ascending: true });
   if (error) throw new Error(`Could not read your buildings: ${error.message}`);
   return (data ?? []).flatMap((row) => {
-    const kind = String(row.kind);
-    if (!isEmpireBuildingKind(kind)) return [];
-    return [{ id: String(row.id), kind, tx: row.tx === null ? null : Number(row.tx), ty: row.ty === null ? null : Number(row.ty) }];
+    const building = stackAcresEmpireBuildingFromBatchRow(row);
+    return building ? [building] : [];
   });
 }
 

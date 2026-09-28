@@ -117,6 +117,7 @@ import {
   listStackAcresFences,
   placeStackAcresFence as placeFenceRow,
   removeStackAcresFence as removeFenceRow,
+  stackAcresFenceFromBatchRow,
 } from "./stackacres-fence-store";
 import {
   EMPIRE_BUILDINGS,
@@ -125,6 +126,7 @@ import {
   isPlaced,
   layoutFingerprint,
   placementProblem,
+  type EmpireBuilding,
   type EmpireBuildingKind,
   type EmpireSnapshot,
 } from "@/lib/stackacres/empire-buildings";
@@ -132,8 +134,9 @@ import {
   listEmpireBuildings,
   pickUpEmpireBuilding as pickUpEmpireBuildingRow,
   placeEmpireBuilding as placeEmpireBuildingRow,
+  stackAcresEmpireBuildingFromBatchRow,
 } from "./stackacres-empire-building-store";
-import { createGrocery, readGrocery, writeGrocery } from "./stackacres-grocery-store";
+import { createGrocery, readGrocery, writeGrocery, stackAcresGroceryFromBatchRow } from "./stackacres-grocery-store";
 import { applicantsFor, hiringFee } from "@/lib/stackacres/grocery-crew";
 import { bankTill, freshTill, groceryRates, readTill } from "@/lib/stackacres/grocery-economy";
 import {
@@ -324,12 +327,16 @@ import {
   getOrCreateStackAcresLandObstacle,
   listStackAcresLandObstacleStates,
   writeStackAcresLandObstacle,
+  stackAcresLandObstacleStatesFromBatchRows,
   getOrCreateStackAcresWoodNode,
   writeStackAcresWoodNodeSwing,
   listStackAcresWoodNodeStates,
+  stackAcresWoodNodeStatesFromBatchRows,
   getOrCreateStackAcresForageNode,
   writeStackAcresForagePick,
   listStackAcresForageNodeStates,
+  stackAcresForageNodeStatesFromBatchRows,
+  stackAcresAxeLevelFromBatchRow,
   type StoredForageNode,
   type StoredWoodNode,
   type StoredStackAcresUnit,
@@ -340,6 +347,9 @@ import {
   type WheatPlotDbRow,
   type MachineDbRow,
   type VatManifestDbRow,
+  type WoodNodeDbRow,
+  type LandObstacleDbRow,
+  type ForageNodeDbRow,
   type StoredMachine,
   type StoredDevotionRow,
   type StoredFriendshipRow,
@@ -426,7 +436,13 @@ import {
   type LandObstacleState,
 } from "@/lib/stackacres/land-clearing";
 import { OVERGROWN_SQUARE, overgrownSoilTile } from "@/lib/stackacres/crop-field-obstacles";
-import { freshWoodNodeState, swingAtWoodNode, woodNodeSnapshot, type WoodNodeSnapshot } from "@/lib/stackacres/wood";
+import {
+  freshWoodNodeState,
+  swingAtWoodNode,
+  woodNodeSnapshot,
+  type WoodNodeSnapshot,
+  type WoodNodeState,
+} from "@/lib/stackacres/wood";
 import {
   AXE_DAMAGE,
   AXE_LEVEL_DEFS,
@@ -444,6 +460,7 @@ import {
   pickForageNode,
   type ForageNodeId,
   type ForageNodeSnapshot,
+  type ForageNodeState,
 } from "@/lib/stackacres/forage";
 import {
   isStoneNodeId,
@@ -1076,17 +1093,18 @@ function bumpRevisionOnce(scope: RevisionScope): Promise<number | null> {
  * branches) read it themselves before calling this.
  */
 /**
- * The ~30-way per-profile fan-out below, batched into one Postgres round
+ * The ~37-way per-profile fan-out below, batched into one Postgres round
  * trip when Supabase is configured (`stackacres_read_batch`, migration
- * 20260914000000) instead of ~30 separate PostgREST round trips -- see that
- * migration's own header for exactly which reads this covers and which
- * three it deliberately leaves as their own RPC calls. Memory mode has no
- * batch to speak of (there is no network round trip to save there in the
- * first place) and keeps running every one of the original individual reads,
- * unchanged -- this function's whole job is choosing between the two and
- * handing the SAME local variables to the rest of `view()` either way, so
- * everything below this point reads identically regardless of which branch
- * ran.
+ * 20260914000000, widened by 20261001000000) instead of ~37 separate
+ * PostgREST round trips -- see that migration's own header for exactly which
+ * reads this covers and which two it deliberately leaves as their own RPC
+ * calls (plus Stone's global read, which isn't per-profile at all). Memory
+ * mode has no batch to speak of (there is no network round trip to save
+ * there in the first place) and keeps running every one of the original
+ * individual reads, unchanged -- this function's whole job is choosing
+ * between the two and handing the SAME local variables to the rest of
+ * `view()` either way, so everything below this point reads identically
+ * regardless of which branch ran.
  */
 async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0): Promise<StackAcresView> {
   const scope = revisionScope.getStore();
@@ -1095,59 +1113,26 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   const day = stackacresExchangeDay(now);
   const supabase = adminClient();
 
-  // Three reads never come from the batch (they're already their own
-  // aggregate/idle-sweep RPCs, not a plain per-table select -- see the
-  // migration's header), so they're kicked off up front alongside the batch
-  // fetch, and nothing here waits on anything else. Drones ARE in the batch
-  // (its own `drones` key) -- the fifth slot below only exists for the
-  // memory-mode fallback's own per-table reads (which include their own
-  // `listDrones` call, last in that array); when a batch is available this
-  // slot does nothing; `listDrones` must never be called a second time here,
-  // or every live-Supabase view() pays for a real, wasted extra round trip
-  // whose result nothing reads.
-  const [
-    batch,
-    activeSynergies,
-    lifetimeGross,
-    woodNodeStates,
-    stoneNodeRows,
-    forageNodeStates,
-    landObstacleStates,
-    fences,
-    axe,
-    empireBuildings,
-    groceryState,
-    fallback,
-  ] = await Promise.all([
+  // Two reads never come from the batch (they're already their own
+  // aggregate/idle-sweep RPCs, not a plain per-table select), so they're
+  // kicked off up front alongside the batch fetch, and nothing here waits on
+  // anything else. Stone's three GLOBAL boulders (not per-profile; see
+  // lib/server/stone-node-store.ts's own header) read the same way, for the
+  // same reason -- a global table has no profile id to key a batch RPC on.
+  // Everything else that used to ride alongside these (wood/forage/land-
+  // obstacle/fences/axe/empire buildings/grocery) was folded into the batch
+  // RPC by the Far Field migration (20261001000000); see that migration for
+  // why. Drones ARE in the batch (its own `drones` key) -- the fallback slot
+  // below only exists for the memory-mode fallback's own per-table reads
+  // (which include their own `listDrones` call, last in that array); when a
+  // batch is available this slot does nothing; `listDrones` must never be
+  // called a second time here, or every live-Supabase view() pays for a
+  // real, wasted extra round trip whose result nothing reads.
+  const [batch, activeSynergies, lifetimeGross, stoneNodeRows, fallback] = await Promise.all([
     supabase ? readStackAcresBatch(profile.id, day) : Promise.resolve(null),
     listActiveSynergyArchetypes(profile.id),
     readStackAcresLifetimeGross(profile.id),
-    // Not part of the big batch RPC (see this file's own header on why the
-    // three reads above aren't either) -- a small, fixed-size table read
-    // (four rows at most; see WOOD_NODE_IDS) run alongside everything else
-    // rather than folded into `read_homestead_batch`, so shipping Wood's
-    // first slice never touches that migration.
-    listStackAcresWoodNodeStates(profile.id),
-    // Same posture for Stone's three GLOBAL boulders (not per-profile; see
-    // lib/server/stone-node-store.ts's own header) -- read alongside
-    // everything else here rather than folded into the batch RPC.
     readAllStoneNodes(now),
-    // And the same again for the four forage bushes: a fixed-size table read
-    // (see FORAGE_NODE_IDS) run alongside the rest rather than folded into
-    // `read_homestead_batch`.
-    listStackAcresForageNodeStates(profile.id),
-    // Same again for what is still standing on land being cleared
-    // (lib/stackacres/land-clearing.ts): only obstacles this farm has swung
-    // at have rows, so a farm that never walked onto the Fold reads none.
-    listStackAcresLandObstacleStates(profile.id),
-    // And the fences this farm has built: a small per-profile table read.
-    listStackAcresFences(profile.id),
-    // And the axe: one small per-profile row, missing until the first upgrade.
-    readStackAcresAxeLevel(profile.id),
-    // And the buildings this player owns on the Far Field: a handful of rows.
-    listEmpireBuildings(profile.id),
-    // And the city grocery, one row, where owning it is open.
-    groceryOwnershipEnabled() ? readGrocery(profile.id) : Promise.resolve(null),
     supabase
       ? Promise.resolve(null)
       : Promise.all([
@@ -1192,6 +1177,15 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
           readStackAcresStory(profile.id),
           readStackAcresEnergy(profile.id),
           readStackAcresClockOffset(profile.id),
+          // Folded into the batch RPC on the live path (see this function's
+          // header) -- still individual reads here in memory mode.
+          listStackAcresWoodNodeStates(profile.id),
+          listStackAcresForageNodeStates(profile.id),
+          listStackAcresLandObstacleStates(profile.id),
+          listStackAcresFences(profile.id),
+          readStackAcresAxeLevel(profile.id),
+          listEmpireBuildings(profile.id),
+          groceryOwnershipEnabled() ? readGrocery(profile.id) : Promise.resolve(null),
         ] as const),
   ]);
 
@@ -1228,6 +1222,13 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   let storedStory: StoredStoryRow;
   let storedEnergy: StoredStackAcresEnergy | null;
   let clockOffset: number;
+  let woodNodeStates: Record<WoodNodeId, WoodNodeState>;
+  let forageNodeStates: Partial<Record<ForageNodeId, ForageNodeState>>;
+  let landObstacleStates: Record<string, LandObstacleState>;
+  let fences: FencePiece[];
+  let axe: AxeLevel;
+  let empireBuildings: EmpireBuilding[];
+  let groceryState: GroceryState | null;
 
   if (batch) {
     rows = (batch.units as unknown as UnitDbRow[]).map(stackAcresUnitFromBatchRow);
@@ -1288,6 +1289,22 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       (batch.energy ?? null) as { level: number | string; updated_at: string; version: number | string } | null,
     );
     clockOffset = stackAcresClockFromBatchRow((batch.clock ?? null) as { offset_ms: number | string } | null);
+    woodNodeStates = stackAcresWoodNodeStatesFromBatchRows((batch.wood_nodes ?? []) as unknown as WoodNodeDbRow[]);
+    forageNodeStates = stackAcresForageNodeStatesFromBatchRows((batch.forage_nodes ?? []) as unknown as ForageNodeDbRow[]);
+    landObstacleStates = stackAcresLandObstacleStatesFromBatchRows(
+      (batch.land_obstacles ?? []) as unknown as LandObstacleDbRow[],
+    );
+    fences = ((batch.fences ?? []) as { tx: number | string; ty: number | string }[]).map(stackAcresFenceFromBatchRow);
+    axe = stackAcresAxeLevelFromBatchRow((batch.axe ?? null) as { level?: unknown } | null);
+    empireBuildings = (
+      (batch.empire_buildings ?? []) as { id: unknown; kind: unknown; tx: number | string | null; ty: number | string | null }[]
+    ).flatMap((row) => {
+      const building = stackAcresEmpireBuildingFromBatchRow(row);
+      return building ? [building] : [];
+    });
+    groceryState = groceryOwnershipEnabled()
+      ? stackAcresGroceryFromBatchRow(batch.grocery as Parameters<typeof stackAcresGroceryFromBatchRow>[0])
+      : null;
   } else {
     [
       rows,
@@ -1323,6 +1340,13 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       storedStory,
       storedEnergy,
       clockOffset,
+      woodNodeStates,
+      forageNodeStates,
+      landObstacleStates,
+      fences,
+      axe,
+      empireBuildings,
+      groceryState,
     ] = fallback as [
       StoredStackAcresUnit[], number, number, Partial<Record<StackAcresStock, number>>, SectorId[], number,
       string[], StackAcresToolTier, StoredWheatPlot[], StoredMachine[], StackAcresInventory, StoredContract | null,
@@ -1332,6 +1356,13 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       StoredVatManifest[], StackAcresCutter[], StoredStoryRow,
       StoredStackAcresEnergy | null,
       number,
+      Record<WoodNodeId, WoodNodeState>,
+      Partial<Record<ForageNodeId, ForageNodeState>>,
+      Record<string, LandObstacleState>,
+      FencePiece[],
+      AxeLevel,
+      EmpireBuilding[],
+      GroceryState | null,
     ];
   }
 

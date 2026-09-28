@@ -33,12 +33,16 @@ function parseKey(key: string): FencePiece {
   return { tx, ty };
 }
 
+export function stackAcresFenceFromBatchRow(row: { tx: number | string; ty: number | string }): FencePiece {
+  return { tx: Number(row.tx), ty: Number(row.ty) };
+}
+
 export async function listStackAcresFences(profileId: string): Promise<FencePiece[]> {
   const supabase = adminClient();
   if (!supabase) return [...(memoryFences.get(profileId) ?? [])].map(parseKey);
   const { data, error } = await supabase.from("homestead_fences").select("tx, ty").eq("profile_id", profileId);
   if (error) throw new Error(`Could not read your fences: ${error.message}`);
-  return (data ?? []).map((row) => ({ tx: Number(row.tx), ty: Number(row.ty) }));
+  return (data ?? []).map(stackAcresFenceFromBatchRow);
 }
 
 export async function placeStackAcresFence(profileId: string, tx: number, ty: number): Promise<FencePlacement> {

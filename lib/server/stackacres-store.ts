@@ -1360,16 +1360,21 @@ export async function upgradeStackAcresToolTier(
 /** The axe this player holds (lib/stackacres/axe.ts). No row is the starting
  *  axe. A stored level this build does not know reads as the nearest real one,
  *  so a farm always loads. */
+/** Same clamp-to-a-known-level logic below, pulled out for the batch RPC path. */
+export function stackAcresAxeLevelFromBatchRow(row: { level?: unknown } | null): AxeLevel {
+  const level = Number(row?.level ?? STARTING_AXE_LEVEL);
+  const top = AXE_LEVELS[AXE_LEVELS.length - 1];
+  const clamped = Math.min(top, Math.max(STARTING_AXE_LEVEL, Math.trunc(Number.isFinite(level) ? level : STARTING_AXE_LEVEL)));
+  return isAxeLevel(clamped) ? clamped : STARTING_AXE_LEVEL;
+}
+
 export async function readStackAcresAxeLevel(profileId: string): Promise<AxeLevel> {
   const supabase = adminClient();
   if (!supabase) return memoryAxe.get(profileId) ?? STARTING_AXE_LEVEL;
 
   const { data, error } = await supabase.from("homestead_axe").select("level").eq("profile_id", profileId).maybeSingle();
   if (error) throw new Error(`Could not read your axe: ${error.message}`);
-  const level = Number((data as { level?: unknown } | null)?.level ?? STARTING_AXE_LEVEL);
-  const top = AXE_LEVELS[AXE_LEVELS.length - 1];
-  const clamped = Math.min(top, Math.max(STARTING_AXE_LEVEL, Math.trunc(Number.isFinite(level) ? level : STARTING_AXE_LEVEL)));
-  return isAxeLevel(clamped) ? clamped : STARTING_AXE_LEVEL;
+  return stackAcresAxeLevelFromBatchRow(data as { level?: unknown } | null);
 }
 
 /**
@@ -3544,7 +3549,7 @@ export interface StoredWoodNode extends WoodNodeState {
 
 const WOOD_NODE_COLUMNS = "profile_id, node_id, hits_remaining, felled_at, version";
 
-interface WoodNodeDbRow {
+export interface WoodNodeDbRow {
   profile_id: string;
   node_id: string;
   hits_remaining: number | string;
@@ -3659,6 +3664,16 @@ export async function writeStackAcresWoodNodeSwing(
  *  standing trees rather than triggering a create -- a read must stay
  *  write-free (see this repo's CLAUDE.md's "Keep game reads write-free"
  *  rule), and a never-tapped tree is standing by definition. */
+/** Same fold-rows-into-a-record logic below, pulled out for the batch RPC path. */
+export function stackAcresWoodNodeStatesFromBatchRows(rows: WoodNodeDbRow[]): Record<WoodNodeId, WoodNodeState> {
+  const result = {} as Record<WoodNodeId, WoodNodeState>;
+  for (const row of rows) {
+    const node = woodNodeFromRow(row);
+    result[node.nodeId] = { hitsRemaining: node.hitsRemaining, felledAt: node.felledAt };
+  }
+  return result;
+}
+
 export async function listStackAcresWoodNodeStates(
   profileId: string,
 ): Promise<Record<WoodNodeId, WoodNodeState>> {
@@ -3677,12 +3692,7 @@ export async function listStackAcresWoodNodeStates(
     .select(WOOD_NODE_COLUMNS)
     .eq("profile_id", profileId);
   if (error) throw new Error(`Could not load your trees: ${error.message}`);
-  const result = {} as Record<WoodNodeId, WoodNodeState>;
-  for (const row of (data ?? []) as WoodNodeDbRow[]) {
-    const node = woodNodeFromRow(row);
-    result[node.nodeId] = { hitsRemaining: node.hitsRemaining, felledAt: node.felledAt };
-  }
-  return result;
+  return stackAcresWoodNodeStatesFromBatchRows((data ?? []) as WoodNodeDbRow[]);
 }
 
 /* ------------------------------------------------------------------ */
@@ -3697,7 +3707,7 @@ export interface StoredLandObstacle extends LandObstacleState {
 
 const LAND_OBSTACLE_COLUMNS = "profile_id, obstacle_id, hits_remaining, cleared_at, version";
 
-interface LandObstacleDbRow {
+export interface LandObstacleDbRow {
   profile_id: string;
   obstacle_id: string;
   hits_remaining: number | string;
@@ -3806,12 +3816,22 @@ export async function writeStackAcresLandObstacle(
 
 /** Every obstacle this farm has touched, for the snapshot. Write-free: an
  *  obstacle with no row is standing, which the caller fills in. */
+/** Same fold-rows-into-a-record logic below, pulled out for the batch RPC path. */
+export function stackAcresLandObstacleStatesFromBatchRows(rows: LandObstacleDbRow[]): Record<string, LandObstacleState> {
+  const result: Record<string, LandObstacleState> = {};
+  for (const row of rows) {
+    const stored = landObstacleFromRow(row);
+    result[stored.obstacleId] = { hitsRemaining: stored.hitsRemaining, clearedAt: stored.clearedAt };
+  }
+  return result;
+}
+
 export async function listStackAcresLandObstacleStates(
   profileId: string,
 ): Promise<Record<string, LandObstacleState>> {
   const supabase = adminClient();
-  const result: Record<string, LandObstacleState> = {};
   if (!supabase) {
+    const result: Record<string, LandObstacleState> = {};
     for (const [key, row] of memoryLandObstacles) {
       if (!key.startsWith(`${profileId}:`)) continue;
       result[row.obstacleId] = { hitsRemaining: row.hitsRemaining, clearedAt: row.clearedAt };
@@ -3824,11 +3844,7 @@ export async function listStackAcresLandObstacleStates(
     .select(LAND_OBSTACLE_COLUMNS)
     .eq("profile_id", profileId);
   if (error) throw new Error(`Could not load your land: ${error.message}`);
-  for (const row of (data ?? []) as LandObstacleDbRow[]) {
-    const stored = landObstacleFromRow(row);
-    result[stored.obstacleId] = { hitsRemaining: stored.hitsRemaining, clearedAt: stored.clearedAt };
-  }
-  return result;
+  return stackAcresLandObstacleStatesFromBatchRows((data ?? []) as LandObstacleDbRow[]);
 }
 
 /* ------------------------------------------------------------------ */
@@ -3843,7 +3859,7 @@ export interface StoredForageNode extends ForageNodeState {
 
 const FORAGE_NODE_COLUMNS = "profile_id, node_id, picks, picked_at, version";
 
-interface ForageNodeDbRow {
+export interface ForageNodeDbRow {
   profile_id: string;
   node_id: string;
   picks: number | string;
@@ -3957,13 +3973,29 @@ export async function writeStackAcresForagePick(
  *  row has never been picked, which is exactly `freshForageNodeState()`, so
  *  this read stays write-free (see this repo's "keep game reads write-free"
  *  rule) and leaves the create to the first actual pick. */
+/** Same fold-rows-into-a-record logic below, pulled out for the batch RPC path. */
+export function stackAcresForageNodeStatesFromBatchRows(
+  rows: ForageNodeDbRow[],
+): Partial<Record<ForageNodeId, ForageNodeState>> {
+  const result: Partial<Record<ForageNodeId, ForageNodeState>> = {};
+  for (const row of rows) {
+    // Here a stale id IS dropped, unlike the single-node read above: this
+    // feeds a snapshot keyed by the ids this build knows, and an unknown key
+    // would render nothing anyway.
+    if (!isForageNodeId(String(row.node_id))) continue;
+    const node = forageNodeFromRow(row);
+    result[node.nodeId] = { picks: node.picks, pickedAt: node.pickedAt };
+  }
+  return result;
+}
+
 export async function listStackAcresForageNodeStates(
   profileId: string,
 ): Promise<Partial<Record<ForageNodeId, ForageNodeState>>> {
   const supabase = adminClient();
-  const result: Partial<Record<ForageNodeId, ForageNodeState>> = {};
 
   if (!supabase) {
+    const result: Partial<Record<ForageNodeId, ForageNodeState>> = {};
     for (const [key, node] of memoryForageNodes) {
       if (!key.startsWith(`${profileId}:`)) continue;
       result[node.nodeId] = { picks: node.picks, pickedAt: node.pickedAt };
@@ -3976,13 +4008,5 @@ export async function listStackAcresForageNodeStates(
     .select(FORAGE_NODE_COLUMNS)
     .eq("profile_id", profileId);
   if (error) throw new Error(`Could not load your bushes: ${error.message}`);
-  for (const row of (data ?? []) as ForageNodeDbRow[]) {
-    // Here a stale id IS dropped, unlike the single-node read above: this
-    // feeds a snapshot keyed by the ids this build knows, and an unknown key
-    // would render nothing anyway.
-    if (!isForageNodeId(String(row.node_id))) continue;
-    const node = forageNodeFromRow(row);
-    result[node.nodeId] = { picks: node.picks, pickedAt: node.pickedAt };
-  }
-  return result;
+  return stackAcresForageNodeStatesFromBatchRows((data ?? []) as ForageNodeDbRow[]);
 }

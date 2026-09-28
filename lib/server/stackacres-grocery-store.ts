@@ -44,18 +44,18 @@ function layoutOf(value: unknown): GroceryPlacement[] {
   });
 }
 
-export async function readGrocery(profileId: string): Promise<GroceryState | null> {
-  const supabase = adminClient();
-  if (!supabase) {
-    const state = memoryGrocery.get(profileId);
-    return state ? clone(state) : null;
-  }
-  const { data, error } = await supabase
-    .from("empire_grocery")
-    .select("staff, layout, till_takings, till_wages, till_since, till_opened_at, collected, version")
-    .eq("profile_id", profileId)
-    .maybeSingle();
-  if (error) throw new Error(`Could not read your store: ${error.message}`);
+export function stackAcresGroceryFromBatchRow(
+  data: {
+    staff: unknown[];
+    layout: unknown;
+    till_takings: number | string;
+    till_wages: number | string;
+    till_since: string;
+    till_opened_at: string;
+    collected: number | string;
+    version: number | string;
+  } | null,
+): GroceryState | null {
   if (!data) return null;
   return {
     staff: (data.staff ?? []).map(String),
@@ -69,6 +69,21 @@ export async function readGrocery(profileId: string): Promise<GroceryState | nul
     collected: Number(data.collected),
     version: Number(data.version),
   };
+}
+
+export async function readGrocery(profileId: string): Promise<GroceryState | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const state = memoryGrocery.get(profileId);
+    return state ? clone(state) : null;
+  }
+  const { data, error } = await supabase
+    .from("empire_grocery")
+    .select("staff, layout, till_takings, till_wages, till_since, till_opened_at, collected, version")
+    .eq("profile_id", profileId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read your store: ${error.message}`);
+  return stackAcresGroceryFromBatchRow(data);
 }
 
 /** Takes the store over. False when this player already has it. */

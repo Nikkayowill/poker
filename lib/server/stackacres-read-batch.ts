@@ -51,14 +51,23 @@ export interface StackAcresReadBatch {
   energy?: Record<string, unknown> | null;
   /** Absent until the clock migration (20260927090000) redefines the batch. */
   clock?: Record<string, unknown> | null;
+  /** Absent until the Far Field batch migration (20261001000000) redefines the batch. */
+  wood_nodes?: Record<string, unknown>[];
+  land_obstacles?: Record<string, unknown>[];
+  forage_nodes?: Record<string, unknown>[];
+  axe?: Record<string, unknown> | null;
+  fences?: Record<string, unknown>[];
+  empire_buildings?: Record<string, unknown>[];
+  grocery?: Record<string, unknown> | null;
 }
 
 /**
- * One Postgres round trip in place of the ~30 `view()` used to fire in
- * parallel -- see the migration's own header for which three reads are
+ * One Postgres round trip in place of the ~37 `view()` used to fire in
+ * parallel -- see the migration's own header for which two reads are
  * deliberately NOT folded in here (they're already their own aggregate/
- * idle-sweep RPCs, not a plain per-table select) and why whole rows, not a
- * hand-typed column list, cross this boundary.
+ * idle-sweep RPCs, not a plain per-table select), plus Stone's global read
+ * (not per-profile, so it can't be a batch RPC argument), and why whole
+ * rows, not a hand-typed column list, cross this boundary.
  *
  * Returns null in memory mode (no Supabase configured) -- there is no batch
  * to fetch, and callers fall back to the exact same per-table reads this

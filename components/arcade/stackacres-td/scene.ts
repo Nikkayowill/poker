@@ -3652,6 +3652,17 @@ export class TopdownScene extends Phaser.Scene {
       this.callbacks.onViewMoved();
       return;
     }
+    if (zone === "city" || zone === "farfield") {
+      const to: TopdownArea = zone === "city" ? "city" : "empire";
+      if (this.areaName === to || this.travelling) return;
+      // Arrive where the Homestead's own bridge or gate would have put him.
+      const exit = this.specs.get("homestead")!.exits.find((e) => e.to === to);
+      if (!exit || !this.canEnter(to)) return;
+      this.path = [];
+      this.pending = null;
+      this.travelTo(to, exit.spawn);
+      return;
+    }
     this.floatAt({ x: this.host.clientWidth / 2, y: this.host.clientHeight / 2 }, "That place isn't in this preview yet", "deny");
   }
 
@@ -3706,10 +3717,11 @@ export class TopdownScene extends Phaser.Scene {
     );
   }
 
-  /** Which map place the farmer is standing in, for the map sheet's "you are here". Every area but the
-   *  Crop Fields (its own ground on the Homestead) reads as the Homestead itself -- the map sheet has
-   *  no button for the City or the Far Field yet. */
+  /** Which map place the farmer is standing in, for the map sheet's "you are here". The grocery counts
+   *  as the City and the Homestead's rooms as the Homestead; the Crop Fields are its own wild ground. */
   currentPlace(): MapPlaceId {
+    if (this.areaName === "city" || this.areaName === "grocery") return "city";
+    if (this.areaName === "empire") return "farfield";
     return this.onCropField(this.pos) ? "cropfields" : "farmstead";
   }
 

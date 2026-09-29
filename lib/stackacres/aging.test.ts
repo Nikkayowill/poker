@@ -18,8 +18,8 @@ import {
 import { recipeRawGoldValue } from "./recipes";
 
 describe("AGING_TIERS", () => {
-  it("is exactly the three rungs the brief specified: 2x/4x/8x, doubling each step", () => {
-    expect(AGING_TIERS.map((t) => t.multiplier)).toEqual([2, 4, 8]);
+  it("is three rungs of 1.5x/2x/3x, the same ladder as the Cellar", () => {
+    expect(AGING_TIERS.map((t) => t.multiplier)).toEqual([1.5, 2, 3]);
     expect(AGING_TIERS.map((t) => t.stars)).toEqual([1, 2, 3]);
     // Strictly increasing duration -- a later tier is always further out than
     // the one before it, or vatTierForElapsed's "walk from the top down"
@@ -72,13 +72,13 @@ describe("msUntilAgingTier", () => {
 
 describe("agedGoldValue", () => {
   it("scales the batch's base value by exactly the tier's multiplier", () => {
-    expect(agedGoldValue(1000, AGING_TIERS[0])).toBe(2000);
-    expect(agedGoldValue(1000, AGING_TIERS[1])).toBe(4000);
-    expect(agedGoldValue(1000, AGING_TIERS[2])).toBe(8000);
+    expect(agedGoldValue(1000, AGING_TIERS[0])).toBe(1500);
+    expect(agedGoldValue(1000, AGING_TIERS[1])).toBe(2000);
+    expect(agedGoldValue(1000, AGING_TIERS[2])).toBe(3000);
   });
 
   it("rounds to the nearest Gold", () => {
-    expect(agedGoldValue(333, AGING_TIERS[0])).toBe(Math.round(333 * 2));
+    expect(agedGoldValue(333, AGING_TIERS[0])).toBe(Math.round(333 * 1.5));
   });
 });
 

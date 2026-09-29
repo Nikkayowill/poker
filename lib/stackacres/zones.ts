@@ -198,7 +198,7 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     // Matches --sa-grass: the farmstead's swatch defers to the grass
     // painter's own fill rather than naming a colour of its own, since it
     // paints no ground wash to have a colour for any more.
-    swatchColor: 0x86c96e,
+    swatchColor: 0x6dbf50,
     approach: { x: -320, y: 0 },
   },
 

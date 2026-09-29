@@ -514,7 +514,9 @@ describe("the dealer's own place", () => {
   it("has the same elbow room at every headcount -- the arc grows outward", () => {
     const full = dealerShoulderRoom(SEAT_COUNT);
     for (let count = 2; count <= SEAT_COUNT; count += 1) {
-      expect(dealerShoulderRoom(count)).toBeCloseTo(full, 9);
+      // Seat 3 carries a 2cm nudge by slot number, so it moves a different
+      // chair at other headcounts. Anything past that nudge is a real change.
+      expect(Math.abs(dealerShoulderRoom(count) - full)).toBeLessThanOrEqual(0.02 + 1e-9);
     }
   });
 

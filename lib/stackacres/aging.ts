@@ -55,11 +55,12 @@ export const VAT_INPUT_QUANTITY = 2;
  * same "total elapsed, not incremental" convention `wheatPlotProgress` and
  * `machineProgress` already use for `readyAt`.
  *
- * `multiplier` is exponential by design (2x, 4x, 8x -- doubling every rung),
- * per the brief this shipped against: a Vat left the full 60 minutes is
- * worth 4x what pulling it the moment it is legal to collect is worth, which
- * is what makes "seal it and come back later" a real choice rather than a
- * formality. `stars` is the same rung, read by the UI as a quality rating
+ * `multiplier` is 1.5x, 2x, 3x, the same ladder as the Cellar. It was 2x/4x/8x
+ * until 2026-09-29, which paid about 7.5x the inputs' sell price and beat
+ * every other loop. There is no daily cap on earning, so the ladder is what
+ * keeps the Vat honest. A Vat left the full 60 minutes is still worth twice
+ * what pulling it the moment it is legal to collect is worth, which keeps
+ * "seal it and come back later" a real choice. `stars` is the same rung, read by the UI as a quality rating
  * rather than a raw multiplier -- the number a player sees while a batch is
  * still aging should look like a grade, not a spoiler of exactly how much
  * Gold is coming.
@@ -73,9 +74,9 @@ export interface AgingTier {
 }
 
 export const AGING_TIERS: readonly AgingTier[] = [
-  { tier: 1, label: "Aged", durationMs: 10 * 60 * 1000, multiplier: 2, stars: 1 },
-  { tier: 2, label: "Well-Aged", durationMs: 30 * 60 * 1000, multiplier: 4, stars: 2 },
-  { tier: 3, label: "Artisan-Aged", durationMs: 60 * 60 * 1000, multiplier: 8, stars: 3 },
+  { tier: 1, label: "Aged", durationMs: 10 * 60 * 1000, multiplier: 1.5, stars: 1 },
+  { tier: 2, label: "Well-Aged", durationMs: 30 * 60 * 1000, multiplier: 2, stars: 2 },
+  { tier: 3, label: "Artisan-Aged", durationMs: 60 * 60 * 1000, multiplier: 3, stars: 3 },
 ];
 
 /** The rung a batch has to clear before it may be collected at all -- there

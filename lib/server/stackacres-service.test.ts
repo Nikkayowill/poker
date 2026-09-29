@@ -3434,6 +3434,22 @@ describe("recipes", () => {
       expect(await balance(token)).toBe(before);
     });
 
+    it("smelts Iron Ore into Metal at the Smelter, and moves no Gold", async () => {
+      const { token, id } = await funded();
+      await adjustStackAcresInventory(id, "stone", 25);
+      await placeStackAcresMachine(token, "smelter", T0);
+      await adjustStackAcresInventory(id, "iron_ore", 5);
+      const before = await balance(token);
+
+      const result = await processRecipe(id, "metal", T0);
+
+      expect(result.produced).toEqual({ item: "metal", quantity: 1 });
+      const view = await readStackAcres(token, T0);
+      expect(view.inventory.iron_ore).toBe(3);
+      expect(view.inventory.metal).toBe(1);
+      expect(await balance(token)).toBe(before);
+    });
+
     it("refuses short of a full batch and spends nothing", async () => {
       const { token, id } = await funded();
       await placeStackAcresMachine(token, "loom", T0);
@@ -5296,14 +5312,18 @@ describe("mineStackAcresStoneNode", () => {
       const result = await mineStackAcresStoneNode(token, "stone:mine-1", T0);
       expect(result.stoneMined?.broke).toBe(false);
     }
+    expect((await readStackAcresInventory(id)).iron_ore ?? 0).toBe(0);
     const felling = await mineStackAcresStoneNode(token, "stone:mine-1", T0);
     expect(felling.stoneMined).toEqual({ landed: true, broke: true, amount: 2 });
 
+    // The swing that breaks the node pays Iron Ore, and only that swing.
+    expect((await readStackAcresInventory(id)).iron_ore ?? 0).toBe(2);
     const stoneAfterBreak = (await readStackAcresInventory(id)).stone ?? 0;
     const refused = await mineStackAcresStoneNode(token, "stone:mine-1", T0);
     expect(refused.stoneMined).toEqual({ landed: false, broke: false, amount: 0 });
     // A refused swing pays nothing -- inventory does not move.
     expect((await readStackAcresInventory(id)).stone ?? 0).toBe(stoneAfterBreak);
+    expect((await readStackAcresInventory(id)).iron_ore ?? 0).toBe(2);
 
     // Once REGROW_MS has fully elapsed the same node accepts a swing again.
     const later = new Date(T0.getTime() + REGROW_MS + 1000);

@@ -14,6 +14,10 @@ describe("MACHINE_CATALOGUE materials", () => {
     expect(MACHINE_CATALOGUE.loom.materials).toEqual([{ item: "wood", quantity: 25 }]);
   });
 
+  it("gates the Smelter on Stone", () => {
+    expect(MACHINE_CATALOGUE.smelter.materials).toEqual([{ item: "stone", quantity: 25 }]);
+  });
+
   it("gates the Feed Silo and Preserves Cellar on Stone, and nothing else", () => {
     expect(MACHINE_CATALOGUE.feed_silo.materials).toEqual([{ item: "stone", quantity: 20 }]);
     expect(MACHINE_CATALOGUE.cellar.materials).toEqual([{ item: "stone", quantity: 30 }]);

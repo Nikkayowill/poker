@@ -25,6 +25,7 @@ const PLACE: Record<MachineKind, BuildPlace> = {
   loom: "Workshop",
   vat: "Workshop",
   feed_silo: "Workshop",
+  smelter: "Workshop",
   oven: "House",
   stew_pot: "House",
   counter: "House",
@@ -37,6 +38,7 @@ const PLACE: Record<MachineKind, BuildPlace> = {
 const SOURCE: Partial<Record<MachineItemId, string>> = {
   wood: "Chop the trees around the farm",
   stone: "Break the boulders in the Crop Fields",
+  metal: "Smelt Iron Ore at the Smelter",
 };
 
 export interface BuildLine {

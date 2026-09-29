@@ -218,6 +218,7 @@ const MACHINE_JOB: Partial<Record<MachineKind, string>> = {
   mill: "Grinds Wheat from your beds into Flour, which sells for more and goes into Cakes. Also grinds Corn into Cattle Feed.",
   dairy: "Turns Milk into Cheese, or Eggs, Milk and Flour into a Cake. Both sell for more than the raw goods.",
   loom: "Weaves Wool into Cloth.",
+  smelter: "Melts Iron Ore from the Mine into Metal, which the Far Field's buildings are made from.",
   vat: `Seal ${machineItemLabel(VAT_INPUT_ITEM, VAT_INPUT_QUANTITY)} inside and let it age. The longer it sits, the more Gold it is worth.`,
   feed_silo: SILO_LINE,
 };
@@ -230,6 +231,7 @@ const ITEM_SOURCE: Partial<Record<MachineItemId, string>> = {
   eggs: "your hens",
   wool: "your sheep",
   cheese: "the Dairy",
+  iron_ore: "the boulders in the Mine",
 };
 
 function shortfalls(recipe: RecipeId, inventory: StackAcresInventory) {

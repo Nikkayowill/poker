@@ -3256,6 +3256,20 @@ describe("Town Contracts", () => {
     return now;
   }
 
+  it("will not post a Cheese order to a Dairy with no cattle behind it", async () => {
+    const { token } = await funded();
+    await placeStackAcresMachine(token, "dairy", T0);
+    await expect(requestStackAcresContract(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+  });
+
+  it("posts a Cheese order once the farm keeps cattle", async () => {
+    const { token } = await funded();
+    await placeStackAcresMachine(token, "dairy", T0);
+    await stockStackAcres(token, { stock: "cattle" }, T0);
+    const view = await requestStackAcresContract(token, T0);
+    expect(["cheese", "cake"]).toContain(view.contract!.item);
+  });
+
   it("posts one open contract and refuses a second while one is open", async () => {
     const { token } = await funded();
     await placeStackAcresMachine(token, "mill", T0);

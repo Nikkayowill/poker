@@ -563,6 +563,7 @@ import type { CrossbreedItem } from "@/lib/stackacres/crossbreed-items";
 import {
   canFulfillContract,
   contractPassSpent,
+  contractableItems,
   drawContract,
   type StackAcresContractRow,
 } from "@/lib/stackacres/contracts";
@@ -5903,6 +5904,21 @@ export async function processStackAcresRecipeAction(
   return { ...(await view(profile, now)), processed };
 }
 
+/** The goods a contract may ask this farm for: a machine for them and every input within reach
+ *  (lib/stackacres/contracts.ts's `contractableItems`). */
+async function contractableFor(profileId: string) {
+  const [machines, units, inventory] = await Promise.all([
+    listStackAcresMachines(profileId),
+    listStackAcresUnits(profileId),
+    readStackAcresInventory(profileId),
+  ]);
+  return contractableItems({
+    machineKinds: machines.map((machine) => machine.kind),
+    ownedStocks: units.map((unit) => unit.stock),
+    inventory,
+  });
+}
+
 /** Posts a new open Town Contract, if this player does not already have one.
  *  Spends and moves nothing -- see lib/stackacres/contracts.ts's header for
  *  why there is ever only one. */
@@ -5923,14 +5939,7 @@ export async function requestStackAcresContract(
   // contract at a time and no way to cancel one, an unfulfillable contract is
   // not a bad draw -- it is a permanent block on every future one. See
   // lib/stackacres/contracts.ts's header.
-  const machines = await listStackAcresMachines(profile.id);
-  const producible = [
-    ...new Set(
-      machines.flatMap((machine) =>
-        recipesForMachine(machine.kind).map((recipe) => RECIPE_CATALOGUE[recipe].output.item),
-      ),
-    ),
-  ];
+  const producible = await contractableFor(profile.id);
   const def = drawContract(producible, Math.random);
   if (!def) {
     throw new StackAcresRequestError(
@@ -5998,14 +6007,7 @@ export async function passStackAcresContract(
   // what this farm can actually make. A farm with no machine left to make
   // anything simply ends up with an empty board, exactly as it would after
   // filling one.
-  const machines = await listStackAcresMachines(profile.id);
-  const producible = [
-    ...new Set(
-      machines.flatMap((machine) =>
-        recipesForMachine(machine.kind).map((recipe) => RECIPE_CATALOGUE[recipe].output.item),
-      ),
-    ),
-  ];
+  const producible = await contractableFor(profile.id);
   const def = drawContract(producible, Math.random);
   if (def) await createStackAcresContract(profile.id, def);
 

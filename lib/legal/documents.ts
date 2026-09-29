@@ -18,7 +18,8 @@ export type LegalDocumentSlug =
   | "privacy_policy"
   | "gold_disclosure"
   | "support_disclosure"
-  | "app_disclaimer";
+  | "app_disclaimer"
+  | "stackacres_refund_policy";
 
 /**
  * Every slug that needs accepting, in prompt order. A caller with no
@@ -66,12 +67,20 @@ export const LEGAL_DOCUMENTS: Record<LegalDocumentSlug, LegalDocument> = {
     // paragraph named it as one of the games Gold buys into, and the second
     // paragraph named it alongside Poker as a table bots could fill; both
     // are now false statements about a game that no longer exists.
-    version: 5,
+    //
+    // Bumped to 6 for the paid StackAcres launch: the opening paragraph said
+    // the whole app was free to play, and the new paragraphs cover what a
+    // one-time StackAcres purchase is, who holds it, and what ends it.
+    version: 6,
     title: "Terms of Service",
     body: [
-      "StackChips is a free-to-play social gaming app played with Gold, an in-app entertainment currency -- Texas Hold'em, Cribbage, head-to-head PvP duels (Chess, Checkers, Trivia Showdown, Word Race), and the Ante Up brain-game collection (Word Stack, Connections, Sudoku, Memory Match, Minesweeper, and others added over time). Nothing in StackChips is real-money gambling: no hand, match, or round you play, and no amount of Gold you hold, wins, buys, or can be exchanged for real money, cryptocurrency, or any prize of monetary value.",
+      "StackChips is a social gaming app played with Gold, an in-app entertainment currency -- Texas Hold'em, Cribbage, head-to-head PvP duels (Chess, Checkers, Trivia Showdown, Word Race), and the Ante Up brain-game collection (Word Stack, Connections, Sudoku, Memory Match, Minesweeper, and others added over time). The card and puzzle games are free to play. StackAcres, the farming game, is a paid game described below. Nothing in StackChips is real-money gambling: no hand, match, or round you play, and no amount of Gold you hold, wins, buys, or can be exchanged for real money, cryptocurrency, or any prize of monetary value.",
       "Poker tables may be filled with computer-controlled opponents. Any poker seat at your table that is not held by another player is played by StackChips software, and seats can change hands between hands as players join and leave. Computer opponents follow the same rules, the same betting limits, and the same shuffled deck as every other seat; they cannot see your cards, and they receive no advantage of any kind. Cribbage tables and PvP duels are human-only -- an empty seat there simply waits for another player rather than being filled by software.",
       "You must be at least 18 years old, or the age of majority where you live if that is higher, to play. By continuing you confirm you meet that requirement.",
+      "StackAcres is unlocked with a one-time purchase, currently $7.99, paid through Stripe on the StackChips website or web app. The price is shown before you pay. One purchase unlocks StackAcres for the one StackChips profile that bought it. It cannot be shared, sold, or moved to another profile. Access lasts for as long as StackAcres is offered. We may change, rebalance, or add to StackAcres over time, and a purchase does not promise any particular feature, item, or amount of content.",
+      "StackAcres purchases are not available in the mobile app builds. If you open StackChips inside one of those, you can play StackAcres only after unlocking it on the web with the same profile.",
+      "You can ask for a refund of a StackAcres purchase within 14 days, as set out in the StackAcres Refund Policy. If a refund is paid, or a payment is reversed by a chargeback or a lost dispute, your StackAcres access ends. Your profile, Gold, and farm records are kept, and buying again restores access to them.",
+      "If we suspend or terminate a profile for breaking these Terms, we are not required to refund a StackAcres purchase, except where the law requires it.",
       "Your Gold balance, table history, and cosmetics belong to your StackChips profile and have no value outside the app. We can suspend or terminate a profile that cheats, abuses other players, colludes, or attempts to convert Gold into anything of real-world value.",
       "Before either of us starts a court proceeding, you agree to first contact us at support@stackchips.app and describe the dispute; we will try in good faith to resolve it informally within 60 days.",
       "These Terms, and any dispute arising from them or from your use of StackChips, are governed by the laws of the Province of Nova Scotia and the federal laws of Canada applicable there, without regard to conflict-of-laws rules. Subject to the informal-resolution step above, you and StackChips agree that the courts of Nova Scotia have exclusive jurisdiction over any dispute that is not resolved informally, and you consent to that jurisdiction and venue.",
@@ -89,12 +98,16 @@ export const LEGAL_DOCUMENTS: Record<LegalDocumentSlug, LegalDocument> = {
     // of data (the browser's push subscription endpoint and keys) that a
     // player creating an account now grants alongside every sign-up.
     // Nothing else on this version changed.
-    version: 3,
+    //
+    // Bumped to 4 for the StackAcres purchase: the payment paragraph said a
+    // payment adds nothing to a profile, which is no longer true for the
+    // one-time StackAcres unlock.
+    version: 4,
     title: "Privacy Policy",
     body: [
       "StackChips is operated from Nova Scotia, Canada. This policy explains what we collect when you use the app, why, and who else sees it, alongside the Terms of Service.",
       "If you play as a guest, we hold an HttpOnly session cookie identifying your profile and nothing else identifying. If you link an account, we hold the email or identifier your sign-in provider gives us. Either way we hold your display name, avatar image, Gold balance, hand history, rank, and other gameplay records tied to your profile. Uploaded avatar images are stored in a public bucket for image delivery -- do not upload an image you want to keep private.",
-      "If you choose to support StackChips, one-time or monthly payments are processed by Stripe. We never receive or store your card number; we receive transaction and subscription status from Stripe, which we use only to keep the payment and billing records we are required to keep -- a support payment does not add anything to your profile for us to receive.",
+      "If you choose to support StackChips, one-time or monthly payments are processed by Stripe. We never receive or store your card number; we receive transaction and subscription status from Stripe, which we use only to keep the payment and billing records we are required to keep -- a support payment does not add anything to your profile for us to receive. A StackAcres purchase is also processed by Stripe. When it completes, we mark your profile as unlocked for StackAcres and keep the payment and refund records we are required to keep.",
       "We automatically receive technical data such as IP address, device and browser information, and crash/error reports (via Sentry) needed to run and debug the app. If you choose to watch a rewarded ad for free Gold, the ad is served by Adsterra, which may set its own cookies or identifiers under its own privacy policy; we do not use Adsterra outside that optional feature.",
       "If you grant notification permission (asked when you create an account), we store the push subscription your browser gives us -- an endpoint and encryption keys tied to that browser, not to you personally -- so we can send reminders like an unclaimed daily Gold grant. We use it only for that; nothing else reads it, and you can revoke it any time from the player menu or your browser's own site settings.",
       "We do not sell your personal information. We share it only with the service providers that run the app for us -- Stripe (payments), Supabase (hosting, database, authentication), Sentry (error monitoring), and Adsterra (only for the optional rewarded-ad feature) -- and only for the purpose of running StackChips, not for their own independent marketing.",
@@ -155,6 +168,27 @@ export const LEGAL_DOCUMENTS: Record<LegalDocumentSlug, LegalDocument> = {
       "StackChips may use third-party services, payment providers, analytics, hosting, and advertising partners. Their services, content, links, availability, and privacy practices are governed by their own terms and policies; their appearance in or connection with StackChips is not an endorsement or guarantee by StackChips.",
     ],
   },
+  stackacres_refund_policy: {
+    slug: "stackacres_refund_policy",
+    // Not in LEGAL_DOCUMENT_SLUGS on purpose, like app_disclaimer: nobody
+    // accepts it separately. The Terms of Service point here, and the buy
+    // screen links to it before payment. Keeping it out of the accept list
+    // also avoids a new legal_acceptances slug and its migration.
+    // The 14 day window is Kayo's launch decision (2026-09-29). Change it
+    // here and in the Terms paragraph that names it.
+    version: 1,
+    title: "StackAcres Refund Policy",
+    body: [
+      "StackAcres is a one-time purchase that unlocks the farming game for the StackChips profile that bought it. This page says when you can get your money back.",
+      "You can ask for a full refund within 14 days of buying. You do not need to give a reason. Email support@stackchips.app from the address on your StackChips profile, or include your profile name and the date of the purchase, and we will reply within 3 business days.",
+      "Approved refunds go back to the card you paid with, through Stripe. Your bank sets how long it takes to show up, usually 5 to 10 business days.",
+      "When a refund is paid, StackAcres access on that profile ends. Your profile, Gold, and farm records are not deleted. If you buy StackAcres again later, your farm is still there.",
+      "After 14 days we do not usually refund a StackAcres purchase. If the game did not work as described and you cannot play it, write to us and we will look at it. Where the law where you live gives you a right to a refund, that right stays in place.",
+      "Please contact us before you ask your bank to reverse the payment. A reversal or a lost dispute ends your StackAcres access the same way a refund does. If you win a dispute, we restore your access.",
+      "A refund is not owed when we suspend or end a profile for cheating, abuse, or breaking the Terms of Service, except where the law requires one.",
+      "This policy covers StackAcres only. Gold purchases and support payments are covered by their own disclosures. Nothing here limits your rights under the consumer protection laws that apply to you.",
+    ],
+  },
 };
 
 export function currentVersion(slug: LegalDocumentSlug): number {
@@ -167,5 +201,6 @@ export function legalDocumentPath(slug: LegalDocumentSlug): string {
   if (slug === "privacy_policy") return "/legal/privacy";
   if (slug === "gold_disclosure") return "/legal/gold-disclosure";
   if (slug === "support_disclosure") return "/legal/support";
+  if (slug === "stackacres_refund_policy") return "/legal/stackacres-refunds";
   return "/legal/disclaimer";
 }

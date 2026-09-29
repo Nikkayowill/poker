@@ -3637,19 +3637,16 @@ export class TopdownScene extends Phaser.Scene {
   /** The map sheet's travel buttons: the Crop Fields and Hen Haven are ground on the Homestead itself. */
   focusZone(zone: MapPlaceId): void {
     if (!this.booted) return;
-    if (zone === "cropfields") {
-      this.path = [];
-      this.pending = null;
-      this.enterArea("homestead", CROP_FIELDS_GATE);
-      this.callbacks.onViewMoved();
-      return;
-    }
-    if (zone === "farmstead" || zone === "henhaven") {
-      const spawn = zone === "henhaven" ? { x: 600, y: 500 } : this.specs.get("homestead")!.spawn;
+    if (zone === "cropfields" || zone === "farmstead" || zone === "henhaven") {
+      const arriving = this.areaName !== "homestead";
+      const spawn =
+        zone === "cropfields" ? CROP_FIELDS_GATE : zone === "henhaven" ? { x: 600, y: 500 } : this.specs.get("homestead")!.spawn;
       this.path = [];
       this.pending = null;
       this.enterArea("homestead", spawn);
       this.callbacks.onViewMoved();
+      // Coming back from another area has to say so, or the shell keeps showing that area's controls.
+      if (arriving) this.callbacks.onPlaceEntered(AREA_NAMES.homestead);
       return;
     }
     if (zone === "city" || zone === "farfield") {

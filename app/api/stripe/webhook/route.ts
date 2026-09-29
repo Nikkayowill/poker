@@ -11,7 +11,8 @@ import {
   verifiedSupportSession,
   type StripeMode,
 } from "@/lib/server/stripe";
-import { fulfillStripePayment, syncSubscriptionState } from "@/lib/server/stripe-store";
+import { fulfillStripePayment, restoreStackAcresPurchase, revokeStackAcresPurchase, syncSubscriptionState } from "@/lib/server/stripe-store";
+import { settleStackAcresSession } from "@/lib/server/stripe-stackacres";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 
 export const runtime = "nodejs";
@@ -119,6 +120,11 @@ export async function POST(request: NextRequest) {
           return ack();
         }
 
+        if (session.metadata?.kind === "stackacres_purchase") {
+          await settleStackAcresSession(session.id, mode);
+          return ack();
+        }
+
         if (session.metadata?.kind !== "support_one_time") return ack();
         const { session: verified, tier, profileId } = await verifiedSupportSession(session.id, undefined, mode);
         if (verified.payment_status !== "paid") return ack();
@@ -148,6 +154,30 @@ export async function POST(request: NextRequest) {
         // A one-off invoice (not tied to a subscription) isn't ours.
         if (!subscriptionId || typeof subscriptionId !== "string") return ack();
         await syncSubscriptionState(stripe, subscriptionId, mode === "live", eventCreatedAt);
+        return ack();
+      }
+      // A refunded or disputed StackAcres purchase takes its access back. Only a
+      // full refund does; a partial one leaves the farm open. Other payments'
+      // charges also arrive here and match nothing, which is a no-op.
+      case "charge.refunded": {
+        const charge = event.data.object as Stripe.Charge;
+        if (charge.refunded && typeof charge.payment_intent === "string") {
+          await revokeStackAcresPurchase(charge.payment_intent, "refunded");
+        }
+        return ack();
+      }
+      case "charge.dispute.created": {
+        const dispute = event.data.object as Stripe.Dispute;
+        if (typeof dispute.payment_intent === "string") {
+          await revokeStackAcresPurchase(dispute.payment_intent, "disputed");
+        }
+        return ack();
+      }
+      case "charge.dispute.closed": {
+        const dispute = event.data.object as Stripe.Dispute;
+        if (dispute.status === "won" && typeof dispute.payment_intent === "string") {
+          await restoreStackAcresPurchase(dispute.payment_intent);
+        }
         return ack();
       }
       default:

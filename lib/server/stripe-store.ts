@@ -43,6 +43,55 @@ export async function fulfillStripePayment(
   return data === true;
 }
 
+/**
+ * Records a paid StackAcres session and turns the profile's access on, once.
+ * False when this session was already applied. Callers must have checked the
+ * session with verifiedStackAcresSession first.
+ */
+export async function fulfillStackAcresPurchase(
+  stripeSessionId: string,
+  profileId: string,
+  paymentIntentId: string,
+  livemode: boolean,
+): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) throw new Error("Stripe purchases require Supabase persistence.");
+  const { data, error } = await supabase.rpc("fulfill_stackacres_purchase", {
+    p_stripe_session_id: stripeSessionId,
+    p_profile_id: profileId,
+    p_payment_intent_id: paymentIntentId,
+    p_livemode: livemode,
+  });
+  if (error) throw new Error(`Could not fulfill StackAcres purchase: ${error.message}`);
+  return data === true;
+}
+
+/** Takes back the access a refunded or disputed payment gave. Returns the profile id, or null when there was nothing to revoke. */
+export async function revokeStackAcresPurchase(
+  paymentIntentId: string,
+  status: "refunded" | "disputed",
+): Promise<string | null> {
+  const supabase = adminClient();
+  if (!supabase) throw new Error("Stripe purchases require Supabase persistence.");
+  const { data, error } = await supabase.rpc("revoke_stackacres_purchase", {
+    p_payment_intent_id: paymentIntentId,
+    p_status: status,
+  });
+  if (error) throw new Error(`Could not revoke StackAcres purchase: ${error.message}`);
+  return typeof data === "string" ? data : null;
+}
+
+/** Puts back the access of a purchase whose dispute was won. Returns the profile id, or null when there was nothing to restore. */
+export async function restoreStackAcresPurchase(paymentIntentId: string): Promise<string | null> {
+  const supabase = adminClient();
+  if (!supabase) throw new Error("Stripe purchases require Supabase persistence.");
+  const { data, error } = await supabase.rpc("restore_stackacres_purchase", {
+    p_payment_intent_id: paymentIntentId,
+  });
+  if (error) throw new Error(`Could not restore StackAcres purchase: ${error.message}`);
+  return typeof data === "string" ? data : null;
+}
+
 export type StripeSubscriptionStatus =
   | "active" | "trialing" | "past_due" | "canceled" | "unpaid"
   | "incomplete" | "incomplete_expired" | "paused";

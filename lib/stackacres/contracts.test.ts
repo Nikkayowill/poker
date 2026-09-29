@@ -6,6 +6,7 @@ import {
   contractPassSpent,
   isStackAcresContractStatus,
   contractProgress,
+  contractableItems,
   drawContract,
   isPostedRung,
   type StackAcresContractRow,
@@ -44,6 +45,42 @@ describe("drawContract", () => {
       ),
     );
     expect(seen.size).toBe(CONTRACT_RUNGS.length);
+  });
+});
+
+describe("contractableItems", () => {
+  it("offers nothing to a farm with no machine", () => {
+    expect(contractableItems({ machineKinds: [], ownedStocks: ["hen", "cattle", "pig"], inventory: {} })).toEqual([]);
+  });
+
+  it("offers Flour for a Mill alone, since seed can always be had", () => {
+    expect(contractableItems({ machineKinds: ["mill"], ownedStocks: [], inventory: {} })).toContain("flour");
+  });
+
+  it("holds Cheese back from a Dairy with no cattle and no milk", () => {
+    const items = contractableItems({ machineKinds: ["dairy"], ownedStocks: ["hen"], inventory: {} });
+    expect(items).not.toContain("cheese");
+  });
+
+  it("offers Cheese once the farm owns cattle, or already holds milk", () => {
+    expect(contractableItems({ machineKinds: ["dairy"], ownedStocks: ["cattle"], inventory: {} })).toContain("cheese");
+    expect(contractableItems({ machineKinds: ["dairy"], ownedStocks: [], inventory: { milk: 3 } })).toContain("cheese");
+  });
+
+  it("holds Cloth back from a Loom with no sheep and no wool", () => {
+    expect(contractableItems({ machineKinds: ["loom"], ownedStocks: ["cattle"], inventory: {} })).not.toContain("cloth");
+    expect(contractableItems({ machineKinds: ["loom"], ownedStocks: ["pig"], inventory: {} })).toContain("cloth");
+  });
+
+  it("follows a chain: Cake needs Flour, so a Dairy alone cannot make it, but a Dairy and a Mill can", () => {
+    const farm = { ownedStocks: ["hen", "cattle"] as const, inventory: {} };
+    expect(contractableItems({ ...farm, ownedStocks: [...farm.ownedStocks], machineKinds: ["dairy"] })).not.toContain("cake");
+    expect(contractableItems({ ...farm, ownedStocks: [...farm.ownedStocks], machineKinds: ["dairy", "mill"] })).toContain("cake");
+  });
+
+  it("never lists a good twice", () => {
+    const items = contractableItems({ machineKinds: ["mill", "mill", "dairy"], ownedStocks: ["cattle"], inventory: {} });
+    expect(new Set(items).size).toBe(items.length);
   });
 });
 

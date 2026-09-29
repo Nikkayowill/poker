@@ -30,7 +30,12 @@
  * processed goods make it the common case rather than the odd one.
  */
 
+import { STACKACRES_STOCK, isLivestock, type StackAcresStock } from "./catalogue";
+import { STACKACRES_YIELDS } from "./items";
+import type { StackAcresInventory } from "./inventory";
 import type { MachineProcessedItem } from "./machine-items";
+import type { MachineKind } from "./machines";
+import { RECIPE_CATALOGUE, recipesForMachine } from "./recipes";
 
 export interface ContractDef {
   item: MachineProcessedItem;
@@ -122,6 +127,43 @@ export const CONTRACT_PASSES_PER_DAY = 1;
  */
 export function contractPassSpent(lastPassDay: string | null, today: string): boolean {
   return lastPassDay !== null && lastPassDay === today;
+}
+
+/**
+ * The goods this farm can really turn out right now: a machine for the recipe AND
+ * every input within reach. A machine alone is not enough. A Dairy on a farm with no
+ * cattle would be handed a Cheese order it can never fill, and with one open contract
+ * and one pass a day that is a stuck board (see the header).
+ *
+ * An input is within reach when the farm already holds some, when it is a crop's
+ * produce (seed can always be had), when a kind of livestock the farm owns yields it,
+ * or when another recipe the farm can run makes it. That last one is why this runs
+ * to a fixed point: Cake needs Flour, and Flour needs a Mill.
+ */
+export function contractableItems(farm: {
+  machineKinds: readonly MachineKind[];
+  ownedStocks: readonly StackAcresStock[];
+  inventory: StackAcresInventory;
+}): MachineProcessedItem[] {
+  const reachable = new Set<string>();
+  for (const stock of STACKACRES_STOCK) if (!isLivestock(stock)) reachable.add(STACKACRES_YIELDS[stock].item);
+  for (const stock of farm.ownedStocks) if (isLivestock(stock)) reachable.add(STACKACRES_YIELDS[stock].item);
+  for (const [item, quantity] of Object.entries(farm.inventory)) if ((quantity ?? 0) > 0) reachable.add(item);
+
+  const recipes = [...new Set(farm.machineKinds)].flatMap((kind) => recipesForMachine(kind));
+  const made = new Set<MachineProcessedItem>();
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const id of recipes) {
+      const recipe = RECIPE_CATALOGUE[id];
+      if (made.has(recipe.output.item)) continue;
+      if (!recipe.inputs.every((input) => reachable.has(input.item))) continue;
+      made.add(recipe.output.item);
+      reachable.add(recipe.output.item);
+      grew = true;
+    }
+  }
+  return [...made];
 }
 
 /** A source of numbers in [0, 1). Injected so a test can make it boring --

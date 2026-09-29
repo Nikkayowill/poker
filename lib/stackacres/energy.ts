@@ -21,6 +21,8 @@ export const ENERGY_REGEN_MS = 6 * 60 * 1000;
 export const ENERGY_START = ENERGY_MAX;
 export const FISHING_CAST_ENERGY = 5;
 export const TOO_TIRED_TO_FISH = "You're too tired to fish. Eat something from the kitchen!";
+export const HUNTING_STALK_ENERGY = 10;
+export const TOO_TIRED_TO_HUNT = "You're too tired to hunt. Eat something from the kitchen!";
 
 export const FOOD_ITEMS = ["bread", "cake", "stew", "salad", "salsa", "stuffed_peppers", "bean_casserole", "harvest_feast"] as const;
 export type FoodItem = (typeof FOOD_ITEMS)[number];

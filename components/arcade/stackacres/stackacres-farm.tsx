@@ -224,6 +224,8 @@ import {
   ENERGY_START,
   FISHING_CAST_ENERGY,
   TOO_TIRED_TO_FISH,
+  HUNTING_STALK_ENERGY,
+  TOO_TIRED_TO_HUNT,
   energyAt,
   type FoodItem,
   type StackAcresEnergyAnchor,
@@ -3834,6 +3836,13 @@ export function StackAcresFarm() {
   const onWorldThicketTap = useCallback(
     (at: TapPoint) => {
       tapAnchor.current = at;
+      // Checked before the stalk, so a tired player is never made to finish
+      // one the server would refuse. The server checks again on `bag-quarry`.
+      if (energyAt(energy, new Date()) < HUNTING_STALK_ENERGY) {
+        refusedSound();
+        world.current?.floatAt(at, TOO_TIRED_TO_HUNT, "deny");
+        return;
+      }
       world.current?.startHuntScope({
         species: rollQuarryDifficulty(),
         weapon: bestWeapon(shopProgress),
@@ -3849,7 +3858,7 @@ export function StackAcresFarm() {
         },
       });
     },
-    [act, shopProgress],
+    [act, energy, shopProgress],
   );
 
   /** Checked before he swings the axe or clears land, so a tired farmer is

@@ -47,6 +47,7 @@ import {
   greetStackAcresNpc,
   buyStackAcresSeed,
   gatherStackAcresForage,
+  bagStackAcresQuarry,
   catchStackAcresFish,
   eatStackAcresFoodAction,
   processStackAcresRecipeAction,
@@ -104,7 +105,7 @@ import {
   listStackAcresMachines,
   writeStackAcresSiloFeeds,
 } from "./stackacres-store";
-import { ENERGY_MAX, FISHING_CAST_ENERGY, TOO_TIRED_TO_FISH, energyAt } from "@/lib/stackacres/energy";
+import { ENERGY_MAX, FISHING_CAST_ENERGY, HUNTING_STALK_ENERGY, TOO_TIRED_TO_FISH, TOO_TIRED_TO_HUNT, energyAt } from "@/lib/stackacres/energy";
 import { AXE_SWING_ENERGY } from "@/lib/stackacres/axe";
 import {
   LAND_OBSTACLES,
@@ -116,6 +117,7 @@ import {
   STACKACRES_PRESTIGE_BASE_MULTIPLIER,
   STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS,
 } from "@/lib/stackacres/prestige";
+import * as profileStore from "./profile-store";
 import { adjustGold, ensureProfile } from "./profile-store";
 import {
   __resetStackAcresSoilTilesForTest,
@@ -2182,30 +2184,20 @@ describe("the currency wall", () => {
 
   const calls = (source: string, fn: string) => source.split(`${fn}(`).length - 1;
 
-  it("credits Gold in exactly four places: the refund helper, and three payouts", async () => {
-    // If this is 5, go and look at the new one and ask the only question that
-    // matters: which DIRECTION does it move Gold. A refund belongs inside
-    // `refundGold`. A credit that is not a refund is a faucet, and a new
-    // faucet is the change to stop over.
-    //
-    // This used to be a count of five -- four refunds plus one payout -- and
-    // it had to be edited every time a spend path added its own refund.
-    // Routing every refund through one helper is what makes the number mean
-    // something: no amount of new refunds can move it, and only a new PAYOUT
-    // can. Harvest stopped paying on 2026-09-10 and Sell took its slot, so
-    // the count stayed at four: the helper, Sell, the contract payout and the
-    // vat collection.
-    expect(calls(SERVICE, "creditGoldByProfile")).toBe(4);
-    // One of the four is the helper, whose whole body is that call.
+  it("credits Gold in exactly two places: the refund helper and the keyed payout helper", async () => {
+    // A refund belongs inside `refundGold`. Every payout goes through
+    // `payOutGold`, which is keyed and retried, so a payout can neither pay
+    // twice nor quietly pay nothing. A new direct credit is a faucet, and a
+    // new faucet is the change to stop over.
+    expect(calls(SERVICE, "creditGoldByProfile")).toBe(1);
     expect(SERVICE).toContain("async function refundGold(");
     expect(SERVICE).toContain("await creditGoldByProfile(profileId, gold).catch(() => null);");
-    // The other three are the payers, and each nets Land Maintenance off the
-    // top first (netUpkeepFromPayout, 2026-09-12) before crediting only
-    // whatever survives that skim -- never the sticker gross directly.
+    expect(SERVICE).toContain("async function payOutGold(");
+    // The payers are the vat and cellar collect, the contract, Sell and the
+    // grocery till, and the three that skim Land Maintenance do so first.
+    expect(calls(SERVICE, "await payOutGold")).toBe(4);
     const netUpkeepCalls = SERVICE.split("await netUpkeepFromPayout(profile.id, now,").length - 1;
-    const netGoldCredits = SERVICE.split("paid = await creditGoldByProfile(profile.id, netGold)").length - 1;
     expect(netUpkeepCalls).toBe(3);
-    expect(netGoldCredits).toBe(3);
 
     const body = (name: string) => {
       const start = SERVICE.indexOf(`export async function ${name}(`);
@@ -2213,28 +2205,26 @@ describe("the currency wall", () => {
       const end = SERVICE.indexOf("\nexport ", start + 1);
       return SERVICE.slice(start, end === -1 ? undefined : end);
     };
-    // Sell takes the goods off the shelf before it credits any Gold.
+    // Sell takes the goods off the shelf before it pays any Gold.
     const sell = body("sellStackAcresItem");
     const debit = sell.indexOf("adjustStackAcresInventory(profile.id, item, -input.quantity)");
-    const sellCredit = sell.indexOf("creditGoldByProfile(");
+    const sellCredit = sell.indexOf("payOutGold(");
     expect(debit).toBeGreaterThan(-1);
     expect(debit).toBeLessThan(sellCredit);
-    // And a harvest never credits Gold at all.
+    // And a harvest never pays Gold at all.
     const harvest = body("harvestStackAcres");
+    expect(harvest).not.toContain("payOutGold(");
     expect(harvest).not.toContain("creditGoldByProfile(");
   });
 
-  it("credits ledgered Gold in exactly two places: the ledgered refund helper, and the grocery's till", () => {
-    // The city grocery's till is a faucet on purpose (Kayo, 2026-09-26: wages
-    // skim off the takings, like Land Maintenance). If this is 3, the new one
-    // is either a refund that belongs in `refundGoldLedgered` or another faucet.
+  it("credits ledgered Gold in exactly two places: the ledgered refund helper, and the payout helper", () => {
     expect(calls(SERVICE, "creditGoldByProfileLedgered")).toBe(2);
     expect(SERVICE).toContain("async function refundGoldLedgered(");
     const start = SERVICE.indexOf("export async function collectStackAcresGroceryTill(");
     const till = SERVICE.slice(start, SERVICE.indexOf("\nexport ", start + 1));
     // The till is emptied (a version-guarded write) before anything is paid.
     const emptied = till.indexOf("await changeGroceryChecked(");
-    const credited = till.indexOf("creditGoldByProfileLedgered(");
+    const credited = till.indexOf("payOutGold(");
     expect(emptied).toBeGreaterThan(-1);
     expect(emptied).toBeLessThan(credited);
   });
@@ -4647,6 +4637,35 @@ describe("Chapter 1: the bread basket", () => {
     });
     const shelfBefore = await readStackAcresInventory(id);
     await expect(catchStackAcresFish(token, false, 0.5, T0)).rejects.toThrow(TOO_TIRED_TO_FISH);
+    expect(await readStackAcresInventory(id)).toEqual(shelfBefore);
+  });
+
+  it("tells the player when a payout cannot land, after three tries, instead of reporting it paid", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresInventory(id, "eggs", 5);
+    const credit = vi.spyOn(profileStore, "creditGoldByProfileLedgered").mockRejectedValue(new Error("db down"));
+    try {
+      await expect(sellStackAcresItem(token, { item: "eggs", quantity: 5 }, T0)).rejects.toMatchObject({ status: 503 });
+      expect(credit).toHaveBeenCalledTimes(3);
+      const keys = new Set(credit.mock.calls.map((call) => call[2]));
+      expect(keys.size).toBe(1);
+    } finally {
+      credit.mockRestore();
+    }
+  });
+
+  it("spends energy on a bagged quarry and refuses a tired hunter with nothing credited", async () => {
+    const { token, id } = await funded();
+    const bagged = await bagStackAcresQuarry(token, T0);
+    expect(bagged.energy.level).toBe(ENERGY_MAX - HUNTING_STALK_ENERGY);
+    expect(bagged.quarryBagged).toBeDefined();
+
+    await writeStackAcresEnergy(id, (await readStackAcresEnergy(id))!.version, {
+      level: HUNTING_STALK_ENERGY - 1,
+      updatedAt: T0.toISOString(),
+    });
+    const shelfBefore = await readStackAcresInventory(id);
+    await expect(bagStackAcresQuarry(token, T0)).rejects.toThrow(TOO_TIRED_TO_HUNT);
     expect(await readStackAcresInventory(id)).toEqual(shelfBefore);
   });
 

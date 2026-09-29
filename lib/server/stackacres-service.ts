@@ -402,6 +402,8 @@ import { FISHING_BAIT_ITEM, castTier, pickCaughtFish, type FishSpecies } from "@
 import {
   ENERGY_MAX,
   FISHING_CAST_ENERGY,
+  HUNTING_STALK_ENERGY,
+  TOO_TIRED_TO_HUNT,
   FOOD_ENERGY,
   TOO_TIRED_TO_FISH,
   applyEnergyDelta,
@@ -1527,6 +1529,28 @@ export async function getPrestigeMultiplier(profileId: string): Promise<number> 
 async function refundGold(profileId: string, gold: number): Promise<void> {
   if (gold <= 0) return;
   await creditGoldByProfile(profileId, gold).catch(() => null);
+}
+
+/**
+ * Pays Gold out after the thing it pays for is already gone. It is keyed, so a
+ * retry can never pay twice, and it tries three times before giving up. If the
+ * credit still fails it throws, so the player is told instead of shown a
+ * payout that never landed. A zero amount (upkeep took it all) pays nothing.
+ */
+async function payOutGold(profileId: string, gold: number, correlationId: string, reason: string): Promise<void> {
+  if (gold <= 0) return;
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const credited = await creditGoldByProfileLedgered(profileId, gold, correlationId, reason);
+      if (credited.success) return;
+      lastError = new Error("credit refused");
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  console.error("stackacres.payout_failed", { profileId, gold, correlationId, reason, error: lastError });
+  throw new StackAcresRequestError("We couldn't pay that out just now. Please contact support so it can be made good.", 503);
 }
 
 /** The same for a spend made through the Gold ledger: the refund is keyed off the spend, so it lands once. */
@@ -3760,23 +3784,31 @@ export async function sleepStackAcres(token: string, now = new Date()): Promise<
  * steady and took it, exactly the separation `catchStackAcresFish` keeps
  * between "the cast completed" and "here is what it landed".
  *
- * Free, so there is nothing to refund: a stalk costs nothing to attempt, and
- * the two inventory writes below are the only thing it moves. They are
- * deliberately NOT wrapped in a transaction -- `adjustStackAcresInventory` is
- * already a row-locking RPC per item, the two items are independent, and the
- * worst a crash between them can do is credit the meat without the pelt. That
- * is a strictly-in-the-player's-favour partial result on a free action, which
- * is the same trade every other multi-item credit in this file makes.
+ * A stalk costs HUNTING_STALK_ENERGY, spent before anything is credited and
+ * handed back if a credit fails, the same order fishing keeps. The scope only
+ * reports that a stalk finished, so energy is what stops a script calling
+ * this in a loop.
  */
 export async function bagStackAcresQuarry(
   token: string,
   now = new Date(),
 ): Promise<StackAcresActionResult> {
   const profile = await ensureProfile(token);
+  const spent = await moveStackAcresEnergy(profile.id, -HUNTING_STALK_ENERGY, now);
+  if (!spent) {
+    throw new StackAcresRequestError(TOO_TIRED_TO_HUNT, 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
   const species: QuarrySpecies = pickQuarry();
   const { meat, pelt } = QUARRY_CATALOGUE[species];
-  await adjustStackAcresInventory(profile.id, "meat", meat);
-  await adjustStackAcresInventory(profile.id, "pelt", pelt);
+  try {
+    await adjustStackAcresInventory(profile.id, "meat", meat);
+    await adjustStackAcresInventory(profile.id, "pelt", pelt);
+  } catch (error) {
+    await moveStackAcresEnergy(profile.id, HUNTING_STALK_ENERGY, now).catch(() => null);
+    throw error;
+  }
   return { ...(await view(profile, now)), quarryBagged: { species, meat, pelt } };
 }
 
@@ -4094,16 +4126,8 @@ export async function collectStackAcresGroceryTill(token: string, now = new Date
     from = current.version;
     return { till: freshTill(now), collected: current.collected + reading.pay };
   });
-  let paid: PlayerProfile | null = null;
-  if (pay > 0) {
-    try {
-      const credited = await creditGoldByProfileLedgered(profile.id, pay, `grocery-till:${profile.id}:${from}`, "stackacres_grocery_till");
-      if (credited.success) paid = await ensureProfile(token);
-    } catch (error) {
-      console.error("stackacres.grocery_till_credit_failed", { profileId: profile.id, version: from, pay, error });
-    }
-  }
-  return { ...(await view(paid ?? (await ensureProfile(token)), now)), groceryPaid: pay };
+  await payOutGold(profile.id, pay, `grocery-till:${profile.id}:${from}`, "stackacres_grocery_till");
+  return { ...(await view(await ensureProfile(token), now)), groceryPaid: pay };
 }
 
 /** Why the store can't be laid out like this, in the words the arrange bar shows. */
@@ -5388,24 +5412,13 @@ async function collectStackAcresAging(
   // Step 2: net Land Maintenance off the top, then pay -- only now that
   // step 1 is durable. `vatCollected.gold` below stays the batch's full
   // worth; netUpkeepFromPayout only changes what actually lands in Gold.
-  let paid: PlayerProfile | null = null;
   if (gold > 0) {
     const netGold = await netUpkeepFromPayout(profile.id, now, gold);
-    try {
-      paid = await creditGoldByProfile(profile.id, netGold);
-    } catch (error) {
-      console.error("stackacres.vat_credit_failed", {
-        profileId: profile.id,
-        manifestId: manifest.id,
-        kind,
-        gold: netGold,
-        error,
-      });
-    }
+    await payOutGold(profile.id, netGold, `stackacres-${kind}-collect:${manifest.id}`, `stackacres_${kind}_collect`);
   }
 
   return {
-    ...(await view(paid ?? (await ensureProfile(token)), now)),
+    ...(await view(await ensureProfile(token), now)),
     // Named for the Vat, which came first; the Cellar's collect fills the
     // same field.
     vatCollected: {
@@ -5976,19 +5989,9 @@ export async function fulfillStackAcresTownContract(
   // Step 3: net Land Maintenance off the top, then pay -- only now that
   // step 2 is durable. `contractReward.gold` below stays the contract's
   // full reward; netUpkeepFromPayout only changes what actually lands.
-  let paid: PlayerProfile | null = null;
   if (contract.goldReward > 0) {
     const netGold = await netUpkeepFromPayout(profile.id, now, contract.goldReward);
-    try {
-      paid = await creditGoldByProfile(profile.id, netGold);
-    } catch (error) {
-      console.error("stackacres.contract_credit_failed", {
-        profileId: profile.id,
-        contractId: contract.id,
-        gold: netGold,
-        error,
-      });
-    }
+    await payOutGold(profile.id, netGold, `stackacres-contract:${contract.id}`, "stackacres_contract");
   }
 
   if (contract.influenceReward > 0) {
@@ -6003,7 +6006,7 @@ export async function fulfillStackAcresTownContract(
 
   await recordStoryEvents(profile.id, [{ kind: "contract-fulfilled" }]);
   return {
-    ...(await view(paid ?? (await ensureProfile(token)), now)),
+    ...(await view(await ensureProfile(token), now)),
     contractReward: { gold: contract.goldReward, influence: contract.influenceReward },
   };
 }
@@ -6058,15 +6061,10 @@ export async function sellStackAcresItem(
   // multiplier may not invent a Gold piece out of a rounding rule.
   const gold = Math.floor(basePrice * Math.max(1, prestigeMultiplier));
   const netGold = await netUpkeepFromPayout(profile.id, now, gold);
-  let paid: PlayerProfile | null = null;
-  try {
-    paid = await creditGoldByProfile(profile.id, netGold);
-  } catch (error) {
-    console.error("stackacres.sell_credit_failed", { profileId: profile.id, item, quantity: input.quantity, gold: netGold, error });
-  }
+  await payOutGold(profile.id, netGold, `stackacres-sell:${profile.id}:${randomUUID()}`, "stackacres_sell");
 
   return {
-    ...(await view(paid ?? (await ensureProfile(token)), now)),
+    ...(await view(await ensureProfile(token), now)),
     sold: { item, quantity: input.quantity, gold },
   };
 }

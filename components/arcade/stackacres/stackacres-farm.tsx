@@ -195,6 +195,8 @@ import { StackAcresSleepDialogue } from "./stackacres-sleep-dialogue";
 import { StackAcresFriendshipDialogue } from "./stackacres-friendship-dialogue";
 import { StackAcresSectorModal } from "./stackacres-sector-modal";
 import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
+import { StackAcresAwayReport } from "./stackacres-away-report";
+import { buildAwayReport, type AwayReport } from "@/lib/stackacres/away-report";
 import { StackAcresStoryDialogue } from "./stackacres-story-dialogue";
 import { useStackAcresStory, type StackAcresStoryController } from "@/lib/stackacres/story/use-stackacres-story";
 import { storyEventsForAction } from "@/lib/stackacres/story/predict";
@@ -1271,6 +1273,49 @@ export function StackAcresFarm() {
       // Nothing to persist if storage is blocked; it just re-offers next visit.
     }
   }, []);
+
+  // "While you were away": read once per visit, after the welcome and the world
+  // are out of the way. `sa-last-seen` is bumped while the farm is open, so the
+  // gap it measures is the real time since the player last looked.
+  const [awayReport, setAwayReport] = useState<AwayReport | null>(null);
+  const awayChecked = useRef(false);
+  // What `sa-last-seen` held when this visit began, captured before the stamp
+  // below overwrites it.
+  const previousSeenMs = useRef<number | null>(null);
+  useEffect(() => {
+    if (!hasStarted) return;
+    const stamp = () => {
+      try {
+        window.localStorage.setItem("sa-last-seen", String(Date.now()));
+      } catch {
+        // Nothing to persist if storage is blocked.
+      }
+    };
+    try {
+      const stored = Number(window.localStorage.getItem("sa-last-seen"));
+      previousSeenMs.current = Number.isFinite(stored) && stored > 0 ? stored : null;
+    } catch {
+      previousSeenMs.current = null;
+    }
+    stamp();
+    const timer = window.setInterval(stamp, 30_000);
+    window.addEventListener("pagehide", stamp);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("pagehide", stamp);
+    };
+  }, [hasStarted]);
+  useEffect(() => {
+    if (!hasStarted || !loaded || !rayCheckDone || showWelcome || awayChecked.current) return;
+    const timer = window.setTimeout(() => {
+      awayChecked.current = true;
+      const lastSeenMs = previousSeenMs.current;
+      if (lastSeenMs !== null) {
+        setAwayReport(buildAwayReport({ units, machines: processing.machines, lastSeenMs, nowMs: Date.now() }));
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [hasStarted, loaded, rayCheckDone, showWelcome, units, processing.machines]);
 
   // The spotlight tour, same mechanism as the lobby and table halves
   // (lib/onboarding/use-onboarding-tour.ts): fires once per profile, server
@@ -4840,6 +4885,7 @@ export function StackAcresFarm() {
       )}
 
       {showWelcome && <StackAcresRayWelcome onClose={dismissWelcome} />}
+      {awayReport && !showWelcome && <StackAcresAwayReport report={awayReport} onClose={() => setAwayReport(null)} />}
       {showGreenhouse && (
         <StackAcresGreenhousePanel
           built={greenhouseBuilt}

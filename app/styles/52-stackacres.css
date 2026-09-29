@@ -2684,6 +2684,14 @@
   }
 }
 
+/* The "While you were away" list (stackacres-away-report.tsx). */
+.sa-away-lines {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+}
+
 /* The checklist/card grid shell, originally built for the now-deleted Ray's
    Museum panel and kept because the Greenhouse panel
    (stackacres-greenhouse-panel.tsx) reuses it for both of its screens -- the

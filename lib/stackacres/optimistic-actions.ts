@@ -133,6 +133,7 @@ import {
 import {
   ENERGY_MAX,
   FISHING_CAST_ENERGY,
+  HUNTING_STALK_ENERGY,
   FOOD_ENERGY,
   applyEnergyDelta,
   energyAt,
@@ -883,6 +884,11 @@ export function predictStackAcresAction(
       if (!body.bait) return { energy };
       const inventory = removeFromInventory(ctx.inventory, FISHING_BAIT_ITEM, 1);
       return inventory ? { energy, ...processingPatch(ctx, { inventory }) } : null;
+    }
+    case "bag-quarry": {
+      // Only the energy is predicted; which animal is the server's own roll.
+      const energy = applyEnergyDelta(ctx.energy, -HUNTING_STALK_ENERGY, new Date(ctx.nowMs));
+      return energy ? { energy } : null;
     }
     case "place-fence": {
       // The same refusals the server makes, so a piece never flashes up and

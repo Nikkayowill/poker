@@ -65,6 +65,8 @@ function toSceneUnits(units: StackAcresUnitSnapshot[]): StackAcresSceneUnit[] {
     permanent: unit.permanent,
     soilSlot: unit.soilSlot,
     housedIn: unit.housedIn,
+    mapTx: unit.mapTx,
+    mapTy: unit.mapTy,
     seed: unit.seed,
   }));
 }

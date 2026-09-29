@@ -114,6 +114,13 @@ import {
   type FencePiece,
 } from "@/lib/stackacres/fences";
 import {
+  HERD_PLACEMENT_MESSAGES,
+  herdKey,
+  herdPlacementProblem,
+  herdSquares,
+  isHerdStock,
+} from "@/lib/stackacres/herd";
+import {
   listStackAcresFences,
   placeStackAcresFence as placeFenceRow,
   removeStackAcresFence as removeFenceRow,
@@ -248,6 +255,7 @@ import {
   feedStackAcresUnit,
   getStackAcresUnit,
   listStackAcresUnits,
+  setStackAcresUnitPosition,
   markStackAcresDonated,
   readStackAcresCapacity,
   readStackAcresFeed,
@@ -2057,6 +2065,14 @@ function requireOpenSector(sectors: readonly SectorId[], zone: ZoneId, what: str
   );
 }
 
+/** `requireOpenSector` for a kind of stock. Sheep and cattle stand wherever the player puts them on the
+ *  Homestead (lib/stackacres/herd.ts), so the Fold and Cattle Pasture, whose maps are gone, no longer gate
+ *  them. Their price and their capacity slots still do. */
+function requireOpenStockSector(sectors: readonly SectorId[], stock: StackAcresStock, what: string): void {
+  if (isHerdStock(stock)) return;
+  requireOpenSector(sectors, stockZone(stock), what);
+}
+
 
 /**
  * Builds the Greenhouse, exactly once: debits `GREENHOUSE_BUILD_COST`
@@ -2141,7 +2157,7 @@ export async function expandStackAcresCapacity(
   // Buying room is taking on more land, so both land rules apply: the ground
   // has to be cleared, and the fee on what is already kept has to be settled.
   const land = await readLand(profile.id);
-  requireOpenSector(land.sectors, stockZone(stock), `${def.label}s`);
+  requireOpenStockSector(land.sectors, stock, `${def.label}s`);
 
   const capacity = await readStackAcresCapacity(profile.id);
   const extraSlots = capacity[stock] ?? 0;
@@ -2621,7 +2637,7 @@ export async function buyStackAcresStock(
   }
 
   const land = await readLand(profile.id);
-  requireOpenSector(land.sectors, stockZone(stock), `${def.label}s`);
+  requireOpenStockSector(land.sectors, stock, `${def.label}s`);
 
   const [occupied, cap] = await Promise.all([
     countOccupiedStackAcresUnits(profile.id, stock),
@@ -2747,7 +2763,7 @@ export async function stockStackAcres(
 
   const land = await readLand(profile.id);
   const zone = stockZone(stock);
-  requireOpenSector(land.sectors, zone, `${def.label}s`);
+  requireOpenStockSector(land.sectors, stock, `${def.label}s`);
   // The Farmstead itself is a HOME sector -- always open -- so
   // `requireOpenSector` above passes trivially for every crop (they are all
   // zoned there since the 2026-09-08 district merge; see stockZone's own
@@ -3856,6 +3872,68 @@ export async function removeStackAcresFencePiece(
 ): Promise<StackAcresView> {
   const profile = await ensureProfile(token);
   await removeFenceRow(profile.id, Math.trunc(input.tx), Math.trunc(input.ty));
+  return view(profile, now);
+}
+
+/**
+ * Sets a sheep or a cow down on a Homestead map square, or moves it there
+ * (lib/stackacres/herd.ts). The square is checked against the map, the beds, the
+ * fences and the other animals here, never taken on trust from the request.
+ *
+ * NO GOLD MOVES. The animal was paid for when it was bought; placing and moving
+ * it cost and refund nothing, so there is no debit here to order or undo. The
+ * database's unique index on the square settles two racing placements.
+ */
+export async function placeStackAcresAnimal(
+  token: string,
+  input: { unitId: string; tx: number; ty: number },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const [units, beds, fences] = await Promise.all([
+    listStackAcresUnits(profile.id),
+    listStackAcresSoilTiles(profile.id),
+    listStackAcresFences(profile.id),
+  ]);
+  const unit = units.find((candidate) => candidate.id === input.unitId);
+  if (!unit || !isHerdStock(unit.stock)) throw new StackAcresRequestError("That isn't one of your animals.", 404);
+
+  const problem = herdPlacementProblem(input.tx, input.ty, {
+    beds: new Set(
+      beds.map((bed) => {
+        const { mx, my } = soilToMapTile(bed.tx, bed.ty);
+        return herdKey(mx, my);
+      }),
+    ),
+    fences: new Set(fences.map((piece) => herdKey(piece.tx, piece.ty))),
+    animals: herdSquares(units, unit.id),
+  });
+  if (problem) {
+    throw new StackAcresRequestError(HERD_PLACEMENT_MESSAGES[problem], problem === "off_yard" ? 400 : 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const outcome = await setStackAcresUnitPosition(profile.id, unit.id, { tx: input.tx, ty: input.ty });
+  if (outcome === "missing") throw new StackAcresRequestError("That isn't one of your animals.", 404);
+  if (outcome === "taken") {
+    throw new StackAcresRequestError(HERD_PLACEMENT_MESSAGES.occupied, 409, { round: await snapshots(profile.id, now) });
+  }
+  return view(profile, now);
+}
+
+/** Lifts a placed sheep or cow so it can be set down somewhere else. It gives nothing back: it was never sold. */
+export async function pickUpStackAcresAnimal(
+  token: string,
+  input: { unitId: string },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const units = await listStackAcresUnits(profile.id);
+  const unit = units.find((candidate) => candidate.id === input.unitId);
+  if (!unit || !isHerdStock(unit.stock)) throw new StackAcresRequestError("That isn't one of your animals.", 404);
+  const outcome = await setStackAcresUnitPosition(profile.id, unit.id, null);
+  if (outcome === "missing") throw new StackAcresRequestError("That isn't one of your animals.", 404);
   return view(profile, now);
 }
 

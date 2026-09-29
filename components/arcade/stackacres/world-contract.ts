@@ -50,6 +50,10 @@ export interface StackAcresSceneUnit {
   /** Seed waiting for its first water; drawn as a sown heap. See
    *  `StackAcresUnitSnapshot.seed`. */
   seed: boolean;
+  /** Sheep and cattle: the Homestead map square the animal was set down on
+   *  (lib/stackacres/herd.ts), or null/absent when it has not been placed. */
+  mapTx?: number | null;
+  mapTy?: number | null;
 }
 
 /** Where a tap landed, in CSS pixels relative to the canvas host -- which is

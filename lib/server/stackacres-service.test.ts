@@ -7,6 +7,8 @@ import {
   activateStackAcresSynergyPerk,
   buyStackAcresFeed,
   buyStackAcresStock,
+  placeStackAcresAnimal,
+  pickUpStackAcresAnimal,
   workStackAcresLand,
   clearStackAcresUnit,
   consumeStackAcresSecretItem,
@@ -126,7 +128,8 @@ import {
 } from "./stackacres-soil-store";
 import { CROP_FIELD_BEDS } from "@/lib/stackacres/world";
 import { SOIL_TILE, soilTileAt } from "@/lib/stackacres/soil";
-import { isHoeableMapTile, isWildMapTile, mapToSoilTile } from "@/lib/stackacres/hoeable";
+import { isHerdMapTile } from "@/lib/stackacres/herd";
+import { isHoeableMapTile, isWildMapTile, mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
 import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "@/lib/stackacres/homestead-ground";
 
 /** `n` bed squares side by side on open yard grass, read off the real map. */
@@ -2293,8 +2296,12 @@ describe("the currency wall", () => {
       // Moves no Gold either way: turning an order down and drawing another
       // is the release valve on a one-slot board, capped at one a UTC day.
       "pass-contract",
+      // Moves no Gold either way, and refunds nothing: a sheep or cow lifted so it can be set down elsewhere.
+      "pick-up-animal",
       // Moves no Gold either way: an owned building going back into storage.
       "pick-up-building",
+      // Moves no Gold either way: a bought sheep or cow set down on the Homestead.
+      "place-animal",
       // Moves no Gold either way: an owned building moved or put back down.
       "place-building",
       // Moves no Gold either way: a fence piece takes Wood and gives it back.
@@ -2708,40 +2715,16 @@ describe("clearing land", () => {
     expect(view.sectors).toEqual([...HOME_SECTORS]);
   });
 
-  it("refuses to stock a kind whose land is still wild", async () => {
-    // Carrot no longer proves this: it's zoned to the Farmstead (a HOME
-    // sector) since the 2026-09-08 district merge, and `greenfield`'s own
-    // `funded` default unlocks the Crop Fields too. Cattle's own district,
-    // Ox Fields, is genuinely still wild here.
+  it("no longer holds sheep and cattle behind their old districts", async () => {
+    // The Fold and Cattle Pasture cannot be cleared any more (their maps are
+    // gone), and sheep and cattle stand wherever the player sets them
+    // (lib/stackacres/herd.ts). Their price and their capacity slots are the
+    // gate now, so a farm that has cleared nothing can still keep them.
     const { token } = await greenfield();
-    const before = await balance(token);
-
-    await expect(stockStackAcres(token, { stock: "cattle" }, T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-    // Rule 1 in reverse: nothing was created, so nothing was paid for.
-    expect(await balance(token)).toBe(before);
-    expect((await readStackAcres(token, T0)).units).toEqual([]);
-  });
-
-  it("refuses to buy that kind outright either, and takes no Gold for it", async () => {
-    const { token } = await greenfield();
-    const before = await balance(token);
-
-    await expect(buyStackAcresStock(token, { stock: "cattle" }, T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-    expect(await balance(token)).toBe(before);
-  });
-
-  it("refuses to expand capacity on land nobody has cleared", async () => {
-    const { token } = await greenfield();
-    const before = await balance(token);
-
-    await expect(expandStackAcresCapacity(token, "cattle", T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-    expect(await balance(token)).toBe(before);
+    const view = await stockStackAcres(token, { stock: "cattle" }, T0);
+    expect(unitOf(view, "cattle").state).toBe("working");
+    await expect(buyStackAcresStock(token, { stock: "pig" }, T0)).resolves.toBeDefined();
+    await expect(expandStackAcresCapacity(token, "cattle", T0)).resolves.toBeDefined();
   });
 
   it("still lets a new farm work the Farmstead it starts with", async () => {
@@ -5465,5 +5448,92 @@ describe("the axe", () => {
     await expect(upgradeStackAcresAxe(token, "gold", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
     expect((await readStackAcresInventory(id)).wood).toBe(5);
     expect(await readStackAcresAxeLevel(id)).toBe(1);
+  });
+});
+
+describe("the herd stands where the player puts it", () => {
+  const FUNDED_ORIGIN = soilTileAt(CROP_FIELD_BEDS.x + SOIL_TILE, CROP_FIELD_BEDS.y + SOIL_TILE);
+
+  /** Open yard squares (grass, not overgrown) that hold no funded bed. */
+  function yardSquares(count: number): { tx: number; ty: number }[] {
+    const found: { tx: number; ty: number }[] = [];
+    for (let ty = 0; ty < HOMESTEAD_MAP_HEIGHT && found.length < count; ty += 1) {
+      for (let tx = 0; tx < HOMESTEAD_MAP_WIDTH && found.length < count; tx += 1) {
+        if (!isHerdMapTile(tx, ty)) continue;
+        const bed = mapToSoilTile(tx, ty);
+        const inFundedBeds =
+          bed.tx >= FUNDED_ORIGIN.tx &&
+          bed.tx < FUNDED_ORIGIN.tx + FUNDED_BED_ROW &&
+          bed.ty >= FUNDED_ORIGIN.ty &&
+          bed.ty < FUNDED_ORIGIN.ty + FUNDED_BEDS / FUNDED_BED_ROW;
+        if (!inFundedBeds) found.push({ tx, ty });
+      }
+    }
+    return found;
+  }
+
+  it("sells a sheep with no sector cleared, still charging its price", async () => {
+    const { token } = await funded(500_000, { land: [] });
+    const before = await balance(token);
+    const view = await buyStackAcresStock(token, { stock: "pig" }, T0);
+    expect(unitOf(view, "pig").mapTx ?? null).toBeNull();
+    expect(await balance(token)).toBe(before - stackacresStockPrice("pig"));
+  });
+
+  it("still sells cattle and lets their capacity be bought with no sector cleared", async () => {
+    const { token } = await funded(2_000_000, { land: [] });
+    await buyStackAcresStock(token, { stock: "cattle" }, T0);
+    await expect(expandStackAcresCapacity(token, "cattle", T0)).resolves.toBeDefined();
+  });
+
+  it("sets an animal down, moves it, and picks it up without moving any Gold", async () => {
+    const { token } = await funded(500_000, { land: [] });
+    const bought = await buyStackAcresStock(token, { stock: "pig" }, T0);
+    const unit = unitOf(bought, "pig");
+    const [a, b] = yardSquares(2);
+    const gold = await balance(token);
+
+    const placed = await placeStackAcresAnimal(token, { unitId: unit.id, tx: a.tx, ty: a.ty }, T0);
+    expect(unitOf(placed, "pig")).toMatchObject({ mapTx: a.tx, mapTy: a.ty });
+    const moved = await placeStackAcresAnimal(token, { unitId: unit.id, tx: b.tx, ty: b.ty }, T0);
+    expect(unitOf(moved, "pig")).toMatchObject({ mapTx: b.tx, mapTy: b.ty });
+    const lifted = await pickUpStackAcresAnimal(token, { unitId: unit.id }, T0);
+    expect(unitOf(lifted, "pig").mapTx ?? null).toBeNull();
+    expect(await balance(token)).toBe(gold);
+  });
+
+  it("refuses a second animal on an occupied square, a bed, and ground off the yard", async () => {
+    const { token, id } = await funded(500_000, { land: [] });
+    await buyStackAcresStock(token, { stock: "pig" }, T0);
+    const view = await buyStackAcresStock(token, { stock: "pig" }, T0);
+    const [first, second] = view.units.filter((u) => u.stock === "pig");
+    const [square, bedSquare] = yardSquares(2);
+    await placeStackAcresAnimal(token, { unitId: first.id, tx: square.tx, ty: square.ty }, T0);
+
+    await expect(placeStackAcresAnimal(token, { unitId: second.id, tx: square.tx, ty: square.ty }, T0)).rejects.toMatchObject({
+      status: 409,
+    });
+    const bed = mapToSoilTile(bedSquare.tx, bedSquare.ty);
+    await laySoilBed(id, bed.tx, bed.ty);
+    await expect(placeStackAcresAnimal(token, { unitId: second.id, tx: bedSquare.tx, ty: bedSquare.ty }, T0)).rejects.toMatchObject({
+      status: 409,
+    });
+    await expect(placeStackAcresAnimal(token, { unitId: second.id, tx: -1, ty: 0 }, T0)).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("only places sheep and cattle that are the caller's own", async () => {
+    const mine = await funded(500_000, { land: [] });
+    const theirs = await funded(500_000, { land: [] });
+    const hen = unitOf(await buyStackAcresStock(mine.token, { stock: "hen" }, T0), "hen");
+    const sheep = unitOf(await buyStackAcresStock(theirs.token, { stock: "pig" }, T0), "pig");
+    const [square] = yardSquares(1);
+
+    await expect(placeStackAcresAnimal(mine.token, { unitId: hen.id, tx: square.tx, ty: square.ty }, T0)).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(placeStackAcresAnimal(mine.token, { unitId: sheep.id, tx: square.tx, ty: square.ty }, T0)).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(pickUpStackAcresAnimal(mine.token, { unitId: sheep.id }, T0)).rejects.toMatchObject({ status: 404 });
   });
 });

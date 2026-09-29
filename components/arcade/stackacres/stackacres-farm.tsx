@@ -95,6 +95,7 @@ import { findCascadeTargets } from "@/lib/stackacres/harvest-cascade";
 import {
   HUD_VIEW_EXPANSION,
   stockZone,
+  stocksInZone,
 } from "@/lib/stackacres/world";
 import {
   createSoilMap,
@@ -291,6 +292,8 @@ import {
 import { sendActionWithRetry } from "@/lib/stackacres/action-retry";
 import { EMPTY_EMPIRE, type EmpireSnapshot } from "@/lib/stackacres/empire-buildings";
 import { useEmpireBuild } from "./empire-build";
+import { useHerdPlace } from "./herd-place";
+import { isHerdStock } from "@/lib/stackacres/herd";
 import type { GroceryView } from "@/lib/stackacres/grocery";
 import { useGroceryArrange } from "./grocery-arrange";
 import { GroceryDesk, type DeskTab } from "./grocery-desk";
@@ -2842,8 +2845,11 @@ export function StackAcresFarm() {
   const [onEmpireMap, setOnEmpireMap] = useState(false);
   /** The same for the grocery, whose Arrange key and desk are only there. */
   const [onGroceryMap, setOnGroceryMap] = useState(false);
+  /** The farmer is out on the Homestead itself (not a room, the City or the Far Field): where the herd is set down. */
+  const [onHomesteadMap, setOnHomesteadMap] = useState(true);
   const onPlaceEntered = useCallback((name: string) => {
     setPlaceTag((was) => ({ name, n: (was?.n ?? 0) + 1 }));
+    setOnHomesteadMap(name === "The Homestead");
     setOnEmpireMap(name === "The Far Field");
     setOnGroceryMap(name === "The Grocery");
     if (name !== "The Grocery") setDesk(null);
@@ -2863,6 +2869,7 @@ export function StackAcresFarm() {
     act,
     farmerTile,
   });
+  const herdPlace = useHerdPlace({ active: onHomesteadMap, units: liveUnits, act });
   const arrange = useGroceryArrange({
     active: onGroceryMap && grocery?.owned === true,
     grocery,
@@ -3788,8 +3795,10 @@ export function StackAcresFarm() {
    *  clearing sheet. */
   const livestockBuyOptions: BuyOption[] = useMemo(
     () =>
+      // Sheep and cattle are set down wherever the player likes (lib/stackacres/herd.ts),
+      // so their old districts no longer gate them.
       Array.from(new Set(STACKACRES_LIVESTOCK.map(stockZone)))
-        .filter((zone) => isSectorUnlocked(zone, sectors))
+        .filter((zone) => isSectorUnlocked(zone, sectors) || stocksInZone(zone).some(isHerdStock))
         .flatMap((zone) =>
           buyOptionsForZone(zone, { units: liveUnits, gold, capacity, inventory: processing.inventory }),
         ),
@@ -4086,6 +4095,7 @@ export function StackAcresFarm() {
       )}
       {build.controls}
       {arrange.controls}
+      {herdPlace.controls}
       {desk && grocery && (
         <GroceryDesk
           grocery={grocery}
@@ -4199,9 +4209,9 @@ export function StackAcresFarm() {
               landObstacles={landObstacles}
               fences={fences}
               empireBuildings={build.shown}
-              buildMode={build.buildMode || arrange.buildMode}
+              buildMode={build.buildMode || arrange.buildMode || herdPlace.buildMode}
               buildGhost={build.ghost}
-              onBuildTap={onGroceryMap ? arrange.onBuildTap : build.onBuildTap}
+              onBuildTap={onGroceryMap ? arrange.onBuildTap : onEmpireMap ? build.onBuildTap : herdPlace.onBuildTap}
               grocery={groceryScene}
               groceryGhost={arrange.ghost}
               onJobBoardTap={onJobBoardTap}

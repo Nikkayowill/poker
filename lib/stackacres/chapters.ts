@@ -24,7 +24,7 @@ export const CHAPTERS: readonly Chapter[] = [
     title: "Bread",
     blurb: "Grow wheat, mill it into flour and bake bread.",
     steps: ["mill", "oven"],
-    doneLine: "There's your first loaf. Eat bread when your energy runs low and you can fish all afternoon.",
+    doneLine: "There's your first loaf. Eat bread when your energy runs low and you can fish a few casts longer.",
   },
   {
     number: 2,
@@ -43,9 +43,9 @@ export const CHAPTERS: readonly Chapter[] = [
   {
     number: 4,
     title: "Feed the Herd",
-    blurb: "Mill corn into cattle feed and build a silo to feed the animals while you're away.",
+    blurb: "Build a silo so the hens get fed while you're away.",
     steps: ["feed_silo"],
-    doneLine: "The silo will feed the animals when you can't. That's when a farm starts working for you.",
+    doneLine: "The silo will feed the hens when you can't. That's when a farm starts working for you.",
   },
   {
     number: 5,

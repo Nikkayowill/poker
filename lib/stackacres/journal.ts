@@ -47,7 +47,8 @@ import { STACKACRES_SECTORS, type SectorId } from "./sectors";
 import {
   STACKACRES_QUEST_FLAGS,
   STACKACRES_QUEST_LABELS,
-  nextStackAcresMilestone,
+  nextReachableStackAcresMilestone,
+  STACKACRES_UNREACHABLE_FLAGS,
   stackacresMilestone,
   stackacresQuestFlags,
   type StackAcresQuestFlag,
@@ -316,7 +317,11 @@ function journalReach(input: JournalInput): JournalReachStep[] {
       flag,
       label: STACKACRES_QUEST_LABELS[flag],
       done: earned.has(flag),
-      cost: def ? `${def.clearCost.toLocaleString()} Gold` : null,
+      cost: STACKACRES_UNREACHABLE_FLAGS.includes(flag)
+        ? "Not open yet"
+        : def
+          ? `${def.clearCost.toLocaleString()} Gold`
+          : null,
       brings: travelersOnFlag(flag),
     };
   });
@@ -436,7 +441,6 @@ function journalWaiting(input: JournalInput): JournalWaiting[] {
   const gatherables: [string, string, readonly { readonly ready: boolean }[]][] = [
     ["trees", "The trees", input.woodNodes],
     ["bushes", "The bushes", input.forageNodes],
-    ["boulders", "The Mine", input.stoneNodes],
   ];
   for (const [key, label, nodes] of gatherables) {
     if (nodes.length === 0) continue;
@@ -541,7 +545,7 @@ function candidateCues(input: JournalInput, chapters: readonly JournalChapter[])
     }
   }
 
-  const next = nextStackAcresMilestone(input.progress);
+  const next = nextReachableStackAcresMilestone(input.progress);
   if (next) {
     cues.push(cue("reach", `${STACKACRES_QUEST_LABELS[next]}, and the farm reaches further.`));
   }

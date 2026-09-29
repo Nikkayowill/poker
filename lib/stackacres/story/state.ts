@@ -402,6 +402,19 @@ export interface TravelerStoryView {
   readonly questBlocked: boolean;
 }
 
+/**
+ * Whether tapping a traveler should open their story rather than something
+ * else. A quest that is ready but still blocked (Ray's "First Order" waits on
+ * friendship) has nothing to say yet: opening it only shows the "come around
+ * more" line, and a traveler like Ray who has a gift loop would then never
+ * show it, so the friendship that unblocks the quest could never be earned.
+ */
+export function travelerHasStoryToTell(
+  traveler: Pick<TravelerStoryView, "unlocked" | "done" | "met" | "ready" | "questBlocked">,
+): boolean {
+  return traveler.unlocked && !traveler.done && (!traveler.met || (traveler.ready && !traveler.questBlocked));
+}
+
 export interface StackAcresStoryView {
   readonly level: number;
   readonly travelers: Readonly<Record<TravelerId, TravelerStoryView>>;

@@ -89,7 +89,7 @@ test("Ray refuses a locked row over HTTP, not just in the browser", async ({ bro
     });
     expect(bulk.status()).toBe(409);
     expect((await bulk.json()) as { error?: string }).toMatchObject({
-      error: "Ray won't sell you a Bulk Shipment yet. Requires: Clear the Fold.",
+      error: "Ray won't sell you a Bulk Shipment yet. Requires: Clear the Fold (not open yet).",
     });
 
     // The equipment ladder names no rung in its request -- the server walks

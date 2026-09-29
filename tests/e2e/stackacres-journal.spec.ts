@@ -66,7 +66,8 @@ test("the sheet says what filled up while the player was away", async ({ context
   const waiting = sheet.locator(".sa-journal-waiting > li");
   await expect(waiting.filter({ hasText: "The trees" })).toContainText("4 of 4 ready");
   await expect(waiting.filter({ hasText: "The bushes" })).toContainText("4 of 4 ready");
-  await expect(waiting.filter({ hasText: "The Mine" })).toContainText("of 3 ready");
+  // The Mine is gone from the world, so the journal must not wait on it.
+  await expect(waiting.filter({ hasText: "The Mine" })).toHaveCount(0);
 });
 
 test("the sheet shows both tracks: the buildings and the reach", async ({ context, page }) => {
@@ -81,8 +82,7 @@ test("the sheet shows both tracks: the buildings and the reach", async ({ contex
   for (const title of ["Bread", "Stew", "Fresh Greens", "Feed the Herd", "Jars and Pickles", "Harvest Feast"]) {
     await expect(sheet.getByRole("heading", { name: title })).toBeVisible();
   }
-  // Chapter 1's first step. Filtering on the word "Mill" would also catch
-  // chapter 4's blurb, which starts "Mill corn into cattle feed".
+  // Chapter 1's first step. Locate it by position, not by the word "Mill".
   const mill = sheet.locator(".sa-goals-list > li").first().locator("ul > li").first();
   await expect(mill).toContainText("in the Workshop");
   await expect(mill).toContainText("0 / 15 Wood");
@@ -105,6 +105,8 @@ test("the sheet shows both tracks: the buildings and the reach", async ({ contex
   // (lib/stackacres/story/travelers.ts's own header), so no reach step
   // shows a "Brings" line now.
   await expect(sheet.locator(".sa-journal-reach")).not.toContainText("Brings");
-  await expect(sheet.locator(".sa-journal-reach")).toContainText("45,000 Gold");
+  // The Fold cannot be cleared on the live world, so it shows no price.
+  await expect(sheet.locator(".sa-journal-reach")).toContainText("Not open yet");
+  await expect(sheet.locator(".sa-journal-reach")).not.toContainText("45,000 Gold");
   await expect(sheet.locator(".sa-journal-foot")).toContainText("Chef Pierre");
 });

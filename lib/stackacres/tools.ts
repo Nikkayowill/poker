@@ -37,7 +37,7 @@ export const STACKACRES_TOOL_DEFS: Readonly<Record<StackAcresTool, StackAcresToo
   },
   scythe: {
     label: "Scythe",
-    hint: "Drag across the Long Meadow to cut a swathe.",
+    hint: "Drag across the grass to cut a swathe.",
     icon: "ico-scythe",
   },
   pipe: {

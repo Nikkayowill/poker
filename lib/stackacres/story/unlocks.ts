@@ -16,6 +16,7 @@
 import {
   STACKACRES_MAX_MILESTONE,
   STACKACRES_QUEST_LABELS,
+  nextReachableStackAcresMilestone,
   nextStackAcresMilestone,
   stackacresMilestone,
   stackacresQuestFlags,
@@ -70,7 +71,7 @@ export function storyUnlockHint(unlock: StoryUnlock, progress: StoryProgress): s
     case "always":
       return null;
     case "milestone": {
-      const next = nextStackAcresMilestone(progress);
+      const next = nextReachableStackAcresMilestone(progress) ?? nextStackAcresMilestone(progress);
       if (next === null) throw new Error("milestone unlock unmet with every flag earned");
       return STACKACRES_QUEST_LABELS[next];
     }

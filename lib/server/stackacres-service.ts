@@ -413,6 +413,7 @@ import {
 } from "@/lib/stackacres/energy";
 import { NOT_SLEEPY, canSleepAt, gameHourAt, offsetAfterSleep } from "@/lib/stackacres/clock";
 import { isActiveStock } from "@/lib/stackacres/scope";
+import { isUnbuiltCutter, isUnbuiltEnchantment, isUnbuiltPerk } from "@/lib/stackacres/unbuilt";
 import { feedingToast, servingBonusEggs, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
 import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/feed-silo";
 import { isFarmKitchenRecipe, planFarmKitchen } from "@/lib/stackacres/farm-kitchen";
@@ -2302,7 +2303,7 @@ export async function buyStackAcresCutter(
   cutterInput: string,
   now = new Date(),
 ): Promise<StackAcresView & { boughtCutter: StackAcresBuyableCutter }> {
-  if (!isStackAcresBuyableCutter(cutterInput)) {
+  if (!isStackAcresBuyableCutter(cutterInput) || isUnbuiltCutter(cutterInput)) {
     throw new StackAcresRequestError("Ray doesn't sell that.", 400);
   }
   const cutter = cutterInput;
@@ -2357,7 +2358,7 @@ export async function unlockStackAcresSynergyPerk(
   archetypeInput: string,
   now = new Date(),
 ): Promise<StackAcresView & { synergyUnlock: { archetype: SynergyArchetype; success: boolean } }> {
-  if (!isSynergyArchetype(archetypeInput)) {
+  if (!isSynergyArchetype(archetypeInput) || isUnbuiltPerk(archetypeInput)) {
     throw new StackAcresRequestError("Not a real archetype.", 400);
   }
   const archetype = archetypeInput;
@@ -2415,7 +2416,7 @@ export async function forgeStackAcresToolEnchantment(
   enchantmentId: string,
   now = new Date(),
 ): Promise<StackAcresView & { forgeResult: { enchantmentId: string; success: true } }> {
-  if (!isForgeEnchantmentId(enchantmentId)) {
+  if (!isForgeEnchantmentId(enchantmentId) || isUnbuiltEnchantment(enchantmentId)) {
     throw new StackAcresRequestError("Not a real enchantment.", 400);
   }
   const profile = await ensureProfile(token);

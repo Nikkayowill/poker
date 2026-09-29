@@ -26,6 +26,7 @@ import {
   tapStackAcresSecretZone,
   tradeStackAcresSecretItemToRay,
   unlockStackAcresSynergyPerk,
+  forgeStackAcresToolEnchantment,
   upgradeStackAcresTool,
   buyStackAcresCutter,
   waterStackAcres,
@@ -164,7 +165,6 @@ import {
   nextToolTier,
   toolUpgradePrice,
 } from "@/lib/stackacres/equipment";
-import { STACKACRES_CUTTER_DEFS } from "@/lib/stackacres/cutters";
 import { stackacresExchangeDay } from "@/lib/stackacres/exchange";
 import {
   HOME_SECTORS,
@@ -1932,51 +1932,20 @@ describe("expanding capacity", () => {
 });
 
 describe("grass cutters", () => {
-  const MOWER_PRICE = STACKACRES_CUTTER_DEFS.mower.price ?? 0;
-
   it("starts every farm with only the Scythe", async () => {
     const { token } = await funded();
     expect((await readStackAcres(token, T0)).cutters).toEqual(["scythe"]);
   });
 
-  it("sells the Mower at its price and leaves the spade ladder alone", async () => {
+  // The world draws no mowing yet (lib/stackacres/unbuilt.ts), so the shop
+  // must not take Gold for it. Delete this and restore the buy tests from git
+  // history the day the Mower's swathe is drawn.
+  it("refuses the Mower while nothing draws it, before any Gold moves", async () => {
     const { token, id } = await funded(1_000_000);
-    const before = await balance(token);
-
-    const view = await buyStackAcresCutter(token, "mower", T0);
-
-    expect(view.boughtCutter).toBe("mower");
-    expect(view.cutters).toEqual(["scythe", "mower"]);
-    expect(await balance(token)).toBe(before - MOWER_PRICE);
-    expect(await readStackAcresToolTier(id)).toBe(STACKACRES_STARTING_TIER);
-  });
-
-  it("refuses a second Mower and takes nothing for it", async () => {
-    const { token, id } = await funded(1_000_000);
-    await buyStackAcresCutter(token, "mower", T0);
-    const before = await balance(token);
-
-    await expect(buyStackAcresCutter(token, "mower", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
-
-    expect(await balance(token)).toBe(before);
-    expect(await readStackAcresCutters(id)).toEqual(["scythe", "mower"]);
-  });
-
-  it("refuses the Mower before the Crop Fields are unlocked, before any Gold moves", async () => {
-    const { token, id } = await funded(1_000_000, { cropFieldsUnlocked: false });
 
     await expect(buyStackAcresCutter(token, "mower", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
 
     expect(await balance(token)).toBe(1_000_000);
-    expect(await readStackAcresCutters(id)).toEqual(["scythe"]);
-  });
-
-  it("refuses a Mower the player cannot afford", async () => {
-    const { token, id } = await funded(MOWER_PRICE - 1);
-
-    await expect(buyStackAcresCutter(token, "mower", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
-
-    expect(await balance(token)).toBe(MOWER_PRICE - 1);
     expect(await readStackAcresCutters(id)).toEqual(["scythe"]);
   });
 
@@ -4103,9 +4072,20 @@ describe("Synergy Tree", () => {
 
   it("refuses a name that is not a real archetype", async () => {
     const { token } = await funded();
+    await expect(unlockStackAcresSynergyPerk(token, "automated_logistics", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
     await expect(unlockStackAcresSynergyPerk(token, "not-a-perk", T0)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
+  });
+
+  it("refuses the Quickened Haft, whose scythe is not on the belt, before any Gold moves", async () => {
+    const { token } = await funded(5_000_000);
+    await expect(forgeStackAcresToolEnchantment(token, "quickened_haft", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(5_000_000);
   });
 
   it("refuses to unlock the same archetype twice, without charging a second time", async () => {
@@ -4149,17 +4129,13 @@ describe("Synergy Tree", () => {
     expect(result.synergy.active).toEqual(["sunlight_harvester"]);
   });
 
-  it("reports the farmhand speed multiplier at 1 until automated_logistics is active", async () => {
+  // Automated Logistics is off the shelf until a farmhand exists
+  // (lib/stackacres/unbuilt.ts), so nobody can activate it and the speed
+  // multiplier stays at its default.
+  it("reports the farmhand speed multiplier at 1", async () => {
     const { token } = await funded();
-    const before = await readStackAcres(token, T0);
-    expect(before.synergy.farmhandSpeedMultiplier).toBe(1);
-
-    await unlockStackAcresSynergyPerk(token, "automated_logistics", T0);
-    await activateStackAcresSynergyPerk(token, "automated_logistics", 0, T0);
-    const after = await readStackAcres(token, T0);
-    const effect = SYNERGY_PERKS.automated_logistics.effect;
-    if (effect.kind !== "farmhand_velocity") throw new Error("archetype effect changed shape");
-    expect(after.synergy.farmhandSpeedMultiplier).toBeCloseTo(1 + effect.multiplierBonus);
+    const view = await readStackAcres(token, T0);
+    expect(view.synergy.farmhandSpeedMultiplier).toBe(1);
   });
 
   it("boosts the harvest crit chance on a Trowel, which alone can never crit", async () => {

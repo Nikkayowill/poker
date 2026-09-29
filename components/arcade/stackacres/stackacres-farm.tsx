@@ -200,7 +200,7 @@ import { buildAwayReport, type AwayReport } from "@/lib/stackacres/away-report";
 import { StackAcresStoryDialogue } from "./stackacres-story-dialogue";
 import { useStackAcresStory, type StackAcresStoryController } from "@/lib/stackacres/story/use-stackacres-story";
 import { storyEventsForAction } from "@/lib/stackacres/story/predict";
-import type { StackAcresStoryView } from "@/lib/stackacres/story/state";
+import { travelerHasStoryToTell, type StackAcresStoryView } from "@/lib/stackacres/story/state";
 import type { StoryIntent } from "@/lib/stackacres/story/dialogue";
 import type { QuestPlaceId } from "@/lib/stackacres/story/places";
 import { TRAVELER_CATALOGUE, type TravelerId } from "@/lib/stackacres/story/travelers";
@@ -2568,7 +2568,7 @@ export function StackAcresFarm() {
   const onWorldRayTap = useCallback(
     (at: TapPoint) => {
       const ray = story.view?.travelers.ray;
-      const hasSomethingToSay = ray && ray.unlocked && !ray.done && (!ray.met || ray.ready);
+      const hasSomethingToSay = ray && travelerHasStoryToTell(ray);
       if (hasSomethingToSay) {
         story.open("ray", at);
         return;
@@ -4517,7 +4517,7 @@ export function StackAcresFarm() {
                 <>
                   <p className="sa-sheet-note">
                     Buy an animal outright, or Cycle Lease one for a single production run. A greyed
-                    pen opens once you clear its land.
+                    pen is not open yet.
                   </p>
                   <div className="sa-panel-section">
                     <StackAcresBuySection

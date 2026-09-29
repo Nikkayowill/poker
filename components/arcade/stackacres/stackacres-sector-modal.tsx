@@ -161,8 +161,8 @@ export function StackAcresSectorModal({
         )}
 
         <p className="sa-sheet-note">
-          Every tree and boulder you break pays into the barn. Anything you would rather not swing
-          at can be blown instead, for Gold. The land is yours when the last of it is down.
+          Every tree and boulder you break pays into the barn. The land is yours when the last of it
+          is down.
         </p>
       </div>
     </div>

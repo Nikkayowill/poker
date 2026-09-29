@@ -36,7 +36,7 @@ const PLACE: Record<MachineKind, BuildPlace> = {
  *  entry: a player always knows where Gold comes from. */
 const SOURCE: Partial<Record<MachineItemId, string>> = {
   wood: "Chop the trees around the farm",
-  stone: "Mine the boulders in the Mine",
+  stone: "Break the boulders in the Crop Fields",
 };
 
 export interface BuildLine {

@@ -237,14 +237,13 @@ describe("what filled up while you were away", () => {
     expect(journalView(FRESH).waiting).toEqual([]);
   });
 
-  it("counts the trees, the bushes and the boulders that have grown back", () => {
+  it("counts the trees and the bushes that have grown back, and shows no Mine", () => {
     const view = journalView(
       farm({ woodNodes: nodes(3, 4), forageNodes: nodes(0, 4), stoneNodes: nodes(1, 3) }),
     );
     expect(view.waiting.map((row) => [row.key, row.detail, row.ready])).toEqual([
       ["trees", "3 of 4 ready", true],
       ["bushes", "0 of 4 ready", false],
-      ["boulders", "1 of 3 ready", true],
     ]);
     expect(view.waiting[0].fill).toBeCloseTo(0.75);
   });
@@ -346,14 +345,14 @@ describe("the expansion track", () => {
     expect(view.reach.find((step) => step.flag === "town_trusted")?.done).toBe(true);
   });
 
-  it("prices the two flags that are land clears, and only those", () => {
+  it("shows no price for land the live world cannot clear", () => {
     const view = journalView(FRESH);
-    expect(view.reach.find((step) => step.flag === "cleared_wallow")?.cost).toBe("45,000 Gold");
-    expect(view.reach.find((step) => step.flag === "cleared_oxfields")?.cost).toBe("100,000 Gold");
+    expect(view.reach.find((step) => step.flag === "cleared_wallow")?.cost).toBe("Not open yet");
+    expect(view.reach.find((step) => step.flag === "cleared_oxfields")?.cost).toBe("Not open yet");
     // The other three are acts, not purchases.
     expect(view.reach.find((step) => step.flag === "town_trusted")?.cost).toBeNull();
     expect(view.reach.find((step) => step.flag === "crop_fields_unlocked")?.cost).toBeNull();
-    expect(view.reach.find((step) => step.flag === "greenhouse_raised")?.cost).toBeNull();
+    expect(view.reach.find((step) => step.flag === "greenhouse_raised")?.cost).toBe("Not open yet");
   });
 
   it("names the travelers pinned to a particular flag on that flag", () => {

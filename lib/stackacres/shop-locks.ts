@@ -87,10 +87,26 @@ export function isStackAcresQuestFlag(value: unknown): value is StackAcresQuestF
 export const STACKACRES_QUEST_LABELS: Readonly<Record<StackAcresQuestFlag, string>> = {
   crop_fields_unlocked: "Break ground in the Crop Fields",
   town_trusted: "Fill an order for the town",
-  cleared_wallow: "Clear the Fold",
-  greenhouse_raised: "Raise the Greenhouse",
-  cleared_oxfields: "Clear the Cattle Pasture",
+  cleared_wallow: "Clear the Fold (not open yet)",
+  greenhouse_raised: "Raise the Greenhouse (not open yet)",
+  cleared_oxfields: "Clear the Cattle Pasture (not open yet)",
 };
+
+/**
+ * Flags no player can earn on the live world, so no hint may send them there.
+ *
+ * The Fold and the Cattle Pasture are cleared by walking onto the land and
+ * chopping it, and both maps are gone (./sectors.ts). The Greenhouse needs
+ * Cloth, which needs Wool, which needs a sheep, which needs the Fold. A hint
+ * that names one of these as "next" points at a wall, so `nextReachable...`
+ * below skips them and their labels say so. Delete an entry the day the herd
+ * has a way back in.
+ */
+export const STACKACRES_UNREACHABLE_FLAGS: readonly StackAcresQuestFlag[] = [
+  "cleared_wallow",
+  "greenhouse_raised",
+  "cleared_oxfields",
+];
 
 /* ------------------------------------------------------------------ */
 /* Progress                                                            */
@@ -165,6 +181,19 @@ export function nextStackAcresMilestone(
 ): StackAcresQuestFlag | null {
   const earned = stackacresQuestFlags(progress);
   return STACKACRES_QUEST_FLAGS.find((flag) => !earned.has(flag)) ?? null;
+}
+
+/** Like `nextStackAcresMilestone`, but only a flag the player can actually go
+ *  and earn. Null when every flag left is behind a wall. */
+export function nextReachableStackAcresMilestone(
+  progress: StackAcresShopProgress,
+): StackAcresQuestFlag | null {
+  const earned = stackacresQuestFlags(progress);
+  return (
+    STACKACRES_QUEST_FLAGS.find(
+      (flag) => !earned.has(flag) && !STACKACRES_UNREACHABLE_FLAGS.includes(flag),
+    ) ?? null
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -249,8 +278,9 @@ export function evaluateStackAcresShopLock(
   }
 
   if (milestone < required) {
-    const next = STACKACRES_QUEST_FLAGS.find((flag) => !earned.has(flag));
-    // `next` is only null when the farm holds every flag, which cannot be
+    const next = nextReachableStackAcresMilestone(progress);
+    // `next` is null when nothing left can be earned yet (see
+    // STACKACRES_UNREACHABLE_FLAGS), and it is only null otherwise when the farm holds every flag, which cannot be
     // true while `milestone < required` unless a registry entry asks for more
     // milestones than exist -- shop-locks.test.ts refuses that, and the
     // fallback keeps this a hint rather than a crash if one ever lands.

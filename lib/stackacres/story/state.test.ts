@@ -17,6 +17,7 @@ import {
   questReady,
   questRequirementMet,
   storyView,
+  travelerHasStoryToTell,
   type StoredStory,
   type StoryFacts,
 } from "./state";
@@ -460,5 +461,29 @@ describe("a quest's own requires", () => {
     expect(blocked.travelers.ray.ready).toBe(true);
     const open = storyView(story, RUNNING_FARM, {}, TROWEL, { ray: 9 });
     expect(open.travelers.ray.questBlocked).toBe(false);
+  });
+});
+
+describe("travelerHasStoryToTell", () => {
+  const base = { unlocked: true, done: false, met: true, ready: false, questBlocked: false };
+
+  it("greets a traveler who has not been met", () => {
+    expect(travelerHasStoryToTell({ ...base, met: false })).toBe(true);
+  });
+
+  it("opens the story when the quest is ready and nothing blocks it", () => {
+    expect(travelerHasStoryToTell({ ...base, ready: true })).toBe(true);
+  });
+
+  it("does not open a ready quest that friendship still blocks", () => {
+    // Ray's First Order: the objective is done at low friendship. Opening the
+    // story would show only "come around more" and hide the gift loop that
+    // earns the friendship.
+    expect(travelerHasStoryToTell({ ...base, ready: true, questBlocked: true })).toBe(false);
+  });
+
+  it("stays quiet for a locked or finished traveler", () => {
+    expect(travelerHasStoryToTell({ ...base, unlocked: false, met: false })).toBe(false);
+    expect(travelerHasStoryToTell({ ...base, done: true, ready: true })).toBe(false);
   });
 });

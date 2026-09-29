@@ -130,6 +130,10 @@ export type Action =
   | { action: "remove-soil-tile"; tx: number; ty: number }
   | { action: "place-fence"; tx: number; ty: number }
   | { action: "remove-fence"; tx: number; ty: number }
+  // Sheep and cattle stand where the player sets them (./herd.ts), by Homestead
+  // map square. Neither spends or refunds anything.
+  | { action: "place-animal"; unitId: string; tx: number; ty: number }
+  | { action: "pick-up-animal"; unitId: string }
   // Far Field buildings (./empire-buildings.ts), by the top-left square of
   // their plan. Buying spends Gold, Wood and Metal; placing one you own and
   // picking it up are free.

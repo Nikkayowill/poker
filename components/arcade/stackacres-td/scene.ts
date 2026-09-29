@@ -128,6 +128,7 @@ import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { QuestPlaceId } from "@/lib/stackacres/story/places";
 import { isTravelerId, type TravelerId } from "@/lib/stackacres/story/travelers";
 import { cropSpot, penFeedSpot, stockZone, type WorldPoint } from "@/lib/stackacres/world";
+import { isHerdStock } from "@/lib/stackacres/herd";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresSceneUnit, TapPoint, TravelerUnlocks, UseSquare } from "../stackacres/world-contract";
@@ -1525,6 +1526,12 @@ export class TopdownScene extends Phaser.Scene {
 
   private unitPlacement(unit: StackAcresSceneUnit): { x: number; y: number } | null {
     if (unit.housedIn) return null;
+    // Sheep and cattle stand on the square the player set them on. One not set down yet is not drawn.
+    if (isHerdStock(unit.stock)) {
+      if (unit.mapTx == null || unit.mapTy == null || this.areaName !== "homestead") return null;
+      const { tile } = this.area;
+      return { x: unit.mapTx * tile + tile / 2, y: (unit.mapTy + 1) * tile - 2 };
+    }
     const zone = stockZone(unit.stock);
     if (zone === "farmstead") {
       const world = cropSpot("farmstead", unit.id, { soil: this.soilMap, slot: unit.soilSlot ?? null });
@@ -1589,7 +1596,7 @@ export class TopdownScene extends Phaser.Scene {
       if (existing?.signature === signature) continue;
       const isNew = !existing;
       existing?.sprite.destroy();
-      const animal = PENS[stockZone(unit.stock)] !== undefined;
+      const animal = PENS[stockZone(unit.stock)] !== undefined || isHerdStock(unit.stock);
       // A plant stands up out of the lower half of its square; seed lies in the
       // middle of it, so it sits on the dug earth rather than on the grass edge.
       const seed = frame === "crop_seeds";
@@ -1885,9 +1892,9 @@ export class TopdownScene extends Phaser.Scene {
       this.castTapped();
       return;
     }
-    // Placing a building: the tap picks the square, and the farmer and the camera stay put.
+    // Placing a building or setting an animal down: the tap picks the square, and the farmer and the camera stay put.
     if (this.buildMode) {
-      if (this.areaName !== "empire" && this.areaName !== "grocery") return;
+      if (this.areaName !== "empire" && this.areaName !== "grocery" && this.areaName !== "homestead") return;
       const rect = this.host.getBoundingClientRect();
       const map = this.cssToMap(clientX - rect.left, clientY - rect.top);
       const { tile } = this.area;

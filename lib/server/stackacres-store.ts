@@ -324,7 +324,7 @@ export function __stackacresHarvestsForTest(): readonly StackAcresHarvestEntry[]
 }
 
 const UNIT_COLUMNS =
-  "id, profile_id, stock, status, stake, yield_quantity, started_at, ready_at, last_fed_at, last_watered_at, muck_fee, permanent, version, created_at, housed_in, soil_slot, feed_bonus";
+  "id, profile_id, stock, status, stake, yield_quantity, started_at, ready_at, last_fed_at, last_watered_at, muck_fee, permanent, version, created_at, housed_in, soil_slot, feed_bonus, map_tx, map_ty";
 
 export interface UnitDbRow {
   id: string;
@@ -344,6 +344,8 @@ export interface UnitDbRow {
   housed_in: string | null;
   soil_slot: number | string | null;
   feed_bonus: number | string;
+  map_tx?: number | string | null;
+  map_ty?: number | string | null;
 }
 
 /** Same parser `listStackAcresUnits`/`getStackAcresUnit`/etc. already call as
@@ -373,6 +375,8 @@ function fromRow(row: UnitDbRow): StoredStackAcresUnit {
     housedIn: row.housed_in === "greenhouse" ? "greenhouse" : null,
     soilSlot: row.soil_slot === null || row.soil_slot === undefined ? null : Number(row.soil_slot),
     feedBonus: Number(row.feed_bonus),
+    mapTx: row.map_tx === null || row.map_tx === undefined ? null : Number(row.map_tx),
+    mapTy: row.map_ty === null || row.map_ty === undefined ? null : Number(row.map_ty),
   };
 }
 
@@ -537,6 +541,8 @@ export async function createStackAcresUnit(
       housedIn,
       soilSlot,
       feedBonus: 0,
+      mapTx: null,
+      mapTy: null,
     };
     memoryUnits.set(unit.id, clone(unit));
     return clone(unit);
@@ -566,6 +572,47 @@ export async function createStackAcresUnit(
     throw new Error(`Could not stock that: ${error.message}`);
   }
   return fromRow(data as UnitDbRow);
+}
+
+/**
+ * Sets an animal down on a Homestead map square, or picks it up (both null).
+ * Never bumps `version`: where an animal stands is not part of any settlement,
+ * so a collect racing a placement must not fail because of it.
+ *
+ * "taken" is another of this profile's animals already on that square, which
+ * the database's own unique index enforces so two racing placements cannot both
+ * land. "missing" is a unit that is not this profile's.
+ */
+export async function setStackAcresUnitPosition(
+  profileId: string,
+  unitId: string,
+  position: { tx: number; ty: number } | null,
+): Promise<"ok" | "taken" | "missing"> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const unit = memoryUnits.get(unitId);
+    if (!unit || unit.profileId !== profileId) return "missing";
+    if (position) {
+      const taken = [...memoryUnits.values()].some(
+        (other) => other.id !== unitId && other.profileId === profileId && other.mapTx === position.tx && other.mapTy === position.ty,
+      );
+      if (taken) return "taken";
+    }
+    unit.mapTx = position ? position.tx : null;
+    unit.mapTy = position ? position.ty : null;
+    return "ok";
+  }
+  const { data, error } = await supabase
+    .from("homestead_units")
+    .update({ map_tx: position ? position.tx : null, map_ty: position ? position.ty : null })
+    .eq("id", unitId)
+    .eq("profile_id", profileId)
+    .select("id");
+  if (error) {
+    if (error.code === "23505") return "taken";
+    throw new Error(`Could not move that animal: ${error.message}`);
+  }
+  return data && data.length > 0 ? "ok" : "missing";
 }
 
 /**

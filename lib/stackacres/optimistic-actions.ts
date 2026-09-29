@@ -115,7 +115,8 @@ import type { Action } from "./farm-actions";
 import { WATER_CAPACITY } from "./water-can";
 import { stockZone } from "./world";
 import { addToInventory, removeFromInventory, type StackAcresInventory } from "./inventory";
-import { isHoeableSoilTile, isWildSoilTile, mapToSoilTile } from "./hoeable";
+import { isHoeableSoilTile, isWildSoilTile, mapToSoilTile, soilToMapTile } from "./hoeable";
+import { herdKey, herdPlacementProblem, herdSquares, isHerdStock } from "./herd";
 import { FENCE_CAP, FENCE_WOOD_COST, isFenceableMapTile, type FencePiece } from "./fences";
 import { overgrownSoilTile } from "./crop-field-obstacles";
 import {
@@ -908,6 +909,26 @@ export function predictStackAcresAction(
         fences: ctx.fences.filter((piece) => piece.tx !== body.tx || piece.ty !== body.ty),
         ...processingPatch(ctx, { inventory: addToInventory(ctx.inventory, "wood", FENCE_WOOD_COST) }),
       };
+    }
+    case "place-animal": {
+      // The server's own refusals, so an animal never lands and lifts back off.
+      const unit = ctx.units.find((u) => u.id === body.unitId);
+      if (!unit || !isHerdStock(unit.stock)) return null;
+      const problem = herdPlacementProblem(body.tx, body.ty, {
+        beds: new Set(ctx.soilTiles.map((tile) => {
+          const { mx, my } = soilToMapTile(tile.tx, tile.ty);
+          return herdKey(mx, my);
+        })),
+        fences: new Set(ctx.fences.map((piece) => herdKey(piece.tx, piece.ty))),
+        animals: herdSquares(ctx.units, unit.id),
+      });
+      if (problem) return null;
+      return { units: ctx.units.map((u) => (u.id === unit.id ? { ...u, mapTx: body.tx, mapTy: body.ty } : u)) };
+    }
+    case "pick-up-animal": {
+      const unit = ctx.units.find((u) => u.id === body.unitId);
+      if (!unit || !isHerdStock(unit.stock)) return null;
+      return { units: ctx.units.map((u) => (u.id === unit.id ? { ...u, mapTx: null, mapTy: null } : u)) };
     }
     case "work-land": {
       // One swing at something standing on land being cleared. Fully

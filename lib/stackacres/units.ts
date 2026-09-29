@@ -88,6 +88,14 @@ export interface StackAcresUnitRow {
    * other snapshotted field on this row already follows.
    */
   housedIn: "greenhouse" | null;
+  /**
+   * Sheep and cattle only: the Homestead map square the animal stands on
+   * (./herd.ts). Null or absent means it has not been placed yet, which is how
+   * every animal bought before placement existed loads. Hens and crops never
+   * use it.
+   */
+  mapTx?: number | null;
+  mapTy?: number | null;
 }
 
 /**
@@ -141,6 +149,9 @@ export interface StackAcresUnitSnapshot {
   permanent: boolean;
   /** See `StackAcresUnitRow.housedIn`. */
   housedIn: "greenhouse" | null;
+  /** See `StackAcresUnitRow.mapTx`. */
+  mapTx?: number | null;
+  mapTy?: number | null;
 }
 
 /**
@@ -405,6 +416,8 @@ export function toStackAcresUnitSnapshots(
         permanent: row.permanent,
         housedIn: row.housedIn,
         soilSlot: row.soilSlot,
+        mapTx: row.mapTx ?? null,
+        mapTy: row.mapTy ?? null,
       };
     }
 
@@ -439,6 +452,8 @@ export function toStackAcresUnitSnapshots(
       permanent: row.permanent,
       housedIn: row.housedIn,
       soilSlot: row.soilSlot,
+      mapTx: row.mapTx ?? null,
+      mapTy: row.mapTy ?? null,
     };
   });
 }

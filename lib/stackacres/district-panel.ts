@@ -37,6 +37,7 @@ import { shelfFeedFor } from "./feeding";
 import { inventoryQuantity, type StackAcresInventory } from "./inventory";
 import type { StackAcresUnitSnapshot } from "./units";
 import { isSectorUnlocked, sectorLabel, type SectorId } from "./sectors";
+import { isHerdStock } from "./herd";
 import { stockZone, stocksInZone } from "./world";
 import type { ZoneId } from "./zones";
 
@@ -181,9 +182,12 @@ export interface LockedLivestock {
   sectorLabel: string;
 }
 
-/** Every buyable livestock kind whose district this farm has not cleared, in catalogue order. */
+/** Every buyable livestock kind whose district this farm has not cleared, in catalogue order.
+ *  Sheep and cattle are never in it: they stand wherever the player sets them (./herd.ts), so
+ *  no district gates them. */
 export function lockedLivestock(unlocked: readonly SectorId[]): LockedLivestock[] {
   return STACKACRES_LIVESTOCK.filter(isActiveStock)
+    .filter((stock) => !isHerdStock(stock))
     .filter((stock) => !isSectorUnlocked(stockZone(stock), unlocked))
     .map((stock) => ({
       stock,

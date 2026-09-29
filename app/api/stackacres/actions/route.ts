@@ -78,6 +78,8 @@ import {
   plantStackAcresCrossbreedBed,
   harvestStackAcresCrossbreedBed,
   placeStackAcresSoilTile,
+  placeStackAcresAnimal,
+  pickUpStackAcresAnimal,
   placeStackAcresFencePiece,
   removeStackAcresFencePiece,
   buyEmpireBuilding,
@@ -462,6 +464,8 @@ const bodySchema = z.discriminatedUnion("action", [
   // Fence pieces, by Homestead map square. Wood only, both ways; no Gold.
   z.object({ action: z.literal("place-fence"), tx: z.number().int().min(0).max(255), ty: z.number().int().min(0).max(255) }),
   z.object({ action: z.literal("remove-fence"), tx: z.number().int().min(0).max(255), ty: z.number().int().min(0).max(255) }),
+  z.object({ action: z.literal("place-animal"), unitId: z.string().uuid(), tx: z.number().int().min(0).max(255), ty: z.number().int().min(0).max(255) }),
+  z.object({ action: z.literal("pick-up-animal"), unitId: z.string().uuid() }),
   // Far Field buildings, by the top-left map square of their plan
   // (lib/stackacres/empire-buildings.ts). Buying SPENDS Gold, Wood and Metal,
   // priced on the server; placing an owned one and picking it up move nothing.
@@ -703,6 +707,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return placeStackAcresFencePiece(token, { tx: action.tx, ty: action.ty }, now);
     case "remove-fence":
       return removeStackAcresFencePiece(token, { tx: action.tx, ty: action.ty }, now);
+    case "place-animal":
+      return placeStackAcresAnimal(token, { unitId: action.unitId, tx: action.tx, ty: action.ty }, now);
+    case "pick-up-animal":
+      return pickUpStackAcresAnimal(token, { unitId: action.unitId }, now);
     case "buy-building":
       return buyEmpireBuilding(token, { kind: action.kind, tx: action.tx, ty: action.ty }, now);
     case "place-building":

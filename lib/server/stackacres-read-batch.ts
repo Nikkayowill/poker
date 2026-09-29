@@ -3,7 +3,7 @@ import { adminClient } from "./supabase-admin";
 
 /**
  * The raw shape `stackacres_read_batch` (migration
- * 20260914000000_stackacres_read_batch.sql) hands back: one field per table,
+ * 20260914011736_stackacres_read_batch.sql) hands back: one field per table,
  * whole rows, exactly as `to_jsonb`/`jsonb_agg` serialize them -- untyped
  * beyond "an object" or "an array of objects" on purpose. Nothing here
  * parses or defaults anything; that stays where it always lived, in the
@@ -49,9 +49,9 @@ export interface StackAcresReadBatch {
   story: Record<string, unknown> | null;
   /** Absent until the Chapter 1 migration redefines the batch. */
   energy?: Record<string, unknown> | null;
-  /** Absent until the clock migration (20260927090000) redefines the batch. */
+  /** Absent until the clock migration (20260924045748) redefines the batch. */
   clock?: Record<string, unknown> | null;
-  /** Absent until the Far Field batch migration (20261001000000) redefines the batch. */
+  /** Absent until the Far Field batch migration (20260928232207) redefines the batch. */
   wood_nodes?: Record<string, unknown>[];
   land_obstacles?: Record<string, unknown>[];
   forage_nodes?: Record<string, unknown>[];

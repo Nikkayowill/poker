@@ -292,7 +292,7 @@ function rowToPlayerStats(row: Record<string, unknown>): PlayerStats {
  * Global leaderboard's percentile blend (lib/server/leaderboard-store.ts) in
  * memory mode only. Production computes the same filter directly in SQL,
  * inside get_global_leaderboard() (supabase/migrations/
- * 20260820120000_game_leaderboard_stats.sql). Exported rather than read off
+ * 20260820184750_game_leaderboard_stats.sql). Exported rather than read off
  * this module's private global directly, to keep that global an
  * implementation detail of this file alone.
  */

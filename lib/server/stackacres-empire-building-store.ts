@@ -15,7 +15,7 @@ import { adminClient } from "./supabase-admin";
  * `empire_buildings`.
  *
  * Paying is the service's job and happens before a new building is written here. `place_empire_building`
- * (20260930220000_stackacres_empire_buildings.sql) is the only writer of a spot and refuses one that
+ * (20260926025010_stackacres_empire_buildings.sql) is the only writer of a spot and refuses one that
  * overlaps another of the player's buildings, under a lock, so two taps can't stack them. The memory
  * branch makes the same check in one process.
  */

@@ -190,7 +190,7 @@ payroll/bankruptcy debit-credit path goes through this, not a bare `creditGoldBy
 cited in older memory as the valve that would stop a StackChips-to-farm Gold injection from
 printing money. It was removed entirely on 2026-09-12 — `lib/stackacres/exchange.ts` now states
 StackAcres has no cap on earning, and the migration
-`20260912211500_stackacres_drop_gold_exchange.sql` dropped the reserve/release RPCs and the
+`20260913002832_stackacres_drop_gold_exchange.sql` dropped the reserve/release RPCs and the
 `homestead_exchanges` table outright. **There is currently no ceiling on Gold earned anywhere in
 StackAcres.** If the empire layer's rescue loop (bounce to StackChips, earn Gold, inject it back)
 needs a limiter, that limiter does not exist yet and is an open decision (see below), not something
@@ -286,7 +286,7 @@ NOT placeable: Kayo confirmed it is the city's existing store, walk-in, bought t
 drawing (same gable kit) waits for the city (`art/stackacres-td/rich/gable_buildings.py`, exported by
 `export_buildings.py`), shared placement rules in `lib/stackacres/empire-buildings.ts` (map edge, trees
 and rocks, the bridge, overlap, every door reachable), `empire_buildings` table plus
-`place_empire_building` RPC (migration `20260930220000`, NOT applied to production yet), buy/place/pick-up
+`place_empire_building` RPC (migration `20260926025010`, NOT applied to production yet), buy/place/pick-up
 actions, and a Build button in the Far Field with a tray and a tick/cross placing bar. First-pass
 price: Barn 6,000 Gold + 60 Wood + 10 Metal. Reviewed 2026-09-25: the placement rules are re-checked under the
 database lock through a layout fingerprint (`place_empire_building`'s `p_expected`, refused as 'stale'),
@@ -371,7 +371,7 @@ development-only until the purchase story is built, and a daily Help Wanted boar
   and something to sell, and they refuse any layout that leaves a shopper unable to reach a shelf or get out, or a
   worker unable to reach a post without cutting down a lane. Each fixture's picture is the room's own pieces that
   stood on it, so Kayo's painted grocery should keep each fixture on its own layer.
-- Table `empire_grocery` (migration `20260930230000_stackacres_grocery.sql`), one row per owner, every write guarded
+- Table `empire_grocery` (migration `20260926153050_stackacres_grocery.sql`), one row per owner, every write guarded
   on its version. Not applied to production; production can't reach any of this until the purchase story exists.
 
 Still open: the purchase story itself (deliveries, finding the manager, the price), what the store stocks

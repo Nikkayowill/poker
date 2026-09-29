@@ -22,7 +22,7 @@ Confirmed reachable from real gameplay, not just present in the tree:
 - Idempotency keys for the four create-actions (stock/buy-stock/buy-feed/expand-capacity),
   via `homestead_action_keys` + `runStackAcresAction` — an older note calling this
   "unapplied" cited the wrong migration (poker's timed-action RPC, not StackAcres); the real
-  one (`20260904140000_stackacres_action_keys.sql`) is applied and exercised by tests
+  one (`20260904140634_stackacres_action_keys.sql`) is applied and exercised by tests
 - Drone hangar gating (intentional server-confirmed gate, not a bug)
 
 ## M1 — Prestige Reset Valve: wire the existing modal
@@ -59,7 +59,7 @@ moot until this exists — there's currently nothing to mismatch against.
 Engine, store, and service are all built and unit-tested (`crossbreeding.ts`,
 `crossbreed-items.ts`, `stackacres-crossbreeding-store.ts`,
 `stackacres-crossbreeding-service.ts`), migration applied
-(`20260905130000_stackacres_crossbreeding.sql`). Nothing calls the service — the service
+(`20260905061017_stackacres_crossbreeding.sql`). Nothing calls the service — the service
 file's own header says so. Needs: plant/harvest-crossbreed actions in the route + dispatcher
 case in `stackacres-service.ts`, plus a farm UI/scene entry point (bed placement, planting,
 harvest). Larger surface than M1-M3 but no new design decisions — the mechanic is already

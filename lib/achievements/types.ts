@@ -20,7 +20,7 @@ export type AchievementCategory =
 /**
  * 'stat' reads player_stats, 'counter' reads player_lifetime_counters, 'live'
  * reads the current progression level. See the migration
- * (20260817120000_achievements.sql) for the full reasoning per kind.
+ * (20260820184604_achievements.sql) for the full reasoning per kind.
  */
 export type AchievementSourceKind = "stat" | "counter" | "live";
 

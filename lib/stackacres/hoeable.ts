@@ -16,7 +16,7 @@
  * of those two places. With a bed allowed anywhere, two grids would give the
  * same square two names. The Crop Fields' grid is the one kept, so every bed
  * already dug out there keeps its coordinates; see the migration
- * 20260923120000_stackacres_one_soil_grid.sql for the paddock beds that moved.
+ * 20260923014853_stackacres_one_soil_grid.sql for the paddock beds that moved.
  *
  * Pure and renderer-free: the server imports this.
  */

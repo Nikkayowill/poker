@@ -4,7 +4,7 @@ import { adminClient } from "./supabase-admin";
 
 /**
  * Persistence for the farm clock's offset (lib/stackacres/clock.ts), in
- * `homestead_clock` (20260927090000_stackacres_clock.sql). No row is offset 0.
+ * `homestead_clock` (20260924045748_stackacres_clock.sql). No row is offset 0.
  *
  * Writes are a compare-and-set on the old offset. Sleeping only ever moves it
  * forward, so the old value works as the row's version.

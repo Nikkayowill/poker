@@ -62,7 +62,7 @@ import type { PainterName } from "./stackacres-art";
  * quantity moves. It is also `security definer`, takes the profile id as a
  * PARAMETER rather than reading the caller's session, and is deliberately
  * revoked from `public`, `anon` and `authenticated` (see
- * supabase/migrations/20260901180000_homestead_inventory.sql, which spells
+ * supabase/migrations/20260901193100_homestead_inventory.sql, which spells
  * out that a browser that could reach it could mint another player's
  * currency outright). A browser therefore cannot call it, and must not be
  * given a way to.

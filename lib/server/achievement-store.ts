@@ -30,14 +30,14 @@ import { createTtlCache } from "./ttl-cache";
 
 // ---- catalog ----------------------------------------------------------
 //
-// Mirrors the seed insert in supabase/migrations/20260817120000_achievements.sql.
+// Mirrors the seed insert in supabase/migrations/20260820184604_achievements.sql.
 // Real Postgres reads its own achievement_definitions table; this is the
 // memory-mode fallback, kept in step with the migration by hand, the same
 // duplication every memory-mode store here carries against its own table's
 // defaults.
 
 // Tier-2/3 reward amounts were bumped in supabase/migrations/
-// 20260820130000_mission_achievement_reward_bumps.sql, tier 1 left as-is
+// 20260820184815_mission_achievement_reward_bumps.sql, tier 1 left as-is
 // since it's already an onboarding-speed reward. Keep this array matching
 // that migration's UPDATE statements exactly. Lifetime ceiling across the
 // whole 24-achievement catalog is roughly 331,000 Gold.
@@ -81,7 +81,7 @@ const DEFAULT_DEFINITIONS: AchievementDefinition[] = [
   // here was removed along with Ray's Museum -- the feature that fed its
   // counter no longer exists. Its row may still exist in a deployed
   // achievement_definitions table (supabase/migrations/
-  // 20260904190000_stackacres_museum_secrets.sql) since removing it there is
+  // 20260905022110_stackacres_museum_secrets.sql) since removing it there is
   // a migration change, out of scope here -- see this repo's CLAUDE.md on
   // migrations shipping separately from code.
 ];

@@ -1095,7 +1095,7 @@ function bumpRevisionOnce(scope: RevisionScope): Promise<number | null> {
 /**
  * The ~37-way per-profile fan-out below, batched into one Postgres round
  * trip when Supabase is configured (`stackacres_read_batch`, migration
- * 20260914000000, widened by 20261001000000) instead of ~37 separate
+ * 20260914011736, widened by 20260928232207) instead of ~37 separate
  * PostgREST round trips -- see that migration's own header for exactly which
  * reads this covers and which two it deliberately leaves as their own RPC
  * calls (plus Stone's global read, which isn't per-profile at all). Memory
@@ -1121,7 +1121,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   // same reason -- a global table has no profile id to key a batch RPC on.
   // Everything else that used to ride alongside these (wood/forage/land-
   // obstacle/fences/axe/empire buildings/grocery) was folded into the batch
-  // RPC by the Far Field migration (20261001000000); see that migration for
+  // RPC by the Far Field migration (20260928232207); see that migration for
   // why. Drones ARE in the batch (its own `drones` key) -- the fallback slot
   // below only exists for the memory-mode fallback's own per-table reads
   // (which include their own `listDrones` call, last in that array); when a
@@ -6117,7 +6117,7 @@ export async function contributeToStackAcresMythicBlueprint(
  * on success, every unit, wheat plot, inventory line, feed serving, today's
  * Land Maintenance total and any open Town Contract are gone. See
  * `reset_stackacres_prestige`'s own migration comment
- * (20260905140000_stackacres_prestige_reset.sql) for the exact table list
+ * (20260905120642_stackacres_prestige_reset.sql) for the exact table list
  * and, as importantly, for what survives it -- land cleared, purchased
  * capacity, placed machines, Synergy Tree perks, the donation register and
  * Town Influence are all untouched.

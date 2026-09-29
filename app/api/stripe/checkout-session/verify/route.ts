@@ -13,6 +13,7 @@ import {
 } from "@/lib/server/stripe";
 import { fulfillStripePayment, syncSubscriptionState } from "@/lib/server/stripe-store";
 import { readSessionToken } from "@/lib/server/session";
+import { settleStackAcresSession } from "@/lib/server/stripe-stackacres";
 import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
@@ -68,6 +69,8 @@ export async function GET(request: NextRequest) {
         membership = await syncSubscriptionState(stripe, peek.subscription, mode === "live", new Date());
         paid = peek.payment_status === "paid";
       }
+    } else if (peek.metadata?.kind === "stackacres_purchase") {
+      paid = await settleStackAcresSession(sessionId.data, mode, profile.id);
     } else if (peek.metadata?.kind === "gold_purchase") {
       const { session, tier, profileId } = await verifiedGoldSession(sessionId.data, profile.id, mode);
       paid = session.payment_status === "paid";

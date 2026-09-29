@@ -276,6 +276,7 @@ function isValidPurchaseSession(
   price: { priceId: string; unitAmount: number; currency: string },
   expectedProfileId: string | undefined,
   extraMetadataCheck: (metadata: NonNullable<Stripe.Checkout.Session["metadata"]>) => boolean = () => true,
+  amountField: "amount_total" | "amount_subtotal" = "amount_total",
 ): boolean {
   const metadata = session.metadata ?? {};
   const lineItems = session.line_items?.data ?? [];
@@ -285,7 +286,7 @@ function isValidPurchaseSession(
     session.mode === "payment"
     && session.livemode === (mode === "live")
     && session.currency === price.currency
-    && session.amount_total === price.unitAmount
+    && session[amountField] === price.unitAmount
     && lineItems.length === 1
     && item?.quantity === 1
     && itemPriceId === price.priceId
@@ -318,6 +319,65 @@ export async function verifiedGoldSession(sessionId: string, expectedProfileId?:
   );
   if (!valid) throw new Error("Stripe payment details did not match the requested Gold pack.");
   return { session, tier, profileId: metadata.profile_id! };
+}
+
+// ---- StackAcres purchase ---------------------------------------------------
+//
+// One fixed one-time Price that unlocks the farm (profiles.homestead_access).
+// Read live from Stripe like every other Price here. Validated on
+// amount_subtotal, not amount_total, so turning on Stripe Tax later cannot
+// make a paid session fail validation and go unfulfilled.
+
+export interface ResolvedStackAcresPrice {
+  priceId: string;
+  unitAmount: number;
+  currency: string;
+}
+
+export function stackAcresPriceEnvVar(mode: StripeMode): string {
+  return mode === "live" ? "STACKACRES_PRICE_ID" : "STACKACRES_TEST_PRICE_ID";
+}
+
+const resolvedStackAcresPriceCache = new Map<string, Promise<ResolvedStackAcresPrice>>();
+
+export function resolveStackAcresPrice(mode: StripeMode = "live"): Promise<ResolvedStackAcresPrice> {
+  const cached = resolvedStackAcresPriceCache.get(mode);
+  if (cached) return cached;
+
+  const work = (async () => {
+    const stripe = clientFor(mode);
+    const priceId = process.env[stackAcresPriceEnvVar(mode)]?.trim();
+    if (!stripe || !priceId) throw new Error("StackAcres is not for sale yet.");
+    const price = await fetchVerifiedPrice(stripe, priceId, mode, "StackAcres", (price) => {
+      if (!price.active || price.type !== "one_time" || price.unit_amount === null) {
+        throw new Error("The StackAcres Price must be an active, fixed one-time Price.");
+      }
+    });
+    return { priceId, unitAmount: price.unit_amount!, currency: price.currency };
+  })();
+
+  resolvedStackAcresPriceCache.set(mode, work);
+  work.catch(() => resolvedStackAcresPriceCache.delete(mode));
+  return work;
+}
+
+export async function verifiedStackAcresSession(
+  sessionId: string,
+  expectedProfileId: string | undefined,
+  mode: StripeMode = "live",
+): Promise<{ session: Stripe.Checkout.Session; profileId: string; paymentIntentId: string }> {
+  const stripe = clientFor(mode);
+  if (!stripe) throw new Error("Stripe payments are not configured yet.");
+  const session = await stripe.checkout.sessions.retrieve(sessionId, {
+    expand: ["line_items.data.price"],
+  });
+  const price = await resolveStackAcresPrice(mode);
+  const valid = isValidPurchaseSession(
+    session, mode, "stackacres_purchase", price, expectedProfileId, () => true, "amount_subtotal",
+  );
+  const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
+  if (!valid || !paymentIntentId) throw new Error("Stripe payment details did not match the StackAcres purchase.");
+  return { session, profileId: session.metadata!.profile_id!, paymentIntentId };
 }
 
 /**

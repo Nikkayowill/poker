@@ -1,6 +1,7 @@
 import { Lock } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { StackAcresLogo } from "@/components/brand/stackacres-logo";
+import { StackAcresBuy, type StackAcresOffer } from "./stackacres-buy";
 
 /**
  * The door. There is nothing to type any more: access is granted per player
@@ -14,7 +15,16 @@ import { StackAcresLogo } from "@/components/brand/stackacres-logo";
  * dashboard's search box matches, so it is the one useful thing this screen
  * can hand someone who has to go and ask.
  */
-export function StackAcresLock({ playerId }: { playerId: string | null }) {
+export function StackAcresLock({
+  playerId,
+  offer,
+  registered,
+}: {
+  playerId: string | null;
+  /** The purchase on sale, or null when it is not set up (the card then only asks for access). */
+  offer: StackAcresOffer | null;
+  registered: boolean;
+}) {
   return (
     <main className="duel-shell ante-shell sa-shell">
       <header className="floor-bar">
@@ -37,10 +47,17 @@ export function StackAcresLock({ playerId }: { playerId: string | null }) {
             <h1 className="sr-only">StackAcres</h1>
             <StackAcresLogo className="sa-heading-logo" alt="" aria-hidden="true" />
           </div>
-          <p>
-            A farm of crops and livestock. It is still being built, so it opens one player at a
-            time — ask for access and it will be here waiting.
-          </p>
+          {offer ? (
+            <>
+              <p>A farm of crops and livestock, yours to build.</p>
+              <StackAcresBuy offer={offer} registered={registered} />
+            </>
+          ) : (
+            <p>
+              A farm of crops and livestock. It is still being built, so it opens one player at a
+              time — ask for access and it will be here waiting.
+            </p>
+          )}
           {playerId && (
             <p className="sa-gate-id">
               Your player ID

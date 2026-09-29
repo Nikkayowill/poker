@@ -1,0 +1,23 @@
+import "server-only";
+import { verifiedStackAcresSession, isTestPurchaseAllowed, type StripeMode } from "./stripe";
+import { fulfillStackAcresPurchase } from "./stripe-store";
+
+/**
+ * Checks a StackAcres Checkout Session against Stripe's own record and, when
+ * it is paid, turns access on. The one place the webhook and the return-trip
+ * verify both go through, so they cannot disagree.
+ *
+ * A test-mode session for a profile not on the test allowlist is ignored, as
+ * for every other purchase. Returns whether the session is paid and counted.
+ */
+export async function settleStackAcresSession(
+  sessionId: string,
+  mode: StripeMode,
+  expectedProfileId?: string,
+): Promise<boolean> {
+  const { session, profileId, paymentIntentId } = await verifiedStackAcresSession(sessionId, expectedProfileId, mode);
+  if (session.payment_status !== "paid") return false;
+  if (mode === "test" && !isTestPurchaseAllowed(profileId)) return false;
+  await fulfillStackAcresPurchase(session.id, profileId, paymentIntentId, mode === "live");
+  return true;
+}

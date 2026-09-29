@@ -7,6 +7,7 @@ import { ChronoDevPanel } from "@/components/dev/ChronoDevPanel";
 import { tokenHasStackAcresAccess } from "@/lib/server/stackacres-access";
 import { findProfileBySessionToken } from "@/lib/server/profile-store";
 import { readSessionTokenFromCookies } from "@/lib/server/session";
+import { resolveStackAcresPrice } from "@/lib/server/stripe";
 
 /**
  * Mirrors ChronoDevPanel's own client-side gate exactly. Checked HERE, on the
@@ -65,6 +66,10 @@ export default async function StackAcresPage() {
   const allowed = STACKACRES_DEV_BYPASS_ACCESS ? true : await tokenHasStackAcresAccess(token);
 
   const profile = allowed ? null : token ? await findProfileBySessionToken(token) : null;
+  // Only offered when the price is actually set up in Stripe; otherwise the
+  // door stays the old "ask for access" card.
+  const price = allowed ? null : await resolveStackAcresPrice("live").catch(() => null);
+  const offer = price ? { unitAmount: price.unitAmount, currency: price.currency } : null;
 
   /**
    * `.sa-theme` is where the farm's whole visual world is declared (the
@@ -81,7 +86,7 @@ export default async function StackAcresPage() {
    */
   return (
     <div className={`sa-theme ${stackAcresDisplay.variable} ${stackAcresPixel.variable}`}>
-      {allowed ? <StackAcresFarmDynamic /> : <StackAcresLock playerId={profile?.id ?? null} />}
+      {allowed ? <StackAcresFarmDynamic /> : <StackAcresLock playerId={profile?.id ?? null} offer={offer} registered={profile?.isRegistered ?? false} />}
       {/* `.sa-theme` above is `display: contents` (see its own comment) and
           generates no box of its own, so ChronoDevPanel is a SIBLING of
           StackAcresFarm here, not nested inside a box this wrapper could

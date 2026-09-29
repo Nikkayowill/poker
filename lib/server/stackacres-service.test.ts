@@ -2006,7 +2006,7 @@ describe("the equipment ladder", () => {
     expect(await readStackAcresToolTier(id)).toBe(STACKACRES_STARTING_TIER);
   });
 
-  it("opens the first paid rung on one milestone and the top rung on three", async () => {
+  it("opens the first paid rung on one milestone and the top rung on two", async () => {
     const { token, id } = await funded(5_000_000, { land: [] });
     // One milestone: unlocking the Crop Fields, same as the equipment ladder's
     // own comment describes -- see lib/stackacres/equipment.ts.
@@ -2016,28 +2016,22 @@ describe("the equipment ladder", () => {
     await upgradeStackAcresTool(token, T0);
     expect(await readStackAcresToolTier(id)).toBe("iron-shovel");
 
-    // ...and the Golden Spade is not, at milestone 1 against its 3.
+    // ...and the Golden Spade is not, at milestone 1 against its 2.
     await expect(upgradeStackAcresTool(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
     expect(await readStackAcresToolTier(id)).toBe("iron-shovel");
 
-    // Clearing the rest of the ladder is milestone 3 on land alone.
-    await recordStackAcresSectorCleared(id, "wallow", T0);
-    await recordStackAcresSectorCleared(id, "oxfields", T0);
+    // A first town order is the second milestone. No land needed.
+    await adjustStackAcresInfluence(id, 1);
     await upgradeStackAcresTool(token, T0);
     expect(await readStackAcresToolTier(id)).toBe("golden-spade");
   });
 
-  it("takes any three milestones, not one prescribed route to them", async () => {
-    // The Crop Fields plus one district plus one town order is the same
-    // three as three districts. The top rung is gated on the farm running,
-    // not on a particular way of running it.
+  it("takes any two milestones, not one prescribed route to them", async () => {
+    // The Crop Fields plus a cleared district is the same two as the Crop
+    // Fields plus a town order.
     const { token, id } = await funded(5_000_000, { land: ["wallow"] });
     await recordStackAcresCropFieldsUnlocked(id, T0);
     await upgradeStackAcresTool(token, T0);
-    await expect(upgradeStackAcresTool(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
-
-    await adjustStackAcresInfluence(id, 1);
-
     await upgradeStackAcresTool(token, T0);
     expect(await readStackAcresToolTier(id)).toBe("golden-spade");
   });

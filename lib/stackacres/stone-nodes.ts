@@ -30,6 +30,18 @@ export const REGROW_MS = 18 * 60 * 1000;
 /** Stone every landed swing yields. */
 export const STONE_PER_SWING = 2;
 
+/** Iron Ore paid to whoever lands the swing that breaks a node. The nodes are
+ *  shared by every player and regrow every REGROW_MS, so this is the whole
+ *  world's ore supply: at most 3 breaks per 18 minutes. The Smelter turns 2
+ *  ore into 1 Metal and the Far Field Barn asks for 10 Metal. Nothing else
+ *  pays ore. */
+export const ORE_PER_BREAK = 2;
+
+/** Ore a swing pays: only the one that breaks the node. */
+export function oreForSwing(broke: boolean): number {
+  return broke ? ORE_PER_BREAK : 0;
+}
+
 export const STONE_NODE_IDS = ["stone:mine-1", "stone:mine-2", "stone:mine-3"] as const;
 export type StoneNodeId = (typeof STONE_NODE_IDS)[number];
 

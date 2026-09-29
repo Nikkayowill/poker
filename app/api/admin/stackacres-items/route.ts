@@ -7,8 +7,8 @@ import { isAdminAuthorized } from "@/lib/server/admin-auth";
 
 export const runtime = "nodejs";
 
-// Gathered materials only (Wood, Stone, Metal and the like), for testing what
-// they pay for before every one has a way to be earned: Metal has no smelter yet.
+// Gathered materials only (Wood, Stone, Iron Ore and the like), for testing what
+// they pay for before every one has a way to be earned.
 const bodySchema = z.object({
   profileId: z.string().uuid(),
   item: z.enum(MACHINE_RAW_ITEMS),

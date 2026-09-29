@@ -174,8 +174,8 @@ describe("feasts (Chapter 6)", () => {
     expect(FOOD_ENERGY.bean_casserole).toBe(40);
   });
 
-  it("adds the Farm Kitchen at 60,000 Gold, one of ten", () => {
+  it("adds the Farm Kitchen at 60,000 Gold, one of eleven", () => {
     expect(MACHINE_CATALOGUE.farm_kitchen.placeCost).toBe(60_000);
-    expect(MACHINE_CAP).toBe(10);
+    expect(MACHINE_CAP).toBe(11);
   });
 });

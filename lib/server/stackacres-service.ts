@@ -467,6 +467,7 @@ import {
 } from "@/lib/stackacres/forage";
 import {
   isStoneNodeId,
+  oreForSwing,
   stoneNodeSnapshot,
   type StoneNodeId,
   type StoneNodeSnapshot,
@@ -4387,6 +4388,7 @@ export async function mineStackAcresStoneNode(
   }
 
   await adjustStackAcresInventory(profile.id, "stone", outcome.yield);
+  if (outcome.broke) await adjustStackAcresInventory(profile.id, "iron_ore", oreForSwing(outcome.broke));
   return {
     ...(await view(profile, now)),
     stoneMined: { landed: true, broke: outcome.broke, amount: outcome.yield },

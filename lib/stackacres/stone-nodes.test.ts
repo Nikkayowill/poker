@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   HITS_TO_BREAK,
+  ORE_PER_BREAK,
   REGROW_MS,
   STONE_PER_SWING,
   STONE_NODE_IDS,
@@ -10,6 +11,7 @@ import {
   hasRegrown,
   isNodeMineable,
   isStoneNodeId,
+  oreForSwing,
   regrowLabel,
 } from "./stone-nodes";
 
@@ -43,6 +45,18 @@ describe("applyMiningSwing", () => {
   it("pays STONE_PER_SWING (2) for every landed swing", () => {
     expect(STONE_PER_SWING).toBe(2);
     expect(applyMiningSwing(freshStoneNode("stone:mine-1"), NOW).yield).toBe(2);
+  });
+
+  it("pays Iron Ore only for the swing that breaks the node", () => {
+    let node = freshStoneNode("stone:mine-1");
+    let ore = 0;
+    for (let i = 0; i < HITS_TO_BREAK; i += 1) {
+      const result = applyMiningSwing(node, NOW);
+      ore += oreForSwing(result.broke);
+      node = result.node;
+    }
+    expect(ore).toBe(ORE_PER_BREAK);
+    expect(oreForSwing(false)).toBe(0);
   });
 
   it("never lands on an already-broken node that has not regrown", () => {

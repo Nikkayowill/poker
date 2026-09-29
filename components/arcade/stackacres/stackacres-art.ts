@@ -274,6 +274,7 @@ type CorePainterName =
   | "ico-trailphoto"
   | "ico-wood"
   | "ico-stone"
+  | "ico-iron-ore"
   | "ico-metal"
   | "ico-fence";
 
@@ -2265,6 +2266,22 @@ const DRAWN: Record<PainterName, Painter> = {
     stroke(c, "#5b5f66", 1);
     ell(c, 10.5, 15, 6.5, 5, -0.08);
     stroke(c, "#5b5f66", 1);
+    ell(c, 15, 13.5, 5, 4.2, 0.1);
+  }),
+
+  // A raw lump of iron ore: the Stone chunk's shape with rust-brown veins.
+  "ico-iron-ore": painter(24, 24, (c) => {
+    ell(c, 11, 15, 6.5, 5, -0.08);
+    F(c, "#7a6a5f");
+    ell(c, 15, 13.5, 5, 4.2, 0.1);
+    F(c, "#6a5b52");
+    ell(c, 9.5, 13, 2.2, 1.4, -0.2);
+    F(c, "#b5643c");
+    ell(c, 14.5, 12, 1.8, 1.1, 0.15);
+    F(c, "#c9784a");
+    stroke(c, "#4a3f38", 1);
+    ell(c, 11, 15, 6.5, 5, -0.08);
+    stroke(c, "#4a3f38", 1);
     ell(c, 15, 13.5, 5, 4.2, 0.1);
   }),
 

@@ -135,12 +135,11 @@ export const STACKACRES_TOOL_TIER_DEFS: Readonly<
     icon: "toolGoldenSpade",
     critChance: 0.25,
     critBonus: 1,
-    // Three of the five. Deliberately reachable more than one way -- the
-    // three land flags alone will do it, and so will two districts plus a
-    // town order or the Greenhouse. "The thing there is left to want once
-    // the farm is running" (see the price note above) should be gated on the
-    // farm running, not on one prescribed route through it.
-    minimumMilestone: 3,
+    // Two of the five. Only two flags can be earned today: the Fold and the
+    // Cattle Pasture cannot be cleared and the Greenhouse needs Cloth, which
+    // needs Wool. Asking for three made this row impossible to buy. Raise it
+    // again once sheep and cattle are back.
+    minimumMilestone: 2,
   },
 };
 

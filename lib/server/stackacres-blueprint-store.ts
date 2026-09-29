@@ -38,7 +38,7 @@ import { adjustStackAcresInventory } from "./stackacres-store";
  * inventory, credits the stage's progress counter, and advances the stage
  * (or completes the structure) -- all as one atomic unit in the Supabase
  * branch (see `contribute_to_stackacres_blueprint` in
- * supabase/migrations/20260905130000_stackacres_mythic_blueprints.sql for
+ * supabase/migrations/20260905120312_stackacres_mythic_blueprints.sql for
  * the row-locking detail) and as one non-yielding sequence of steps in the
  * memory branch, in the same order, for the same reason
  * `processStackAcresRecipe`'s memory branch gives: memory mode has no

@@ -19,7 +19,7 @@ import { adminClient } from "./supabase-admin";
  *
  * Same twin-branch shape as every other store here: a real deployment writes
  * through apply_leaderboard_result and reads through the SQL functions in
- * supabase/migrations/20260820120000_game_leaderboard_stats.sql; local/dev/
+ * supabase/migrations/20260820184750_game_leaderboard_stats.sql; local/dev/
  * test runs against an in-process approximation of the same math.
  *
  * The two record* functions below never throw, the same contract

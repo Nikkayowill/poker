@@ -45,7 +45,7 @@ describe("isValidBlueprintItem", () => {
  * whichever one is wrong -- do not edit this test to match a mistake.
  */
 describe("MYTHIC_BLUEPRINTS parity with the migration seed", () => {
-  it("mythic-ember-spire matches supabase/migrations/20260905130000_stackacres_mythic_blueprints.sql", () => {
+  it("mythic-ember-spire matches supabase/migrations/20260905120312_stackacres_mythic_blueprints.sql", () => {
     expect(spire.stages.map((stage) => ({ index: stage.index, requirements: stage.requirements }))).toEqual([
       {
         index: 0,

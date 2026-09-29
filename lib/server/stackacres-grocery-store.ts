@@ -6,7 +6,7 @@ import { adminClient } from "./supabase-admin";
 
 /**
  * Persistence for the city grocery a player owns (lib/stackacres/grocery.ts), in `empire_grocery`
- * (20260930230000_stackacres_grocery.sql).
+ * (20260926153050_stackacres_grocery.sql).
  *
  * Every write names the version it read and lands only if the row is still at it, bumping it by one. The
  * service reads, works out the change, and writes; a write that finds the row moved on changes nothing and

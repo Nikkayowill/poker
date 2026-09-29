@@ -8,7 +8,7 @@
 /** One row of public flair earned by a profile: a season top-10 finish or an
  * achievement unlock. Mirrors profile_badges
  * (20260728195100_leaderboards_and_seasons.sql, populated further by
- * 20260817120000_achievements.sql). `label` is resolved server-side so
+ * 20260820184604_achievements.sql). `label` is resolved server-side so
  * nothing on the client has to parse the raw badge id. */
 export interface ProfileBadge {
   badge: string;

@@ -10,7 +10,7 @@ import { adminClient } from "./supabase-admin";
  *
  * Wood moves in the same transaction as the piece: `place_homestead_fence`
  * takes it as the piece goes up, `remove_homestead_fence` gives it back as the
- * piece comes down (20260924120000_stackacres_fences.sql). The memory branch
+ * piece comes down (20260923050117_stackacres_fences.sql). The memory branch
  * does the same with a debit, then the insert, then a refund if the insert is
  * refused, which is safe in one process.
  */

@@ -4,7 +4,7 @@ import { lowestTierFor, tierAllowedFor, type TierLadder } from "./stake-pressure
  * How much Gold may ride on one Ante Up attempt.
  *
  * Ante Up used to bound a wager by a per-game, per-difficulty ceiling (see
- * git history / 20260827090000_ante_up_wager_tier_ceiling.sql for why one was
+ * git history / 20260827170508_ante_up_wager_tier_ceiling.sql for why one was
  * added: restaking a near-certain win on an easy board compounded a fortune).
  * That ceiling has been removed -- a solo wager is now bounded only by the
  * player's own balance, same as any other stake in the app. What a big stake

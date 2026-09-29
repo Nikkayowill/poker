@@ -13,8 +13,8 @@ import { describe, expect, it } from "vitest";
  * UP TO 2026-09-14, `view()` fired ~35 separate per-profile PostgREST round
  * trips in one flat `Promise.all`, one per table, and this file counted them
  * with a single `"(profile.id"` regex over that array literal. Since
- * `stackacres_read_batch` (migration 20260914000000, widened by
- * 20261001000000), the live-Supabase path collapses nearly all of those into
+ * `stackacres_read_batch` (migration 20260914011736, widened by
+ * 20260928232207), the live-Supabase path collapses nearly all of those into
  * ONE round trip; only three reads stay separate -- two because they are
  * already their own aggregate/idle-sweep RPCs, not a plain per-table select,
  * and Stone's because it's a GLOBAL table, not per-profile (see the
@@ -30,7 +30,7 @@ import { describe, expect, it } from "vitest";
 describe("the StackAcres read budget", () => {
   const SERVICE = readFileSync(join(process.cwd(), "lib/server/stackacres-service.ts"), "utf8");
   const MIGRATION = readFileSync(
-    join(process.cwd(), "supabase/migrations/20261001000000_stackacres_read_batch_fold_far_field.sql"),
+    join(process.cwd(), "supabase/migrations/20260928232207_stackacres_read_batch_fold_far_field.sql"),
     "utf8",
   );
 
@@ -75,7 +75,7 @@ describe("the StackAcres read budget", () => {
     // the count, not just presence, is what catches a new table's read being
     // added here instead of folded into the batch -- the exact drift that
     // let this list grow from three exceptions to eleven unnoticed before
-    // the Far Field migration (20261001000000) folded six of them back in.
+    // the Far Field migration (20260928232207) folded six of them back in.
     // 3, not 2: this also counts the batch call itself (`readStackAcresBatch(profile.id, ...)`).
     const preFallback = body.slice(0, body.indexOf(": Promise.all([\n"));
     expect(preFallback.split("(profile.id").length - 1).toBe(3);

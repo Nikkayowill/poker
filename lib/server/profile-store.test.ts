@@ -252,7 +252,7 @@ describe("Gold economy (memory mode)", () => {
 });
 
 // Memory mode implements the same idempotency-on-correlationId shape the
-// Postgres RPCs do (see 20260917001958_gold_ledger_and_idempotent_rpcs.sql),
+// Postgres RPCs do (see 20260917004238_gold_ledger_and_idempotent_rpcs.sql),
 // so a retry-safety regression here would also be one in production. What
 // this file CANNOT cover: find_orphaned_gold_debits and
 // confirm_gold_debit_ledgered are SQL-only, and reconcileOrphanedGoldDebits

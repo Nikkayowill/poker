@@ -511,7 +511,7 @@ export async function createStackAcresUnit(
 
   if (!supabase) {
     // Mirrors the database's own partial unique index (see the
-    // 20260908120000 migration): two sows racing for the same slot in memory
+    // 20260909204011_stackacres_soil_slot_unique migration): two sows racing for the same slot in memory
     // mode must fail the same way they would against Postgres.
     if (soilSlot !== null) {
       const taken = [...memoryUnits.values()].some(
@@ -2128,7 +2128,7 @@ export function machineFromRow(row: MachineDbRow): StoredMachine {
     status: row.status === "working" ? "working" : "idle",
     startedAt: row.started_at ? String(row.started_at) : null,
     readyAt: row.ready_at ? String(row.ready_at) : null,
-    // A row written before 20260904170000 and still working reads as a Mill
+    // A row written before 20260905022349 and still working reads as a Mill
     // batch of Flour, which is what it is -- the migration backfills exactly
     // that, and this fallback only matters if that backfill were ever missed.
     recipeId: row.recipe_id && isRecipeId(row.recipe_id) ? row.recipe_id : null,
@@ -2878,7 +2878,7 @@ export async function readStackAcresLifetimeGross(profileId: string): Promise<nu
  * Pulls the valve: wipes the grid and every resource stockpile riding on it,
  * and raises the permanent multiplier by what the profile's gross farm
  * production since the last reset actually earned. See
- * 20260905140000_stackacres_prestige_reset.sql's own header for exactly
+ * 20260905120642_stackacres_prestige_reset.sql's own header for exactly
  * which tables this sweeps and which it deliberately leaves untouched (land
  * cleared, purchased capacity, placed machines, Synergy Tree perks, the
  * donation register and Town Influence all survive -- none of them is a

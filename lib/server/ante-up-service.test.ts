@@ -114,7 +114,7 @@ describe("wagering", () => {
 
   /**
    * The wager ceiling that used to live here (git history /
-   * 20260827090000_ante_up_wager_tier_ceiling.sql) has been removed: a solo
+   * 20260827170508_ante_up_wager_tier_ceiling.sql) has been removed: a solo
    * wager is bounded only by the player's own balance. What a big stake
    * changes instead is which grids it may be played on.
    */

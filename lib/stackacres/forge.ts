@@ -23,7 +23,7 @@
  * account has bought up to. An enchantment is therefore profile-scoped and
  * applies to whichever tier is currently held, exactly like a Synergy perk
  * applies regardless of which tier is held. See the migration
- * (20260905130000_stackacres_tool_enchantments.sql) for the storage side of
+ * (20260905042510_stackacres_tool_enchantments.sql) for the storage side of
  * this same decision, including why it is its own table rather than the
  * dead `homestead_inventory`.
  *

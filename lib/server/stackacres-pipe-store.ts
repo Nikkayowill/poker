@@ -19,7 +19,7 @@ import { adminClient } from "./supabase-admin";
  * `adjust_homestead_inventory` -- that pair is the inert barn-era one (see
  * this store's sibling header). `homestead_pipes` +
  * `place_/remove_/sync_homestead_pipe_network` are this feature's own,
- * created by 20260906120000_stackacres_irrigation.sql.
+ * created by 20260905181302_stackacres_irrigation.sql.
  *
  * Same twin-branch shape as the rest of `lib/server/stackacres-*`: Supabase
  * when configured, an in-process Map otherwise, and the memory branch
@@ -30,7 +30,7 @@ import { adminClient } from "./supabase-admin";
  * the service runs `recalculatePipeConnections` after every layout change
  * and hands the result to `syncStackAcresPipeNetwork`, which is the only
  * writer of those three columns. `facing` is NOT derived -- it is the
- * player's own cosmetic aim for a lone stub (20260909140000), written only
+ * player's own cosmetic aim for a lone stub (20260910023706), written only
  * by `aimStackAcresPipe` below and never touched by the sync.
  */
 

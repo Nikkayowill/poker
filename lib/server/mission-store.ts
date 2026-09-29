@@ -13,7 +13,7 @@ import { createTtlCache } from "./ttl-cache";
  * has already done the work (played the hand, won the duel) by the time a
  * mission completes, and gating a reward they already earned behind a second
  * tap would add friction the feature exists to remove. See the migration
- * (20260814120000_missions.sql) for the reward ledger's idempotency
+ * (20260814183724_missions.sql) for the reward ledger's idempotency
  * guarantee, which is what makes auto-crediting safe against a retry.
  *
  * This module is the only thing that calls apply_mission_progress and
@@ -23,7 +23,7 @@ import { createTtlCache } from "./ttl-cache";
 
 // ---- catalog ----------------------------------------------------------
 //
-// Mirrors the seed insert in supabase/migrations/20260814120000_missions.sql.
+// Mirrors the seed insert in supabase/migrations/20260814183724_missions.sql.
 // Real Postgres reads its own mission_definitions table, which is what makes
 // the catalog admin-tunable without a deploy; this is the memory-mode
 // fallback and what tests seed against, kept in step with the migration by
@@ -31,13 +31,13 @@ import { createTtlCache } from "./ttl-cache";
 // its own table's defaults.
 
 // Reward amounts bumped roughly 3x in supabase/migrations/
-// 20260820130000_mission_achievement_reward_bumps.sql, for play-driven Gold
+// 20260820184815_mission_achievement_reward_bumps.sql, for play-driven Gold
 // income specifically, so an active player can climb the stakes ladder
 // without ever buying Gold. Keep this array's numbers matching that
 // migration's UPDATE statements exactly.
 //
 // `daily_brain_game` (300 Gold, once/day across any one puzzle) was retired
-// in supabase/migrations/20260821130000_ante_up_unify_brain_games.sql,
+// in supabase/migrations/20260821183845_ante_up_unify_brain_games.sql,
 // replaced by a per-game skill-scored daily bonus. See
 // lib/server/daily-puzzle-bonus.ts. Left out of this array entirely rather
 // than kept-but-disabled: this array is the memory-mode/test mirror of the

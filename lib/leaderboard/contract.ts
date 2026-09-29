@@ -22,7 +22,7 @@
  *
  * gameId values here, and the game_id lists baked into the
  * global_leaderboard_entries() SQL function
- * (supabase/migrations/20260820120000_game_leaderboard_stats.sql), must stay
+ * (supabase/migrations/20260820184750_game_leaderboard_stats.sql), must stay
  * hand-in-sync; that migration's own comment points back at this file.
  */
 

@@ -85,7 +85,7 @@ Each target stands on or beside a rug so a young player can find it. Rebuild wit
   lamps, lanterns, stove and fireplace glow.
 - The time shows under the right end of the top bar, like "6:40 PM", in 10-minute steps, with a sun or a moon.
   It sits under the bar because inside it, the bar pushed the More button off a 736px-wide phone.
-- The offset lives in `homestead_clock` (migration `20260927090000_stackacres_clock.sql`), which also adds a
+- The offset lives in `homestead_clock` (migration `20260924045748_stackacres_clock.sql`), which also adds a
   `clock` key to `stackacres_read_batch`. Apply it with the PR. If the code ships without it, sleeping fails.
 
 ### Open questions for Kayo

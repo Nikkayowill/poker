@@ -42,11 +42,10 @@ export interface ContractDef {
 /**
  * The rungs a contract is drawn from.
  *
- * FLOUR is priced off seed: a Mill turns 3 Wheat (a few Gold of seed, at
- * WHEAT_SEED_COST) into 1 Flour, so a contract asking for a handful of Flour
- * has to clear what growing and milling it actually cost -- the same "never
- * pay less than a tier's net" sanity check ./items.ts's `netPerCycle` runs
- * for stock.
+ * FLOUR pays 1.3x its Sell price, not a multiple of seed. It used to pay up
+ * to 35x the seed cost, and with no cooldown between orders that was a money
+ * printer. A Mill turns 3 Wheat into 1 Flour, so the rungs still clear what
+ * growing and milling it cost.
  *
  * CHEESE AND CLOTH are priced off something stricter, because their raw
  * materials are not seed but FORGONE HARVEST GOLD. Milk and wool have a price
@@ -63,9 +62,9 @@ export interface ContractDef {
  * would just be a bad draw the player is stuck with.
  */
 export const CONTRACT_RUNGS: readonly ContractDef[] = [
-  { item: "flour", quantity: 2, goldReward: 140, influenceReward: 10 },
-  { item: "flour", quantity: 4, goldReward: 300, influenceReward: 25 },
-  { item: "flour", quantity: 8, goldReward: 640, influenceReward: 60 },
+  { item: "flour", quantity: 2, goldReward: 42, influenceReward: 10 },
+  { item: "flour", quantity: 4, goldReward: 84, influenceReward: 25 },
+  { item: "flour", quantity: 8, goldReward: 168, influenceReward: 60 },
   { item: "cheese", quantity: 2, goldReward: 1_720, influenceReward: 60 },
   { item: "cheese", quantity: 4, goldReward: 3_430, influenceReward: 130 },
   { item: "cloth", quantity: 3, goldReward: 1_190, influenceReward: 40 },

@@ -1,5 +1,8 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { MAP_COLUMNS, MAP_PLACES, MAP_ROWS } from "./map-places";
+
+const at = (id: string) => MAP_PLACES.find((place) => place.id === id)!;
 
 describe("the world map's places", () => {
   it("gives every place its own cell, inside the grid", () => {
@@ -14,14 +17,25 @@ describe("the world map's places", () => {
     expect(cells.size).toBe(MAP_PLACES.length);
   });
 
-  it("puts the Crop Fields and the Homestead side by side, the only two places left", () => {
-    // Six districts (and the gates that led to them) were removed 2026-09-28
-    // (../story/travelers.ts's own header); the Crop Fields, ground inside
-    // the Homestead rather than a district of their own, are all that is
-    // still a walk from it.
-    const at = (id: string) => MAP_PLACES.find((place) => place.id === id)!;
-    expect(MAP_PLACES).toHaveLength(2);
-    expect(at("cropfields").row).toBe(at("farmstead").row);
-    expect(at("cropfields").col).toBeLessThan(at("farmstead").col);
+  it("lists the Homestead, its Crop Fields, the City and the Far Field", () => {
+    expect(MAP_PLACES.map((place) => place.id).sort()).toEqual(["city", "cropfields", "farfield", "farmstead"]);
+  });
+
+  it("lays the City west and the Far Field east of the Homestead, the Crop Fields south", () => {
+    expect(at("city").row).toBe(at("farmstead").row);
+    expect(at("city").col).toBeLessThan(at("farmstead").col);
+    expect(at("farfield").row).toBe(at("farmstead").row);
+    expect(at("farfield").col).toBeGreaterThan(at("farmstead").col);
+    expect(at("cropfields").col).toBe(at("farmstead").col);
+    expect(at("cropfields").row).toBeGreaterThan(at("farmstead").row);
+  });
+
+  it("only offers areas the Homestead has an exit to", () => {
+    const area = JSON.parse(readFileSync("public/stackacres-td/areas/homestead/area.json", "utf8")) as {
+      exits: { to: string }[];
+    };
+    const exits = area.exits.map((exit) => exit.to);
+    expect(exits).toContain("city");
+    expect(exits).toContain("empire");
   });
 });

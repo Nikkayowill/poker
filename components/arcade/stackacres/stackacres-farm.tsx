@@ -1098,6 +1098,9 @@ export function StackAcresFarm() {
   /** The wild district a finger just landed on, if the clearing modal is up. */
   const [clearing, setClearing] = useState<SectorId | null>(null);
   const [loaded, setLoaded] = useState(false);
+  /** The first read of the farm failed, so the loading screen offers a retry instead of an empty farm. */
+  const [loadFailed, setLoadFailed] = useState(false);
+  const hasLoadedOnce = useRef(false);
   const [worldReady, setWorldReady] = useState(false);
   /**
    * The intents with a request in the air right now, mirrored into render so
@@ -1870,6 +1873,7 @@ export function StackAcresFarm() {
   // Safe with taps in the air: an answer never paints over what a guess still
   // holds (see heldGuesses), so there is nothing to hold a refresh off for.
   const refresh = useCallback(async () => {
+    let ok = false;
     try {
       const response = await fetch("/api/stackacres", { cache: "no-store" });
       if (response.status === 429) return;
@@ -1882,13 +1886,30 @@ export function StackAcresFarm() {
       }
       const data = (await response.json()) as Partial<StackAcresResponse>;
       if (!mounted.current) return;
-      if (response.ok) applyResponse(data);
+      if (response.ok) {
+        applyResponse(data);
+        ok = true;
+      }
     } catch {
-      // A dropped read is not worth a banner; the farm just stays as it was.
+      // A dropped read is not worth a banner once the farm is up; it just stays as it was.
     } finally {
-      if (mounted.current) setLoaded(true);
+      if (mounted.current) {
+        if (ok) {
+          hasLoadedOnce.current = true;
+          setLoadFailed(false);
+          setLoaded(true);
+        } else if (!hasLoadedOnce.current) {
+          // Nothing has ever come back, so there is no farm to leave as it was.
+          setLoadFailed(true);
+        }
+      }
     }
   }, [applyResponse]);
+
+  const retryLoad = useCallback(() => {
+    setLoadFailed(false);
+    void refresh();
+  }, [refresh]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void refresh(), 0);
@@ -2791,9 +2812,9 @@ export function StackAcresFarm() {
       // are overgrown ground the player walks straight onto and breaks
       // himself (see stackacres-service.ts's `placeStackAcresSoilTile`), so
       // this only aims the camera at them.
-      if (id === "cropfields") {
+      if (id === "cropfields" || id === "city" || id === "farfield") {
         travelSound();
-        world.current?.focusZone("cropfields");
+        world.current?.focusZone(id);
         return;
       }
       travel(id);
@@ -2809,11 +2830,8 @@ export function StackAcresFarm() {
     setShowMap(true);
   }, []);
 
-  /** Every place, in map order: the Homestead and its own Crop Fields, the
-   *  only two left on the map sheet since the six other districts (and the
-   *  gates they had) went (2026-09-28, ../../../lib/stackacres/map-places.ts's
-   *  own header). Both are always open, so this never has a locked label to
-   *  show. */
+  /** Every place, in map order: the City, the Homestead, the Far Field and the Homestead's Crop Fields.
+   *  All are always open, so this never has a locked label to show. */
   const mapPlaces = useMemo(
     () =>
       mapPlaceStates(
@@ -4247,6 +4265,14 @@ export function StackAcresFarm() {
           {bootPhase !== "hidden" && (
             <div className={clsx("sa-loading", bootPhase === "hiding" && "sa-loading-hiding")}>
               <StackAcresLogo variant="stacked" className="sa-loading-logo" alt="" aria-hidden="true" />
+              {loadFailed && (
+                <div className="sa-loading-error" role="alert">
+                  <p>The farm didn&apos;t load.</p>
+                  <button type="button" className="sa-cta" onClick={retryLoad}>
+                    Try again
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

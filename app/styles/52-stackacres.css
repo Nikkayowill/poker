@@ -759,6 +759,21 @@
   50% { opacity: .6; }
 }
 
+.sa-loading-error {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 12%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: auto;
+  color: #fff;
+  font-family: var(--sa-font);
+}
+.sa-loading-error p { margin: 0; }
+
 @media (prefers-reduced-motion: reduce) {
   .sa-loading { transition: none; }
   .sa-loading-logo { animation: none; }

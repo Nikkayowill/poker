@@ -180,13 +180,16 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   // Smelted from ore. Its job is paying for the Far Field's buildings
   // (./empire-buildings.ts), so like Wood and Stone it sells for little.
   metal: { label: "Metal", plural: "Metal", icon: "ico-metal", sellPrice: 20 },
-  flour: { label: "Flour", plural: "Flour", icon: "ico-flour", sellPrice: 40 },
+  // Set to 16 on 2026-09-30. At 40 a Flour sold for about 18x its seed and the
+  // biggest order paid 35x, which made a wheat field a money printer. 16 still
+  // beats the 12 Gold its three Wheat sell for, so milling is worth doing.
+  flour: { label: "Flour", plural: "Flour", icon: "ico-flour", sellPrice: 16 },
   cheese: { label: "Cheese", plural: "Cheese", icon: "ico-cheese", sellPrice: 700 },
   cloth: { label: "Cloth", plural: "Cloth", icon: "ico-cloth", sellPrice: 320 },
-  cake: { label: "Cake", plural: "Cakes", icon: "ico-cake", sellPrice: 400 },
-  // Above Flour's 40, so baking a Flour always beats selling it. There is no
+  cake: { label: "Cake", plural: "Cakes", icon: "ico-cake", sellPrice: 365 },
+  // Above Flour's 16, so baking a Flour always beats selling it. There is no
   // bread art yet, so it borrows the wheat icon.
-  bread: { label: "Bread", plural: "Bread", icon: "ico-wheat", sellPrice: 55 },
+  bread: { label: "Bread", plural: "Bread", icon: "ico-wheat", sellPrice: 22 },
   // Above the 10 Gold its five crops sell for raw. No stew art yet, so it
   // borrows the potato icon.
   stew: { label: "Hearty Stew", plural: "Hearty Stew", icon: "ico-potato", sellPrice: 30 },
@@ -209,7 +212,7 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   // what the order pays per dish. The Feast has none; it is the meal to eat
   // or give, priced like the other order-free meals.
   bean_casserole: { label: "Bean Casserole", plural: "Bean Casseroles", icon: "ico-green_bean", sellPrice: 135 },
-  harvest_feast: { label: "Harvest Feast", plural: "Harvest Feasts", icon: "ico-eggplant", sellPrice: 260 },
+  harvest_feast: { label: "Harvest Feast", plural: "Harvest Feasts", icon: "ico-eggplant", sellPrice: 215 },
 };
 
 /** What one of `item` sells for, whatever space it started in. */

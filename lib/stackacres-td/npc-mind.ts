@@ -16,6 +16,8 @@
  *   pass if he is stood in their way.
  * - A quiet moment turns into a look around; a long chore gets a breather; nobody's rhythm is even.
  * - While the farmer talks to them they stop and face him, then hurry to catch up with their day.
+ * - Two people free and a few steps apart walk up to each other for a word, stand facing while they talk,
+ *   then walk back to where they were.
  *
  * None of it ever moves their day. Stopping only puts them behind the clock (`lag`), and they catch up
  * by playing their own day back a little faster along the same paths, so nobody can get stuck and
@@ -89,6 +91,11 @@ const HURRY_FROM_MS = 3000;
 const BRISK = 1.15;
 /** From standing to their own walking pace. */
 const RAMP_MS = 280;
+/** How far someone will walk off their spot to meet another for a chat, and at what pace. */
+export const MEET_REACH = 64;
+const MEET_PACE = 34;
+/** Give up on a chat that has not started after this long (a blocked walk, the other person called away). */
+const MEET_GIVE_UP_MS = 8000;
 /** The furthest behind their day a conversation can hold them before they have to get on. */
 export const MAX_LAG_MS = 45_000;
 /** Personal space, feet to feet, in map px. */
@@ -149,7 +156,9 @@ export class Mind {
 
   private beat: { facing: Dir | null; anim: Anim | null; until: number } | null = null;
   private nextBeatAt = 0;
-  private chat: { with: string; until: number } | null = null;
+  private chat: { with: string; talkMs: number; until: number | null; giveUpAt: number; meet: Point | null } | null = null;
+  /** Off their spot on a walk to or from a chat: while it lasts their day waits for them. */
+  private detour = false;
 
   constructor(
     private readonly temper: Temperament,
@@ -170,6 +179,7 @@ export class Mind {
     this.noticeAt = null;
     this.beat = null;
     this.chat = null;
+    this.detour = false;
   }
 
   /** How far behind their day they are, in real ms. */
@@ -184,6 +194,7 @@ export class Mind {
       this.prev.doing !== "walk" &&
       this.prev.doing !== "fish" &&
       this.lag === 0 &&
+      !this.detour &&
       this.chat === null &&
       now >= this.holdUntil &&
       now >= this.settleUntil &&
@@ -195,10 +206,23 @@ export class Mind {
     return this.temper.chatty;
   }
 
-  /** Turn to someone for a few words. They let go of whatever quiet beat they were in. */
-  startChat(partner: string, until: number): void {
-    this.chat = { with: partner, until };
+  /**
+   * Turn to someone for a few words. They let go of whatever quiet beat they were in. With a `meet` point
+   * (map px, absolute) they first walk to it, and the `talkMs` starts counting when they get there.
+   */
+  startChat(partner: string, talkMs: number, now: number, meet: Point | null = null): void {
+    this.chat = { with: partner, talkMs, until: meet ? null : now + talkMs, giveUpAt: now + MEET_GIVE_UP_MS, meet };
     this.beat = null;
+  }
+
+  /** In a chat and standing where they mean to talk: the words can begin. */
+  talking(): boolean {
+    return this.chat !== null && this.chat.until !== null;
+  }
+
+  /** In a chat, or walking to or from one. */
+  chatting(): boolean {
+    return this.chat !== null || this.detour;
   }
 
   /** The pause before the next swing of a can or pull at a plant: never the same twice. */
@@ -212,7 +236,7 @@ export class Mind {
 
   step(f: Frame): Look {
     const { now, dt } = f;
-    const holding = f.talking || now < this.holdUntil;
+    const holding = f.talking || now < this.holdUntil || this.detour;
 
     // How their day plays for them: stopped while held, hurrying while behind, easing between.
     // A breath before setting off leaves them a moment behind, made up with a brisker step, not a sprint.
@@ -241,9 +265,10 @@ export class Mind {
     if (prev && prev.area !== pose.area) {
       this.offset = { x: 0, y: 0 };
       this.chat = null;
+      this.detour = false;
     }
 
-    const moving = pose.doing === "walk" && pose.speed * this.rate > 1;
+    const moving = pose.doing === "walk" && pose.speed * this.rate > 1 && !this.detour;
     const heading = moving ? this.heading(f, pose) : VECTORS[pose.facing];
     const here = { x: pose.x + this.offset.x, y: pose.y + this.offset.y };
 
@@ -295,9 +320,16 @@ export class Mind {
       }
     }
 
-    this.steer(f, pose, here, heading, moving);
+    const strolling = this.stroll(f, pose);
+    if (!strolling && !this.detour) this.steer(f, pose, here, heading, moving);
 
-    if (this.chat && (moving || f.talking || now >= this.chat.until || !f.others.some((o) => o.name === this.chat!.with))) this.chat = null;
+    const chat = this.chat;
+    if (chat) {
+      const partner = f.others.find((o) => o.name === chat.with);
+      const arrived = chat.until === null && !strolling && (chat.meet === null || Math.hypot(pose.x + this.offset.x - chat.meet.x, pose.y + this.offset.y - chat.meet.y) < 1.5);
+      if (arrived) chat.until = now + chat.talkMs;
+      if (moving || f.talking || !partner || (chat.until === null ? now >= chat.giveUpAt : now >= chat.until)) this.chat = null;
+    }
 
     // A quiet moment: look around, catch a breath.
     const idleNow = !moving && !watching && !holding && !this.chat && now >= this.settleUntil;
@@ -311,7 +343,10 @@ export class Mind {
     let facing: Dir;
     let anim: Anim;
     let tracking = false;
-    if (moving) {
+    if (strolling) {
+      facing = strolling.dir;
+      anim = "walk";
+    } else if (moving) {
       facing = pose.facing;
       anim = "walk";
     } else if (watching && toFarmer) {
@@ -352,10 +387,40 @@ export class Mind {
       y: pose.y + this.offset.y,
       facing,
       anim,
-      walkSpeed: anim === "walk" ? pose.speed * this.rate : 0,
+      walkSpeed: strolling ? MEET_PACE : anim === "walk" ? pose.speed * this.rate : 0,
       animRate: anim === "idle" ? tempo : tempo * Math.max(1, this.rate),
       says,
     };
+  }
+
+  /**
+   * The walk to a chat, and back off it. While in a chat with a meet point they walk their offset toward it;
+   * once the chat is over they walk it back to nothing. Either way it is a real walk (the caller plays the
+   * walk cycle) and their day waits for them (`detour`), so it never shows as a slide or a jump.
+   */
+  private stroll(f: Frame, pose: Pose): { dir: Dir } | null {
+    const meet = this.chat?.meet ?? null;
+    if (!meet && !this.detour) return null;
+    const dx = (meet ? meet.x - pose.x : 0) - this.offset.x;
+    const dy = (meet ? meet.y - pose.y : 0) - this.offset.y;
+    const gap = Math.hypot(dx, dy);
+    if (gap < 0.5) {
+      if (!meet) {
+        this.offset = { x: 0, y: 0 };
+        this.detour = false;
+      }
+      return null;
+    }
+    const step = Math.min(gap, (MEET_PACE * f.dt) / 1000);
+    const next = { x: this.offset.x + (dx / gap) * step, y: this.offset.y + (dy / gap) * step };
+    if (!f.open({ x: pose.x + next.x, y: pose.y + next.y })) {
+      // Blocked: the chat is off and they walk back to their spot.
+      this.chat = null;
+      return null;
+    }
+    this.detour = true;
+    this.offset = next;
+    return { dir: facingToward(dx, dy, this.facing) };
   }
 
   /** Where they are really heading: a moment further along their own walk. Four-way facing is too coarse
@@ -479,18 +544,29 @@ export function pickChat(
   now: number,
   lastTalked: Map<string, number>,
   random: () => number,
-): { a: string; b: string; until: number } | null {
+  open: (p: Point) => boolean = () => true,
+): { a: string; b: string; meetA: Point; meetB: Point } | null {
   for (let i = 0; i < people.length; i++) {
     for (let j = i + 1; j < people.length; j++) {
       const a = people[i];
       const b = people[j];
       if (!a.mind.free(now) || !b.mind.free(now)) continue;
-      if (Math.hypot(a.x - b.x, a.y - b.y) > 56) continue;
+      const gap = Math.hypot(a.x - b.x, a.y - b.y);
+      if (gap > MEET_REACH * 2 + 16) continue;
       const key = [a.name, b.name].sort().join("|");
-      if (now - (lastTalked.get(key) ?? Number.NEGATIVE_INFINITY) < 25_000) continue;
+      if (now - (lastTalked.get(key) ?? Number.NEGATIVE_INFINITY) < 45_000) continue;
       if (random() > ((a.mind.chatty() + b.mind.chatty()) / 2) * 0.35) continue;
+      // Each steps toward the other until they stand a conversation apart, on the line between them.
+      const ux = gap > 0.5 ? (b.x - a.x) / gap : 1;
+      const uy = gap > 0.5 ? (b.y - a.y) / gap : 0;
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const half = Math.min(gap / 2, 11);
+      const meetA = { x: mid.x - ux * half, y: mid.y - uy * half };
+      const meetB = { x: mid.x + ux * half, y: mid.y + uy * half };
+      const clear = (from: Point, to: Point) => [0.25, 0.5, 0.75, 1].every((t) => open({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t }));
+      if (!clear(a, meetA) || !clear(b, meetB)) continue;
       lastTalked.set(key, now);
-      return { a: a.name, b: b.name, until: now + 2500 + random() * 2000 };
+      return { a: a.name, b: b.name, meetA, meetB };
     }
   }
   return null;

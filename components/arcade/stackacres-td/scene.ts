@@ -140,6 +140,7 @@ import { SunlightLayer } from "./sunlight-layer";
 import { WaterFilm } from "./water-film";
 import { PeopleLife, greeting } from "./people-life";
 import { NpcWalkers, keepsRoutine } from "./npc-walkers";
+import { SpeechBubbles } from "./npc-speech";
 import { WorksiteCrew } from "./worksite-crew";
 import { EMPIRE_BUILDINGS, buildingTiles, doorTile, type PlacedEmpireBuilding, type Tile } from "@/lib/stackacres/empire-buildings";
 import type { BuildGhost, GroceryGhost, GroceryScene } from "../stackacres/world-contract";
@@ -626,6 +627,7 @@ export class TopdownScene extends Phaser.Scene {
   private water!: WaterFilm;
   private people!: PeopleLife;
   private walkers!: NpcWalkers;
+  private speech!: SpeechBubbles;
   /** A dev preview of hired hands working a farm and store (startWorksiteDemo), or null. */
   private worksite: WorksiteCrew | null = null;
   /** A pinned clock (setClock) and when it was pinned: the people on their rounds keep walking from it. */
@@ -744,6 +746,8 @@ export class TopdownScene extends Phaser.Scene {
     this.people = new PeopleLife(this, (object) => this.keep(object), STANDING);
     this.walkers = new NpcWalkers(new Map<string, AreaSpecForRoutines>(this.specs), STANDING);
     this.walkers.setHourLength(STACKACRES_HOUR_MS);
+    this.speech = new SpeechBubbles(this.host, (p) => this.mapToCss(p));
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.speech.clear());
     this.drops = new ChunkDrops(
       this,
       (object) => this.keep(object),
@@ -809,9 +813,14 @@ export class TopdownScene extends Phaser.Scene {
       this.pending?.kind === "npc" ? this.pending.name : null,
       (name, what) => {
         if (!isEmoteTarget(name)) return;
-        this.people.emote(name, what === "greet" ? greeting(name, this.daylight.hour()) : "note", time, this.player);
+        this.people.emote(name, greeting(name, this.daylight.hour()), time, this.player);
+      },
+      (name, partner, text, ms) => {
+        const node = this.npcSprites.get(name);
+        if (node) this.speech.say(name, partner, text, ms, time, () => (node.sprite.visible ? { x: node.sprite.x, y: node.sprite.y } : null));
       },
     );
+    this.speech.update(time);
     // A cast holds its poses as still frames (the rod out, a fish held up), so
     // it counts as busy: the idle fidget would otherwise take him over mid-cast.
     this.people.update(
@@ -1113,6 +1122,7 @@ export class TopdownScene extends Phaser.Scene {
     this.people.clear();
     this.npcSprites.clear();
     this.walkers.clear();
+    this.speech.clear();
     this.stopWorksiteDemo();
     this.soilImages.clear();
     for (const image of this.fenceImages) image.destroy();

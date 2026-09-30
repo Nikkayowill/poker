@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import type { Grid, Point } from "@/lib/stackacres-td/movement";
 import { Mind, NOTICE_REACH, GREET_REACH, pickChat, facingToward, type Other } from "@/lib/stackacres-td/npc-mind";
+import { composeChat, type Chat, type Topic } from "@/lib/stackacres-td/npc-talk";
 import {
   areaMapOf,
   daySeed,
@@ -31,7 +32,19 @@ export interface FarmerView extends Point {
   walking: boolean;
 }
 
-export type Says = "greet" | "chat";
+export type Says = "greet";
+
+/** A chat under way: who, what they will say, and when the talk began (once both have walked up). */
+interface Conversation {
+  a: string;
+  b: string;
+  chat: Chat;
+  startedAt: number | null;
+  said: number;
+}
+
+/** How long after the last word a bubble stays up. */
+const BUBBLE_LINGER_MS = 1200;
 
 /** Whether someone keeps a routine, and so is placed by the clock rather than by area.json. */
 export function keepsRoutine(name: string): boolean {
@@ -60,6 +73,8 @@ export class NpcWalkers {
   private clockMsPerHour: number | null = null;
   private stale = true;
   private lastTalked = new Map<string, number>();
+  private lastTopic = new Map<string, Topic>();
+  private conversations: Conversation[] = [];
   private nextChatCheck = 0;
   private talk: { name: string; at: Point; until: number } | null = null;
   private greetedAt = new Map<string, number>();
@@ -100,6 +115,7 @@ export class NpcWalkers {
   clear(): void {
     for (const mind of this.minds.values()) mind.reset();
     this.keys.clear();
+    this.conversations = [];
     this.talk = null;
   }
 
@@ -131,7 +147,7 @@ export class NpcWalkers {
       const areas: Record<string, AreaMap> = {};
       for (const [area, spec] of this.specs) areas[area] = areaMapOf(spec);
       if (this.live && areas[this.live.area]) areas[this.live.area] = { ...areas[this.live.area], grid: this.live.grid };
-      plan = planDay(NPC_ROUTINES[name], NPC_STATIONS, areas, this.msPerHour, this.varied ? daySeed(name, day) : undefined);
+      plan = planDay(NPC_ROUTINES[name], NPC_STATIONS, areas, this.msPerHour, this.varied ? daySeed(name, day) : undefined, this.varied ? day : undefined);
       this.plans.set(key, plan);
       // Today and yesterday are all anyone needs; the oldest go first.
       while (this.plans.size > this.names().length * 3) this.plans.delete(this.plans.keys().next().value!);
@@ -169,6 +185,8 @@ export class NpcWalkers {
     /** Someone the farmer has tapped and is walking over to: they wait for him. */
     waitingFor: string | null,
     say: (name: string, what: Says) => void,
+    /** Someone says a line to their chat partner: shown as a bubble over them for `ms`. */
+    speak: (name: string, partner: string, text: string, ms: number) => void,
   ): void {
     const dt = Math.min(delta, 100);
     const gameHours = day * 24 + hour;
@@ -264,14 +282,46 @@ export class NpcWalkers {
 
     if (!reducedMotion && !night && now >= this.nextChatCheck) {
       this.nextChatCheck = now + CHAT_CHECK_MS;
-      const chat = pickChat(shown, now, this.lastTalked, Math.random);
-      if (chat) {
-        this.mind(chat.a).startChat(chat.b, chat.until);
-        this.mind(chat.b).startChat(chat.a, chat.until);
-        // Half the time one of them says something you can see; the rest is just the turn to each other.
-        if (Math.random() < 0.5) say(Math.random() < 0.5 ? chat.a : chat.b, "chat");
-      }
+      const chat = pickChat(shown, now, this.lastTalked, Math.random, (p) => this.open(area, p));
+      if (chat) this.beginChat(chat, hour, now);
     }
+    this.speakLines(now, speak);
+  }
+
+  /** Two people set off to meet: what they will say is settled now, and starts when they are face to face. */
+  private beginChat(pair: { a: string; b: string; meetA: Point; meetB: Point }, hour: number, now: number): void {
+    const pairKey = [pair.a, pair.b].sort().join("|");
+    const script = composeChat(pair.a, pair.b, hour, Math.random, this.lastTopic.get(pairKey));
+    // Anyone without lines just turns to each other for a moment, as before.
+    const talkMs = script ? script.duration + 1500 : 2500 + Math.random() * 2000;
+    this.mind(pair.a).startChat(pair.b, talkMs, now, pair.meetA);
+    this.mind(pair.b).startChat(pair.a, talkMs, now, pair.meetB);
+    if (script) {
+      this.lastTopic.set(pairKey, script.topic);
+      this.conversations.push({ a: pair.a, b: pair.b, chat: script, startedAt: null, said: 0 });
+    }
+  }
+
+  /** Each line of every chat in turn, once both have walked up; a chat that falls through is dropped. */
+  private speakLines(now: number, speak: (name: string, partner: string, text: string, ms: number) => void): void {
+    this.conversations = this.conversations.filter((talk) => {
+      const a = this.mind(talk.a);
+      const b = this.mind(talk.b);
+      if (talk.startedAt === null) {
+        if (a.talking() && b.talking()) talk.startedAt = now;
+        return a.chatting() && b.chatting();
+      }
+      if (!a.talking() || !b.talking()) return false;
+      const elapsed = now - talk.startedAt;
+      const { lines } = talk.chat;
+      while (talk.said < lines.length && elapsed >= lines[talk.said].at) {
+        const line = lines[talk.said];
+        const next = lines[talk.said + 1];
+        speak(line.who, line.who === talk.a ? talk.b : talk.a, line.text, (next ? next.at - line.at : BUBBLE_LINGER_MS + 1500) - 100);
+        talk.said += 1;
+      }
+      return elapsed < talk.chat.duration + BUBBLE_LINGER_MS;
+    });
   }
 
   private place(node: WalkerNode, x: number, y: number): void {

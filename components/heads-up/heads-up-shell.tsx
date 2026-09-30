@@ -12,6 +12,7 @@ import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { CHEAPEST_TIER, isStakesTier, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { createRequestSequence } from "@/lib/ui/request-sequence";
+import { startBackoffPoll } from "@/lib/ui/backoff-poll";
 
 /**
  * The client half of heads-up poker: the lobby (quick play, invites), the
@@ -24,7 +25,6 @@ import { createRequestSequence } from "@/lib/ui/request-sequence";
  * heads-up is quick-play-or-invite, never pick-a-table-off-a-list.
  */
 
-const POLL_MS = 2000;
 
 interface HeadsUpPlayer {
   profileId: string;
@@ -88,7 +88,7 @@ export function HeadsUpShell() {
         if (data.invites) setInvites(data.invites);
       }
     } catch {
-      // A dropped poll is not worth a banner; the next one is two seconds away.
+      // A dropped poll is not worth a banner; the next one is a few seconds away.
     } finally {
       if (mounted.current) setLoaded(true);
     }
@@ -146,15 +146,10 @@ export function HeadsUpShell() {
 
   useEffect(() => {
     mounted.current = true;
-    const poll = () => {
-      if (!document.hidden) void refresh();
-    };
-    const first = window.setTimeout(poll, 0);
-    const timer = window.setInterval(poll, POLL_MS);
+    const stop = startBackoffPoll(() => void refresh());
     return () => {
       mounted.current = false;
-      window.clearTimeout(first);
-      window.clearInterval(timer);
+      stop();
     };
   }, [refresh]);
 

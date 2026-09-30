@@ -13,6 +13,7 @@ import { selectSound } from "@/lib/audio/ui-sounds";
 import { isStakesTier, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { createRequestSequence } from "@/lib/ui/request-sequence";
+import { startBackoffPoll } from "@/lib/ui/backoff-poll";
 
 /**
  * The client half of a Sit & Go: the tier lobby, the waiting room, and the
@@ -26,7 +27,6 @@ import { createRequestSequence } from "@/lib/ui/request-sequence";
  * to rebuild any slice of it.
  */
 
-const POLL_MS = 2000;
 const MAX_SEATS = 6;
 
 export interface SitAndGoTable {
@@ -101,7 +101,7 @@ export function SitAndGoShell() {
         if (data.table !== undefined) setTable(data.table ?? null);
       }
     } catch {
-      // A dropped poll is not worth a banner; the next one is two seconds away.
+      // A dropped poll is not worth a banner; the next one is a few seconds away.
     } finally {
       if (mounted.current) setLoaded(true);
     }
@@ -151,16 +151,10 @@ export function SitAndGoShell() {
 
   useEffect(() => {
     mounted.current = true;
-    // A background tab would otherwise poll every POLL_MS forever.
-    const poll = () => {
-      if (!document.hidden) void refresh();
-    };
-    const first = window.setTimeout(poll, 0);
-    const timer = window.setInterval(poll, POLL_MS);
+    const stop = startBackoffPoll(() => void refresh());
     return () => {
       mounted.current = false;
-      window.clearTimeout(first);
-      window.clearInterval(timer);
+      stop();
     };
   }, [refresh]);
 

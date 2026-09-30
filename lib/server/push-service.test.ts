@@ -108,8 +108,28 @@ describe("sendPushToSubscription", () => {
     await savePushSubscription(profileId, { endpoint: "https://fcm.googleapis.com/fcm/send/a", p256dh: "p", auth: "a" }, null);
     const [subscription] = await pushSubscriptionsForProfile(profileId);
 
-    await sendPushToSubscription(subscription, payload);
+    const result = await sendPushToSubscription(subscription, payload);
 
+    expect(result).toBe("not-configured");
     expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("reports sent, gone and failed", async () => {
+    setVapidEnv();
+    const profileId = randomUUID();
+    await savePushSubscription(profileId, { endpoint: "https://fcm.googleapis.com/fcm/send/a", p256dh: "p", auth: "a" }, null);
+    const [subscription] = await pushSubscriptionsForProfile(profileId);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    sendNotification.mockResolvedValueOnce(undefined);
+    expect(await sendPushToSubscription(subscription, payload)).toBe("sent");
+
+    sendNotification.mockRejectedValueOnce(Object.assign(new Error("boom"), { statusCode: 500 }));
+    expect(await sendPushToSubscription(subscription, payload)).toBe("failed");
+    expect(logged).toHaveBeenCalled();
+
+    sendNotification.mockRejectedValueOnce(Object.assign(new Error("gone"), { statusCode: 410 }));
+    expect(await sendPushToSubscription(subscription, payload)).toBe("gone");
+    logged.mockRestore();
   });
 });

@@ -40,6 +40,8 @@ export async function GET(request: NextRequest) {
     const candidates = await pushSubscriptionsForInactivePlayers(utcDayStart);
 
     let sent = 0;
+    let failed = 0;
+    let notConfigured = false;
     await Promise.all(candidates.map(async (subscription) => {
       // Belt and suspenders against a same-day re-run: the store query
       // already filters on the daily-Gold claim, but a cron retry (Vercel
@@ -48,16 +50,29 @@ export async function GET(request: NextRequest) {
       if (subscription.lastNotifiedAt && isSameUtcDay(new Date(subscription.lastNotifiedAt), now)) return;
 
       const seed = [...subscription.profileId].reduce((sum, char) => sum + char.charCodeAt(0), 0) + now.getUTCDate();
-      await sendPushToSubscription(subscription, {
+      const result = await sendPushToSubscription(subscription, {
         title: "StackChips",
         body: pickComeBackPushCopy(seed),
         url: "/",
       });
+      if (result === "not-configured") {
+        notConfigured = true;
+        return;
+      }
+      // Only a delivered push counts as notified; a failed one stays eligible for the next run.
+      if (result !== "sent") {
+        failed += 1;
+        return;
+      }
       await markPushSubscriptionNotified(subscription.id, now);
       sent += 1;
     }));
 
-    return NextResponse.json({ sent, candidates: candidates.length });
+    if (notConfigured) {
+      console.error("notify-inactive-players: VAPID keys are not set, nothing was sent", { candidates: candidates.length });
+      return NextResponse.json({ error: "Push is not configured.", sent: 0, candidates: candidates.length }, { status: 503 });
+    }
+    return NextResponse.json({ sent, failed, candidates: candidates.length });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not run the notification sweep.";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -9,6 +9,7 @@ import {
 } from "./ante-up-memory-service";
 import { __resetAnteUpAttemptsForTest, getActiveAnteUpAttempt } from "./ante-up-store";
 import { adjustGold, ensureProfile } from "./profile-store";
+import { getProgression } from "./progression-store";
 import { MEMORY_RULES_BY_PRESSURE, MIN_ANTE_UP_WAGER, type AnteUpMemoryAttempt } from "@/lib/arcade/ante-up-memory";
 import type { Card } from "@/lib/game/types";
 
@@ -252,5 +253,43 @@ describe("stake bands", () => {
     const { attempt } = await openAnteUpMemory(token, 0);
     expect(attempt.pairs).toBe(8);
     expect(attempt.maxTurns).toBe(20);
+  });
+});
+
+describe("the solo earnings tally", () => {
+  it("records a win as Gold earned, at the payout it settled on", async () => {
+    const { token, id } = await funded();
+    await openAnteUpMemory(token, 1000);
+    const result = await clearActiveAttempt(token, id);
+
+    const { soloEarnings } = await getProgression(id);
+    expect(soloEarnings).toMatchObject({ wins: 1, losses: 0, totalStaked: 1000, totalPaidOut: result.payout });
+    expect(soloEarnings.net).toBe(result.payout - 1000);
+  });
+
+  it("records a resignation as a loss, and rank does not rise", async () => {
+    const { token, id } = await funded();
+    await openAnteUpMemory(token, 1000);
+    await resignAnteUpMemoryAttempt(token);
+
+    const progress = await getProgression(id);
+    expect(progress.soloEarnings).toMatchObject({ wins: 0, losses: 1, totalStaked: 1000, totalPaidOut: 0, net: -1000 });
+    expect(progress.level).toBe(1);
+  });
+
+  it("records a turn-cap forfeit as a loss", async () => {
+    const { token, id } = await funded();
+    await openAnteUpMemory(token, 750);
+    await forfeitByTurnCap(token, id);
+
+    expect((await getProgression(id)).soloEarnings).toMatchObject({ losses: 1, totalStaked: 750, totalPaidOut: 0 });
+  });
+
+  it("records nothing for free practice", async () => {
+    const { token, id } = await funded();
+    await openAnteUpMemory(token, 0);
+    await resignAnteUpMemoryAttempt(token);
+
+    expect((await getProgression(id)).soloEarnings).toMatchObject({ wins: 0, losses: 0, totalStaked: 0 });
   });
 });

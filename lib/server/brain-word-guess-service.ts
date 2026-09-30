@@ -18,7 +18,6 @@ import { stakePressure } from "@/lib/arcade/stake-pressure";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   ActiveAnteUpAttemptExists,
-  advanceAnteUpAttempt,
   countWageredAttemptsSince,
   createAnteUpAttempt,
   getActiveAnteUpAttempt,
@@ -36,6 +35,7 @@ import {
   spendStakeLedgered,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
+import { soloAdvance } from "./solo-settle";
 
 /**
  * Everything between a Word Guess request and the wallet. Same shape, same
@@ -47,6 +47,9 @@ export class BrainWordGuessRequestError extends ArcadeRequestError<BrainWordGues
 }
 
 const GAME = "word-guess";
+
+/** The version-guarded advance; also records the settled wager in the solo earnings tally. */
+const advance = soloAdvance<BrainWordGuessAttempt>(brainWordGuessPayout);
 export const BRAIN_WORD_GUESS_DAILY_WAGERED_LIMIT = 10;
 
 function snapshot(stored: StoredAnteUpAttempt<BrainWordGuessAttempt>): BrainWordGuessSnapshot {
@@ -173,7 +176,7 @@ export async function guessBrainWordGuessLetter(
   }
 
   const next = guessBrainWordLetter(current.state, letter, now);
-  const stored = await advanceAnteUpAttempt(current, next);
+  const stored = await advance(current, next);
   if (!stored) {
     const live = (await getAnteUpAttemptById<BrainWordGuessAttempt>(current.id)) ?? current;
     throw new BrainWordGuessRequestError("That word moved on.", 409, { round: snapshot(live) });
@@ -194,7 +197,7 @@ export async function resignBrainWordGuessAttempt(
 
   const next = resignBrainWordGuess(current.state, now);
   const stored =
-    (await advanceAnteUpAttempt(current, next)) ?? (await getAnteUpAttemptById<BrainWordGuessAttempt>(current.id)) ?? current;
+    (await advance(current, next)) ?? (await getAnteUpAttemptById<BrainWordGuessAttempt>(current.id)) ?? current;
   return { attempt: snapshot(stored), profile };
 }
 

@@ -31,7 +31,6 @@ import {
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   ActiveAnteUpAttemptExists,
-  advanceAnteUpAttempt,
   countWageredAttemptsSince,
   createAnteUpAttempt,
   getActiveAnteUpAttempt,
@@ -49,6 +48,7 @@ import {
   spendStakeLedgered,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
+import { soloAdvance } from "./solo-settle";
 
 /**
  * Everything between an Ante Up: Nonogram request and the wallet.
@@ -75,6 +75,9 @@ export class AnteUpNonogramRequestError extends ArcadeRequestError<AnteUpNonogra
 
 /** This game's id in ante_up_attempts; see lib/server/ante-up-store.ts. */
 const GAME = "nonogram";
+
+/** The version-guarded advance; also records the settled wager in the solo earnings tally. */
+const advance = soloAdvance<AnteUpNonogramAttempt>(anteUpNonogramPayout);
 
 /** How many wagered attempts a player may open in a rolling day, at this game. Free practice is uncapped. */
 export const ANTE_UP_NONOGRAM_DAILY_WAGERED_LIMIT = 10;
@@ -131,7 +134,7 @@ async function settleIfExpired(
   const ticked = tickAnteUpNonogram(stored.state, now);
   if (ticked === null) return stored;
 
-  const advanced = await advanceAnteUpAttempt(stored, ticked);
+  const advanced = await advance(stored, ticked);
   // Rule 2: a lost race did not happen; another read already settled this.
   return advanced ?? (await getAnteUpAttemptById<AnteUpNonogramAttempt>(stored.id)) ?? stored;
 }
@@ -293,7 +296,7 @@ async function requireLiveAttempt(
     // carries the true (timed-out) state rather than a stale "active" one the
     // player could mistake for still-playable.
     const settled =
-      (await advanceAnteUpAttempt(current, ticked)) ??
+      (await advance(current, ticked)) ??
       (await getAnteUpAttemptById<AnteUpNonogramAttempt>(current.id)) ??
       current;
     throw new AnteUpNonogramRequestError("Time's up.", 409, { round: snapshot(settled, now) });
@@ -321,7 +324,7 @@ async function settle(
   next: AnteUpNonogramAttempt,
   now: Date,
 ): Promise<{ attempt: AnteUpNonogramSnapshot; paid: PlayerProfile | null }> {
-  const stored = await advanceAnteUpAttempt(current, next);
+  const stored = await advance(current, next);
   if (!stored) {
     const live = (await getAnteUpAttemptById<AnteUpNonogramAttempt>(current.id)) ?? current;
     throw new AnteUpNonogramRequestError("That board moved on.", 409, {
@@ -460,7 +463,7 @@ export async function resignAnteUpNonogramAttempt(
 
   const next = resignAnteUpNonogram(current.state, now);
   const stored =
-    (await advanceAnteUpAttempt(current, next)) ??
+    (await advance(current, next)) ??
     (await getAnteUpAttemptById<AnteUpNonogramAttempt>(current.id)) ??
     current;
   return { attempt: snapshot(stored, now), profile };

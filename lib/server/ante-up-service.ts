@@ -18,7 +18,6 @@ import { isSudokuDifficulty, type SudokuDifficulty } from "@/lib/arcade/puzzles/
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   ActiveAnteUpAttemptExists,
-  advanceAnteUpAttempt,
   countWageredAttemptsSince,
   createAnteUpAttempt,
   getActiveAnteUpAttempt,
@@ -36,6 +35,7 @@ import {
   spendStakeLedgered,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
+import { soloAdvance } from "./solo-settle";
 
 /**
  * Everything between an Ante Up request and the wallet.
@@ -90,6 +90,9 @@ export const ANTE_UP_DAILY_WAGERED_LIMIT = 10;
 /** This game's id in ante_up_attempts; see lib/server/ante-up-store.ts. */
 const GAME = "sudoku";
 
+/** The version-guarded advance; also records the settled wager in the solo earnings tally. */
+const advance = soloAdvance<AnteUpAttempt>((state) => (state.status === "won" ? anteUpPayout(state) : 0));
+
 function parseDifficulty(value: string): SudokuDifficulty {
   if (!isSudokuDifficulty(value)) throw new AnteUpRequestError("Not a real difficulty.", 400);
   return value;
@@ -128,7 +131,7 @@ async function settleIfExpired(
   const ticked = tickAnteUpAttempt(stored.state, now);
   if (ticked === null) return stored;
 
-  const advanced = await advanceAnteUpAttempt(stored, ticked);
+  const advanced = await advance(stored, ticked);
   // Rule 2: a lost race did not happen; somebody else's read already
   // settled (and, on a win, paid) this same attempt.
   return advanced ?? (await getAnteUpAttemptById<AnteUpAttempt>(stored.id)) ?? stored;
@@ -271,7 +274,7 @@ export async function fillAnteUpAttempt(
     // the response carries the true (timed-out) state rather than a stale
     // "active" one the player could mistake for still-playable.
     const settled =
-      (await advanceAnteUpAttempt(current, ticked)) ?? (await getAnteUpAttemptById<AnteUpAttempt>(current.id)) ?? current;
+      (await advance(current, ticked)) ?? (await getAnteUpAttemptById<AnteUpAttempt>(current.id)) ?? current;
     throw new AnteUpRequestError("Time's up.", 409, { round: snapshot(settled, now) });
   }
 
@@ -289,7 +292,7 @@ export async function fillAnteUpAttempt(
   }
 
   const { attempt: next, correct } = fillAnteUpCell(current.state, input.index, input.value, now);
-  const stored = await advanceAnteUpAttempt(current, next);
+  const stored = await advance(current, next);
   if (!stored) {
     // Rule 2: a lost race did not happen.
     const live = (await getAnteUpAttemptById<AnteUpAttempt>(current.id)) ?? current;
@@ -318,7 +321,7 @@ export async function resignAnteUp(
 
   const next = resignAnteUpAttempt(current.state, now);
   const stored =
-    (await advanceAnteUpAttempt(current, next)) ?? (await getAnteUpAttemptById<AnteUpAttempt>(current.id)) ?? current;
+    (await advance(current, next)) ?? (await getAnteUpAttemptById<AnteUpAttempt>(current.id)) ?? current;
   return { attempt: snapshot(stored, now), profile };
 }
 

@@ -12,6 +12,7 @@ import {
   startWordStackPuzzle,
 } from "./word-stack-service";
 import { adjustGold, ensureProfile } from "./profile-store";
+import { getProgression } from "./progression-store";
 import { advancePuzzleRound, createPuzzleRound, getPuzzleRound } from "./daily-puzzle-store";
 import {
   WAGER_MULTIPLIER_BY_GUESSES,
@@ -459,11 +460,14 @@ describe("the wager ladder travels with the round", () => {
     );
 
     const balanceBefore = (await ensureProfile(token)).goldBalance;
-    await playWordStackGuess(token, { day: today(), version: 2, guess: todaysAnswer() });
+    const view = await playWordStackGuess(token, { day: today(), version: 2, guess: todaysAnswer() });
     const credited = (await ensureProfile(token)).goldBalance - balanceBefore;
 
-    // One-guess win: 8x under the stored ladder, 4x under today's table.
-    expect(credited).toBe(8000);
+    // One-guess win: 8x under the stored ladder, 4x under today's table. The
+    // wallet can hold a little more than the payout if the win also levelled
+    // the player up (mission and milestone Gold), so the payout is read off the round.
+    expect(view.round?.payout).toBe(8000);
+    expect(credited).toBeGreaterThanOrEqual(8000);
   });
 });
 
@@ -578,5 +582,47 @@ describe("a big stake plays hard mode", () => {
     await playWordStackGuess(token, { day: today(), version: 2, guess: sameFirstLetter(answer) });
     const next = await playWordStackGuess(token, { day: today(), version: 3, guess: otherFirstLetter(answer) });
     expect(next.round?.guesses).toHaveLength(2);
+  });
+});
+
+describe("the solo earnings tally", () => {
+  async function fundedPlayer(gold: number) {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    const delta = gold - profile.goldBalance;
+    if (delta !== 0) await adjustGold(profile.id, delta);
+    return { token, id: profile.id };
+  }
+
+  it("records a wagered win as Gold earned", async () => {
+    const { token, id } = await fundedPlayer(50_000);
+    await startWordStackPuzzle(token, 1000);
+    const view = await playWordStackGuess(token, { day: today(), version: 1, guess: todaysAnswer() });
+
+    const { soloEarnings } = await getProgression(id);
+    expect(soloEarnings).toMatchObject({ wins: 1, losses: 0, totalStaked: 1000, totalPaidOut: view.round?.payout });
+  });
+
+  it("records a wagered loss, and rank does not rise", async () => {
+    const { token, id } = await fundedPlayer(50_000);
+    await startWordStackPuzzle(token, 1000);
+    const answer = todaysAnswer();
+    let version = 1;
+    for (const guess of wrongGuesses(answer).slice(0, 6)) {
+      const view = await playWordStackGuess(token, { day: today(), version, guess });
+      version = view.round?.version ?? version + 1;
+    }
+
+    const progress = await getProgression(id);
+    expect(progress.soloEarnings).toMatchObject({ wins: 0, losses: 1, totalStaked: 1000, totalPaidOut: 0, net: -1000 });
+    expect(progress.level).toBe(1);
+  });
+
+  it("records nothing for a free board", async () => {
+    const { token, id } = await fundedPlayer(50_000);
+    await startWordStackPuzzle(token, 0);
+    await playWordStackGuess(token, { day: today(), version: 1, guess: todaysAnswer() });
+
+    expect((await getProgression(id)).soloEarnings).toMatchObject({ wins: 0, losses: 0 });
   });
 });

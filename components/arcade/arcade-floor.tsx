@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { Coins, HelpCircle } from "lucide-react";
+import { Bot, Coins, HelpCircle, Swords, X } from "lucide-react";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   arcadeActionLabel,
@@ -15,6 +15,7 @@ import {
   type ArcadeWallet,
 } from "@/lib/arcade/games";
 import { gameOnSound, tapSound } from "@/lib/audio/ui-sounds";
+import { useModalDismiss } from "@/components/use-modal-dismiss";
 import { useArcadeSound } from "./use-arcade-sound";
 import { markEmbeddedFloorNav } from "./floor-back-link";
 import { HowToPlayModal } from "./how-to-play-modal";
@@ -196,7 +197,7 @@ export function ArcadeFloor({
             gives about prices: a count written into a sentence is a count
             that goes stale the day a game ships. */}
         <div className="lobby-kicker">Ante Up</div>
-        <Heading>Every game beside the table.</Heading>
+        <Heading>Wager against the House or challenge a friend.</Heading>
         <p>
           Play free, or stake Gold from the same wallet as the tables.
         </p>
@@ -344,13 +345,17 @@ function GameCard({
   embedded: boolean;
 }) {
   const blocked = arcadeBlockedReason(game, wallet);
+  const [choosing, setChoosing] = useState(false);
+  const isChallenge = arcadeActionLabel(game, wallet) === "Challenge";
   return (
     <article className="floor-card">
       <GamePreview id={game.id} />
       <strong>{game.name}</strong>
       <small>{game.blurb}</small>
       <small className="floor-card-stake">{stakeLabel}</small>
-      {blocked === null && game.href ? (
+      {blocked === null && game.href && isChallenge ? (
+        <button type="button" className="floor-play" onClick={() => { tapSound(); setChoosing(true); }}>Challenge</button>
+      ) : blocked === null && game.href ? (
         <Link className="floor-play" href={game.href} onClick={onPlayClick(embedded)}>{arcadeActionLabel(game, wallet)}</Link>
       ) : (
         <button type="button" className="floor-play" disabled>
@@ -361,7 +366,67 @@ function GameCard({
           nowhere for "earn more Gold" to send anyone. compact: this is a
           grid card, not a modal. */}
       {blocked === "insufficient-gold" && <GoldShortfallHint needed={game.entryCost} compact />}
+      {choosing && game.href && (
+        <ChallengeChoice game={game} href={game.href} embedded={embedded} onClose={() => setChoosing(false)} />
+      )}
     </article>
+  );
+}
+
+/** Scrolls the floor to the solo wagers. Waits a tick so a pane that was just switched to has laid out. */
+export function jumpToSoloWagers(): void {
+  window.setTimeout(() => {
+    document.getElementById("floor-wagers")?.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
+  }, 60);
+}
+
+/**
+ * What "Challenge" opens: a solo wager for Rank Points, or a duel with a friend.
+ * Duels have no AI opponent, so the solo option sends the player to the solo
+ * wagers section rather than into this game.
+ */
+function ChallengeChoice({
+  game,
+  href,
+  embedded,
+  onClose,
+}: {
+  game: ArcadeGame;
+  href: string;
+  embedded: boolean;
+  onClose: () => void;
+}) {
+  const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(onClose);
+  return (
+    <div className="profile-overlay" role="presentation" onMouseDown={onBackdropMouseDown}>
+      <section className="profile-modal challenge-choice" role="dialog" aria-modal="true" aria-labelledby="challenge-choice-title">
+        <header className="profile-modal-header">
+          <div>
+            <span>CHALLENGE</span>
+            <h2 id="challenge-choice-title">{game.name}</h2>
+          </div>
+          <button ref={closeButtonRef} className="modal-close" onClick={() => { tapSound(); onClose(); }} aria-label="Close">
+            <X size={18} />
+          </button>
+        </header>
+        <div className="challenge-choice-options">
+          <button type="button" className="challenge-choice-option" onClick={() => { tapSound(); onClose(); jumpToSoloWagers(); }}>
+            <Bot size={20} aria-hidden="true" />
+            <span>
+              <strong>Solo Wager (vs. AI)</strong>
+              <small>Choose a difficulty to earn Rank Points</small>
+            </span>
+          </button>
+          <Link className="challenge-choice-option" href={href} onClick={onPlayClick(embedded)}>
+            <Swords size={20} aria-hidden="true" />
+            <span>
+              <strong>Invite a Friend</strong>
+              <small>Open a private challenge for a friend to take</small>
+            </span>
+          </Link>
+        </div>
+      </section>
+    </div>
   );
 }
 

@@ -9,7 +9,7 @@ import { publicErrorMessage } from "@/lib/server/public-error";
 export const runtime = "nodejs";
 
 /**
- * Where the caller stands: rank, XP into the level, lifetime volume, streak.
+ * Where the caller stands: rank, rank points into the level, solo earnings, lifetime volume, streak.
  *
  * Open to guests, unlike /api/friends and /api/invites. Those address a durable
  * profile id that a guest does not have; a rank is just a readout of play this

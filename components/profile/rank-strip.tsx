@@ -4,6 +4,7 @@ import { Flame, TrendingUp } from "lucide-react";
 import type { ProgressionPayload } from "@/lib/progression/types";
 import { FadeSwap } from "@/components/loading/fade-swap";
 import { Skeleton } from "@/components/loading/skeleton";
+import { SoloEarningsPanel } from "./solo-earnings-panel";
 import { useProgression } from "./use-progression";
 
 /**
@@ -29,12 +30,17 @@ import { useProgression } from "./use-progression";
 
 function RankStripSkeleton() {
   return (
-    <div className="rank-strip" aria-hidden="true">
-      <Skeleton className="skeleton-rank-badge" />
-      <div className="rank-body">
-        <Skeleton className="skeleton-rank-line" />
-        <Skeleton className="skeleton-rank-track" />
-        <Skeleton className="skeleton-rank-next" />
+    <div className="rank-stack" aria-hidden="true">
+      <div className="rank-strip">
+        <Skeleton className="skeleton-rank-badge" />
+        <div className="rank-body">
+          <Skeleton className="skeleton-rank-line" />
+          <Skeleton className="skeleton-rank-track" />
+          <Skeleton className="skeleton-rank-next" />
+        </div>
+      </div>
+      <div className="earnings-strip">
+        <Skeleton className="skeleton-earnings" />
       </div>
     </div>
   );
@@ -55,45 +61,53 @@ function RankStripContent({ data }: { data: ProgressionPayload }) {
   const atCap = progression.levelSpan === 0;
 
   return (
-    <section className="rank-strip" aria-label="Your rank">
-      <div className="rank-badge" aria-hidden="true">{progression.level}</div>
+    <div className="rank-stack">
+      <section className="rank-strip" aria-label="Your rank">
+        <div className="rank-badge" aria-hidden="true">{progression.level}</div>
 
-      <div className="rank-body">
-        <div className="rank-line">
-          <strong>{progression.title}</strong>
-          <span className="rank-level">Level {progression.level}</span>
+        <div className="rank-body">
+          <div className="rank-line">
+            <strong>{progression.title}</strong>
+            <span className="rank-level">Level {progression.level}</span>
+          </div>
+
+          {/* aria-hidden on the bar because the same numbers are stated in words
+              immediately below it; a screen reader should hear one of them. */}
+          <div className="rank-track" aria-hidden="true">
+            <div className="rank-fill" style={{ width: `${Math.round(progression.ratio * 100)}%` }} />
+          </div>
+
+          <small className="rank-next">
+            {atCap
+              ? "Top rank reached."
+              : (
+                <>
+                  {progression.intoLevel.toLocaleString()} / {progression.levelSpan.toLocaleString()} rank points
+                  {progression.nextTitle && (
+                    <> · <TrendingUp size={11} aria-hidden="true" /> {progression.nextTitle} at {progression.nextTitleLevel}</>
+                  )}
+                </>
+              )}
+          </small>
         </div>
 
-        {/* aria-hidden on the bar because the same numbers are stated in words
-            immediately below it; a screen reader should hear one of them. */}
-        <div className="rank-track" aria-hidden="true">
-          <div className="rank-fill" style={{ width: `${Math.round(progression.ratio * 100)}%` }} />
-        </div>
-
-        <small className="rank-next">
-          {atCap
-            ? "Top rank reached."
-            : (
-              <>
-                {progression.intoLevel.toLocaleString()} / {progression.levelSpan.toLocaleString()} XP
-                {progression.nextTitle && (
-                  <> · <TrendingUp size={11} aria-hidden="true" /> {progression.nextTitle} at {progression.nextTitleLevel}</>
-                )}
-              </>
-            )}
-        </small>
-      </div>
-
-      {/* Only once there is a streak to show. A "0 day streak" is a scolding,
-          not a reward, and the daily claim in the player menu is already where
-          a player who has not claimed is told to. */}
-      {daily.streak > 0 && (
-        <div className="rank-streak" title={`Daily grant x${daily.multiplier}`}>
-          <Flame size={14} aria-hidden="true" />
-          <strong>{daily.streak}</strong>
-          <small>day{daily.streak === 1 ? "" : "s"}</small>
-        </div>
-      )}
-    </section>
+        {/* Only once there is a streak to show. A "0 day streak" is a scolding,
+            not a reward, and the daily claim in the player menu is already where
+            a player who has not claimed is told to. */}
+        {daily.streak > 0 && (
+          <div className="rank-streak" title={`Daily grant x${daily.multiplier}`}>
+            <Flame size={14} aria-hidden="true" />
+            <strong>{daily.streak}</strong>
+            <small>day{daily.streak === 1 ? "" : "s"}</small>
+          </div>
+        )}
+      </section>
+      <SoloEarningsPanel
+        summary={progression.soloEarnings}
+        rankPoints={progression.xp}
+        tier={progression.title}
+        level={progression.level}
+      />
+    </div>
   );
 }

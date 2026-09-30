@@ -16,7 +16,6 @@ import { anteUpStakeProblem } from "@/lib/arcade/ante-up-stakes";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   ActiveAnteUpAttemptExists,
-  advanceAnteUpAttempt,
   countWageredAttemptsSince,
   createAnteUpAttempt,
   getActiveAnteUpAttempt,
@@ -34,6 +33,7 @@ import {
   spendStakeLedgered,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
+import { soloAdvance } from "./solo-settle";
 
 /**
  * Everything between an Ante Up: Memory Match request and the wallet.
@@ -52,6 +52,9 @@ export class AnteUpMemoryRequestError extends ArcadeRequestError<AnteUpMemorySna
 
 /** This game's id in ante_up_attempts; see lib/server/ante-up-store.ts. */
 const GAME = "memory-match";
+
+/** The version-guarded advance; also records the settled wager in the solo earnings tally. */
+const advance = soloAdvance<AnteUpMemoryAttempt>(anteUpMemoryPayout);
 
 /** How many wagered attempts a player may open in a rolling day, at this game. Free practice is uncapped. */
 export const ANTE_UP_MEMORY_DAILY_WAGERED_LIMIT = 10;
@@ -198,7 +201,7 @@ export async function flipAnteUpMemory(
   }
 
   const next = flipAnteUpMemoryTile(current.state, input.index, now);
-  const stored = await advanceAnteUpAttempt(current, next);
+  const stored = await advance(current, next);
   if (!stored) {
     const live = (await getAnteUpAttemptById<AnteUpMemoryAttempt>(current.id)) ?? current;
     throw new AnteUpMemoryRequestError("That board moved on.", 409, { round: snapshot(live) });
@@ -223,7 +226,7 @@ export async function resignAnteUpMemoryAttempt(
 
   const next = resignAnteUpMemory(current.state);
   const stored =
-    (await advanceAnteUpAttempt(current, next)) ??
+    (await advance(current, next)) ??
     (await getAnteUpAttemptById<AnteUpMemoryAttempt>(current.id)) ??
     current;
   return { attempt: snapshot(stored), profile };

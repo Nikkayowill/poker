@@ -1,11 +1,6 @@
 import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  GOLD_PER_XP,
-  goldForLevelUps,
-  levelForXp,
-  xpToReachLevel,
-} from "@/lib/progression/rank";
+import { GOLD_PER_XP, xpToReachLevel } from "@/lib/progression/rank";
 import { dailyGrantFor, utcDayKey } from "@/lib/progression/streak";
 import { ensureProfile, findProfileBySessionToken } from "./profile-store";
 import {
@@ -49,8 +44,7 @@ describe("awarding XP for a wager", () => {
     await awardWager(profileId, token, 500);
 
     const progress = await getProgression(profileId);
-    expect(progress.xp).toBe(150);
-    // Volume, not profit: two losing rounds still moved the bar.
+    // Volume, not profit: two losing rounds still counted.
     expect(progress.lifetimeWagered).toBe(1_500);
   });
 
@@ -59,57 +53,29 @@ describe("awarding XP for a wager", () => {
 
     expect(await awardWager(profileId, token, GOLD_PER_XP - 1)).toBeNull();
     expect(await awardWager(profileId, token, 0)).toBeNull();
-    expect((await getProgression(profileId)).xp).toBe(0);
+    expect((await getProgression(profileId)).lifetimeWagered).toBe(0);
   });
 
-  it("reports the levels a single wager crossed, not just the one it landed on", async () => {
-    const { token, profileId } = await newPlayer("Whale");
+  it("no longer moves rank or pays level Gold: staking alone is not progress", async () => {
+    const { token, profileId, startingGold } = await newPlayer("Volume");
 
-    // One wager big enough to jump several levels at once -- the case where
-    // awarding only the level landed on would swallow the milestones below it.
-    const target = xpToReachLevel(7);
-    const award = await awardWager(profileId, token, goldFor(target));
+    // Enough volume that the old wager-volume rank would have been level 7.
+    const award = await awardWager(profileId, token, goldFor(xpToReachLevel(7)));
 
     expect(award).not.toBeNull();
-    expect(award!.levelUps.map((reward) => reward.level)).toEqual([2, 3, 4, 5, 6, 7]);
-    expect(award!.progression.level).toBe(7);
+    expect(award!.levelUps).toEqual([]);
+    expect(award!.goldAwarded).toBe(0);
+    expect(award!.profile).toBeNull();
+    expect(award!.progression.level).toBe(1);
+    expect((await getProgression(profileId)).level).toBe(1);
+    expect((await findProfileBySessionToken(token))?.goldBalance).toBe(startingGold);
   });
 
-  it("credits milestone Gold once, into the balance it hands back", async () => {
-    const { token, profileId, startingGold } = await newPlayer("Climber");
-
-    const target = xpToReachLevel(5);
-    const owed = goldForLevelUps(1, 5);
-    expect(owed).toBeGreaterThan(0);
-
-    const award = await awardWager(profileId, token, goldFor(target));
-    expect(award!.goldAwarded).toBe(owed);
-    // The wallet comes back with the payout already in it, so a caller
-    // serialising this response cannot show a level-up beside a stale
-    // balance -- checked against a fresh read rather than startingGold + owed,
-    // since crossing several levels in one wager also completes the
-    // "weekly_level_up" mission, whose own Gold lands in this same balance.
-    const fresh = await findProfileBySessionToken(token);
-    expect(award!.profile?.goldBalance).toBe(fresh?.goldBalance);
-    expect(award!.profile?.goldBalance).toBeGreaterThanOrEqual(startingGold + owed);
-
-    // Crossing nothing pays nothing: the second wager is inside level 5.
-    const again = await awardWager(profileId, token, goldFor(1));
-    expect(again!.goldAwarded).toBe(0);
-    expect(again!.levelUps).toEqual([]);
-  });
-
-  it("keeps XP monotonic across many small wagers", async () => {
+  it("keeps lifetime volume monotonic across many small wagers", async () => {
     const { token, profileId } = await newPlayer("Steady");
 
-    let expected = 0;
-    for (let round = 0; round < 40; round += 1) {
-      await awardWager(profileId, token, 250);
-      expected += 25;
-    }
-    const progress = await getProgression(profileId);
-    expect(progress.xp).toBe(expected);
-    expect(progress.level).toBe(levelForXp(expected));
+    for (let round = 0; round < 40; round += 1) await awardWager(profileId, token, 250);
+    expect((await getProgression(profileId)).lifetimeWagered).toBe(40 * 250);
   });
 });
 
@@ -153,7 +119,7 @@ describe("the daily streak", () => {
     expect((await getProgression(profileId, day("2026-08-05"))).streak).toBe(0);
   });
 
-  it("survives beside XP rather than overwriting it", async () => {
+  it("survives beside lifetime volume rather than overwriting it", async () => {
     const { token, profileId } = await newPlayer("Both");
 
     await awardWager(profileId, token, 10_000);
@@ -161,7 +127,7 @@ describe("the daily streak", () => {
     await awardWager(profileId, token, 10_000);
 
     const progress = await getProgression(profileId, day("2026-08-01"));
-    expect(progress.xp).toBe(2_000);
+    expect(progress.lifetimeWagered).toBe(20_000);
     expect(progress.streak).toBe(1);
     expect(progress.lastClaimDay).toBe(utcDayKey(day("2026-08-01")));
   });

@@ -20,7 +20,6 @@ import type { BlockudokuMoveProblem } from "@/lib/arcade/puzzles/blockudoku";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   ActiveAnteUpAttemptExists,
-  advanceAnteUpAttempt,
   countWageredAttemptsSince,
   createAnteUpAttempt,
   getActiveAnteUpAttempt,
@@ -38,6 +37,7 @@ import {
   spendStakeLedgered,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
+import { soloAdvance } from "./solo-settle";
 
 /**
  * Everything between an Ante Up: Blockudoku request and the wallet.
@@ -67,6 +67,9 @@ export class AnteUpBlockudokuRequestError extends ArcadeRequestError<
 
 /** This game's id in ante_up_attempts; see lib/server/ante-up-store.ts. */
 const GAME = "blockudoku";
+
+/** The version-guarded advance; also records the settled wager in the solo earnings tally. */
+const advance = soloAdvance<AnteUpBlockudokuAttempt>(anteUpBlockudokuPayout);
 
 /** How many wagered attempts a player may open in a rolling day, at this game. Free practice is uncapped. */
 export const ANTE_UP_BLOCKUDOKU_DAILY_WAGERED_LIMIT = 10;
@@ -129,7 +132,7 @@ async function settleIfExpired(
   const ticked = tickAnteUpBlockudoku(stored.state, now);
   if (ticked === null) return stored;
 
-  const advanced = await advanceAnteUpAttempt(stored, ticked);
+  const advanced = await advance(stored, ticked);
   // Rule 2: a lost race did not happen; another read already settled this.
   return advanced ?? (await getAnteUpAttemptById<AnteUpBlockudokuAttempt>(stored.id)) ?? stored;
 }
@@ -280,7 +283,7 @@ export async function placeAnteUpBlockudoku(
     // Settle the timeout before refusing, so the response carries the true
     // state rather than a stale "active" the player could mistake for playable.
     const settled =
-      (await advanceAnteUpAttempt(current, ticked)) ??
+      (await advance(current, ticked)) ??
       (await getAnteUpAttemptById<AnteUpBlockudokuAttempt>(current.id)) ??
       current;
     throw new AnteUpBlockudokuRequestError("Time's up.", 409, { round: snapshot(settled, now) });
@@ -307,7 +310,7 @@ export async function placeAnteUpBlockudoku(
 
   // Fresh entropy for any refill this placement triggers; see the puzzle file's header.
   const next = placeAnteUpBlockudokuPiece(current.state, input.slot, input.row, input.col, now, randomInt(2 ** 32));
-  const stored = await advanceAnteUpAttempt(current, next);
+  const stored = await advance(current, next);
   if (!stored) {
     // Rule 2: a lost race did not happen.
     const live = (await getAnteUpAttemptById<AnteUpBlockudokuAttempt>(current.id)) ?? current;
@@ -332,7 +335,7 @@ export async function resignAnteUpBlockudokuAttempt(
 
   const next = resignAnteUpBlockudoku(current.state, now);
   const stored =
-    (await advanceAnteUpAttempt(current, next)) ??
+    (await advance(current, next)) ??
     (await getAnteUpAttemptById<AnteUpBlockudokuAttempt>(current.id)) ??
     current;
   return { attempt: snapshot(stored, now), profile };

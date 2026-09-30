@@ -1,22 +1,20 @@
 import "server-only";
-import {
-  goldForLevelUps,
-  levelForXp,
-  rankProgress,
-  rewardsBetween,
-  xpForWager,
-  type LevelReward,
-} from "@/lib/progression/rank";
+import { rankProgress, xpForWager, type LevelReward } from "@/lib/progression/rank";
+import { rankPointsFrom, summarizeSoloEarnings } from "@/lib/progression/solo-earnings";
 import { liveStreak, streakAfterClaim, utcDayKey } from "@/lib/progression/streak";
 import type { ProgressionSnapshot } from "@/lib/progression/types";
 import type { PlayerProfile } from "@/lib/profile/types";
-import { checkAchievements } from "./achievement-store";
-import { applyMissionEvent } from "./mission-store";
-import { creditGold, creditGoldByProfile } from "./profile-store";
+import { readSoloState, type SoloState } from "./solo-earnings-store";
 import { adminClient } from "./supabase-admin";
 
 /**
- * Player progression: XP, rank, lifetime wagered, daily streak.
+ * Player progression: rank, lifetime wagered, daily streak.
+ *
+ * Rank is no longer XP from staking. It is the difficulty-weighted net of solo
+ * wagers, kept by lib/server/solo-earnings-store.ts and turned into a level by
+ * lib/progression/solo-earnings.ts. This store still counts XP and lifetime
+ * wagered for every wager, PVP included, but nothing here pays level rewards or
+ * moves rank from them; the milestone Gold comes from the solo store.
  *
  * The curve itself is not here. lib/progression/rank.ts owns it, is pure, and
  * is the only definition; this module reads xp out of a row and asks that
@@ -88,10 +86,11 @@ export function __resetProgressionMemory(): void {
   memoryProgression.clear();
 }
 
-function toSnapshot(row: ProgressionRow, now: Date): ProgressionSnapshot {
+function toSnapshot(row: ProgressionRow, solo: SoloState, now: Date): ProgressionSnapshot {
   return {
-    ...rankProgress(row.xp),
+    ...rankProgress(rankPointsFrom(solo.base, solo.byBand)),
     lifetimeWagered: row.lifetimeWagered,
+    soloEarnings: summarizeSoloEarnings(solo.byBand),
     // Read through liveStreak rather than straight off the row: a stored 9 is
     // not a nine-day streak if the last claim was a week ago, and the readout
     // must not promise a multiplier the next claim will not pay.
@@ -126,111 +125,56 @@ export async function getProgression(
   profileId: string,
   now: Date = new Date(),
 ): Promise<ProgressionSnapshot> {
-  return toSnapshot(await readRow(profileId), now);
+  const [row, solo] = await Promise.all([readRow(profileId), readSoloState(profileId)]);
+  return toSnapshot(row, solo, now);
 }
 
 /**
- * Records Gold staked, and pays whatever levels that crossed.
+ * Records Gold staked, for lifetime volume and the legacy XP count.
  *
- * `token` is taken alongside `profileId` because the two identities do
- * different jobs here and neither substitutes for the other: progression is
- * keyed on the durable profile id, and the guarded credit is keyed on the
- * session token, which is what creditGold and the credit_gold RPC take.
+ * It no longer moves rank or pays level rewards: rank is the net of solo
+ * wagers now, which recordSoloResult owns. The return shape is kept so the
+ * settle paths that read `progression` off it keep working, with `levelUps`
+ * always empty and no Gold awarded.
  *
- * It is NULLABLE for the one caller that genuinely does not have it: a duel
- * stakes both players (lib/server/pvp-match-service.ts), and the request that
- * opens a match carries only the acceptor's cookie; the challenger has no
- * session in scope. Null routes the milestone credit through
- * creditGoldByProfile instead, which is the same row-locked RPC keyed on the
- * id this function already has. Passing a token when you have one is still
- * preferred: it is the identity the rest of the wallet is keyed on.
+ * `token` is kept in the signature for the same reason; nothing here credits.
  *
- * Never throws into its caller's request. A settled arcade round or a completed
- * poker hand must not become a failed request because the XP write failed,
- * the same contract onHandCompleted states for stats and archives. The award is
- * lost in that case, which is the right trade: a player would rather keep the
- * hand than keep the XP.
+ * Never throws into its caller. A settled arcade round or a completed poker
+ * hand must not become a failed request because the XP write failed, the same
+ * contract onHandCompleted states for stats and archives.
  */
 export async function awardWager(
   profileId: string,
-  token: string | null,
+  _token: string | null,
   goldStaked: number,
   now: Date = new Date(),
 ): Promise<WagerAward | null> {
   const xp = xpForWager(goldStaked);
   // A sub-threshold stake still counts toward lifetime volume, but there is
-  // nothing to write and no level it could cross.
+  // nothing to write.
   if (xp <= 0) return null;
 
   try {
     const supabase = adminClient();
-    let previousXp: number;
-    let newXp: number;
-
     if (!supabase) {
       const current = memoryProgression.get(profileId) ?? EMPTY_ROW;
-      previousXp = current.xp;
-      newXp = current.xp + xp;
       memoryProgression.set(profileId, {
         ...current,
-        xp: newXp,
+        xp: current.xp + xp,
         lifetimeWagered: current.lifetimeWagered + Math.floor(goldStaked),
       });
     } else {
-      const { data, error } = await supabase
-        .rpc("award_progression_xp", {
-          p_profile_id: profileId,
-          p_xp: xp,
-          p_wagered: Math.floor(goldStaked),
-        })
-        .single();
+      const { error } = await supabase.rpc("award_progression_xp", {
+        p_profile_id: profileId,
+        p_xp: xp,
+        p_wagered: Math.floor(goldStaked),
+      });
       if (error) throw new Error(`Could not award XP: ${error.message}`);
-      const result = data as { previous_xp: number; new_xp: number };
-      previousXp = Number(result.previous_xp);
-      newXp = Number(result.new_xp);
     }
 
-    const levelUps = rewardsBetween(levelForXp(previousXp), levelForXp(newXp));
-    // The "rank up" mission's only hook: awardWager is already the single
-    // funnel every wager-driven level-up passes through (poker, blackjack,
-    // tips, PvP accept), so this is where it's detected rather than at each
-    // of those call sites again. applyMissionEvent never throws, so awaiting
-    // it costs latency, not reliability, and most of those callers await
-    // awardWager itself before responding, where a fire-and-forget call can
-    // simply never run if the serverless invocation freezes right after.
-    await applyMissionEvent(profileId, { kind: "level_gained", levels: levelUps.length });
-    if (levelUps.length > 0) {
-      // Its own try/catch even though this whole function already sits
-      // inside one (the outer catch below discards the entire WagerAward,
-      // level-up display included, on any error): an achievement-check bug
-      // must not cost the level-up result on top of nothing.
-      try {
-        await checkAchievements([profileId]);
-      } catch (error) {
-        console.error("achievements.level_check_failed", { profileId, error });
-      }
-    }
-    const owed = goldForLevelUps(levelForXp(previousXp), levelForXp(newXp));
-    let goldAwarded = 0;
-    let profile: PlayerProfile | null = null;
-    if (owed > 0) {
-      // Rule 1: the XP write above already happened, so this pays at most once
-      // per crossing. A failure here loses the milestone Gold rather than
-      // risking paying it twice on a retry, and unlike the XP, it is visible,
-      // because the level-up still shows.
-      //
-      // Both branches are the same guarded RPC on the same row, differing only
-      // in which unique column addresses it; see the token note in the header.
-      profile = token === null
-        ? await creditGoldByProfile(profileId, owed)
-        : await creditGold(token, owed);
-      goldAwarded = owed;
-    }
-
-    const row = await readRow(profileId);
-    return { levelUps, goldAwarded, xpAwarded: xp, progression: toSnapshot(row, now), profile };
+    const [row, solo] = await Promise.all([readRow(profileId), readSoloState(profileId)]);
+    return { levelUps: [], goldAwarded: 0, xpAwarded: xp, progression: toSnapshot(row, solo, now), profile: null };
   } catch (error) {
-    // Covers the level-up Gold credit too, so a lost milestone payout shows up here.
     console.error("progression.award_wager_failed", { profileId, goldStaked, error });
     return null;
   }

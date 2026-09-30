@@ -1,4 +1,5 @@
 import type { RankProgress } from "./rank";
+import type { SoloEarningsSummary } from "./solo-earnings";
 
 /**
  * The progression wire contract, shared rather than server-only.
@@ -13,8 +14,14 @@ import type { RankProgress } from "./rank";
  */
 
 export interface ProgressionSnapshot extends RankProgress {
-  /** Gold staked over this profile's lifetime. Never netted against winnings. */
+  /**
+   * Gold staked over this profile's lifetime, PVP and solo. Never netted against
+   * winnings. Rank no longer reads this: `xp` on a snapshot is rank points, the
+   * difficulty-weighted net of solo wagers.
+   */
   lifetimeWagered: number;
+  /** What PVE and solo wagers have paid and cost, by stake band, with the difficulty gauge. */
+  soloEarnings: SoloEarningsSummary;
   /** Consecutive claim days, already zeroed if the streak has lapsed. */
   streak: number;
   /** The UTC day of the last claim (YYYY-MM-DD), or null. */

@@ -26,7 +26,6 @@ import {
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   ActiveAnteUpAttemptExists,
-  advanceAnteUpAttempt,
   countWageredAttemptsSince,
   createAnteUpAttempt,
   getActiveAnteUpAttempt,
@@ -44,6 +43,7 @@ import {
   spendStakeLedgered,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
+import { soloAdvance } from "./solo-settle";
 
 /**
  * Everything between an Ante Up: Minesweeper request and the wallet.
@@ -73,6 +73,9 @@ export class AnteUpMinesweeperRequestError extends ArcadeRequestError<
 
 /** This game's id in ante_up_attempts; see lib/server/ante-up-store.ts. */
 const GAME = "minesweeper";
+
+/** The version-guarded advance; also records the settled wager in the solo earnings tally. */
+const advance = soloAdvance<AnteUpMinesweeperAttempt>(anteUpMinesweeperPayout);
 
 /** How many wagered attempts a player may open in a rolling day, at this game. Free practice is uncapped. */
 export const ANTE_UP_MINESWEEPER_DAILY_WAGERED_LIMIT = 10;
@@ -129,7 +132,7 @@ async function settleIfExpired(
   const ticked = tickAnteUpMinesweeper(stored.state, now);
   if (ticked === null) return stored;
 
-  const advanced = await advanceAnteUpAttempt(stored, ticked);
+  const advanced = await advance(stored, ticked);
   // Rule 2: a lost race did not happen; another read already settled this.
   return advanced ?? (await getAnteUpAttemptById<AnteUpMinesweeperAttempt>(stored.id)) ?? stored;
 }
@@ -309,7 +312,7 @@ export async function playAnteUpMinesweeper(
     // response carries the true (timed-out) state rather than a stale "active"
     // one the player could mistake for still-playable.
     const settled =
-      (await advanceAnteUpAttempt(current, ticked)) ??
+      (await advance(current, ticked)) ??
       (await getAnteUpAttemptById<AnteUpMinesweeperAttempt>(current.id)) ??
       current;
     throw new AnteUpMinesweeperRequestError("Time's up.", 409, { round: snapshot(settled, now) });
@@ -329,7 +332,7 @@ export async function playAnteUpMinesweeper(
   }
 
   const next = applyMove(current.state, input, now);
-  const stored = await advanceAnteUpAttempt(current, next);
+  const stored = await advance(current, next);
   if (!stored) {
     // Rule 2: a lost race did not happen.
     const live = (await getAnteUpAttemptById<AnteUpMinesweeperAttempt>(current.id)) ?? current;
@@ -354,7 +357,7 @@ export async function resignAnteUpMinesweeperAttempt(
 
   const next = resignAnteUpMinesweeper(current.state, now);
   const stored =
-    (await advanceAnteUpAttempt(current, next)) ??
+    (await advance(current, next)) ??
     (await getAnteUpAttemptById<AnteUpMinesweeperAttempt>(current.id)) ??
     current;
   return { attempt: snapshot(stored, now), profile };

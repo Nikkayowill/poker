@@ -48,6 +48,7 @@ import {
   spendStakeLedgered,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
+import { recordSoloResult } from "./solo-earnings-store";
 
 /**
  * Everything between a Connections request and the board.
@@ -428,6 +429,14 @@ export async function playConnectionsGuess(
         console.error("connections.wager_payout_credit_failed", { profileId: profile.id, payout, error });
       });
     }
+    // The daily board settles once, so the profile and day are the idempotency
+    // key. Recorded after the credit, win or lose, for the rank and the tracker.
+    await recordSoloResult(profile.id, token, {
+      game: "connections",
+      correlationId: `connections:${profile.id}:${current.day}`,
+      wager: current.round.wager,
+      payout,
+    });
   } else if (complete && isToday) {
     // The per-game daily bonus, replacing the retired flat "daily_brain_game"
     // mission; see lib/server/daily-puzzle-bonus.ts. Pays even on a loss, at

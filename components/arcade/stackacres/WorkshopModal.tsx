@@ -13,6 +13,7 @@ import {
   machineItemIcon,
   machineItemLabel,
   machineItemNoun,
+  machineItemPurpose,
   machineItemSellPrice,
   type MachineItemId,
   type MachineProcessedItem,
@@ -395,7 +396,10 @@ export function WorkshopModal({
                         <ContractPayout key={sellPayout.nonce} gold={sellPayout.gold} influence={0} />
                       )}
                       <StackAcresIcon name={icon(item)} size={20} />
-                      <span className="sa-workshop-shelf-name">{machineItemLabel(item, quantity)}</span>
+                      <span className="sa-workshop-shelf-copy">
+                        <span className="sa-workshop-shelf-name">{machineItemLabel(item, quantity)}</span>
+                        <span className="sa-workshop-shelf-purpose">{machineItemPurpose(item)}</span>
+                      </span>
                       {quantity > 0 && (
                         <button
                           type="button"

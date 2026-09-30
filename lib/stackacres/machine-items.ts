@@ -223,3 +223,13 @@ export function machineItemLabel(item: MachineItemId, quantity: number): string 
   const def = MACHINE_ITEM_CATALOGUE[item];
   return `${quantity.toLocaleString()} ${quantity === 1 ? def.label : def.plural}`;
 }
+
+/** A short player-facing hint for the shelf. Exact requirements still live in
+ * the recipe and contract panels. */
+export function machineItemPurpose(item: MachineItemId): string {
+  if (item === "wood" || item === "stone") return "Building material — keep some for farm upgrades.";
+  if (item === "bluegill" || item === "trout" || item === "catfish") return "Catch from the pond, then sell for Gold.";
+  if (item === "meat" || item === "pelt") return "Exploration find — sell it from the Workshop shelf.";
+  if (isMachineProcessedItem(item)) return "Use in recipes or town orders, or sell it from the Workshop shelf.";
+  return "Use in recipes, animal care, gifts, or town orders.";
+}

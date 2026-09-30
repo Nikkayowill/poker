@@ -161,6 +161,48 @@ describe("the farm's routines", () => {
     });
   });
 
+  describe("on the weekly rest day", () => {
+    const REST = 6;
+
+    it("keeps the barn shut and Ray out on the Homestead", () => {
+      for (const day of [REST, REST + 7, REST + 70]) {
+        const plan = planDay(NPC_ROUTINES.ray, NPC_STATIONS, areas, 3_600_000, daySeed("ray", day), day);
+        for (let h = 7; h < 20.5; h += 0.05) expect(poseAt(plan, h).area, `day ${day} at ${h.toFixed(2)}h`).toBe("homestead");
+      }
+    });
+
+    it("leaves the other days alone", () => {
+      const plain = planDay(NPC_ROUTINES.ray, NPC_STATIONS, areas, 3_600_000, daySeed("ray", 3));
+      const dated = planDay(NPC_ROUTINES.ray, NPC_STATIONS, areas, 3_600_000, daySeed("ray", 3), 3);
+      expect(dated).toEqual(plain);
+      expect(poseAt(dated, 10.5).area).toBe("barn");
+    });
+
+    for (const [name, routine] of Object.entries(NPC_ROUTINES)) {
+      it(`${name} goes from every weekday into the next without a jump`, () => {
+        const planFor = (day: number) => planDay(routine, NPC_STATIONS, areas, 3_600_000, daySeed(name, day), day);
+        for (let day = 1; day <= 14; day++) {
+          let previous = poseOn(planFor, day * 24 - 2);
+          for (let s = 1; s <= 10 * 3600; s += 2) {
+            const pose = poseOn(planFor, day * 24 - 2 + s / 3600);
+            const when = `${name} day ${day} at ${(s / 3600 - 2).toFixed(3)}h`;
+            if (pose.area === previous.area) {
+              expect(Math.hypot(pose.x - previous.x, pose.y - previous.y), when).toBeLessThanOrEqual(routine.speed * 1.08 * 2 + 0.5);
+            } else {
+              expect([previous.doing, pose.doing], when).toEqual(["walk", "walk"]);
+            }
+            previous = pose;
+          }
+        }
+      }, 60_000);
+
+      it(`${name} ends every variant at the station the everyday routine ends at`, () => {
+        const last = (steps: { hour: number; station: string }[]) => [...steps].sort((a, b) => a.hour - b.hour).at(-1)!.station;
+        for (const steps of Object.values(routine.weekly ?? {})) expect(last(steps!)).toBe(last(routine.steps));
+      });
+    }
+  });
+
   it("has Ray on the Homestead at mid-morning and turned in for the night by the east gate", () => {
     const plan = planDay(NPC_ROUTINES.ray, NPC_STATIONS, areas, 3_600_000);
     expect(poseAt(plan, 8).area).toBe("homestead");

@@ -51,6 +51,15 @@ export interface Routine {
   /** Walking speed in map px per real second. The farmer walks at 72. */
   speed: number;
   steps: RoutineStep[];
+  /** Days of the week (farm day number mod 7) that keep their own steps instead of `steps`: a rest day,
+   *  a market day. A variant should end where `steps` ends, so the next day starts from the same place. */
+  weekly?: Partial<Record<number, RoutineStep[]>>;
+}
+
+/** The steps a routine follows on `day`. With no day given, the everyday steps. */
+export function stepsFor(routine: Routine, day?: number): RoutineStep[] {
+  if (day === undefined) return routine.steps;
+  return routine.weekly?.[((Math.floor(day) % 7) + 7) % 7] ?? routine.steps;
 }
 
 export interface AreaExit {
@@ -315,11 +324,12 @@ function stepPose(step: StepPlan, ms: number): Pose {
  * Lays out one day of a routine. `msPerHour` is how long a game hour lasts in real time: an hour
  * (3,600,000) on the player's own clock, less on a faster game clock. Walks always take real time at
  * about `routine.speed`, so they look the same whatever the clock. With a `seed` (daySeed) the day is
- * that day's own variation on the routine; without one it is the routine to the letter.
+ * that day's own variation on the routine; without one it is the routine to the letter. With a `day`, a
+ * routine's weekly variant for that weekday (`Routine.weekly`) stands in for its everyday steps.
  */
-export function planDay(routine: Routine, stations: Record<string, Station>, areas: Record<string, AreaMap>, msPerHour: number, seed?: number): DayPlan {
+export function planDay(routine: Routine, stations: Record<string, Station>, areas: Record<string, AreaMap>, msPerHour: number, seed?: number, day?: number): DayPlan {
   const random = seed === undefined ? null : seededRandom(seed);
-  const steps = [...routine.steps].sort((a, b) => a.hour - b.hour);
+  const steps = [...stepsFor(routine, day)].sort((a, b) => a.hour - b.hour);
   if (steps.length === 0) throw new Error("a routine needs at least one step");
   for (const step of steps) {
     const station = stations[step.station];
@@ -392,11 +402,13 @@ export function poseOn(planFor: (day: number) => DayPlan, gameHours: number, sti
   return still ? rest(step) : stepPose(step, ms);
 }
 
-/** Every point a routine stands on or walks to, with its area: what a test checks is open ground. */
+/** Every point a routine stands on or walks to, weekly variants included, with its area: what a test checks
+ *  is open ground. */
 export function routineSpots(routine: Routine, stations: Record<string, Station>): { station: string; area: string; spot: Spot }[] {
   const seen = new Set<string>();
   const out: { station: string; area: string; spot: Spot }[] = [];
-  for (const step of routine.steps) {
+  for (const step of [...routine.steps, ...Object.values(routine.weekly ?? {}).flat()]) {
+    if (!step) continue;
     if (seen.has(step.station)) continue;
     seen.add(step.station);
     const station = stations[step.station];

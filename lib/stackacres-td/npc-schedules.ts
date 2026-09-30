@@ -5,7 +5,8 @@
  * tends the greenhouse beds, minds his counter in the barn, feeds the hens at noon, picks berries in
  * the afternoon, sits on the porch at dusk and turns in by the east road again at night. The Pixel
  * Pilgrim fishes off the dock, wanders the grove by the workshop, rests by the well and camps by the
- * west edge overnight.
+ * west edge overnight. Pierre and Ivy work their corner but break at midday and wander for the evening.
+ * On day 6 of each week Ray and the Pilgrim keep a rest day (Routine.weekly).
  *
  * Every spot is a map point on open ground (npc-schedules.test.ts checks each one against the
  * exported area.json, and that every walk between them can be made). When the Homestead is redrawn,
@@ -102,6 +103,18 @@ export const NPC_ROUTINES: Record<string, Routine> = {
       { hour: 18, station: "ray-porch" },
       { hour: 20.5, station: "ray-home" },
     ],
+    // Day 6 of the week the barn stays shut: he lies in, still feeds the hens, and spends the rest of
+    // the day on the porch and at the berries.
+    weekly: {
+      6: [
+        { hour: 7.5, station: "ray-porch" },
+        { hour: 10, station: "ray-hens" },
+        { hour: 12, station: "ray-porch" },
+        { hour: 15, station: "ray-berries" },
+        { hour: 17.5, station: "ray-porch" },
+        { hour: 20.5, station: "ray-home" },
+      ],
+    },
   },
   pilgrim: {
     speed: 30,
@@ -113,11 +126,24 @@ export const NPC_ROUTINES: Record<string, Routine> = {
       { hour: 17, station: "pilgrim-grove" },
       { hour: 20, station: "pilgrim-camp" },
     ],
+    // Rest day: he keeps to the water, fishing longer and resting by the well at noon.
+    weekly: {
+      6: [
+        { hour: 6, station: "pilgrim-dock" },
+        { hour: 11, station: "pilgrim-well" },
+        { hour: 13, station: "pilgrim-dock" },
+        { hour: 20, station: "pilgrim-camp" },
+      ],
+    },
   },
   pierre: {
     speed: 38,
     steps: [
       { hour: 7, station: "pierre-yard" },
+      { hour: 12, station: "ray-porch" },
+      { hour: 13, station: "pierre-yard" },
+      { hour: 17, station: "pilgrim-well" },
+      { hour: 19, station: "pierre-yard" },
       { hour: 21, station: "pierre-rest" },
     ],
   },
@@ -125,6 +151,10 @@ export const NPC_ROUTINES: Record<string, Routine> = {
     speed: 38,
     steps: [
       { hour: 7, station: "ivy-greenhouse" },
+      { hour: 12, station: "ray-berries" },
+      { hour: 13.5, station: "ivy-greenhouse" },
+      { hour: 17, station: "ray-hens" },
+      { hour: 19, station: "ivy-greenhouse" },
       { hour: 21, station: "ivy-rest" },
     ],
   },

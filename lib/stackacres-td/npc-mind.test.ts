@@ -257,4 +257,84 @@ describe("pickChat", () => {
     ];
     expect(pickChat(people, 5000, new Map(), () => 0)).toBeNull();
   });
+
+  it("brings two people 60px apart to a conversation's distance on the line between them", () => {
+    const people = [
+      { name: "ray", x: 100, y: 100, mind: free().mind },
+      { name: "ivy", x: 160, y: 100, mind: free().mind },
+    ];
+    const chat = pickChat(people, 5000, new Map(), () => 0)!;
+    expect(chat.meetA).toEqual({ x: 119, y: 100 });
+    expect(chat.meetB).toEqual({ x: 141, y: 100 });
+  });
+
+  it("does not pair people whose walk to each other is blocked", () => {
+    const people = [
+      { name: "ray", x: 100, y: 100, mind: free().mind },
+      { name: "ivy", x: 160, y: 100, mind: free().mind },
+    ];
+    expect(pickChat(people, 5000, new Map(), () => 0, (p) => p.x < 110 || p.x > 130)).toBeNull();
+  });
+});
+
+describe("walking to a chat", () => {
+  const meetUp = () => {
+    const s = sim(standing(100, 100, "down", "idle"));
+    s.run(2000);
+    const partner = { name: "ivy", x: 160, y: 100 };
+    s.mind.startChat("ivy", 3000, s.now, { x: 119, y: 100 });
+    return { s, partner };
+  };
+
+  it("walks over at a walking pace, turned toward them, and only then starts the talk", () => {
+    const { s, partner } = meetUp();
+    let previous = { x: 100, y: 100 };
+    let walked = 0;
+    let talkedAt: number | null = null;
+    let talkedX = 0;
+    for (let t = 0; t < 4000; t += FRAME_MS) {
+      const [look] = s.run(FRAME_MS, { others: [partner] });
+      expect(Math.hypot(look.x - previous.x, look.y - previous.y)).toBeLessThanOrEqual(0.6);
+      if (look.anim === "walk" && talkedAt === null) {
+        walked += 1;
+        expect(look.facing).toBe("right");
+        expect(look.walkSpeed).toBeGreaterThan(0);
+      }
+      if (s.mind.talking() && talkedAt === null) {
+        talkedAt = s.now;
+        talkedX = look.x;
+      }
+      previous = look;
+    }
+    expect(walked).toBeGreaterThan(30);
+    expect(talkedAt).not.toBeNull();
+    expect(talkedX).toBeCloseTo(119, 0);
+  });
+
+  it("walks back to their spot when the talk is over, and is free for their day again", () => {
+    const { s, partner } = meetUp();
+    s.run(40_000, { others: [partner] });
+    expect(s.mind.chatting()).toBe(false);
+    expect(s.look!.x).toBeCloseTo(100, 0);
+    expect(s.mind.behind()).toBe(0);
+  });
+
+  it("gives the chat up and walks home when the way is blocked", () => {
+    const s = sim(standing(100, 100, "down", "idle"));
+    s.run(2000);
+    s.mind.startChat("ivy", 3000, s.now, { x: 119, y: 100 });
+    s.run(6000, { others: [{ name: "ivy", x: 160, y: 100 }], open: (p) => p.x < 105 });
+    expect(s.mind.talking()).toBe(false);
+    expect(s.look!.x).toBeCloseTo(100, 0);
+  });
+
+  it("holds their day while they are away from their spot, then catches up", () => {
+    const s = sim(leavesAt(3000));
+    s.run(2000);
+    s.mind.startChat("ivy", 4000, s.now, { x: 119, y: 100 });
+    s.run(3500, { others: [{ name: "ivy", x: 160, y: 100 }] });
+    expect(s.mind.behind()).toBeGreaterThan(0);
+    s.run(20_000, { others: [{ name: "ivy", x: 400, y: 100 }] });
+    expect(s.mind.behind()).toBe(0);
+  });
 });

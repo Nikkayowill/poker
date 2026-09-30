@@ -15,6 +15,12 @@ StackChips does not support real-money wagering.
 4. Never expose `SUPABASE_SERVICE_ROLE_KEY` through a `NEXT_PUBLIC_` variable.
 5. Verify every migration in `supabase/migrations` is in the production Supabase migration ledger.
    Deploy only after this verification passes.
+   Repeat this verification after every merge that adds a migration file.
+   Merging a PR ships code only, and Vercel deploys `main` within minutes of the merge.
+   Use `supabase migration list --linked`, or list the ledger with the Supabase MCP `list_migrations` tool and compare the versions with the file names.
+   On 2026-09-30, PRs #694 and #698 were merged and deployed with their migrations (`rank_tiers` and `waiting_room_realtime_signals`) not applied.
+   The Sit & Go and heads-up waiting rooms stopped refreshing on production.
+   That code no longer polls, and the database triggers that ping the client did not exist yet.
 6. Open `/api/health` on the deployed domain.
    Do not invite players until this endpoint returns Hypertext Transfer Protocol (HTTP) status 200 with `"status":"ok"` and `"persistence":"supabase"`.
 
@@ -139,6 +145,61 @@ Check the items below before you invite players to any of these surfaces.
   Verify the table ends immediately.
   Verify the pot goes to the higher score.
   Verify the table does not continue with the remaining seats.
+
+## StackAcres
+
+StackAcres is the farm game inside StackChips.
+It is a Gold sink and a capped passive Gold source.
+The server owns the farm state.
+The client renders each action at once and then reconciles with the server.
+See `docs/stackacres-direction.md` for the product direction.
+
+Check the items below before you invite players to the farm.
+
+- Verify Wood and Stone credit the inventory in the production database.
+  This check passed on 2026-09-30.
+  The `stackacres_wood_stone_inventory` migration is in the production ledger.
+  The live `homestead_processing_inventory_item_check` constraint lists `wood` and `stone`.
+  A real profile holds 64 Wood and 36 Stone from cleared land obstacles and one felled Homestead tree.
+  No profile had mined a Mine boulder, and no profile had built a machine.
+  The two items below close this check.
+- Mine one Mine boulder on a real account.
+  Verify the Stone count rises by the swing's yield.
+  Verify a tap on a broken boulder pays nothing.
+- Build the Mill on a real account.
+  Verify 15 Wood leaves the inventory once.
+  Verify the Mill is still there after a page refresh.
+- Verify every StackAcres migration is in the production migration ledger.
+  Follow the check in the "Deployment" section.
+- Verify crops grow and machines finish while the player is away.
+  Plant a crop, start a machine, close the tab, wait past both timers, and reopen the farm.
+  Verify the crop is ready.
+  Verify the machine output is on the shelf.
+- Verify animals produce while the player is away.
+  Feed an animal, close the tab, wait past its production time, and reopen the farm.
+  Verify the product is on the shelf.
+- Verify storage limits.
+  Fill a store to its cap.
+  Verify the farm refuses the next item with a message.
+  Verify the farm does not drop the item silently.
+- Verify a contract pays once.
+  Fulfil the same contract from two tabs at the same time.
+  Verify the reward pays once.
+  Verify the goods leave the inventory once.
+- Refresh the page during planting, watering, harvesting, and crafting.
+  Verify each action lands once or not at all.
+- Double-tap every action button.
+  Verify each action lands once.
+- Verify the farm layout on mobile Safari in portrait and landscape.
+- Play the first 10 minutes on a completely fresh account.
+  Verify the player always knows the next action.
+  Verify the player can build the Mill without outside help.
+- Verify there is no infinite Gold or resource exploit.
+  Sell an item the profile does not hold.
+  Verify the server refuses the sale.
+  Build a machine without the materials.
+  Verify the server refuses the build.
+  Verify the Gold balance does not change on a refused action.
 
 ## Release verification
 

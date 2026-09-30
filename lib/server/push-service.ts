@@ -38,9 +38,11 @@ function ensureConfigured(): boolean {
   return configured;
 }
 
-async function sendToSubscription(subscription: StoredPushSubscription, payload: PushPayload): Promise<void> {
+export type PushSendResult = "sent" | "not-configured" | "blocked-endpoint" | "gone" | "failed";
+
+async function sendToSubscription(subscription: StoredPushSubscription, payload: PushPayload): Promise<PushSendResult> {
   // Rows saved before the endpoint check existed could point anywhere.
-  if (!isAllowedPushEndpoint(subscription.endpoint)) return;
+  if (!isAllowedPushEndpoint(subscription.endpoint)) return "blocked-endpoint";
   try {
     await webpush.sendNotification(
       {
@@ -49,6 +51,7 @@ async function sendToSubscription(subscription: StoredPushSubscription, payload:
       },
       JSON.stringify(payload),
     );
+    return "sent";
   } catch (error) {
     // 404/410 mean the push service has permanently discarded this
     // endpoint (uninstalled PWA, cleared site data, expired subscription) --
@@ -59,7 +62,10 @@ async function sendToSubscription(subscription: StoredPushSubscription, payload:
     const statusCode = (error as { statusCode?: number } | null)?.statusCode;
     if (statusCode === 404 || statusCode === 410) {
       await removePushSubscription(subscription.endpoint).catch(() => {});
+      return "gone";
     }
+    console.error("push send failed", { subscriptionId: subscription.id, statusCode });
+    return "failed";
   }
 }
 
@@ -70,10 +76,13 @@ export async function sendPushToProfile(profileId: string, payload: PushPayload)
   await Promise.all(subscriptions.map((subscription) => sendToSubscription(subscription, payload)));
 }
 
-/** Sends directly to an already-fetched subscription (the cron sender's path -- it already has the candidate list and shouldn't re-fetch it per profile). */
-export async function sendPushToSubscription(subscription: StoredPushSubscription, payload: PushPayload): Promise<void> {
-  if (!ensureConfigured()) return;
-  await sendToSubscription(subscription, payload);
+/**
+ * Sends directly to an already-fetched subscription (the cron sender's path -- it already has the candidate list and shouldn't re-fetch it per profile).
+ * Returns what happened so the caller only counts a real delivery.
+ */
+export async function sendPushToSubscription(subscription: StoredPushSubscription, payload: PushPayload): Promise<PushSendResult> {
+  if (!ensureConfigured()) return "not-configured";
+  return sendToSubscription(subscription, payload);
 }
 
 /** Test seam only: forces the configured check to re-read env vars. */

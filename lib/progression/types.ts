@@ -16,8 +16,8 @@ import type { SoloEarningsSummary } from "./solo-earnings";
 export interface ProgressionSnapshot extends RankProgress {
   /**
    * Gold staked over this profile's lifetime, PVP and solo. Never netted against
-   * winnings. Rank no longer reads this: `xp` on a snapshot is rank points, the
-   * difficulty-weighted net of solo wagers.
+   * winnings. Rank does not read this: `points` on a snapshot is rank points,
+   * the difficulty-weighted net of solo wagers.
    */
   lifetimeWagered: number;
   /** What PVE and solo wagers have paid and cost, by stake band, with the difficulty gauge. */

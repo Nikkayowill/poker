@@ -87,8 +87,7 @@ function MissionRow({ mission }: { mission: MissionView }) {
 
       <p className="mission-row-desc">{mission.description}</p>
 
-      {/* aria-hidden: the same numbers are stated in words right below it,
-          same reasoning as .rank-track in rank-strip.tsx. */}
+      {/* aria-hidden: the same numbers are stated in words right below it. */}
       <div className="mission-track" aria-hidden="true">
         <div className="mission-fill" style={{ width: `${Math.round(ratio * 100)}%` }} />
       </div>

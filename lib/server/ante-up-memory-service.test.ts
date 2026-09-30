@@ -274,7 +274,8 @@ describe("the solo earnings tally", () => {
 
     const progress = await getProgression(id);
     expect(progress.soloEarnings).toMatchObject({ wins: 0, losses: 1, totalStaked: 1000, totalPaidOut: 0, net: -1000 });
-    expect(progress.level).toBe(1);
+    expect(progress.tier.id).toBe("bronze");
+    expect(progress.points).toBe(0);
   });
 
   it("records a turn-cap forfeit as a loss", async () => {

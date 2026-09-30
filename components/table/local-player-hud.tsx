@@ -23,6 +23,7 @@
  * of only past 901px; see 42-racetrack-table.css's own note.
  */
 
+import { RankJewel } from "@/components/profile/rank-jewel";
 import { useProgression } from "@/components/profile/use-progression";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -100,8 +101,8 @@ export function LocalPlayerHud({
           />
         ) : avatar}
         {progression && (
-          <span className="player-hud-level" title={progression.title}>
-            {progression.level}
+          <span className="player-hud-level" title={progression.tier.name}>
+            <RankJewel tier={progression.tier.id} size={26} label={progression.tier.name} />
           </span>
         )}
       </div>
@@ -113,7 +114,7 @@ export function LocalPlayerHud({
           <div
             className="player-hud-xp-track"
             role="progressbar"
-            aria-label="Level progress"
+            aria-label="Progress to next tier"
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={Math.round(progression.ratio * 100)}

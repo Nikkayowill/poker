@@ -168,14 +168,14 @@ describe("checkAchievements against stat-sourced metrics", () => {
 });
 
 describe("checkAchievements against the live-sourced rank metric", () => {
-  it("unlocks a level achievement the moment a solo result crosses it", async () => {
+  it("unlocks a tier achievement the moment a solo result reaches it", async () => {
     const { profileId } = await newPlayer("Climber");
 
-    // xpToReachLevel(10) = 250 * 9 * 10 / 2 = 11,250 points, and a point is
-    // 20 Gold of weighted net earnings at band 0, so a 9,000 stake that pays
-    // 240,000 (231,000 net, 11,550 points) crosses level 10 outright.
-    // solo-earnings-store.ts's recordSoloResult wires checkAchievements on any
-    // level-up, so this exercises the real call site, not a mock of it.
+    // Silver starts at 2,500 points, and a point is 20 Gold of weighted net
+    // earnings at band 0, so a 9,000 stake that pays 240,000 (231,000 net,
+    // 11,550 points) reaches Silver outright. solo-earnings-store.ts's
+    // recordSoloResult wires checkAchievements on any tier-up, so this
+    // exercises the real call site, not a mock of it.
     await recordSoloResult(profileId, null, {
       game: "sudoku",
       correlationId: `test:${profileId}:big-win`,
@@ -188,7 +188,7 @@ describe("checkAchievements against the live-sourced rank metric", () => {
     expect(achievement.unlockedAt).not.toBeNull();
   });
 
-  it("leaves a level achievement locked below its threshold", async () => {
+  it("leaves a tier achievement locked below its threshold", async () => {
     const { profileId } = await newPlayer("Newcomer");
     await recordSoloResult(profileId, null, {
       game: "sudoku",

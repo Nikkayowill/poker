@@ -75,6 +75,7 @@ import { Menu, type MenuItem } from "@/components/nav/menu";
 import { DonateButton } from "@/components/nav/donate-button";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { NotificationToast } from "@/components/notifications/notification-toast";
+import { TierUpPopup } from "@/components/profile/tier-up-popup";
 import { useNotifications } from "@/lib/notifications/use-notifications";
 import { GoldBadge } from "@/components/profile/gold-badge";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
@@ -1833,6 +1834,7 @@ export function PokerApp() {
           fire mid-hand too, which is the entire point of building this
           instead of just reusing AchievementToast/MissionToast. */}
       <NotificationToast queue={notificationsArrived} onQueued={clearNotificationsArrived} />
+      <TierUpPopup profileId={profile?.id} goldBalance={profile?.goldBalance} />
       <div className="entry-sky app-entry-sky" aria-hidden="true">
         <span className="entry-orb" />
         <span className="entry-orb" />

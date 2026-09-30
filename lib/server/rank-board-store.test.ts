@@ -43,13 +43,13 @@ describe("getGlobalRankBoard", () => {
     expect(mine).toBeNull();
   });
 
-  it("carries title, level and difficulty on each row, and no win-loss counters", async () => {
+  it("carries tier and difficulty on each row, and no win-loss counters", async () => {
     const player = await newPlayer("Solo");
     await settle(player, 5_000);
 
     const { entries } = await getGlobalRankBoard(10, null);
 
-    expect(entries[0]).toMatchObject({ level: expect.any(Number), title: expect.any(String), difficulty: expect.any(String) });
+    expect(entries[0]).toMatchObject({ tierId: expect.any(String), tierName: expect.any(String), difficulty: expect.any(String) });
     for (const key of ["wins", "losses", "draws", "currentStreak"]) expect(entries[0]).not.toHaveProperty(key);
   });
 
@@ -129,7 +129,7 @@ describe("getFriendsRankBoard", () => {
     const entries = await getFriendsRankBoard(me.id);
 
     expect(entries.map((entry) => entry.displayName)).toEqual(["Me", "Quiet"]);
-    expect(entries[1]).toMatchObject({ points: 0, level: 1, difficulty: null });
+    expect(entries[1]).toMatchObject({ points: 0, tierId: "bronze", tierName: "Bronze", difficulty: null });
   });
 
   it("is just the viewer when they have no friends", async () => {

@@ -35,13 +35,13 @@ describe("missionSignalsForEvent", () => {
     ]);
   });
 
-  it("scales levels_gained by every level a single wager crossed", () => {
-    expect(missionSignalsForEvent({ kind: "level_gained", levels: 3 })).toEqual([
-      { metric: "levels_gained", delta: 3 },
+  it("counts rank_points_gained by the points a single wager added", () => {
+    expect(missionSignalsForEvent({ kind: "rank_points_gained", points: 30 })).toEqual([
+      { metric: "rank_points_gained", delta: 30 },
     ]);
   });
 
-  it("is a no-op for a wager that crossed no level", () => {
-    expect(missionSignalsForEvent({ kind: "level_gained", levels: 0 })).toEqual([]);
+  it("is a no-op for a wager that added no rank points", () => {
+    expect(missionSignalsForEvent({ kind: "rank_points_gained", points: 0 })).toEqual([]);
   });
 });

@@ -45,7 +45,6 @@ import {
 } from "react";
 import Link from "next/link";
 import {
-  ArrowRight,
   Bell,
   BellOff,
   ChevronRight,
@@ -72,6 +71,7 @@ import type { PlayerProfile } from "@/lib/profile/types";
 import type { DailyGoldState } from "@/lib/profile/daily-gold";
 import { browserSessionStorage } from "@/lib/profile/session-continuity";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { playRailGames, toArcadeWallet } from "@/lib/arcade/games";
 import {
   beginSwipe,
   clampPage,
@@ -80,7 +80,6 @@ import {
   type SwipeGesture,
 } from "@/lib/ui/swipe-pager";
 import { ArcadeFloor } from "@/components/arcade/arcade-floor";
-import { StackAcresLogo } from "@/components/brand/stackacres-logo";
 import { Leaderboard } from "@/components/leaderboard/leaderboard";
 import { LOBBY_PANE_STORAGE_KEY, TAB_COUNT, TAB_LABELS, TabBar } from "@/components/shell/tab-bar";
 import { SiteFooter } from "@/components/nav/site-footer";
@@ -91,6 +90,8 @@ import { jumpToSoloWagers } from "@/components/arcade/arcade-floor";
 import { InstallPrompt } from "@/components/install-prompt";
 import { LobbyNotices } from "./lobby-notices";
 import { FirstRunStrip } from "./first-run-strip";
+import { PlayRail } from "./play-rail";
+import { AnteUpRail } from "./ante-up-rail";
 
 /**
  * The settle transition's duration at a full pane width of travel — matches
@@ -130,11 +131,12 @@ function readStoredPage(): number {
 /**
  * Anything that scrolls sideways inside a pane -- the leaderboard's own
  * game-tab strip once it's wider than the screen (poker + global + friends +
- * every registered game is nine-plus segments). A drag that starts in one
+ * every registered game is nine-plus segments), and the Play tab's rails.
+ * A drag that starts in one
  * belongs to it, not to the pager, or trying to reach the last game tab
  * would throw the player onto the next shell tab instead.
  */
-const HORIZONTAL_SCROLLER = ".leaderboard-game-tabs";
+const HORIZONTAL_SCROLLER = ".leaderboard-game-tabs, .mshell-rail";
 
 export function MobileShell({
   profile,
@@ -377,6 +379,7 @@ export function MobileShell({
               onJoinCode={onJoinCode}
               onOpenFriends={onOpenFriends}
               onRankUp={() => { goTo(1); jumpToSoloWagers(); }}
+              onSeeArcade={() => goTo(1)}
             />
           </section>
 
@@ -425,6 +428,9 @@ export function MobileShell({
 
 /* ---------------------------------------------------------------- pane 1 */
 
+/** The catalogue is static, so the rails are picked once. */
+const PLAY_RAIL = playRailGames();
+
 function PlayPane({
   profile,
   loading,
@@ -444,6 +450,7 @@ function PlayPane({
   onJoinCode,
   onOpenFriends,
   onRankUp,
+  onSeeArcade,
 }: {
   profile: PlayerProfile;
   loading: boolean;
@@ -463,7 +470,9 @@ function PlayPane({
   onJoinCode: (code: string) => void;
   onOpenFriends: () => void;
   onRankUp: () => void;
+  onSeeArcade: () => void;
 }) {
+  const wallet = toArcadeWallet(profile);
   const [joinCode, setJoinCode] = useState("");
   const [showExpansion, setShowExpansion] = useState(false);
 
@@ -476,7 +485,6 @@ function PlayPane({
 
   return (
     <>
-      <RankUpCard onRankUp={onRankUp} />
       <LobbyNotices
         loading={loading}
         cashOutNotice={cashOutNotice}
@@ -501,88 +509,43 @@ function PlayPane({
           onboarding at all. */}
       <FirstRunStrip profile={profile} onTakeSeat={onOpenBuyIn} />
 
-      {/* The real table plate from public/pokertable, the same art the desktop
-          hero tile carries, dissolved into the card rather than sat on top of
-          it. The card itself stays on the chrome's own ground, so the felt
-          reads as a photograph of the table rather than a green panel. */}
-      <div className="mshell-hero">
-        <div className="mshell-hero-art" aria-hidden="true" />
-        <div className="mshell-hero-body">
-          <span className="lobby-kicker mshell-hero-kicker">Poker · No-limit Hold&rsquo;em</span>
-          <strong className="mshell-hero-name">Texas Hold&rsquo;em</strong>
-          <span className="mshell-hero-meta">
-            Six-max cash, Heads-Up, or a Sit &amp; Go &mdash; pick your format and stakes when you sit down.
-          </span>
-
-          {/* Format and stakes both live one step in, inside the buy-in
-              modal -- the same "choose blinds, then choose Texas Hold'em /
-              Heads-Up / Tournament" flow the desktop hub's own tile opens,
-              rather than a picker sitting on the main Play screen. */}
-          <button
-            type="button"
-            className="mshell-primary"
-            disabled={loading || !sessionReady}
-            onClick={() => { selectSound(); onOpenBuyIn(); }}
-          >
-            {!sessionReady ? "Getting your seat ready" : loading ? "Finding you a table" : "Take a seat"}
-            {!loading && sessionReady && <ArrowRight size={18} aria-hidden="true" />}
-          </button>
-        </div>
-      </div>
-
-      {/* Right under Texas Hold'em. Everyone sees the row, badged as a premium
-          expansion. A player with stackacresAccess (granted from the admin
-          dashboard) gets the link; everyone else gets an info modal, since
-          there is no checkout yet.
-
-          prefetch={false} for the same reason as the desktop tile in
-          lobby.tsx: this row is on screen from the moment the shell mounts,
-          and a default link would prefetch the heaviest route on that alone. */}
-      {profile.stackacresAccess ? (
-        <Link className="mshell-card mshell-row mshell-stackacres-row" href="/games/stackacres" onClick={tapSound} prefetch={false}>
-          <StackAcresLogo variant="badge" className="mshell-stackacres-logo" alt="" />
-          <span className="mshell-row-body">
-            <strong>StackAcres</strong>
-            <small>Raise crops and livestock, sell what they make</small>
-          </span>
-          <span className="mshell-premium-badge">Premium Expansion</span>
-          <ChevronRight size={18} aria-hidden="true" />
-        </Link>
-      ) : (
-        <button
-          type="button"
-          className="mshell-card mshell-row mshell-stackacres-row"
-          onClick={() => { tapSound(); setShowExpansion(true); }}
-        >
-          <StackAcresLogo variant="badge" className="mshell-stackacres-logo" alt="" />
-          <span className="mshell-row-body">
-            <strong>StackAcres</strong>
-            <small>Raise crops and livestock, sell what they make</small>
-          </span>
-          <span className="mshell-premium-badge">Premium Expansion</span>
-          <ChevronRight size={18} aria-hidden="true" />
-        </button>
-      )}
+      <PlayRail
+        profile={profile}
+        wallet={wallet}
+        loading={loading}
+        sessionReady={sessionReady}
+        onOpenBuyIn={onOpenBuyIn}
+        featuredDuel={PLAY_RAIL.featuredDuel}
+        onOpenExpansion={() => setShowExpansion(true)}
+      />
       {showExpansion && <PremiumExpansionModal onClose={() => setShowExpansion(false)} />}
 
+      <AnteUpRail cards={PLAY_RAIL.cards} total={PLAY_RAIL.total} wallet={wallet} onSeeAll={onSeeArcade} />
+
+      <RankUpCard onRankUp={onRankUp} />
+
       <div className="mshell-grid">
-        <button type="button" className="mshell-card mshell-tile" onClick={() => { tapSound(); onHostPrivate(); }}>
+        <button type="button" className="mshell-card mshell-tile mshell-tile-compact" onClick={() => { tapSound(); onHostPrivate(); }}>
           <Lock size={20} strokeWidth={1.8} aria-hidden="true" />
-          <strong>Private table</strong>
-          <small>Open a room, share the code</small>
+          <span className="mshell-tile-body">
+            <strong>Private table</strong>
+            <small>Share a code</small>
+          </span>
         </button>
-        <button type="button" className="mshell-card mshell-tile" onClick={() => { tapSound(); onOpenFriends(); }}>
+        <button type="button" className="mshell-card mshell-tile mshell-tile-compact" onClick={() => { tapSound(); onOpenFriends(); }}>
           <Users size={20} strokeWidth={1.8} aria-hidden="true" />
-          <strong>Friends</strong>
-          <small>People you play with</small>
+          <span className="mshell-tile-body">
+            <strong>Friends</strong>
+            <small>People you play with</small>
+          </span>
         </button>
       </div>
 
-      <form className="mshell-card mshell-tile" onSubmit={submitJoin}>
-        <label className="lobby-kicker" htmlFor="mshell-join-code">Join with a room code</label>
+      <form className="mshell-card mshell-code-form" onSubmit={submitJoin}>
         <div className="hub-code-row">
           <input
             id="mshell-join-code"
+            aria-label="Join with a room code"
             value={joinCode}
             maxLength={6}
             onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}

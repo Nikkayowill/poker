@@ -44,6 +44,13 @@ export interface SitAndGoSeatRow {
   playerId: string;
   token: string;
   joinedAt: string;
+  /**
+   * The gold_ledger correlation id of the entry fee that paid for this seat.
+   * Refunds credit against it so the reconcile cron can never refund the
+   * same fee a second time. Null only for seats claimed before the column
+   * existed.
+   */
+  stakeCorrelationId: string | null;
 }
 
 /** A guard genuinely failed (table full, already started, gone): an ordinary outcome, not a fault. */
@@ -76,6 +83,13 @@ export function __resetSitAndGoTablesForTest(): void {
   memorySeats.clear();
 }
 
+/** Test seam only: backdates a table's `started_at` so the undealt-table sweep treats it as old enough. */
+export function __backdateSitAndGoTableStartForTest(tableId: string, startedAt: string): void {
+  const table = memoryTables.get(tableId);
+  if (!table) return;
+  memoryTables.set(tableId, { ...table, startedAt });
+}
+
 function cloneTable(table: StoredSitAndGoTable): StoredSitAndGoTable {
   return { ...table };
 }
@@ -96,6 +110,24 @@ interface TableRow {
   created_at: string;
   started_at: string | null;
   settled_at: string | null;
+}
+
+interface SeatRow {
+  seat: number;
+  player_id: string;
+  token: string;
+  joined_at: string;
+  stake_correlation_id: string | null;
+}
+
+function seatFromRow(row: SeatRow): SitAndGoSeatRow {
+  return {
+    seat: Number(row.seat),
+    playerId: String(row.player_id),
+    token: String(row.token),
+    joinedAt: String(row.joined_at),
+    stakeCorrelationId: row.stake_correlation_id ? String(row.stake_correlation_id) : null,
+  };
 }
 
 function fromRow(row: TableRow): StoredSitAndGoTable {
@@ -140,16 +172,11 @@ export async function getSitAndGoSeats(tableId: string): Promise<SitAndGoSeatRow
   }
   const { data, error } = await supabase
     .from("sit_and_go_table_players")
-    .select("seat, player_id, token, joined_at")
+    .select("seat, player_id, token, joined_at, stake_correlation_id")
     .eq("table_id", tableId)
     .order("seat", { ascending: true });
   if (error) throw new Error(`Could not load that table's seats: ${error.message}`);
-  return (data ?? []).map((row) => ({
-    seat: Number(row.seat),
-    playerId: String(row.player_id),
-    token: String(row.token),
-    joinedAt: String(row.joined_at),
-  }));
+  return (data ?? []).map((row) => seatFromRow(row as SeatRow));
 }
 
 /**
@@ -185,6 +212,36 @@ export async function getStaleActiveSitAndGoTables(
     .order("started_at", { ascending: true })
     .limit(limit);
   if (error) throw new Error(`Could not load stale Sit & Go tables: ${error.message}`);
+  return (data ?? []).map((row) => fromRow(row as TableRow));
+}
+
+/**
+ * Tables that flipped 'active' but never got a game linked, started before
+ * `cutoffIso`. Only a crash between the deal and the game link leaves one
+ * behind; its players are stuck (they read as registered) until the sweep in
+ * sit-and-go-service.ts cancels it and refunds every entry fee.
+ */
+export async function getUndealtActiveSitAndGoTables(
+  cutoffIso: string,
+  limit: number,
+): Promise<StoredSitAndGoTable[]> {
+  const supabase = adminClient();
+  if (!supabase) {
+    return [...memoryTables.values()]
+      .filter((table) => table.status === "active" && table.gameId === null && (table.startedAt ?? table.createdAt) < cutoffIso)
+      .sort((a, b) => (a.startedAt ?? a.createdAt).localeCompare(b.startedAt ?? b.createdAt))
+      .slice(0, limit)
+      .map(cloneTable);
+  }
+  const { data, error } = await supabase
+    .from("sit_and_go_tables")
+    .select(TABLE_COLUMNS)
+    .eq("status", "active")
+    .is("game_id", null)
+    .lt("started_at", cutoffIso)
+    .order("started_at", { ascending: true })
+    .limit(limit);
+  if (error) throw new Error(`Could not load undealt Sit & Go tables: ${error.message}`);
   return (data ?? []).map((row) => fromRow(row as TableRow));
 }
 
@@ -368,6 +425,7 @@ export async function claimSitAndGoSeat(
   tableId: string,
   playerId: string,
   token: string,
+  stakeCorrelationId: string,
 ): Promise<{ seat: number; seatedCount: number; hostId: string }> {
   const supabase = adminClient();
 
@@ -383,13 +441,18 @@ export async function claimSitAndGoSeat(
     const taken = new Set(seats.map((s) => s.seat));
     let seat = 0;
     while (taken.has(seat)) seat += 1;
-    const next = [...seats, { seat, playerId, token, joinedAt: new Date().toISOString() }];
+    const next = [...seats, { seat, playerId, token, joinedAt: new Date().toISOString(), stakeCorrelationId }];
     memorySeats.set(tableId, next);
     return { seat, seatedCount: next.length, hostId: table.hostId };
   }
 
   const { data, error } = await supabase
-    .rpc("claim_sit_and_go_seat", { p_table_id: tableId, p_player_id: playerId, p_token: token })
+    .rpc("claim_sit_and_go_seat", {
+      p_table_id: tableId,
+      p_player_id: playerId,
+      p_token: token,
+      p_stake_correlation_id: stakeCorrelationId,
+    })
     .single();
   if (error) {
     if (error.code === "23505") throw new SitAndGoTableNotJoinable("You are already registered at that table.");
@@ -456,7 +519,9 @@ export async function setSitAndGoGameId(
   if (!supabase) {
     const table = memoryTables.get(tableId);
     if (!table || table.status !== "active" || table.gameId !== null) return null;
-    const updated: StoredSitAndGoTable = { ...table, gameId };
+    // Bumps the version, same as the RPC, so a stale-table cancel read
+    // before the link can't land on a table that is now being played.
+    const updated: StoredSitAndGoTable = { ...table, gameId, version: table.version + 1 };
     memoryTables.set(tableId, cloneTable(updated));
     return cloneTable(updated);
   }
@@ -520,9 +585,9 @@ export async function leaveSitAndGoTable(
     .rpc("leave_sit_and_go_table", { p_table_id: tableId, p_player_id: playerId })
     .maybeSingle();
   if (error) throw new Error(`Could not leave that Sit & Go table: ${error.message}`);
-  if (!data) return null;
-  const row = data as { seat: number; player_id: string; token: string; joined_at: string };
-  return { seat: row.seat, playerId: String(row.player_id), token: String(row.token), joinedAt: String(row.joined_at) };
+  // A null composite can come back as a row of nulls rather than null.
+  if (!data || !(data as SeatRow).player_id) return null;
+  return seatFromRow(data as SeatRow);
 }
 
 /**
@@ -568,8 +633,9 @@ export async function settleSitAndGoTable(
 
 /**
  * Cancels an abandoned mid-tournament table exactly once: version-guarded
- * transition from 'active' straight to 'cancelled', no winner. Called only
- * from lib/server/game-store.ts's archiveStaleGames tournament branch -- see
+ * transition from 'active' straight to 'cancelled', no winner. Called from
+ * lib/server/game-store.ts's archiveStaleGames tournament branch, and from
+ * sit-and-go-service.ts when a dealt table's game could not be created -- see
  * the migration's own comment on cancel_stale_sit_and_go_table for why an
  * abandoned Sit & Go must never fall through to that function's ordinary
  * per-seat "credit the current stack" refund.

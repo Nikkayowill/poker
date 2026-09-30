@@ -22,13 +22,13 @@
  */
 
 import { STACKACRES_CATALOGUE, type StackAcresCrop } from "./catalogue";
-import { SOIL_DEFAULT_TIER, type SoilTier } from "./soil-tiers";
 import { tapActionFor } from "./tap-action";
 import type { StackAcresUnitSnapshot } from "./units";
 import type { StackAcresInventory } from "./inventory";
+import { FENCE_NEEDS_WOOD, FENCE_NOT_HERE, FENCE_WOOD_COST } from "./fences";
 
 /** The belt, in the order it is drawn. `hand` is the resting slot every session starts in. */
-export const BELT_TOOLS = ["hand", "hoe", "can", "seeds"] as const;
+export const BELT_TOOLS = ["hand", "hoe", "can", "seeds", "fence"] as const;
 
 export type BeltTool = (typeof BELT_TOOLS)[number];
 
@@ -50,7 +50,7 @@ export const BELT_TOOL_DEFS: Readonly<Record<BeltTool, BeltToolDef>> = {
   },
   hoe: {
     label: "Hoe",
-    hint: "Break new ground. Lays one bed from the soil in your barn.",
+    hint: "Break new ground. Tap bare grass to dig a bed.",
     icon: "ico-hoe",
   },
   can: {
@@ -65,12 +65,18 @@ export const BELT_TOOL_DEFS: Readonly<Record<BeltTool, BeltToolDef>> = {
     hint: "Sow the seed you picked. Tap the pouch again to change it.",
     icon: "ico-plant",
   },
+  fence: {
+    label: "Fence",
+    hint: `Put up a fence piece for ${FENCE_WOOD_COST} Wood. Use it on a fence to take it down and get the Wood back.`,
+    icon: "ico-fence",
+  },
 };
 
 /**
  * The square a tool is about to be used on: whatever the farmer walked to, or
- * the one he is facing when the Use key is pressed. `tile` is null off the
- * Crop Fields, where there is no bed to lay or sow.
+ * the one he is facing when the Use key is pressed. `tile` is null anywhere a
+ * bed cannot go -- off the Homestead's grass paddocks and the Crop Fields --
+ * where there is no bed to lay or sow.
  */
 export interface BeltTarget {
   unit: StackAcresUnitSnapshot | null;
@@ -79,6 +85,8 @@ export interface BeltTarget {
   bedded: boolean;
   /** This exact tile is already armed for lifting, so the next hoe press lifts it. */
   armed?: boolean;
+  /** A fence piece stands on this square. */
+  fenced: boolean;
 }
 
 /** Everything the belt reads off the farm to answer. Display-only, like `tapActionFor`'s own context. */
@@ -89,13 +97,12 @@ export interface BeltContext {
   shelfFeed?: StackAcresInventory;
   gold: number;
   nowMs: number;
-  /** Beds on the shelf, per tier, and which tier the hoe lays. */
-  soilStock: Partial<Record<SoilTier, number>>;
-  tier: SoilTier;
   /** The crop on the seed wheel, and how many of it are held. Livestock is bought
    *  from a shop, never sown, so the pouch only ever holds a crop. */
   seed: StackAcresCrop | null;
   seedsHeld: number;
+  /** Wood on the shelf, which fence pieces are built from. */
+  wood: number;
 }
 
 /**
@@ -111,11 +118,15 @@ export type BeltAction =
   | { kind: "feed"; unitId: string }
   | { kind: "water"; unitId: string }
   | { kind: "clear"; unitId: string }
-  | { kind: "till"; tx: number; ty: number; tier: SoilTier }
+  | { kind: "till"; tx: number; ty: number }
   /** The hoe on a bare bed, first press: ask before lifting it. */
   | { kind: "arm-lift"; tx: number; ty: number; reason: string }
   | { kind: "lift"; tx: number; ty: number }
   | { kind: "plant"; tx: number; ty: number; stock: StackAcresCrop }
+  | { kind: "fence"; tx: number; ty: number }
+  /** The Fence on a piece, first press: ask before taking it down. */
+  | { kind: "arm-unfence"; tx: number; ty: number; reason: string }
+  | { kind: "unfence"; tx: number; ty: number }
   | { kind: "nothing"; reason: string; why: "blocked" | "waiting" };
 
 const blocked = (reason: string): BeltAction => ({ kind: "nothing", reason, why: "blocked" });
@@ -124,6 +135,9 @@ const waiting = (reason: string): BeltAction => ({ kind: "nothing", reason, why:
 /** Which farmer animation acts a belt action out, or null when nothing is sent. */
 export function beltAnimation(action: BeltAction): "water" | "harvest" | "hoe" | "plant" | null {
   switch (action.kind) {
+    case "fence":
+    case "unfence":
+      return "plant";
     case "water":
       return "water";
     case "collect":
@@ -149,7 +163,26 @@ export function resolveBeltAction(tool: BeltTool, target: BeltTarget, ctx: BeltC
       return hoeAction(target, ctx);
     case "seeds":
       return seedAction(target, ctx);
+    case "fence":
+      return fenceAction(target, ctx);
   }
+}
+
+/**
+ * The Fence puts a piece up on open grass and takes one down. Taking one down
+ * is two presses, the same confirm lifting a bed has, even though the Wood all
+ * comes back: a walk along a fence with Use held should never unbuild it.
+ */
+function fenceAction(target: BeltTarget, ctx: BeltContext): BeltAction {
+  if (!target.tile) return blocked(FENCE_NOT_HERE);
+  const { tx, ty } = target.tile;
+  if (target.fenced) {
+    if (target.armed) return { kind: "unfence", tx, ty };
+    return { kind: "arm-unfence", tx, ty, reason: "Press again to take this piece down." };
+  }
+  if (target.bedded) return blocked("There's a bed here.");
+  if (ctx.wood < FENCE_WOOD_COST) return blocked(FENCE_NEEDS_WOOD);
+  return { kind: "fence", tx, ty };
 }
 
 /**
@@ -184,15 +217,15 @@ function canAction(target: BeltTarget, ctx: BeltContext): BeltAction {
  * never throw one away.
  */
 function hoeAction(target: BeltTarget, ctx: BeltContext): BeltAction {
-  if (!target.tile) return blocked("Beds only go in the Crop Fields.");
+  if (!target.tile) return blocked("Beds go on the grass by the house, or in the Crop Fields.");
+  if (target.fenced) return blocked("There's a fence there.");
   const { tx, ty } = target.tile;
   if (target.bedded) {
     if (target.unit) return blocked("Something is growing here. Pick it first.");
     if (target.armed) return { kind: "lift", tx, ty };
     return { kind: "arm-lift", tx, ty, reason: "Press again to lift this bed." };
   }
-  if ((ctx.soilStock[ctx.tier] ?? 0) < 1) return blocked("No soil left in the barn. Buy some from Ray.");
-  return { kind: "till", tx, ty, tier: ctx.tier };
+  return { kind: "till", tx, ty };
 }
 
 function seedAction(target: BeltTarget, ctx: BeltContext): BeltAction {
@@ -203,6 +236,3 @@ function seedAction(target: BeltTarget, ctx: BeltContext): BeltAction {
   if (ctx.seedsHeld < 1) return blocked(`No ${STACKACRES_CATALOGUE[ctx.seed].label} seeds left.`);
   return { kind: "plant", tx: target.tile.tx, ty: target.tile.ty, stock: ctx.seed };
 }
-
-/** The tier the hoe lays when nothing else has been picked. */
-export const BELT_DEFAULT_TIER = SOIL_DEFAULT_TIER;

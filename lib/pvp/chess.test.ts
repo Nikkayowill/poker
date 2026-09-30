@@ -470,6 +470,11 @@ describe("promotion", () => {
     expect(at(play(fromFen(ready), "a7", "a8"), "a8")).toBe("Q");
   });
 
+  it("refuses a promotion piece that is not q, r, b or n rather than guessing", () => {
+    const claim = { from: squareIndex("a7"), to: squareIndex("a8"), promotion: "k" };
+    expect(reject(fromFen(ready), 0, claim)).toBeTruthy();
+  });
+
   it("honours the piece the move carries", () => {
     expect(at(play(fromFen(ready), "a7", "a8", { promotion: "n" }), "a8")).toBe("N");
     expect(at(play(fromFen(ready), "a7", "a8", { promotion: "r" }), "a8")).toBe("R");

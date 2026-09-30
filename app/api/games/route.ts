@@ -8,6 +8,7 @@ import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { withRequestSessionCookie } from "@/lib/server/session";
 import { resolvePlayerForTableEntry } from "@/lib/server/table-entry";
 import { resolveTierEntry } from "@/lib/server/tier-entry";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
     });
     return withRequestSessionCookie(request, response, hostToken);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not create the table.";
+    const message = publicErrorMessage(error, "Could not create the table.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

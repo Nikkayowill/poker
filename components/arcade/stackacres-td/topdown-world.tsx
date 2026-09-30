@@ -33,14 +33,14 @@ import type { TopdownScene } from "./scene";
  *
  * Pixel art at a whole-number zoom: the canvas is the host at full device
  * resolution, and the camera zooms by the largest whole number that still
- * shows 16 tiles across and 10 down. Rendering at device resolution rather
+ * shows 20 tiles across and 13 down. Rendering at device resolution rather
  * than one canvas pixel per art pixel is what lets the farmer and the camera
  * glide a device pixel at a time; at art resolution every step was a 4px jump
  * and the farmer shook against the ground (see scene.ts's `placeCamera`).
  */
 
-export const MIN_TILES_ACROSS = 16;
-export const MIN_TILES_DOWN = 10;
+export const MIN_TILES_ACROSS = 20;
+export const MIN_TILES_DOWN = 13;
 
 /** Device pixels per CSS pixel, capped so a 3x screen does not bake a canvas
  *  nobody can afford. Read in one place so every layer drawn on this canvas
@@ -65,12 +65,29 @@ function toSceneUnits(units: StackAcresUnitSnapshot[]): StackAcresSceneUnit[] {
     permanent: unit.permanent,
     soilSlot: unit.soilSlot,
     housedIn: unit.housedIn,
+    mapTx: unit.mapTx,
+    mapTy: unit.mapTy,
     seed: unit.seed,
   }));
 }
 
 export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
-  const { units, celebrate, sectors, cropFieldsUnlocked, soilTiles, woodNodes, stoneNodes, api } = props;
+  const {
+    units,
+    celebrate,
+    soilTiles,
+    woodNodes,
+    stoneNodes,
+    forageNodes,
+    landObstacles,
+    fences,
+    empireBuildings,
+    buildMode,
+    buildGhost,
+    grocery,
+    groceryGhost,
+    api,
+  } = props;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<TopdownScene | null>(null);
   /** The live game, held so a layer can be added over the map after boot --
@@ -91,15 +108,44 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   const [castLocked, setCastLocked] = useState(false);
 
   // The scene calls back into whatever the shell currently is, not whatever it was at boot.
+  // A layout effect, like the pushes below: a Phaser frame can land between a
+  // commit and a passive effect, and a tap in it would reach the previous
+  // render's handlers with the previous render's crops.
   const propsRef = useRef(props);
-  useEffect(() => {
+  useLayoutEffect(() => {
     propsRef.current = props;
   });
 
   const sceneUnits = useMemo(() => toSceneUnits(units), [units]);
-  const latest = useRef({ sceneUnits, sectors, cropFieldsUnlocked, soilTiles, woodNodes, stoneNodes });
-  useEffect(() => {
-    latest.current = { sceneUnits, sectors, cropFieldsUnlocked, soilTiles, woodNodes, stoneNodes };
+  const latest = useRef({
+    sceneUnits,
+    soilTiles,
+    woodNodes,
+    stoneNodes,
+    forageNodes,
+    landObstacles,
+    fences,
+    empireBuildings,
+    buildMode,
+    buildGhost,
+    grocery,
+    groceryGhost,
+  });
+  useLayoutEffect(() => {
+    latest.current = {
+      sceneUnits,
+      soilTiles,
+      woodNodes,
+      stoneNodes,
+      forageNodes,
+      landObstacles,
+      fences,
+      empireBuildings,
+      buildMode,
+      buildGhost,
+      grocery,
+      groceryGhost,
+    };
   });
 
   useEffect(() => {
@@ -129,21 +175,28 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onSignpostTap: () => p().onSignpostTap(),
           onWorkshopTap: () => p().onWorkshopTap(),
           onWellTap: (at) => p().onWellTap(at),
-          onDockTap: (at) => p().onDockTap(at),
+          onDockTap: (at, castPower) => p().onDockTap(at, castPower),
           onThicketTap: (at) => p().onThicketTap(at),
           onTreeTap: (nodeId, at) => p().onTreeTap(nodeId, at),
+          maySwing: (at) => p().maySwing(at),
           onStoneTap: (nodeId, at) => p().onStoneTap(nodeId, at),
+          onForageTap: (nodeId, at) => p().onForageTap(nodeId, at),
+          onLandTap: (obstacleId, at) => p().onLandTap(obstacleId, at),
           onGreenhouseTap: () => p().onGreenhouseTap(),
           onMonkTap: (at) => p().onMonkTap(at),
           onRayTap: (at) => p().onRayTap(at),
           onHouseTap: (at) => p().onHouseTap(at),
+          onBedTap: (at) => p().onBedTap(at),
           onTravelerTap: (traveler, at) => p().onTravelerTap(traveler, at),
           onSecretZoneTap: (zoneId, at) => p().onSecretZoneTap(zoneId, at),
-          onLockedSectorTap: (zone, at) => p().onLockedSectorTap(zone, at),
-          onCropFieldsLockedTap: (at) => p().onCropFieldsLockedTap(at),
+          onQuestPlaceTap: (placeId, at) => p().onQuestPlaceTap(placeId, at),
           onViewMoved: () => p().onViewMoved(),
           onPlaceEntered: (name) => p().onPlaceEntered(name),
           onInputLocked: setCastLocked,
+          onBuildTap: (tile) => p().onBuildTap(tile),
+          onJobBoardTap: () => p().onJobBoardTap(),
+          onStoreDeskTap: () => p().onStoreDeskTap(),
+          onStaffTap: (name, at) => p().onStaffTap(name, at),
         },
         host,
       );
@@ -176,11 +229,19 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       scene.setZoom(first.zoom);
       const now = latest.current;
       scene.setUnits(now.sceneUnits);
-      scene.setSectors(now.sectors);
-      scene.setCropFieldsUnlocked(now.cropFieldsUnlocked);
       scene.setSoil(now.soilTiles);
       scene.setWoodNodes(now.woodNodes);
       scene.setStoneNodes(now.stoneNodes);
+      scene.setForageNodes(now.forageNodes);
+      scene.setLandObstacles(now.landObstacles);
+      scene.setFences(now.fences);
+      scene.setEmpireBuildings(now.empireBuildings);
+      scene.setBuildMode(now.buildMode);
+      scene.setBuildGhost(now.buildGhost);
+      scene.setGrocery(now.grocery);
+      scene.setGroceryGhost(now.groceryGhost);
+      scene.setClockSource(() => p().clockHour());
+      scene.setDaySource(() => p().clockDay());
 
       const fit = () => {
         if (!instance.isBooted) return;
@@ -215,27 +276,34 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
     api,
     () => ({
       popUnit: (unitId) => sceneRef.current?.popUnit(unitId),
+      pullCrop: (unitId) => sceneRef.current?.pullCrop(unitId),
       celebrateCascade: (unitIds) => sceneRef.current?.celebrate(unitIds),
       celebrateCrit: (unitId) => sceneRef.current?.celebrate([unitId]),
       floatAt: (at, text, tone) => sceneRef.current?.floatAt(at, text, tone),
-      setStoryCues: (cues) => sceneRef.current?.setStoryCues(cues),
       setTravelerUnlocks: (unlocked) => sceneRef.current?.setTravelerUnlocks(unlocked),
       soilTiles: () => sceneRef.current?.soilTiles() ?? [],
       setSoil: (tiles) => sceneRef.current?.setSoil(tiles),
-      placeSoilAt: (x, y, tier) => sceneRef.current?.placeSoilAt(x, y, tier) ?? false,
+      placeSoilAt: (x, y) => sceneRef.current?.placeSoilAt(x, y) ?? false,
       removeSoilAt: (x, y) => sceneRef.current?.removeSoilAt(x, y) ?? false,
       previewSoilAt: (world) => sceneRef.current?.previewSoilAt(world),
       tapAt: (clientX, clientY) => sceneRef.current?.tapAt(clientX, clientY),
       focusZone: (zone) => sceneRef.current?.focusZone(zone),
       currentPlace: () => sceneRef.current?.currentPlace() ?? "farmstead",
+      farmerTile: () => sceneRef.current?.farmerTile() ?? null,
       fieldPointFor: (x, y) => sceneRef.current?.fieldPointFor(x, y) ?? null,
       // A drag pans and a pinch zooms (scene.ts's free-camera section); these are the same moves without a gesture.
       zoomBy: (factor) => sceneRef.current?.zoomBy(factor),
       recenter: () => sceneRef.current?.recenter(),
       farmerAction: (action, impact) => sceneRef.current?.farmerAction(action, impact),
       emote: (who, kind) => sceneRef.current?.emote(who, kind),
+      sleep: async (whileDark) => {
+        const scene = sceneRef.current;
+        if (scene) await scene.sleep(whileDark);
+        else await whileDark();
+      },
       // Not drawn yet (see this file's header).
       endFishingCast: (outcome) => sceneRef.current?.endFishingCast(outcome),
+      revealCatch: (fish) => sceneRef.current?.revealCatch(fish),
       startFishingGauge: (request) => {
         const game = gameRef.current;
         const host = hostRef.current;
@@ -344,14 +412,6 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   }, [sceneUnits]);
 
   useLayoutEffect(() => {
-    sceneRef.current?.setSectors(sectors);
-  }, [sectors]);
-
-  useLayoutEffect(() => {
-    sceneRef.current?.setCropFieldsUnlocked(cropFieldsUnlocked);
-  }, [cropFieldsUnlocked]);
-
-  useLayoutEffect(() => {
     sceneRef.current?.setSoil(soilTiles);
   }, [soilTiles]);
 
@@ -362,6 +422,38 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   useLayoutEffect(() => {
     sceneRef.current?.setStoneNodes(stoneNodes);
   }, [stoneNodes]);
+
+  useEffect(() => {
+    sceneRef.current?.setForageNodes(forageNodes);
+  }, [forageNodes]);
+
+  useEffect(() => {
+    sceneRef.current?.setLandObstacles(landObstacles);
+  }, [landObstacles]);
+
+  useEffect(() => {
+    sceneRef.current?.setFences(fences);
+  }, [fences]);
+
+  useEffect(() => {
+    sceneRef.current?.setEmpireBuildings(empireBuildings);
+  }, [empireBuildings]);
+
+  useLayoutEffect(() => {
+    sceneRef.current?.setBuildMode(buildMode);
+  }, [buildMode]);
+
+  useEffect(() => {
+    sceneRef.current?.setBuildGhost(buildGhost);
+  }, [buildGhost]);
+
+  useEffect(() => {
+    sceneRef.current?.setGrocery(grocery);
+  }, [grocery]);
+
+  useEffect(() => {
+    sceneRef.current?.setGroceryGhost(groceryGhost);
+  }, [groceryGhost]);
 
   useLayoutEffect(() => {
     if (celebrate) sceneRef.current?.celebrate([celebrate.unitId]);

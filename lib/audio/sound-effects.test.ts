@@ -79,12 +79,13 @@ describe("priming", () => {
     vi.stubGlobal("window", { addEventListener: vi.fn() });
     vi.resetModules();
     await import("./sound-effects");
-    // ui, select, game-on -- fetched/decoded immediately so the first real
+    // ui, select, toggle, game-on -- fetched/decoded immediately so the first real
     // tap of a session finds them already buffered instead of racing a
     // fetch that starts on that same tap.
     expect(built.map((a) => a.src)).toEqual([
       SOUND_FILES.ui,
       SOUND_FILES.select,
+      SOUND_FILES.toggle,
       SOUND_FILES["game-on"],
     ]);
   });

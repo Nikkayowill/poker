@@ -4,8 +4,8 @@
  *
  * Pure and synchronous, like lib/pvp/checkers.ts: every function takes a
  * state and returns the next one, nothing here reads a clock, a store or a
- * request. `now` is always an argument even where unused, because the money
- * layer hands every game the same arguments.
+ * request. `now` is always an argument. The one exception is the shuffle,
+ * which draws from the CSPRNG (see below).
  *
  * ## No separate counting phase
  *
@@ -22,14 +22,23 @@
  *
  * ## Randomness across an unbounded number of deals
  *
- * A cribbage match plays as many deals as it takes to reach 121, unlike
- * Word Race's fixed five rounds, so the state cannot pre-generate every
- * deal at createState() the way that engine does. Instead `rngState`
- * carries the mulberry32 accumulator itself, advanced one shuffle at a
- * time by lib/cribbage/deck.ts's stepRandom (see that file's header).
- * Every card dealt in the whole match, including which card gets burned
- * into a 3-handed crib and which gets cut as the starter, comes from that
- * one carried accumulator: nothing here ever calls Math.random().
+ * Every deal is shuffled from lib/pvp/secure-random.ts at the moment it is
+ * dealt, not from the match seed. Deals used to come from a mulberry32
+ * accumulator carried on the state, and a 31-bit seed can be brute-forced
+ * from the hands a count reveals, after which every later hand at the table
+ * is known. `rngState` is still on old stored matches and ignored. Tests
+ * pass a seeded RandomInt to get a fixed deal.
+ *
+ * ## Turn clock and forfeits
+ *
+ * Every decision has CRIBBAGE_TURN_MS to be made: the whole discard, and each
+ * pegging play or go. A seat that runs past it forfeits, and so does a seat
+ * that resigns. A forfeit ends the table for everyone (see resignCribbage for
+ * why nobody plays on), with no winner: the forfeiting seats lose their
+ * stakes and everyone else gets theirs back plus an equal share of the
+ * forfeited ones. `cribbagePayouts` is that rule. Paying a resignation to the
+ * leader instead would let two friends at a three-seat table take a
+ * stranger's stake by having one of them quit.
  *
  * ## Seats
  *
@@ -44,7 +53,8 @@ import {
   scorePeggingPlay,
   heelsBonus,
 } from "./scoring";
-import { shuffle, standardDeck } from "./deck";
+import { shuffleDeck, standardDeck } from "./deck";
+import { secureRandomInt, type RandomInt } from "@/lib/pvp/secure-random";
 import { defineCribbageGame, type CribbageMoveResult as GenericMoveResult, type CribbageOutcome } from "./table-contract";
 import {
   pointValue,
@@ -64,14 +74,29 @@ export const WIN_SCORE = 121;
 /** Cards dealt to each seat before discarding, for both 3- and 4-handed tables. */
 const CARDS_DEALT_PER_SEAT = 5;
 
+/**
+ * How long one decision may take: the discard, or a single pegging play.
+ * Generous, since nobody should lose a pot to reading their hand, but short
+ * enough that a table cannot be held hostage by someone who walked away.
+ */
+export const CRIBBAGE_TURN_MS = 2 * 60 * 1000;
+
+const REASON_RESIGNED = "Resigned";
+const REASON_TIMEOUT = "Timeout";
+
 export interface CribbageState {
   playerCount: number;
   dealerSeat: CribbageSeat;
   /** 0-indexed, incremented every time a new hand is dealt. */
   handNumber: number;
   phase: CribbagePhase;
-  /** The mulberry32 accumulator; see the header. Advances on every shuffle. */
-  rngState: number;
+  /** The old seeded-deal accumulator. Only on matches stored before deals moved to the CSPRNG; unused. */
+  rngState?: number;
+  /**
+   * When the decision now awaited became due: the deal for the discard, the
+   * last play for pegging. See CRIBBAGE_TURN_MS.
+   */
+  actionStartedAt: number;
 
   /** Cards each seat still holds. Shrinks to empty over the pegging phase. */
   hands: Card[][];
@@ -108,6 +133,12 @@ export interface CribbageState {
 
   winner: CribbageSeat | null;
   winReason: string | null;
+  /**
+   * Seats that resigned or timed out, ending the table with no winner.
+   * Empty on a match that is still going or was won at 121. Absent on
+   * matches stored before forfeits existed.
+   */
+  forfeited?: CribbageSeat[];
 }
 
 export type CribbageMoveResult = GenericMoveResult<CribbageState>;
@@ -125,9 +156,10 @@ function dealHand(
   playerCount: number,
   dealerSeat: CribbageSeat,
   handNumber: number,
-  rngState: number,
+  randomInt: RandomInt,
+  now: number,
 ): CribbageState {
-  const [deck, nextRng] = shuffle(standardDeck(), rngState);
+  const deck = shuffleDeck(standardDeck(), randomInt);
   const hands: Card[][] = [];
   let cursor = 0;
   for (let seat = 0; seat < playerCount; seat += 1) {
@@ -140,7 +172,7 @@ function dealHand(
     dealerSeat,
     handNumber,
     phase: "discard",
-    rngState: nextRng,
+    actionStartedAt: now,
     hands,
     // A placeholder equal to the fresh deal -- beginPegging() overwrites this
     // with the real post-discard 4-card hands once discarding finishes.
@@ -160,14 +192,24 @@ function dealHand(
     lastHandSummary: null,
     winner: null,
     winReason: null,
+    forfeited: [],
   };
 }
 
-export function createCribbageState(seed: number, _now: number, playerCount: number): CribbageState {
+/**
+ * The opening deal. `seed` is ignored: see the header. `randomInt` is only
+ * ever passed by a test that wants a fixed deal.
+ */
+export function createCribbageState(
+  _seed: number,
+  now: number,
+  playerCount: number,
+  randomInt: RandomInt = secureRandomInt,
+): CribbageState {
   if (playerCount !== 3 && playerCount !== 4) {
     throw new Error("Cribbage tables are 3 or 4 seats, never more or fewer.");
   }
-  const dealt = dealHand(playerCount, 0, 0, seed);
+  const dealt = dealHand(playerCount, 0, 0, randomInt, now);
   return { ...dealt, scores: new Array(playerCount).fill(0) };
 }
 
@@ -316,6 +358,7 @@ function finishCycleAndContinue(
   awardGoPoint: boolean,
   leadFrom: CribbageSeat,
   now: number,
+  randomInt: RandomInt,
 ): CribbageState {
   let scores = state.scores;
   if (awardGoPoint) {
@@ -340,7 +383,7 @@ function finishCycleAndContinue(
   }
 
   const anyoneHasCards = next.hands.some((hand) => hand.length > 0);
-  if (!anyoneHasCards) return concludeHand(next, now);
+  if (!anyoneHasCards) return concludeHand(next, now, randomInt);
 
   return { ...next, peggingTurn: firstEligibleAfter(next, leadFrom) };
 }
@@ -354,11 +397,11 @@ function finishCycleAndContinue(
  * remaining seat is stuck. Conflating the two was a real bug: it let play
  * continue past 31 as if the count were still live.
  */
-function advanceAfterPeg(state: CribbageState, seat: CribbageSeat, now: number): CribbageState {
-  if (state.peggingCount === 31) return finishCycleAndContinue(state, seat, false, seat, now);
+function advanceAfterPeg(state: CribbageState, seat: CribbageSeat, now: number, randomInt: RandomInt): CribbageState {
+  if (state.peggingCount === 31) return finishCycleAndContinue(state, seat, false, seat, now, randomInt);
   const candidate = nextEligibleSeat(state, seat);
   if (candidate !== null) return { ...state, peggingTurn: candidate };
-  return finishCycleAndContinue(state, seat, true, seat, now);
+  return finishCycleAndContinue(state, seat, true, seat, now, randomInt);
 }
 
 /**
@@ -372,14 +415,20 @@ function advanceAfterPeg(state: CribbageState, seat: CribbageSeat, now: number):
  * before them if some other seat further round the table is the one still
  * holding a now-legal card.
  */
-function advanceAfterGo(state: CribbageState, seat: CribbageSeat, now: number): CribbageState {
+function advanceAfterGo(state: CribbageState, seat: CribbageSeat, now: number, randomInt: RandomInt): CribbageState {
   const candidate = nextEligibleSeat(state, seat);
   if (candidate !== null) return { ...state, peggingTurn: candidate };
   const resetRecipient = state.lastToPlaySeat ?? seat;
-  return finishCycleAndContinue(state, resetRecipient, true, resetRecipient, now);
+  return finishCycleAndContinue(state, resetRecipient, true, resetRecipient, now, randomInt);
 }
 
-function applyPeg(state: CribbageState, seat: CribbageSeat, card: Card, now: number): CribbageMoveResult {
+function applyPeg(
+  state: CribbageState,
+  seat: CribbageSeat,
+  card: Card,
+  now: number,
+  randomInt: RandomInt,
+): CribbageMoveResult {
   if (state.phase !== "pegging") return { reject: "Pegging is not open right now." };
   if (state.peggingTurn !== seat) return { reject: "It is not your turn." };
 
@@ -404,10 +453,10 @@ function applyPeg(state: CribbageState, seat: CribbageSeat, card: Card, now: num
   const won = maybeWin(next, seat);
   if (won) return { next: won };
 
-  return { next: advanceAfterPeg(next, seat, now) };
+  return { next: advanceAfterPeg(next, seat, now, randomInt) };
 }
 
-function applyGo(state: CribbageState, seat: CribbageSeat, now: number): CribbageMoveResult {
+function applyGo(state: CribbageState, seat: CribbageSeat, now: number, randomInt: RandomInt): CribbageMoveResult {
   if (state.phase !== "pegging") return { reject: "Pegging is not open right now." };
   if (state.peggingTurn !== seat) return { reject: "It is not your turn." };
 
@@ -419,7 +468,7 @@ function applyGo(state: CribbageState, seat: CribbageSeat, now: number): Cribbag
   const next = cloneState(state);
   next.peggingGoneThisCycle[seat] = true;
 
-  return { next: advanceAfterGo(next, seat, now) };
+  return { next: advanceAfterGo(next, seat, now, randomInt) };
 }
 
 /* --------------------------------------------------------------- counting  */
@@ -432,8 +481,7 @@ function applyGo(state: CribbageState, seat: CribbageSeat, now: number): Cribbag
  * the instant anyone crosses WIN_SCORE, even mid-count, and otherwise
  * deals straight into the next hand.
  */
-function concludeHand(state: CribbageState, _now: number): CribbageState {
-  void _now; // kept for a consistent (state, now) shape across every state-transition helper here
+function concludeHand(state: CribbageState, now: number, randomInt: RandomInt): CribbageState {
   const starter = state.starter;
   if (!starter) return state; // unreachable: pegging cannot start without a cut starter.
 
@@ -471,7 +519,8 @@ function concludeHand(state: CribbageState, _now: number): CribbageState {
     entries,
   };
   const nextDealer = (state.dealerSeat + 1) % state.playerCount;
-  const dealt = dealHand(state.playerCount, nextDealer, state.handNumber + 1, state.rngState);
+  // Shuffled now, from the CSPRNG, so nothing on the stored state predicts it.
+  const dealt = dealHand(state.playerCount, nextDealer, state.handNumber + 1, randomInt, now);
   return { ...state, ...dealt, scores, lastHandSummary: summary };
 }
 
@@ -504,6 +553,7 @@ export function applyCribbageMove(
   seat: CribbageSeat,
   move: unknown,
   now: number,
+  randomInt: RandomInt = secureRandomInt,
 ): CribbageMoveResult {
   if (state.phase === "done") return { reject: "This match is already over." };
   if (seat < 0 || seat >= state.playerCount) return { reject: "That is not your seat." };
@@ -511,53 +561,139 @@ export function applyCribbageMove(
   const parsed = parseMove(move);
   if (!parsed) return { reject: "That is not a move." };
 
-  if (parsed.type === "discard") return applyDiscard(state, seat, parsed.card, now);
-  if (parsed.type === "peg") return applyPeg(state, seat, parsed.card, now);
-  return applyGo(state, seat, now);
+  // A seat whose time already ran out cannot move; the table ends on the attempt.
+  const timedOut = timedOutState(state, now);
+  if (timedOut) return { next: timedOut };
+
+  const result =
+    parsed.type === "discard"
+      ? applyDiscard(state, seat, parsed.card, now)
+      : parsed.type === "peg"
+        ? applyPeg(state, seat, parsed.card, now, randomInt)
+        : applyGo(state, seat, now, randomInt);
+  if ("reject" in result) return result;
+
+  // The clock restarts for every pegging play and for each new phase or
+  // deal. A discard that leaves others still to discard does not restart it:
+  // the discard is one decision the whole table has the same time for.
+  const next = result.next;
+  const stillDiscarding = next.phase === "discard" && state.phase === "discard" && next.handNumber === state.handNumber;
+  return { next: stillDiscarding ? { ...next, actionStartedAt: actionStart(state, now) } : { ...next, actionStartedAt: now } };
+}
+
+/* ----------------------------------------------------------- clock/forfeit */
+
+/** When the current decision became due. A match stored before the clock existed counts from `now`. */
+function actionStart(state: CribbageState, now: number): number {
+  const stored = (state as Partial<CribbageState>).actionStartedAt;
+  return typeof stored === "number" ? stored : now;
+}
+
+/** Ms left on the decision now awaited, or null once the match is over. */
+export function cribbageTurnRemainingMs(state: CribbageState, now: number): number | null {
+  if (state.phase === "done") return null;
+  return Math.max(0, actionStart(state, now) + CRIBBAGE_TURN_MS - now);
+}
+
+/** Who the table is waiting on: every seat yet to discard, or the seat to peg. */
+function stalledSeats(state: CribbageState): CribbageSeat[] {
+  if (state.phase === "discard") {
+    const seats: CribbageSeat[] = [];
+    for (let seat = 0; seat < state.playerCount; seat += 1) {
+      if (state.discarded[seat] === null) seats.push(seat);
+    }
+    return seats;
+  }
+  if (state.phase === "pegging" && state.peggingTurn !== null) return [state.peggingTurn];
+  return [];
+}
+
+function forfeit(state: CribbageState, seats: CribbageSeat[], reason: string): CribbageState {
+  return { ...state, phase: "done", winner: null, winReason: reason, forfeited: [...seats].sort((a, b) => a - b) };
+}
+
+/** The table ended by timeout if the current decision is overdue, else null. */
+function timedOutState(state: CribbageState, now: number): CribbageState | null {
+  const remaining = cribbageTurnRemainingMs(state, now);
+  if (remaining === null || remaining > 0) return null;
+  const stalled = stalledSeats(state);
+  if (stalled.length === 0) return null;
+  return forfeit(state, stalled, REASON_TIMEOUT);
 }
 
 /**
- * Cribbage has no real-time clock; nothing here times out on its own the
- * way a chess flag or a trivia question does, so this always returns null.
- * Kept as an explicit function rather than omitted so a future turn-timer
- * feature has an obvious seam, and so its contract (null means "nothing
- * changed", checked on every poll) stays visible even while unused.
+ * The turn clock running out, the only thing that happens without a move.
+ * Null when nothing changed, which is nearly every poll. A match stored
+ * before the clock existed gets one here, once, starting now.
  */
-export function tickCribbage(_state: CribbageState, _now: number): CribbageState | null {
-  void _state;
-  void _now;
-  return null;
+export function tickCribbage(state: CribbageState, now: number): CribbageState | null {
+  if (state.phase === "done") return null;
+  if (typeof (state as Partial<CribbageState>).actionStartedAt !== "number") {
+    return { ...state, actionStartedAt: now };
+  }
+  return timedOutState(state, now);
 }
 
 export function cribbageResult(state: CribbageState): CribbageOutcome | null {
-  if (state.phase !== "done" || state.winner === null) return null;
-  return { winner: state.winner, reason: state.winReason ?? "121" };
+  if (state.phase !== "done") return null;
+  const forfeited = state.forfeited ?? [];
+  if (forfeited.length > 0) {
+    return { winner: null, reason: state.winReason ?? REASON_RESIGNED, forfeited: [...forfeited] };
+  }
+  if (state.winner === null) return null;
+  return { winner: state.winner, reason: state.winReason ?? "121", forfeited: [] };
 }
 
 /**
- * Resigning ends the whole match immediately, not just for the resigning
- * seat, and hands the pot to whoever else currently has the higher score.
- * Cribbage has no clean "the rest keep playing" case the way poker folding
- * does: pegging turn order and hand-counting order both depend on every
- * seat, so removing one mid-hand has no well-defined continuation. A tie
- * among the remaining seats breaks toward the lowest seat index, rare (it
- * needs an exact score tie at the moment somebody quits) and arbitrary by
- * necessity, since cribbage's contract has no draw outcome to fall back on.
+ * What each seat is credited when the table settles, indexed by seat. The
+ * only place the split is decided; the service pays exactly this, one credit
+ * per seat.
+ *
+ * A win pays the whole pot to the winner. A forfeit pays nothing to the
+ * forfeiting seats and gives every other seat its own stake back plus an
+ * equal share of the forfeited stakes, any odd Gold going one each to the
+ * lowest seats so the total always equals the pot. If every seat forfeited
+ * (the whole table let the discard clock run out) each is refunded its own
+ * stake, since nobody played anyone out of anything.
+ */
+export function cribbagePayouts(outcome: CribbageOutcome, playerCount: number, stake: number): number[] {
+  const payouts = new Array<number>(playerCount).fill(0);
+  if (outcome.winner !== null && outcome.forfeited.length === 0) {
+    payouts[outcome.winner] = stake * playerCount;
+    return payouts;
+  }
+
+  const lost = new Set(outcome.forfeited);
+  const keepers: CribbageSeat[] = [];
+  for (let seat = 0; seat < playerCount; seat += 1) {
+    if (!lost.has(seat)) keepers.push(seat);
+  }
+  if (keepers.length === 0) return payouts.fill(stake);
+
+  const forfeitedGold = stake * (playerCount - keepers.length);
+  const share = Math.floor(forfeitedGold / keepers.length);
+  let oddGold = forfeitedGold - share * keepers.length;
+  for (const seat of keepers) {
+    payouts[seat] = stake + share + (oddGold > 0 ? 1 : 0);
+    if (oddGold > 0) oddGold -= 1;
+  }
+  return payouts;
+}
+
+/**
+ * Resigning forfeits the resigner's stake and ends the whole match, not just
+ * for the resigning seat. Cribbage has no clean "the rest keep playing" case
+ * the way poker folding does: pegging turn order and hand-counting order both
+ * depend on every seat, so removing one mid-hand has no well-defined
+ * continuation. Nobody wins: the other seats get their stakes back and split
+ * the resigner's (see cribbagePayouts). Handing the pot to the leader
+ * instead would let a partner at the table resign it to their friend.
  */
 export function resignCribbage(state: CribbageState, seat: CribbageSeat, _now: number): CribbageState {
   void _now; // kept for a consistent (state, seat, now) shape across every mutator here
   if (state.phase === "done") return state;
-
-  let winner: CribbageSeat | null = null;
-  for (let s = 0; s < state.playerCount; s += 1) {
-    if (s === seat) continue;
-    if (winner === null || state.scores[s] > state.scores[winner]) winner = s;
-  }
-  // Unreachable given tables are always 3-4 seats: at least one other seat
-  // always exists to resign to.
-  if (winner === null) winner = seat;
-
-  return { ...state, phase: "done", winner, winReason: "Resigned" };
+  if (seat < 0 || seat >= state.playerCount) return state;
+  return forfeit(state, [seat], REASON_RESIGNED);
 }
 
 /* --------------------------------------------------------------- viewing - */
@@ -597,8 +733,12 @@ export interface CribbageSnapshot {
   pegging: CribbagePeggingView | null;
   /** The reveal for the deal that just finished. Fully public -- that deal is over. */
   lastHandSummary: CribbageHandSummary | null;
+  /** Ms left for the decision the table is waiting on, or null once over. */
+  turnRemainingMs: number | null;
   winner: CribbageSeat | null;
   winReason: string | null;
+  /** Seats that resigned or timed out. Empty unless the table ended on a forfeit. */
+  forfeited: CribbageSeat[];
 }
 
 /**
@@ -612,9 +752,8 @@ export interface CribbageSnapshot {
 export function cribbageSnapshot(
   state: CribbageState,
   rawSeat: CribbageSeat | null,
-  _now: number,
+  now: number,
 ): CribbageSnapshot {
-  void _now; // kept for parity with the table-contract's snapshot(state, seat, now) shape
   // Defense in depth: a seat outside 0..playerCount-1 should be unreachable
   // (the service looks it up from the actual seat rows), but treating one
   // as "unknown viewer" here (the same most-restrictive default the header
@@ -655,8 +794,10 @@ export function cribbageSnapshot(
     opponents,
     pegging,
     lastHandSummary: state.lastHandSummary,
+    turnRemainingMs: cribbageTurnRemainingMs(state, now),
     winner: state.winner,
     winReason: state.winReason,
+    forfeited: [...(state.forfeited ?? [])],
   };
 }
 

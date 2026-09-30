@@ -29,37 +29,66 @@ class Area:
         self.verts = {m: set() for m in kit.MATERIALS}
         self.items = []      # (frame images, anchor, base x, base y, shadow radii, ground?, character name or None)
         self.npcs = []       # (name, x, y) for everyone placed with character()
-        self.spawn = None    # where the player appears, in pixels; export.py needs it
+        self._spawn = None   # where the player appears, in pixels; export.py needs it
         # For the game only (export.py); the review renders ignore all three.
-        self.tags = {}       # item index -> what tapping it does, e.g. "barn", "gate:oldfields"
+        self.tags = {}       # item index -> what tapping it does, e.g. "barn", "tree:homestead-1"
         self.zones = []      # (tag, x, y, w, h) in pixels: tappable ground with no sprite of its own
         self.exits = []      # (to area, x, y, w, h, spawn x, spawn y): walk in here, arrive there
         self.doorways = set()  # (tx, ty) a building's own footprint leaves open, so its door can be walked into
         self.solid = set()   # (tx, ty) that never walk: an interior's walls
         self.indoor = False  # an interior: lit by its lamps whatever the hour, and no weather or critters
+        # Everything authored after a shift() is pushed this far down the map.
+        # One map can then be written as two blocks that each keep their own
+        # numbers -- see homestead.py, which lays the Crop Fields over the top
+        # of the farmyard without renumbering either of them.
+        self.dty = 0
+
+    @property
+    def spawn(self):
+        return self._spawn
+
+    @spawn.setter
+    def spawn(self, at):
+        self._spawn = None if at is None else (at[0], at[1] + self.dpy)
+
+    def shift(self, tiles):
+        """Author everything from here on `tiles` rows further down the map."""
+        self.dty = tiles
+
+    @property
+    def dpy(self):
+        return self.dty * T
 
     # ---- terrain, authored on the (w+1) x (h+1) vertex grid
 
     def rect(self, material, x0, y0, x1, y1):
+        y0, y1 = y0 + self.dty, y1 + self.dty
         self.verts[material].update((x, y) for y in range(y0, y1 + 1) for x in range(x0, x1 + 1))
 
     def line(self, material, a, b, width=2):
         """A run of vertices from a to b. Kept 4-connected, so a one-wide stream never pinches on a diagonal step."""
+        a, b = (a[0], a[1] + self.dty), (b[0], b[1] + self.dty)
         n = max(abs(b[0] - a[0]), abs(b[1] - a[1]), 1)
         prev = None
         for i in range(n + 1):
             x = round(a[0] + (b[0] - a[0]) * i / n)
             y = round(a[1] + (b[1] - a[1]) * i / n)
             if prev and prev[0] != x and prev[1] != y:
-                self.rect(material, prev[0], y, prev[0] + width - 1, y + width - 1)
-            self.rect(material, x, y, x + width - 1, y + width - 1)
+                self._rect(material, prev[0], y, prev[0] + width - 1, y + width - 1)
+            self._rect(material, x, y, x + width - 1, y + width - 1)
             prev = (x, y)
 
+    def _rect(self, material, x0, y0, x1, y1):
+        """rect() with the shift already applied, for callers that pre-shifted."""
+        self.verts[material].update((x, y) for y in range(y0, y1 + 1) for x in range(x0, x1 + 1))
+
     def ellipse(self, material, cx, cy, rx, ry):
+        cy += self.dty
         self.verts[material].update((x, y) for y in range(self.h + 1) for x in range(self.w + 1)
                                     if ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1)
 
     def clear(self, material, x0, y0, x1, y1):
+        y0, y1 = y0 + self.dty, y1 + self.dty
         self.verts[material].difference_update((x, y) for y in range(y0, y1 + 1) for x in range(x0, x1 + 1))
 
     # ---- sprites, placed by base point in pixels
@@ -67,6 +96,7 @@ class Area:
     def add(self, made, bx, by, shadow=None, ground=False, tag=None):
         """`made` is (sprite, anchor) or a list of them for an animated thing (one per frame).
         `tag` names what tapping it does in the game (see export.py)."""
+        by += self.dpy
         frames = made if isinstance(made, list) else [made]
         imgs = [(s.image() if isinstance(s, kit.Sprite) else s) for s, _ in frames]
         self.items.append((imgs, frames[0][1], bx, by, shadow, ground, None))
@@ -75,23 +105,25 @@ class Area:
 
     def character(self, name, bx, by):
         self.add(character_frame(name), bx, by, (6, 2))
-        self.npcs.append((name, bx, by))
+        self.npcs.append((name, bx, by + self.dpy))
         self.items[-1] = self.items[-1][:6] + (name,)
 
     def zone(self, tag, x, y, w, h):
-        self.zones.append((tag, x, y, w, h))
+        self.zones.append((tag, x, y + self.dpy, w, h))
 
     def exit(self, to, x, y, w, h, spawn):
-        self.exits.append((to, x, y, w, h) + tuple(spawn))
+        self.exits.append((to, x, y + self.dpy, w, h) + tuple(spawn))
 
     def door(self, to, x, y, w, h, spawn):
         """An exit through a building's door: the tiles under it are opened in the building's footprint."""
         self.exit(to, x, y, w, h, spawn)
+        y += self.dpy
         self.doorways.update((tx, ty) for ty in range(y // T, (y + h - 1) // T + 1)
                              for tx in range(x // T, (x + w - 1) // T + 1))
 
     def wall(self, tx0, ty0, tx1, ty1):
         """Tiles that never walk, inclusive."""
+        ty0, ty1 = ty0 + self.dty, ty1 + self.dty
         self.solid.update((tx, ty) for ty in range(ty0, ty1 + 1) for tx in range(tx0, tx1 + 1))
 
     def trees(self, spots, seed=0):

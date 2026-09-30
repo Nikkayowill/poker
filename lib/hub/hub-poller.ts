@@ -72,16 +72,17 @@ function dueSections(now: number): HubSection[] {
  * Fetches the given sections and fans the answer out.
  *
  * A call whose sections are already covered by the request in flight joins it
- * rather than opening a second one -- a visibilitychange landing on the same
- * beat as a tick must not double the traffic this module exists to halve. A
+ * (unless `join` is false) rather than opening a second one -- a
+ * visibilitychange landing on the same beat as a tick must not double the
+ * traffic this module exists to halve. A
  * call asking for anything extra waits its turn instead, so the promise a
  * caller gets back always covers what it asked for; refreshHub()'s callers
  * await it precisely to read the result.
  */
-function fetchSections(sections: HubSection[]): Promise<void> {
+function fetchSections(sections: HubSection[], { join = true }: { join?: boolean } = {}): Promise<void> {
   if (sections.length === 0) return Promise.resolve();
   const pending = inFlight;
-  if (pending && sections.every((section) => pending.sections.includes(section))) {
+  if (join && pending && sections.every((section) => pending.sections.includes(section))) {
     return pending.done;
   }
 
@@ -192,5 +193,8 @@ export function subscribeHub(sections: HubSection[], listener: Listener): () => 
  */
 export function refreshHub(sections: HubSection[]): Promise<void> {
   for (const section of sections) lastAttemptedAt.delete(section);
-  return fetchSections(sections);
+  // Never joins a poll already in flight. That poll may have been read before
+  // the mutation it is refreshing for, which is how the unread badge stayed
+  // up after opening the inbox. It waits for that poll, then reads again.
+  return fetchSections(sections, { join: false });
 }

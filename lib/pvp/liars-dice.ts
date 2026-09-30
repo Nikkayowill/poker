@@ -3,9 +3,22 @@
  * game is what each seat cannot see about the other one's hand.
  *
  * Pure and synchronous, like ./othello.ts: every function takes a state and
- * returns the next one. `now` is only here because the contract asks every
- * game for it -- this variant has no clock of its own, so `tick` is simply
- * not implemented (it's optional on DuelGame for exactly this case).
+ * returns the next one. The one exception is the dice themselves, which come
+ * from ./secure-random.ts at the moment they are rolled (see "Dice" below).
+ *
+ * ## Clock
+ *
+ * Each seat has an Othello-style bank clock that only runs on its own turn.
+ * Without one a player who is losing could simply stop bidding, and the other
+ * seat's only way out would be to resign and pay them. Running out of time
+ * loses the match, the same as a chess flag.
+ *
+ * ## Dice
+ *
+ * Every roll is drawn from the CSPRNG when it happens, not from the match
+ * seed. The seed is only 31 bits, and a showdown reveals ten dice, which is
+ * enough to brute-force it and read the opponent's next hand. `rngState` is
+ * left on old stored matches and ignored.
  *
  * ## No wildcards
  *
@@ -44,11 +57,12 @@
 import {
   defineDuelGame,
   otherSeat,
+  remainingTime,
   type DuelMoveResult,
   type DuelOutcome,
   type DuelSeat,
 } from "./match-contract";
-import { mulberry32Step } from "@/lib/seeded-random";
+import { secureRandomInt, type RandomInt } from "./secure-random";
 
 /* ------------------------------------------------------------------ shape */
 
@@ -82,14 +96,12 @@ export interface LiarsDiceState {
   /** Who made `bid`. Null exactly when `bid` is null. */
   bidder: DuelSeat | null;
   turn: DuelSeat;
-  /**
-   * The mulberry32 accumulator, carried on the state rather than closed over
-   * in memory. A match runs an unbounded number of rounds, each needing a
-   * fresh reroll, so the generator can't be exhausted up front the way a
-   * single fixed-length shuffle's callers do -- same reason
-   * lib/cribbage/deck.ts's `rngState` exists.
-   */
-  rngState: number;
+  /** When the current turn's clock started running, in epoch ms. */
+  turnStartedAt: number;
+  /** Each seat's banked remaining ms as of `turnStartedAt`. Read through `liarsDiceRemainingMs`. */
+  clocks: [number, number];
+  /** The old seeded-dice accumulator. Only on matches stored before dice moved to the CSPRNG; unused. */
+  rngState?: number;
   /**
    * What the most recent challenge exposed, or null before the first one.
    * Kept through the next round's bids so both seats get to see it.
@@ -120,33 +132,77 @@ export interface LiarsDiceSnapshot {
   bid: LiarsDiceBid | null;
   bidder: DuelSeat | null;
   turn: DuelSeat;
+  /** Live remaining ms for [seat 0, seat 1], computed against `now`. */
+  clocks: [number, number];
   lastReveal: LiarsDiceReveal | null;
   outcome: DuelOutcome | null;
 }
 
 /* -------------------------------------------------------------- constants */
 
+/** Five minutes each plus three seconds a move, the same clock Othello and checkers use. */
+export const LIARS_DICE_CLOCK_MS = 5 * 60 * 1000;
+export const LIARS_DICE_INCREMENT_MS = 3 * 1000;
+
 const REASON_RESIGNED = "Resigned";
 const REASON_OUT_OF_DICE = "Out of dice";
+const REASON_TIMEOUT = "Timeout";
 
 /* ------------------------------------------------------------------ dice */
 
-/** One die, drawn from the threaded rng state. Returns the face and the next state. */
-function rollDie(rngState: number): [number, number] {
-  const [nextState, value] = mulberry32Step(rngState);
-  return [Math.floor(value * 6) + 1, nextState];
+/** `count` fresh dice from `randomInt`. */
+function rollDice(count: number, randomInt: RandomInt): number[] {
+  const dice: number[] = [];
+  for (let i = 0; i < count; i += 1) dice.push(randomInt(6) + 1);
+  return dice;
 }
 
-/** `count` fresh dice, threading the rng state through each draw. */
-function rollDice(count: number, rngState: number): [number[], number] {
-  const dice: number[] = [];
-  let state = rngState;
-  for (let i = 0; i < count; i += 1) {
-    const [face, nextState] = rollDie(state);
-    dice.push(face);
-    state = nextState;
-  }
-  return [dice, state];
+/* ------------------------------------------------------------------ clock */
+
+/**
+ * A stored state with its clock filled in. Matches stored before the clock
+ * existed have no `clocks`, and their current turn is treated as starting at
+ * `now` with a full bank each.
+ */
+function withClock(state: LiarsDiceState, now: number): LiarsDiceState {
+  const stored = state as Partial<LiarsDiceState>;
+  if (Array.isArray(stored.clocks) && typeof stored.turnStartedAt === "number") return state;
+  return { ...state, clocks: [LIARS_DICE_CLOCK_MS, LIARS_DICE_CLOCK_MS], turnStartedAt: now };
+}
+
+/** What a seat has left at `now`. Frozen once the match is over. */
+export function liarsDiceRemainingMs(state: LiarsDiceState, seat: DuelSeat, now: number): number {
+  const clocked = withClock(state, now);
+  return remainingTime(
+    clocked.clocks[seat],
+    seat,
+    clocked.turn,
+    clocked.turnStartedAt,
+    now,
+    clocked.outcome !== null,
+  );
+}
+
+function flagFallen(state: LiarsDiceState): LiarsDiceState {
+  const clocks: [number, number] = [state.clocks[0], state.clocks[1]];
+  clocks[state.turn] = 0;
+  return {
+    ...state,
+    clocks,
+    outcome: { winner: otherSeat(state.turn), reason: REASON_TIMEOUT },
+  };
+}
+
+/**
+ * A flag falling, the only thing that happens without a move. Null when
+ * nothing changed, which is nearly every poll. A legacy match with no clock
+ * gets one here, once.
+ */
+export function tickLiarsDice(state: LiarsDiceState, now: number): LiarsDiceState | null {
+  if (state.outcome !== null) return null;
+  const clocked = withClock(state, now);
+  if (liarsDiceRemainingMs(clocked, clocked.turn, now) > 0) return clocked === state ? null : clocked;
+  return flagFallen(clocked);
 }
 
 function totalDice(state: Pick<LiarsDiceState, "seats">): number {
@@ -163,15 +219,22 @@ function countFace(dice: readonly number[], faceValue: number): number {
 
 /* ---------------------------------------------------------- state changes */
 
-export function createLiarsDiceState(seed: number, _now: number): LiarsDiceState {
-  const [seatZero, afterZero] = rollDice(LIARS_DICE_STARTING_DICE, seed >>> 0);
-  const [seatOne, afterOne] = rollDice(LIARS_DICE_STARTING_DICE, afterZero);
+/**
+ * The opening deal. `seed` is ignored: see "Dice" in the header. `randomInt`
+ * is only ever passed by a test that wants a fixed hand.
+ */
+export function createLiarsDiceState(
+  _seed: number,
+  now: number,
+  randomInt: RandomInt = secureRandomInt,
+): LiarsDiceState {
   return {
-    seats: [seatZero, seatOne],
+    seats: [rollDice(LIARS_DICE_STARTING_DICE, randomInt), rollDice(LIARS_DICE_STARTING_DICE, randomInt)],
     bid: null,
     bidder: null,
     turn: 0,
-    rngState: afterOne,
+    turnStartedAt: now,
+    clocks: [LIARS_DICE_CLOCK_MS, LIARS_DICE_CLOCK_MS],
     lastReveal: null,
     outcome: null,
   };
@@ -217,16 +280,25 @@ function removeOneDie(dice: readonly number[]): number[] {
 }
 
 export function applyLiarsDiceMove(
-  state: LiarsDiceState,
+  stored: LiarsDiceState,
   seat: DuelSeat,
   move: unknown,
   now: number,
+  randomInt: RandomInt = secureRandomInt,
 ): DuelMoveResult<LiarsDiceState> {
-  if (state.outcome !== null) return { reject: "This match is already over." };
-  if (seat !== state.turn) return { reject: "It is not your turn." };
+  if (stored.outcome !== null) return { reject: "This match is already over." };
+  if (seat !== stored.turn) return { reject: "It is not your turn." };
 
   const claim = parseMove(move);
   if (claim === null) return { reject: "That is not a move." };
+
+  const state = withClock(stored, now);
+  // A player whose flag fell cannot then move; the match ends on the attempt.
+  if (liarsDiceRemainingMs(state, seat, now) <= 0) return { next: flagFallen(state) };
+  // The mover banks what they had left plus the increment, and the next
+  // turn's clock starts now, whoever it belongs to.
+  const clocks: [number, number] = [state.clocks[0], state.clocks[1]];
+  clocks[seat] = liarsDiceRemainingMs(state, seat, now) + LIARS_DICE_INCREMENT_MS;
 
   if (claim.type === "bid") {
     if (claim.count > totalDice(state)) {
@@ -242,6 +314,8 @@ export function applyLiarsDiceMove(
         bid,
         bidder: seat,
         turn: otherSeat(seat),
+        turnStartedAt: now,
+        clocks,
         // lastReveal stays until the next challenge replaces it. Clearing it
         // here meant a player whose bid held never saw the showdown when the
         // loser opened the next round before their screen refreshed.
@@ -275,24 +349,24 @@ export function applyLiarsDiceMove(
         seats,
         bid: null,
         bidder: null,
+        clocks,
         lastReveal: reveal,
         outcome: { winner: otherSeat(loser), reason: REASON_OUT_OF_DICE },
       },
     };
   }
 
-  const [seatZero, afterZero] = rollDice(seats[0].length, state.rngState);
-  const [seatOne, afterOne] = rollDice(seats[1].length, afterZero);
-
+  // Fresh dice from the CSPRNG, drawn now. Nothing on the state predicts them.
   return {
     next: {
       ...state,
-      seats: [seatZero, seatOne],
+      seats: [rollDice(seats[0].length, randomInt), rollDice(seats[1].length, randomInt)],
       bid: null,
       bidder: null,
       // The loser of the round opens the next one's bidding.
       turn: loser,
-      rngState: afterOne,
+      turnStartedAt: now,
+      clocks,
       lastReveal: reveal,
       outcome: null,
     },
@@ -310,9 +384,12 @@ export function liarsDiceResult(state: LiarsDiceState): DuelOutcome | null {
  * a resignation arriving after the match ended some other way can't rewrite
  * the winner.
  */
-export function resignLiarsDice(state: LiarsDiceState, seat: DuelSeat, _now: number): LiarsDiceState {
+export function resignLiarsDice(state: LiarsDiceState, seat: DuelSeat, now: number): LiarsDiceState {
   if (state.outcome !== null) return state;
-  return { ...state, outcome: { winner: otherSeat(seat), reason: REASON_RESIGNED } };
+  const clocked = withClock(state, now);
+  const clocks: [number, number] = [clocked.clocks[0], clocked.clocks[1]];
+  clocks[clocked.turn] = liarsDiceRemainingMs(clocked, clocked.turn, now);
+  return { ...clocked, clocks, outcome: { winner: otherSeat(seat), reason: REASON_RESIGNED } };
 }
 
 /**
@@ -327,7 +404,7 @@ export function resignLiarsDice(state: LiarsDiceState, seat: DuelSeat, _now: num
 export function liarsDiceSnapshot(
   state: LiarsDiceState,
   seat: DuelSeat | null,
-  _now: number,
+  now: number,
 ): LiarsDiceSnapshot {
   const over = state.outcome !== null;
   const seatView = (index: DuelSeat): LiarsDiceSeatView => ({
@@ -341,6 +418,7 @@ export function liarsDiceSnapshot(
     bid: state.bid,
     bidder: state.bidder,
     turn: state.turn,
+    clocks: [liarsDiceRemainingMs(state, 0, now), liarsDiceRemainingMs(state, 1, now)],
     lastReveal: state.lastReveal,
     outcome: state.outcome,
   };
@@ -351,6 +429,7 @@ export const LIARS_DICE_DUEL = defineDuelGame<LiarsDiceState, unknown, LiarsDice
   label: "Liar's Dice",
   createState: createLiarsDiceState,
   applyMove: applyLiarsDiceMove,
+  tick: tickLiarsDice,
   result: liarsDiceResult,
   snapshot: liarsDiceSnapshot,
   resign: resignLiarsDice,

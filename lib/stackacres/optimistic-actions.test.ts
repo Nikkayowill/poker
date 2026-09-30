@@ -1,3 +1,7 @@
+import { cropFieldObstaclePlacements } from "./crop-field-obstacles";
+import { isWildMapTile, mapToSoilTile } from "./hoeable";
+import { isFenceableMapTile } from "./fences";
+import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "./homestead-ground";
 import { describe, expect, it } from "vitest";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { STACKACRES_CATALOGUE } from "./catalogue";
@@ -11,6 +15,12 @@ import { RECIPE_CATALOGUE } from "./recipes";
 import { STACKACRES_FEED } from "./catalogue";
 import { toolUpgradePrice } from "./equipment";
 import { applyInfluenceDiscount } from "./influence-tiers";
+import {
+  LAND_OBSTACLES,
+  LAND_OBSTACLE_DEFS,
+  LAND_SWING_ENERGY,
+  landObstacleSnapshot,
+} from "./land-clearing";
 import {
   createsStackAcresUnit,
   isOptimisticUnitId,
@@ -76,7 +86,9 @@ function ctx(overrides: Partial<FarmPredictContext> = {}): FarmPredictContext {
     greenhouseBuilt: false,
     cropFieldsUnlocked: false,
     soilTiles: [],
-    soilStock: {},
+    forageNodes: [],
+    landObstacles: [],
+    fences: [],
     inventory: {},
     wheatPlots: [],
     machines: [],
@@ -328,11 +340,11 @@ describe("predictStackAcresAction: feed/water/clear", () => {
   });
 
   it("spends a Radish on a baited cast and never guesses the fish", () => {
-    const patch = predictStackAcresAction({ action: "catch-fish", bait: true }, ctx({ inventory: { radish: 2 } }));
+    const patch = predictStackAcresAction({ action: "catch-fish", bait: true, cast: 0.5 }, ctx({ inventory: { radish: 2 } }));
     expect(patch?.inventory?.radish).toBe(1);
     expect(patch?.energy?.level).toBe(95);
     expect(patch?.inventory?.bluegill ?? 0).toBe(0);
-    expect(predictStackAcresAction({ action: "catch-fish", bait: true }, ctx({ inventory: {} }))).toBeNull();
+    expect(predictStackAcresAction({ action: "catch-fish", bait: true, cast: 0.5 }, ctx({ inventory: {} }))).toBeNull();
   });
 
   it("eats Bread for 20 energy and refuses when there is none or energy is full", () => {
@@ -345,9 +357,9 @@ describe("predictStackAcresAction: feed/water/clear", () => {
   });
 
   it("spends 5 energy on a landed cast and guesses nothing when too tired", () => {
-    expect(predictStackAcresAction({ action: "catch-fish", bait: false }, ctx())?.energy?.level).toBe(95);
+    expect(predictStackAcresAction({ action: "catch-fish", bait: false, cast: 0.5 }, ctx())?.energy?.level).toBe(95);
     expect(
-      predictStackAcresAction({ action: "catch-fish", bait: false }, ctx({ energy: { level: 4, updatedAt: NOW.toISOString() } })),
+      predictStackAcresAction({ action: "catch-fish", bait: false, cast: 0.5 }, ctx({ energy: { level: 4, updatedAt: NOW.toISOString() } })),
     ).toBeNull();
   });
 
@@ -556,6 +568,70 @@ describe("predictStackAcresAction: buying and selling stock", () => {
   });
 });
 
+describe("predictStackAcresAction: laying a soil tile", () => {
+  // The first square out in the wild land with no overgrowth dealt onto it, off the real map.
+  const inFields = (() => {
+    const standing = new Set(cropFieldObstaclePlacements().map((p) => `${p.tx},${p.ty}`));
+    for (let my = 0; my < HOMESTEAD_MAP_HEIGHT; my++) {
+      for (let mx = 0; mx < HOMESTEAD_MAP_WIDTH; mx++) {
+        if (isWildMapTile(mx, my) && !standing.has(`${mx},${my}`)) return mapToSoilTile(mx, my);
+      }
+    }
+    throw new Error("no clear wild square on the Homestead");
+  })();
+
+  it("lays the bed, and clears the Crop Fields with it", () => {
+    const patch = predictStackAcresAction(
+      { action: "place-soil-tile", tx: inFields.tx, ty: inFields.ty },
+      ctx(),
+    );
+    expect(patch?.soilTiles).toHaveLength(1);
+    // Breaking the first ground out there IS the unlock, so the browser shows
+    // it straight away rather than waiting for the round trip.
+    expect(patch?.cropFieldsUnlocked).toBe(true);
+  });
+
+  it("does not claim the Crop Fields for a bed laid in the yard", () => {
+    const yard = (() => {
+      for (let my = 0; my < HOMESTEAD_MAP_HEIGHT; my++) {
+        for (let mx = 0; mx < HOMESTEAD_MAP_WIDTH; mx++) {
+          if (isFenceableMapTile(mx, my) && !isWildMapTile(mx, my)) return mapToSoilTile(mx, my);
+        }
+      }
+      throw new Error("no yard grass on the Homestead");
+    })();
+    const patch = predictStackAcresAction({ action: "place-soil-tile", tx: yard.tx, ty: yard.ty }, ctx());
+    expect(patch?.soilTiles).toHaveLength(1);
+    expect(patch?.cropFieldsUnlocked).toBe(false);
+  });
+
+  it("refuses a coordinate that already has a bed", () => {
+    const bed = { tx: inFields.tx, ty: inFields.ty, order: 0, origin: "purchased" as const };
+    expect(
+      predictStackAcresAction(
+        { action: "place-soil-tile", tx: inFields.tx, ty: inFields.ty },
+        ctx({ soilTiles: [bed] }),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("predictStackAcresAction: the Crop Fields' overgrowth", () => {
+  const [first] = cropFieldObstaclePlacements();
+  const square = mapToSoilTile(first.tx, first.ty);
+
+  it("does not flash a bed where something still stands", () => {
+    expect(predictStackAcresAction({ action: "place-soil-tile", ...square }, ctx())).toBeNull();
+  });
+
+  it("breaks the bed once that obstacle is down", () => {
+    const obstacle = LAND_OBSTACLES.cropfields.find((o) => o.id === first.id)!;
+    const down = landObstacleSnapshot(obstacle, { hitsRemaining: 0, clearedAt: NOW.toISOString() });
+    const patch = predictStackAcresAction({ action: "place-soil-tile", ...square }, ctx({ landObstacles: [down] }));
+    expect(patch?.soilTiles).toHaveLength(1);
+  });
+});
+
 describe("predictStackAcresAction: removing a soil tile", () => {
   const bedA = { tx: 0, ty: 0, order: 0, origin: "purchased" as const };
   const bedB = { tx: 1, ty: 0, order: 1, origin: "purchased" as const };
@@ -629,6 +705,25 @@ describe("predictStackAcresAction: collect", () => {
       ctx({ units: [growing] }),
     );
     expect(patch).toBeNull();
+  });
+
+  it("removes a crop that ripened on this device's clock since the list last moved", () => {
+    // The last response said "working"; its readyAt has passed since.
+    const ripened = unit({ id: "c1", stock: "carrot", state: "working", progress: 0.9, hungryAt: null });
+    const stillGrowing = unit({
+      id: "c2",
+      stock: "carrot",
+      state: "working",
+      hungryAt: null,
+      readyAt: new Date(NOW.getTime() + 60_000).toISOString(),
+    });
+    const tapped = predictStackAcresAction(
+      { action: "collect", unitIds: [ripened.id] },
+      ctx({ units: [ripened, stillGrowing] }),
+    );
+    expect(tapped?.units).toEqual([stillGrowing]);
+    const sweep = predictStackAcresAction({ action: "collect" }, ctx({ units: [ripened, stillGrowing] }));
+    expect(sweep?.units).toEqual([stillGrowing]);
   });
 });
 
@@ -873,5 +968,92 @@ describe("withResolvedUnitIds", () => {
 
   it("leaves an action that names no unit alone", () => {
     expect(withResolvedUnitIds({ action: "draw-water" }, swap)).toEqual({ action: "draw-water" });
+  });
+});
+
+describe("clearing land", () => {
+  const tree = LAND_OBSTACLES.wallow.find((obstacle) => obstacle.kind === "tree")!;
+  const def = LAND_OBSTACLE_DEFS.tree;
+
+  /** Every obstacle on the Fold down except `standing`. */
+  function foldAllButOne(standingId: string) {
+    return LAND_OBSTACLES.wallow.map((obstacle) =>
+      obstacle.id === standingId
+        ? landObstacleSnapshot(obstacle, { hitsRemaining: 1, clearedAt: null })
+        : landObstacleSnapshot(obstacle, { hitsRemaining: 0, clearedAt: NOW.toISOString() }),
+    );
+  }
+
+  it("spends energy, pays the barn and counts the swing down", () => {
+    const patch = predictStackAcresAction(
+      { action: "work-land", obstacleId: tree.id },
+      ctx({ energy: { level: 50, updatedAt: NOW.toISOString() } }),
+    );
+    expect(patch?.energy?.level).toBe(50 - LAND_SWING_ENERGY);
+    expect(patch?.inventory?.wood).toBe(def.perHit);
+    const guessed = patch?.landObstacles?.find((obstacle) => obstacle.id === tree.id);
+    expect(guessed?.hitsRemaining).toBe(def.hits - 1);
+    expect(guessed?.cleared).toBe(false);
+    // No Gold moves on the way to owning land.
+    expect(patch?.profile).toBeUndefined();
+  });
+
+  it("refuses a swing nobody has the energy for", () => {
+    const flat = ctx({ energy: { level: 1, updatedAt: NOW.toISOString() } });
+    expect(predictStackAcresAction({ action: "work-land", obstacleId: tree.id }, flat)).toBeNull();
+  });
+
+  it("refuses a swing at something already down", () => {
+    const down = ctx({
+      landObstacles: [landObstacleSnapshot(tree, { hitsRemaining: 0, clearedAt: NOW.toISOString() })],
+    });
+    expect(predictStackAcresAction({ action: "work-land", obstacleId: tree.id }, down)).toBeNull();
+  });
+
+  it("refuses an obstacle that is not on the map", () => {
+    expect(predictStackAcresAction({ action: "work-land", obstacleId: "nowhere-99" }, ctx())).toBeNull();
+  });
+
+  it("opens the sector on the swing that takes the last one down, for no Gold", () => {
+    const last = LAND_OBSTACLES.wallow[0];
+    const patch = predictStackAcresAction(
+      { action: "work-land", obstacleId: last.id },
+      ctx({ landObstacles: foldAllButOne(last.id) }),
+    );
+    expect(patch?.sectors).toContain("wallow");
+    expect(patch?.profile).toBeUndefined();
+  });
+
+  it("leaves the sector shut while anything is still standing", () => {
+    const patch = predictStackAcresAction({ action: "work-land", obstacleId: tree.id }, ctx());
+    expect(patch?.sectors).toBeUndefined();
+  });
+});
+
+describe("predictStackAcresAction: fences", () => {
+  // Open yard grass (./homestead-ground.ts): hoeable, not out in the wild land.
+  const grass = (() => {
+    for (let ty = 0; ty < HOMESTEAD_MAP_HEIGHT; ty++) {
+      for (let tx = 0; tx < HOMESTEAD_MAP_WIDTH; tx++) {
+        if (isFenceableMapTile(tx, ty) && !isWildMapTile(tx, ty)) return { tx, ty };
+      }
+    }
+    throw new Error("no yard grass on the Homestead");
+  })();
+
+  it("puts the piece up and takes its Wood under the finger", () => {
+    const patch = predictStackAcresAction({ action: "place-fence", ...grass }, ctx({ inventory: { wood: 5 } }));
+    expect(patch?.fences).toEqual([grass]);
+    expect(patch?.inventory?.wood).toBe(3);
+  });
+
+  it("guesses nothing it cannot pay for", () => {
+    expect(predictStackAcresAction({ action: "place-fence", ...grass }, ctx({ inventory: { wood: 1 } }))).toBeNull();
+  });
+
+  it("gives the Wood back as the piece comes down", () => {
+    const patch = predictStackAcresAction({ action: "remove-fence", ...grass }, ctx({ fences: [grass], inventory: { wood: 0 } }));
+    expect(patch?.fences).toEqual([]);
+    expect(patch?.inventory?.wood).toBe(2);
   });
 });

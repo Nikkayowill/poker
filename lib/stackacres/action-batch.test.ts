@@ -199,17 +199,13 @@ describe("window bookkeeping", () => {
 });
 
 describe("what batching buys", () => {
-  it("gives a batch one intent, which is why the taps in it are not dropped", () => {
-    // Every `collect` shares the intent `collect` (see intentOf's fallback),
-    // so a second single-unit collect tap inside the first one's round trip
-    // is refused as a duplicate today. Batched, those taps ride in one
-    // request under one intent instead.
+  it("keys each harvest by its own crops, so one in the air never blocks another", () => {
     const a = actionForUnits("collect", ["a"]);
     const b = actionForUnits("collect", ["b"]);
-    expect(a && b && intentOf(a) === intentOf(b)).toBe(true);
+    expect(a && b && intentOf(a) !== intentOf(b)).toBe(true);
 
     const batched = actionForUnits("collect", ["a", "b"]);
-    expect(batched && intentOf(batched)).toBe("collect");
+    expect(batched && intentOf(batched)).toBe("collect:a,b");
   });
 
   it("keeps a water batch on the anchor's own intent", () => {

@@ -4,6 +4,7 @@ import { persistenceMode } from "@/lib/server/game-store";
 import { detectImage, readImageDimensions, resizeAvatar, MAX_AVATAR_DIMENSION, MAX_AVATAR_PIXELS } from "@/lib/profile/image";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest) {
     const profile = await saveAvatar(token, resized, detected.contentType, detected.extension);
     return NextResponse.json({ profile, persistence: persistenceMode() });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not upload that avatar.";
+    const message = publicErrorMessage(error, "Could not upload that avatar.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

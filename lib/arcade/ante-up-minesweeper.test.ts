@@ -49,6 +49,19 @@ describe("opening an attempt", () => {
     expect(attempt.status).toBe("active");
   });
 
+  it("runs expert-ish clocks on the rungs big stakes play on", () => {
+    expect(ANTE_UP_MINESWEEPER_TIERS.intermediate.timeLimitMs).toBe(5 * 60_000);
+    expect(ANTE_UP_MINESWEEPER_TIERS.expert.timeLimitMs).toBe(10 * 60_000);
+  });
+
+  it("keeps the clock an attempt was opened with, even after a retune", () => {
+    // An expert attempt opened while the limit was still 20 minutes.
+    const old = { ...revealAnteUpMinesweeperCell(open("expert"), 0, NOW), timeLimitMs: 20 * 60_000 };
+    expect(anteUpMinesweeperDeadline(old)).toBe(NOW.getTime() + 20 * 60_000);
+    expect(tickAnteUpMinesweeper(old, at(15 * 60_000))).toBeNull();
+    expect(tickAnteUpMinesweeper(old, at(20 * 60_000))?.status).toBe("timed-out");
+  });
+
   it("keeps the wager floor above zero", () => {
     expect(MIN_ANTE_UP_WAGER).toBeGreaterThan(0);
   });

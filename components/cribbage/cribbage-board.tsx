@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { PlayingCard } from "@/components/table/playing-card";
 import type { Card as PokerCard } from "@/lib/game/types";
@@ -53,6 +54,10 @@ export function CribbageBoard({ state, yourSeat, players, busy, onMove }: Cribba
       <div className="crib-hand-number">
         Hand {state.handNumber + 1} · {dealer ? `${dealer.displayName} deals` : "Dealing"}
         {isDealer && " (you)"}
+        {state.turnRemainingMs !== null && (
+          // Re-keyed on the server's value so the countdown re-anchors to it.
+          <TurnClock key={state.turnRemainingMs} ms={state.turnRemainingMs} />
+        )}
       </div>
 
       {state.lastHandSummary && <CribbageHandReveal summary={state.lastHandSummary} players={players} yourSeat={yourSeat} />}
@@ -141,6 +146,30 @@ export function CribbageBoard({ state, yourSeat, players, busy, onMove }: Cribba
       </div>
     </div>
   );
+}
+
+/** mm:ss, rounded up so "0:00" only ever means time is up. */
+function formatClock(ms: number): string {
+  const seconds = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+/**
+ * Time left on the decision the table is waiting on. Counts down locally
+ * from the last value the server sent, the same way chess-board.tsx's clock
+ * does, since reads only arrive on a change or the backup poll. The server
+ * alone decides when it has run out.
+ */
+function TurnClock({ ms }: { ms: number }) {
+  const [anchor] = useState(() => Date.now());
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setElapsed(Date.now() - anchor), 1000);
+    return () => window.clearInterval(timer);
+  }, [anchor]);
+
+  return <> · {formatClock(ms - elapsed)} to play</>;
 }
 
 function wouldFit(card: CribCard, count: number): boolean {

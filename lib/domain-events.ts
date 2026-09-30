@@ -31,4 +31,4 @@ export type DomainEvent =
   // than silently inflating duel_won's "Win 10 PvP duels" count.
   | { kind: "heads_up_won" }
   | { kind: "puzzle_completed" }
-  | { kind: "level_gained"; levels: number };
+  | { kind: "rank_points_gained"; points: number };

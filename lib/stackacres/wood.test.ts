@@ -4,7 +4,6 @@ import {
   WOOD_HITS_TO_FELL,
   WOOD_PER_HIT,
   WOOD_RESPAWN_MS,
-  WOOD_SWEET_HIT_BONUS,
   freshWoodNodeState,
   isWoodNodeChoppable,
   isWoodNodeFelled,
@@ -30,29 +29,29 @@ describe("swingAtWoodNode", () => {
     const felled = { hitsRemaining: 0, felledAt: NOW.toISOString() };
     const later = new Date(NOW.getTime() + WOOD_RESPAWN_MS - 1);
     expect(isWoodNodeChoppable(felled, later)).toBe(false);
-    expect(swingAtWoodNode(felled, later, false)).toBeNull();
+    expect(swingAtWoodNode(felled, later)).toBeNull();
   });
 
   it("lets a swing land again once the respawn clock clears, resetting hits", () => {
     const felled = { hitsRemaining: 0, felledAt: NOW.toISOString() };
     const respawned = new Date(NOW.getTime() + WOOD_RESPAWN_MS);
     expect(isWoodNodeChoppable(felled, respawned)).toBe(true);
-    const result = swingAtWoodNode(felled, respawned, false);
+    const result = swingAtWoodNode(felled, respawned);
     expect(result).not.toBeNull();
     expect(result!.nextState.hitsRemaining).toBe(WOOD_HITS_TO_FELL - 1);
     expect(result!.felled).toBe(false);
   });
 
-  it("takes WOOD_HITS_TO_FELL ordinary swings to fell a fresh tree", () => {
+  it("takes WOOD_HITS_TO_FELL swings to fell a fresh tree", () => {
     let state = freshWoodNodeState();
     for (let i = 0; i < WOOD_HITS_TO_FELL - 1; i++) {
-      const result = swingAtWoodNode(state, NOW, false);
+      const result = swingAtWoodNode(state, NOW);
       expect(result).not.toBeNull();
       expect(result!.felled).toBe(false);
       expect(result!.woodGained).toBe(WOOD_PER_HIT);
       state = result!.nextState;
     }
-    const last = swingAtWoodNode(state, NOW, false);
+    const last = swingAtWoodNode(state, NOW);
     expect(last).not.toBeNull();
     expect(last!.felled).toBe(true);
     expect(last!.woodGained).toBe(WOOD_PER_HIT + WOOD_FELL_BONUS);
@@ -60,10 +59,15 @@ describe("swingAtWoodNode", () => {
     expect(isWoodNodeChoppable(last!.nextState, NOW)).toBe(false);
   });
 
-  it("pays the sweet-hit bonus on top of the ordinary yield", () => {
-    const state = freshWoodNodeState();
-    const result = swingAtWoodNode(state, NOW, true);
-    expect(result!.woodGained).toBe(WOOD_PER_HIT + WOOD_SWEET_HIT_BONUS);
+  it("pays 8 Wood over a whole tree", () => {
+    let state = freshWoodNodeState();
+    let total = 0;
+    for (let i = 0; i < WOOD_HITS_TO_FELL; i++) {
+      const result = swingAtWoodNode(state, NOW)!;
+      total += result.woodGained;
+      state = result.nextState;
+    }
+    expect(total).toBe(8);
   });
 
   it("cannot double-fell a tree that is already down", () => {
@@ -73,9 +77,9 @@ describe("swingAtWoodNode", () => {
     // second swing against a state it has already marked felled.
     const state = freshWoodNodeState();
     const felledOnThisSwing = { hitsRemaining: 1, felledAt: null };
-    const first = swingAtWoodNode(felledOnThisSwing, NOW, false)!;
+    const first = swingAtWoodNode(felledOnThisSwing, NOW)!;
     expect(first.felled).toBe(true);
-    const second = swingAtWoodNode(first.nextState, NOW, false);
+    const second = swingAtWoodNode(first.nextState, NOW);
     expect(second).toBeNull();
     void state;
   });
@@ -109,5 +113,33 @@ describe("woodNodeSnapshot", () => {
       hitsRemaining: 0,
       respawnProgress: 0,
     });
+  });
+});
+
+describe("a better axe", () => {
+  const NOW = new Date("2026-09-26T12:00:00Z");
+
+  function fell(damage: number): number[] {
+    const paid: number[] = [];
+    let state = freshWoodNodeState();
+    for (;;) {
+      const swing = swingAtWoodNode(state, NOW, damage)!;
+      paid.push(swing.woodGained);
+      state = swing.nextState;
+      if (swing.felled) return paid;
+    }
+  }
+
+  it("takes fewer swings and pays the same Wood", () => {
+    expect(fell(1)).toEqual([2, 2, 4]);
+    expect(fell(2)).toEqual([4, 4]);
+    expect(fell(3)).toEqual([8]);
+  });
+
+  it("finishes a tree the old axe started", () => {
+    const started = swingAtWoodNode(freshWoodNodeState(), NOW, 1)!.nextState;
+    const finished = swingAtWoodNode(started, NOW, 3)!;
+    expect(finished.felled).toBe(true);
+    expect(finished.woodGained).toBe(6);
   });
 });

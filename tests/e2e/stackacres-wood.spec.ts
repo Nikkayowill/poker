@@ -4,11 +4,8 @@ import { expect, test, type APIRequestContext, type BrowserContext } from "./fix
  * Chopping a tree, from the outside.
  *
  * Same API-level posture as stackacres-harvest.spec.ts's first test rather
- * than a canvas-driven one: the chop TIMING is a client-side minigame with
- * no server counterpart to assert on (see lib/stackacres/chop.ts's own
- * header -- the server only ever sees the `sweet` flag a swing already
- * decided), and the real behaviour worth confirming end to end is the
- * server-authoritative part a Phaser tap ultimately triggers: a swing fills
+ * than a canvas-driven one. The real behaviour worth confirming end to end is
+ * the server-authoritative part a Phaser tap ultimately triggers: a swing fills
  * the shelf with Wood, several swings fell the tree, and a felled tree
  * refuses another swing until its own respawn clock clears (asserted from
  * `lib/stackacres/wood.test.ts`'s injected-clock coverage, not repeated here
@@ -53,14 +50,14 @@ test("chopping a tree fills the barn with Wood and felling it takes a few swings
 
     // Not a real tree: the schema refuses it before any of this ever runs.
     const badNode = await api.post("/api/stackacres/actions", {
-      data: { action: "chop-tree", nodeId: "not-a-real-tree", sweet: false },
+      data: { action: "chop-tree", nodeId: "not-a-real-tree" },
     });
     expect(badNode.status()).toBe(400);
 
     let wood = 0;
     for (let swing = 1; swing <= 3; swing++) {
       const response = await api.post("/api/stackacres/actions", {
-        data: { action: "chop-tree", nodeId: "homestead-1", sweet: false },
+        data: { action: "chop-tree", nodeId: "homestead-1" },
       });
       expect(response.ok()).toBe(true);
       const data = (await response.json()) as {
@@ -87,7 +84,7 @@ test("chopping a tree fills the barn with Wood and felling it takes a few swings
 
     // A felled tree refuses a fourth swing outright: no Wood, no change.
     const afterFelled = await api.post("/api/stackacres/actions", {
-      data: { action: "chop-tree", nodeId: "homestead-1", sweet: false },
+      data: { action: "chop-tree", nodeId: "homestead-1" },
     });
     expect(afterFelled.ok()).toBe(true);
     const stillFelled = (await afterFelled.json()) as {
@@ -99,7 +96,7 @@ test("chopping a tree fills the barn with Wood and felling it takes a few swings
 
     // A different tree is entirely unaffected -- each node is its own row.
     const otherTree = await api.post("/api/stackacres/actions", {
-      data: { action: "chop-tree", nodeId: "homestead-2", sweet: true },
+      data: { action: "chop-tree", nodeId: "homestead-2" },
     });
     expect(otherTree.ok()).toBe(true);
     const otherData = (await otherTree.json()) as {

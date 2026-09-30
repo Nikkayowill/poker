@@ -4,6 +4,7 @@ import { toSnapshot } from "@/lib/game/engine";
 import { getStoredGame, persistenceMode } from "@/lib/server/game-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -38,7 +39,7 @@ export async function GET(
       persistence: persistenceMode(),
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not load the table.";
+    const message = publicErrorMessage(error, "Could not load the table.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -7,6 +7,7 @@ import {
   arcadeEntryLabel,
   arcadeFloorSummary,
   canAffordArcadeGame,
+  playRailGames,
   splitArcadeFloor,
   toArcadeWallet,
   type ArcadeGame,
@@ -34,6 +35,12 @@ describe("arcade catalogue", () => {
       "Nonogram",
       "Blockudoku",
       "Word Fill-In",
+      "Sequence Recall",
+      "Quick Math Sprint",
+      "Pattern Predictor",
+      "Trivia Blitz",
+      "Lights Out",
+      "Word Guess",
       "Chess",
       "Checkers",
       "Othello",
@@ -52,7 +59,9 @@ describe("arcade catalogue", () => {
     // Memory Match have no daily gate left at all. Both shapes are still
     // `kind: "wager"` -- see lib/arcade/games.ts's own note. Minesweeper
     // (2026-08-24), Nonogram (2026-08-31), Blockudoku and Word Fill-In
-    // (2026-09-18) join the second, unlimited shape.
+    // (2026-09-18) join the second, unlimited shape. Sequence Recall, Quick
+    // Math Sprint, Pattern Predictor, Trivia Blitz, Lights Out and Word Guess
+    // (2026-09-24, the Brain Games set) join the same unlimited shape too.
     const floor = splitArcadeFloor();
     expect(floor.free).toHaveLength(0);
     expect(floor.wagers.map((entry) => entry.id)).toEqual([
@@ -64,6 +73,12 @@ describe("arcade catalogue", () => {
       "nonogram",
       "blockudoku",
       "word-fill-in",
+      "sequence-recall",
+      "quick-math",
+      "pattern-predictor",
+      "trivia-blitz",
+      "lights-out",
+      "word-guess",
     ]);
   });
 
@@ -212,5 +227,53 @@ describe("labels", () => {
     const rich = { goldBalance: 999_999, unlimitedGold: false };
     expect(arcadeActionLabel(game({ status: "live", kind: "duel" }), rich)).toBe("Challenge");
     expect(arcadeActionLabel(game({ status: "live", kind: "casino" }), rich)).toBe("Play");
+  });
+});
+
+describe("playRailGames", () => {
+  const live = (id: string, kind: ArcadeGame["kind"], over: Partial<ArcadeGame> = {}) =>
+    game({ id: id as ArcadeGame["id"], name: id, kind, status: "live", href: `/games/${id}`, entryCost: 0, ...over });
+
+  it("features the first duel and keeps it out of the cards", () => {
+    const result = playRailGames([live("a", "wager"), live("chess", "duel"), live("b", "duel")]);
+    expect(result.featuredDuel?.name).toBe("chess");
+    expect(result.cards.map((entry) => entry.name)).not.toContain("chess");
+  });
+
+  it("mixes two solo games to every duel so the rail shows both kinds", () => {
+    const games = [
+      live("w1", "wager"), live("w2", "wager"), live("w3", "wager"), live("w4", "wager"),
+      live("d0", "duel"), live("d1", "duel"), live("d2", "duel"),
+    ];
+    expect(playRailGames(games).cards.map((entry) => entry.name)).toEqual(["w1", "w2", "d1", "w3", "w4", "d2"]);
+  });
+
+  it("drops rows that are not live or have no href", () => {
+    const games = [
+      live("ok", "wager"),
+      live("soon", "wager", { status: "coming-soon" }),
+      live("nohref", "wager", { href: null }),
+    ];
+    const result = playRailGames(games);
+    expect(result.cards.map((entry) => entry.name)).toEqual(["ok"]);
+    expect(result.total).toBe(1);
+  });
+
+  it("caps the rail but still counts every openable game", () => {
+    const games = Array.from({ length: 14 }, (_, i) => live(`w${i}`, "wager"));
+    const result = playRailGames(games);
+    expect(result.cards).toHaveLength(10);
+    expect(result.total).toBe(14);
+  });
+
+  it("has no featured duel when the catalogue has none", () => {
+    expect(playRailGames([live("w", "wager")]).featuredDuel).toBeNull();
+  });
+
+  it("returns real, openable games from the live catalogue", () => {
+    const result = playRailGames();
+    expect(result.featuredDuel).not.toBeNull();
+    expect(result.cards.length).toBeGreaterThan(0);
+    expect(result.cards.every((entry) => entry.status === "live" && entry.href !== null)).toBe(true);
   });
 });

@@ -6,7 +6,6 @@ import {
   freshStoneNode,
   type StoneNodeId,
   type StoneNodeRow,
-  type SwingQuality,
 } from "@/lib/stackacres/stone-nodes";
 import { adminClient } from "./supabase-admin";
 
@@ -81,14 +80,29 @@ export async function readStoneNode(nodeId: StoneNodeId, now: Date): Promise<Sto
   return effectiveNodeState(stoneNodeFromRow(data), now);
 }
 
-/** Every Stone node's current state, one read per `STONE_NODE_IDS` --
- *  same fixed, small-table shape `listStackAcresWoodNodeStates` reads for
- *  Wood, and cheap for the same reason: three rows, global rather than
- *  per-profile, read alongside the rest of `view()`'s own batch of reads
- *  rather than folded into `read_homestead_batch` (see that function's own
- *  header on why the small side-tables aren't). */
+/** Every Stone node's current state, in one round trip rather than one per
+ *  `STONE_NODE_IDS` entry -- this is global, not per-profile, so it can't
+ *  join `read_homestead_batch` (see that function's own header), but there
+ *  is still only one table here, so there is no reason `view()` pays three
+ *  round trips for it instead of one. */
 export async function readAllStoneNodes(now: Date): Promise<StoneNodeRow[]> {
-  return Promise.all(STONE_NODE_IDS.map((nodeId) => readStoneNode(nodeId, now)));
+  const supabase = adminClient();
+  if (!supabase) {
+    return STONE_NODE_IDS.map((nodeId) => effectiveNodeState(memoryNodes.get(nodeId) ?? freshStoneNode(nodeId), now));
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_stone_nodes")
+    .select("node_id, hits_remaining, broken_at, version")
+    .in("node_id", STONE_NODE_IDS);
+  if (error) throw new Error(`Could not read the Mine's boulders: ${error.message}`);
+
+  const byId = new Map((data ?? []).map((row) => [row.node_id, row]));
+  return STONE_NODE_IDS.map((nodeId) => {
+    const row = byId.get(nodeId);
+    if (!row) throw new Error(`Could not read that boulder: ${nodeId} is missing`);
+    return effectiveNodeState(stoneNodeFromRow(row), now);
+  });
 }
 
 export interface MineStoneNodeOutcome {
@@ -102,20 +116,18 @@ export interface MineStoneNodeOutcome {
 
 /**
  * The one write that matters: one accepted swing against `nodeId`, applied
- * under the row's own version guard. `quality` only ever changes `yield` --
- * see ./stackacres/stone-nodes.ts's `applyMiningSwing` for the rule this
- * store just persists.
+ * under the row's own version guard. See ./stackacres/stone-nodes.ts's
+ * `applyMiningSwing` for the rule this store just persists.
  */
 export async function mineStoneNode(
   nodeId: StoneNodeId,
-  quality: SwingQuality,
   now: Date,
 ): Promise<MineStoneNodeOutcome> {
   const supabase = adminClient();
   if (!supabase) {
     const current = memoryNodes.get(nodeId) ?? freshStoneNode(nodeId);
     const effective = effectiveNodeState(current, now);
-    const result = applyMiningSwing(effective, quality, now);
+    const result = applyMiningSwing(effective, now);
     if (result.yield === 0 && !result.broke) {
       // Persist the (possibly just-regrown-then-immediately-checked) state
       // even on a no-op swing, so a subsequent read sees the same effective
@@ -127,8 +139,10 @@ export async function mineStoneNode(
     return { landed: true, broke: result.broke, yield: result.yield, node: result.node };
   }
 
+  // The RPC still takes the old swing grade. "sweet" is the one that pays
+  // STONE_PER_SWING, and every swing pays that now.
   const { data, error } = await supabase
-    .rpc("mine_stackacres_stone_node", { p_node_id: nodeId, p_quality: quality, p_now: now.toISOString() })
+    .rpc("mine_stackacres_stone_node", { p_node_id: nodeId, p_quality: "sweet", p_now: now.toISOString() })
     .single();
   if (error) throw new Error(`Could not swing at that boulder: ${error.message}`);
   const result = data as {

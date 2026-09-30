@@ -1,20 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { GUST_EVERY_MS, RUSTLE, gustAt, rustleOffset, swayOffset } from "./wind";
+import { BACKSWING, GUST_EVERY_MS, RUSTLE, gustAt, rustleOffset, swayOffset } from "./wind";
 
 describe("swayOffset", () => {
-  it("stays in whole pixels between upright and the amplitude", () => {
+  it("stays between a little back past upright and the full amplitude downwind", () => {
     for (let t = 0; t < 60_000; t += 37) {
-      const offset = swayOffset(t, 120, 300, 1);
-      expect(Number.isInteger(offset)).toBe(true);
-      expect(offset).toBeGreaterThanOrEqual(0);
-      expect(offset).toBeLessThanOrEqual(1);
+      const offset = swayOffset(t, 120, 300, 2);
+      expect(offset).toBeGreaterThanOrEqual(-BACKSWING * 2);
+      expect(offset).toBeLessThanOrEqual(2);
     }
   });
 
-  it("actually moves over time", () => {
+  it("moves smoothly rather than flicking between two positions", () => {
+    // The old wind snapped to whole pixels, so a tree only ever had two places to be.
     const seen = new Set<number>();
-    for (let t = 0; t < 20_000; t += 100) seen.add(swayOffset(t, 40, 40));
-    expect(seen).toEqual(new Set([0, 1]));
+    for (let t = 0; t < 20_000; t += 100) seen.add(Math.round(swayOffset(t, 40, 40, 2) * 100));
+    expect(seen.size).toBeGreaterThan(50);
+    // And a frame apart it barely moves: no jumps.
+    for (let t = 0; t < 20_000; t += 16) {
+      expect(Math.abs(swayOffset(t + 16, 40, 40, 2) - swayOffset(t, 40, 40, 2))).toBeLessThan(0.2);
+    }
+  });
+
+  it("leans downwind far more than it swings back", () => {
+    let east = 0;
+    let west = 0;
+    for (let t = 0; t < 60_000; t += 50) {
+      const offset = swayOffset(t, 40, 40, 2);
+      if (offset > 0) east++;
+      else if (offset < 0) west++;
+    }
+    expect(east).toBeGreaterThan(west * 3);
   });
 
   it("keeps neighbouring trees out of step", () => {

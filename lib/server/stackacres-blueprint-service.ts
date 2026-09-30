@@ -166,7 +166,7 @@ export async function startBlueprintForProfile(profileId: string, structureId: s
  *
  * SEQUENTIAL VALIDATION, mirroring `contribute_to_stackacres_blueprint`'s
  * own step order exactly (see that function's comment in
- * supabase/migrations/20260905130000_stackacres_mythic_blueprints.sql) so a
+ * supabase/migrations/20260905120312_stackacres_mythic_blueprints.sql) so a
  * caller gets the SAME specific, actionable message the database would
  * otherwise only report as an undifferentiated empty result:
  *

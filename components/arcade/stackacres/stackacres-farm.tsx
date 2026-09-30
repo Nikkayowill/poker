@@ -1,5 +1,7 @@
 "use client";
 
+import { fenceKey, type FencePiece } from "@/lib/stackacres/fences";
+import { soilToMapTile } from "@/lib/stackacres/hoeable";
 import {
   useCallback,
   useEffect,
@@ -7,20 +9,21 @@ import {
   useMemo,
   useRef,
   useState,
+  type Dispatch,
   type PointerEvent as ReactPointerEvent,
+  type SetStateAction,
   type ReactNode,
 } from "react";
 import clsx from "clsx";
 import {
-  Coins,
   Dna,
   Lock,
-  MapPin,
+  Moon,
   Sparkles,
+  Sun,
   Wand2,
   X,
 } from "lucide-react";
-import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { StackAcresLogo } from "@/components/brand/stackacres-logo";
 import { useMinHoldFade } from "@/components/loading/use-min-hold-fade";
 import { useLandscape } from "@/components/use-landscape";
@@ -41,11 +44,15 @@ import {
   collectSound,
   expandSound,
   feedSound,
+  forageSound,
   goldSound,
+  hoeSound,
+  journalSound,
+  mapSound,
   muckSound,
   panelSound,
+  questStepSound,
   refusedSound,
-  retireSound,
   sellSound,
   sowSound,
   toolSound,
@@ -53,6 +60,7 @@ import {
   travelSound,
   waterSound,
 } from "@/lib/audio/stackacres-sfx";
+import { HOE_STRIKE_MS } from "@/lib/stackacres-td/hoe";
 import {
   STACKACRES_CATALOGUE,
   STACKACRES_CROPS,
@@ -79,35 +87,21 @@ import {
   type HiddenZoneId,
   type SecretItemId,
 } from "@/lib/stackacres/secrets";
-import {
-  HOME_SECTOR,
-  STACKACRES_SECTORS,
-  isSectorUnlocked,
-  sectorClearCheck,
-  type SectorId,
-} from "@/lib/stackacres/sectors";
+import { HOME_SECTOR, isSectorUnlocked, sectorLabel, type SectorId } from "@/lib/stackacres/sectors";
 import { upkeepState, type StackAcresUpkeepState } from "@/lib/stackacres/upkeep";
-import { collectFloat } from "@/lib/stackacres/tap-action";
-import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
+import { withLocalClockUnit, type StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
 import { findCascadeTargets } from "@/lib/stackacres/harvest-cascade";
 import {
   HUD_VIEW_EXPANSION,
   stockZone,
+  stocksInZone,
 } from "@/lib/stackacres/world";
 import {
   createSoilMap,
   hasSoilTile,
-  soilTilesEqual,
   type SoilTile,
 } from "@/lib/stackacres/soil";
-import {
-  SOIL_BAGS_PER_PURCHASE,
-  SOIL_DEFAULT_TIER,
-  soilTierDef,
-  type SoilStock,
-  type SoilTier,
-} from "@/lib/stackacres/soil-tiers";
 
 import type { StackAcresContractRow } from "@/lib/stackacres/contracts";
 import { emptyInventory, inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
@@ -129,24 +123,24 @@ import {
   freshFriendship,
   friendshipView,
   type GiftOutcome,
+  type GreetOutcome,
   type KeepsakeId,
   type NpcId,
   type StackAcresFriendshipView,
 } from "@/lib/stackacres/friendship";
-import { machineItemLabel, type MachineItemId, type MachineProcessedItem } from "@/lib/stackacres/machine-items";
-import { FISHING_BAIT_ITEM, type FishSpecies } from "@/lib/stackacres/fishing";
+import { machineItemLabel, machineItemNoun, type MachineItemId, type MachineProcessedItem } from "@/lib/stackacres/machine-items";
+import { FISHING_BAIT_ITEM, castTier, type FishSpecies } from "@/lib/stackacres/fishing";
 import { rollGaugeDifficulty } from "@/lib/stackacres/fishing-gauge";
 import { rollQuarryDifficulty } from "@/lib/stackacres/hunt-proximity";
 import { QUARRY_CATALOGUE, bestWeapon, type QuarrySpecies } from "@/lib/stackacres/hunting";
-import { WOOD_HITS_TO_FELL, type WoodNodeSnapshot } from "@/lib/stackacres/wood";
-import { HITS_TO_BREAK as STONE_HITS_TO_BREAK, type StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
-import { StackAcresChopPopup } from "./stackacres-chop-popup";
+import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
+import type { StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
+import type { ForageNodeSnapshot } from "@/lib/stackacres/forage";
 import {
   ACTION_BATCH_WINDOW_MS,
   actionForUnits,
   batchWindowRemainingMs,
   coalesceActionTap,
-  drainActionBatch,
   reopenActionBatch,
   type ActionBatchWindow,
   type BatchableAction,
@@ -159,13 +153,14 @@ import {
   type StackAcresPrestigeView,
 } from "@/lib/stackacres/prestige";
 import { FORGE_ENCHANTMENTS } from "@/lib/stackacres/forge";
-import { PEN_ZONE_IDS, STACKACRES_ZONES, type ZoneId } from "@/lib/stackacres/zones";
+import { PEN_ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { useOnboardingTour } from "@/lib/onboarding/use-onboarding-tour";
 import { STACKACRES_TOUR_STEPS } from "@/lib/onboarding/tour-steps";
 import type { PainterName } from "./stackacres-art";
-import { StackAcresBuySection, StackAcresUnitRows } from "./stackacres-district-panel";
+import { StackAcresBuySection } from "./stackacres-district-panel";
 import { StackAcresIcon } from "./stackacres-icon";
+import { StackAcresPixelIcon } from "./stackacres-pixel-icon";
 import { StackAcresGreenhousePanel } from "./stackacres-greenhouse-panel";
 import { TownContractsModal, type ContractActionResult } from "./TownContractsModal";
 import { WorkshopModal, type WorkshopActionResult } from "./WorkshopModal";
@@ -197,25 +192,26 @@ import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { STOCK_ICON } from "./stock-icon";
 import { StackAcresMonkDialogue } from "./stackacres-monk-dialogue";
+import { StackAcresSleepDialogue } from "./stackacres-sleep-dialogue";
 import { StackAcresFriendshipDialogue } from "./stackacres-friendship-dialogue";
 import { StackAcresSectorModal } from "./stackacres-sector-modal";
-import { StackAcresCropFieldsModal } from "./stackacres-crop-fields-modal";
 import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
+import { StackAcresAwayReport } from "./stackacres-away-report";
+import { buildAwayReport, type AwayReport } from "@/lib/stackacres/away-report";
 import { StackAcresStoryDialogue } from "./stackacres-story-dialogue";
 import { useStackAcresStory, type StackAcresStoryController } from "@/lib/stackacres/story/use-stackacres-story";
 import { storyEventsForAction } from "@/lib/stackacres/story/predict";
-import type { StackAcresStoryView } from "@/lib/stackacres/story/state";
+import { travelerHasStoryToTell, type StackAcresStoryView } from "@/lib/stackacres/story/state";
 import type { StoryIntent } from "@/lib/stackacres/story/dialogue";
-import { TRAVELER_CATALOGUE, WILD_AREA_TRAVELER, type TravelerId } from "@/lib/stackacres/story/travelers";
-import { CROP_FIELDS_UNLOCK_COST_GOLD } from "@/lib/stackacres/crop-fields";
+import type { QuestPlaceId } from "@/lib/stackacres/story/places";
+import { TRAVELER_CATALOGUE, type TravelerId } from "@/lib/stackacres/story/travelers";
 import { type MapPlaceId } from "@/lib/stackacres/map-places";
 import { StackAcresMapSheet, mapPlaceStates } from "./stackacres-map-sheet";
 import { STORY_ITEM_CATALOGUE, isStoryItemId } from "@/lib/stackacres/story/items";
-import type { StackAcresWorldApi, StoryCues, TapPoint, TravelerUnlocks } from "./world-contract";
+import type { StackAcresWorldApi, TapPoint, TravelerUnlocks } from "./world-contract";
 import { StackAcresToolbelt } from "./stackacres-toolbelt";
 import { StackAcresSeedWheel, type SeedWheelItem } from "./stackacres-seed-wheel";
 import {
-  BELT_DEFAULT_TIER,
   BELT_TOOL_DEFS,
   beltAnimation,
   resolveBeltAction,
@@ -229,16 +225,28 @@ import {
   ENERGY_START,
   FISHING_CAST_ENERGY,
   TOO_TIRED_TO_FISH,
+  HUNTING_STALK_ENERGY,
+  TOO_TIRED_TO_HUNT,
   energyAt,
   type FoodItem,
   type StackAcresEnergyAnchor,
 } from "@/lib/stackacres/energy";
+import { NOT_SLEEPY, canSleepAt, clockLabel, gameDayAt, gameHourAt, isNightHour, offsetAfterSleep } from "@/lib/stackacres/clock";
+import { AXE_SWING_ENERGY, TOO_TIRED_TO_CHOP, type AxeLevel, type AxePayment } from "@/lib/stackacres/axe";
 import { shelfFeedFor } from "@/lib/stackacres/feeding";
 import { StackAcresHouse } from "./stackacres-house";
 import { isActiveStock } from "@/lib/stackacres/scope";
 import { isSeedUnlocked, seedLockLine } from "@/lib/stackacres/seed-unlocks";
 import { chapterFinishedBy, chapterViews, currentChapter, type Chapter } from "@/lib/stackacres/chapters";
-import { StackAcresChapterCard, StackAcresGoalChip, StackAcresGoalsSheet } from "./stackacres-chapters";
+import { StackAcresChapterCard } from "./stackacres-chapters";
+import { StackAcresJournalChip, StackAcresJournalSheet } from "./stackacres-journal";
+import {
+  isClearableSector,
+  landClearingProgress,
+  type ClearingGround,
+  type LandObstacleSnapshot,
+} from "@/lib/stackacres/land-clearing";
+import { journalView } from "@/lib/stackacres/journal";
 import { wantedForLine } from "@/lib/stackacres/recipe-uses";
 import { useStackAcresMusic } from "./use-stackacres-music";
 import { StackAcresTopdownWorld } from "../stackacres-td/topdown-world";
@@ -271,7 +279,7 @@ import {
   influenceTier,
   nextInfluenceTier,
 } from "@/lib/stackacres/influence-tiers";
-import { type Action, intentOf, newIntentKey, purchaseCueText } from "@/lib/stackacres/farm-actions";
+import { type Action, intentOf, newIntentKey, purchaseCueText, unitsBeingCollected } from "@/lib/stackacres/farm-actions";
 import {
   createsStackAcresUnit,
   isOptimisticUnitId,
@@ -282,7 +290,26 @@ import {
   type MachineView,
 } from "@/lib/stackacres/optimistic-actions";
 import { sendActionWithRetry } from "@/lib/stackacres/action-retry";
-import { mergeIncomingStackAcresUnits, touchedUnitIds } from "@/lib/stackacres/unit-merge";
+import { EMPTY_EMPIRE, type EmpireSnapshot } from "@/lib/stackacres/empire-buildings";
+import { useEmpireBuild } from "./empire-build";
+import { useHerdPlace } from "./herd-place";
+import { isHerdStock } from "@/lib/stackacres/herd";
+import type { GroceryView } from "@/lib/stackacres/grocery";
+import { useGroceryArrange } from "./grocery-arrange";
+import { GroceryDesk, type DeskTab } from "./grocery-desk";
+import type { GroceryScene } from "./world-contract";
+import {
+  GuessClaims,
+  guessClaims,
+  isClaimOnUnit,
+  layFarmField,
+  sameOrNext,
+  takesNext,
+  type ClaimKey,
+  type FarmFields,
+  type GuessField,
+  type LayMode,
+} from "@/lib/stackacres/pending-guesses";
 
 /** A promise and the handle that settles it, for a gate another call has to
  *  be able to wait on -- see `pendingUnitCreates`. */
@@ -298,6 +325,12 @@ function settleable(): { promise: Promise<void>; settle: () => void } {
  *  refused. One is the real case (the create that made it); the extra
  *  passes only cover a create that started while we were already waiting,
  *  and the bound is what stops a busy farm holding a tap open forever. */
+/** The fence key of the map square under a soil square: the belt works soil squares, fences stand on map squares. */
+function soilSquareFenceKey(tile: { tx: number; ty: number }): string {
+  const { mx, my } = soilToMapTile(tile.tx, tile.ty);
+  return fenceKey(mx, my);
+}
+
 const PROVISIONAL_WAIT_PASSES = 3;
 
 /**
@@ -311,12 +344,12 @@ const PROVISIONAL_WAIT_PASSES = 3;
  * beside the finger to seed something there. Nothing opens, nothing has to be
  * travelled to first, and `place` follows the finger rather than the other
  * way round. lib/stackacres/tap-action.ts is what decides which of those a
- * given tap is, off the same `unitRowAction` the sidebar rows use, so the
- * two surfaces can never disagree about what a unit affords.
+ * given tap is, off `unitRowAction`, which is the one place that decides
+ * what a unit affords.
  *
- * The sidebar (./stackacres-district-panel.tsx) is for the deep end now:
- * capacity bought with Gold, stock bought outright, and the district's own
- * standing list. It no longer opens on its own -- travelling flies the
+ * The sidebar that used to hold the deep end is gone. Buying outright and
+ * expanding capacity moved to the Supply Store's Livestock shelf. Travelling
+ * flies the
  * camera and nothing else -- so the old tap-district / wait / find-the-row /
  * press-Collect loop is gone. Its unit rows STAY, and are not redundant:
  * they remain the only keyboard and screen-reader path to everything a tap
@@ -338,23 +371,13 @@ const PROVISIONAL_WAIT_PASSES = 3;
 
 const DEFAULT_RETRY_AFTER_SECONDS = 5;
 
+/** How long a refusal stays on screen before it fades out. */
+const NOTICE_MS = 3200;
+
 /** How many extra windows a batched flush may wait for its own intent to
  *  clear before sending anyway and letting `act` answer. Bounded so a stuck
  *  request can never hold a player's taps forever -- see `flushBatch`. */
 const BATCH_FLUSH_ATTEMPTS = 3;
-
-/**
- * The tiers Ray's shelf actually sells, as opposed to `SOIL_TIERS` (every
- * tier the game engine knows about). The Soil tab shows one card -- "Soil
- * bag," the base `dirt` tier -- rather than the old three-tier ladder.
- * The Crop Fields' own gel dock plants that same `dirt` tier directly, with
- * no tier picker of its own: Enriched Substrate and Hydro Soil are not
- * deleted from the engine (a farm that already holds a bed of either keeps
- * its growth bonus / self-watering perk), but nothing on the shelf or in the
- * dock offers planting one anymore -- keeping a plot hydrated is the pipe
- * network's job now, not a soil purchase.
- */
-const STORE_SOIL_TIERS: readonly SoilTier[] = ["dirt"];
 
 /**
  * The Pixel Pilgrim's own opening lines -- formal, devout, and clear that he
@@ -382,6 +405,34 @@ const RAY_GIFT_LINES: readonly string[] = [
   "This old farm's given me plenty over the years. Nice to see a bit of it come back around.",
   "Whatever you've got, I expect I'll find a use for it.",
 ];
+
+/** Chef Pierre's own rotating lines, once his own quest line is done and a
+ *  tap opens the plain greet/gift dialogue instead of a story bubble --
+ *  same convention RAY_GIFT_LINES sets, in his own four-colour-kitchen
+ *  voice (see TRAVELER_CATALOGUE.pierre's own origin line). */
+const PIERRE_GIFT_LINES: readonly string[] = [
+  "Every dish deserves a second look, and so does a second visit. Good to see you.",
+  "The pixel realm never had a farm this fresh. I still notice it every day.",
+  "You keep good company for a man who talks to his own pans.",
+  "Bring me something and I'll tell you exactly what I'd do with it. Free of charge.",
+];
+
+/** Botanist Ivy's own rotating lines, same convention as Pierre's above, in
+ *  her own greenhouse-sim voice. */
+const IVY_GIFT_LINES: readonly string[] = [
+  "Every plant on this farm is a little less tidy than my old lookup tables. I like it better this way.",
+  "You've got good instincts for the ground. Better than my simulation ever gave me credit for.",
+  "I keep meaning to chart everything you've grown here. One of these days.",
+  "Bring me something and I'll tell you exactly what cross I'd try with it.",
+];
+
+/** Which of the eleven story travelers also carry a greet/gift dialogue
+ *  once their quest line is done -- keyed off FRIENDSHIP_NPCS, restated
+ *  here as a lookup rather than iterated from it so each entry keeps its
+ *  own line array's type. Module scope, not component state: the lines
+ *  never change at runtime, so a fresh object every render would only
+ *  cost `onWorldTravelerTap` its memoization for nothing. */
+const TRAVELER_GIFT_LINES: Partial<Record<TravelerId, readonly string[]>> = { pierre: PIERRE_GIFT_LINES, ivy: IVY_GIFT_LINES };
 
 /** The processing track as this component holds it. The full machine
  *  snapshot (with the server's `canStart`), not the farmhand planner's
@@ -411,6 +462,18 @@ interface StackAcresResponse {
   /** The energy anchor (lib/stackacres/energy.ts). Absent from a response
    *  older than Chapter 1. */
   energy?: StackAcresEnergyAnchor;
+  /** The farm clock (lib/stackacres/clock.ts): this farm's offset and the
+   *  server's own now for the read. */
+  clock?: { offsetMs: number; serverNowMs: number };
+  /** The second map's own resource HUD -- see StackAcresView's own doc
+   *  comment. Absent from a response older than it, which the HUD reads as
+   *  all-zero, same posture as every other stub-until-built field here. */
+  empire?: EmpireSnapshot;
+  /** The city grocery (lib/stackacres/grocery.ts): null where owning it isn't open yet, absent from an older response. */
+  grocery?: GroceryView | null;
+  /** Only on a settled `grocery-collect`: the Gold that emptying actually paid, which may be a moment fresher
+   *  than the till's own client-side estimate at the instant it was pressed. */
+  groceryPaid?: number;
   capacity: Partial<Record<StackAcresStock, number>>;
   /** Land the player may work. Everything else is drawn as wild growth. */
   sectors: SectorId[];
@@ -418,6 +481,8 @@ interface StackAcresResponse {
   /** The equipment rung held. Absent only from a response old enough to
    *  predate the ladder, which `toStackAcresToolTier` reads as the Trowel. */
   tool?: StackAcresToolTier;
+  /** The axe held (lib/stackacres/axe.ts). Absent from a response older than it. */
+  axe?: AxeLevel;
   /** Grass cutters owned, Scythe first. Absent from a response older than
    *  cutters, which leaves the Scythe alone in hand. */
   cutters?: StackAcresCutter[];
@@ -497,9 +562,31 @@ interface StackAcresResponse {
    *  means the node was already broken and had not yet regrown. Every other
    *  action's answer leaves this undefined. */
   stoneMined?: { landed: boolean; broke: boolean; amount: number };
+  /** What one swing at (or one blast on) something standing on unclaimed
+   *  land did -- see lib/server/stackacres-service.ts's `workStackAcresLand`.
+   *  Null when nothing landed, the same "a lost race says nothing" posture
+   *  `woodChopped` takes. */
+  landCleared?: {
+    obstacleId: string;
+    ground: ClearingGround;
+    item: MachineItemId | null;
+    quantity: number;
+    cleared: boolean;
+    sectorOpened: boolean;
+  } | null;
   /** Every Stone boulder's current mine state, always present -- see
    *  lib/stackacres/stone-nodes.ts's `StoneNodeSnapshot`. */
   stoneNodes?: StoneNodeSnapshot[];
+  /** Set by a `gather-forage` response to what THIS pick took. Null means
+   *  the bush was already bare. Every other action's answer leaves this
+   *  undefined. */
+  foraged?: { nodeId: string; crop: StackAcresCrop; quantity: number } | null;
+  /** Every forage bush's current state, always present -- see
+   *  lib/stackacres/forage.ts's `ForageNodeSnapshot`. */
+  forageNodes?: ForageNodeSnapshot[];
+  landObstacles?: LandObstacleSnapshot[];
+  /** Every fence piece this farm has put up, by Homestead map square. */
+  fences?: FencePiece[];
   /** Set (to an item id or null) by a `tap-secret-zone` response only --
    *  absent from every other action's answer. */
   discovery?: SecretItemId | null;
@@ -529,9 +616,6 @@ interface StackAcresResponse {
    *  as "no purchased tiles yet" -- starter tiles are never carried here, see
    *  `StackAcresView.soilTiles`'s own doc comment. */
   soilTiles?: SoilTile[];
-  /** Unplaced bags per tier. Absent on a response predating Ray's soil shelf,
-   *  which reads as an empty barn. */
-  soilStock?: SoilStock;
   /** Unplanted crop seeds per crop id. Absent on a response predating Ray's
    *  seed shelf, which reads as an empty shelf. */
   seedStock?: SeedStock;
@@ -560,6 +644,13 @@ interface StackAcresResponse {
     npc: NpcId;
     points: number;
     outcome: GiftOutcome | "insufficient-item";
+    grantedKeepsake: KeepsakeId | null;
+  };
+  /** Set only by a `greet-npc` response; same posture `gift` above takes. */
+  greet?: {
+    npc: NpcId;
+    points: number;
+    outcome: GreetOutcome;
     grantedKeepsake: KeepsakeId | null;
   };
   /** The Prestige Reset Valve's own standing: how many times pulled, the
@@ -610,7 +701,11 @@ interface StackAcresResponse {
    *  dialogue's own "hello" -> "progress" or "done" -> "home" switch can
    *  fire off the same response that produced it rather than waiting for
    *  the next node derivation. */
-  storyResult?: { traveler: TravelerId; outcome: "met" | "already-met" | "advanced" | "completed"; granted: string | null };
+  storyResult?: {
+    traveler: TravelerId;
+    outcome: "met" | "already-met" | "advanced" | "completed" | "reward-required";
+    granted: readonly string[];
+  };
 }
 
 /**
@@ -622,10 +717,6 @@ interface StackAcresResponse {
  * the same vector painter the icon beside a barn row uses, at a size a thumb
  * can find while moving -- the shelves are now told apart by picture first and
  * by wording second.
- *
- * The district drawer's own headings ("What's here", "Buy") deliberately do
- * NOT take one: there are two of them, they are the whole content of a narrow
- * panel, and a badge on each is decoration on something nobody was lost in.
  */
 function StoreShelf({ icon, children }: { icon: PainterName; children: ReactNode }) {
   return (
@@ -646,11 +737,11 @@ function StoreShelf({ icon, children }: { icon: PainterName; children: ReactNode
  * shelf that still scrolls (it is Ray's whole catalogue), and that is fine:
  * a player who opened it already knows it is nothing but seeds.
  *
- * Livestock reuses the exact same `buyOptionsForZone`/`StackAcresBuySection`
- * pair the map's signpost drawer already uses, just fed every livestock zone
- * that's currently unlocked instead of only whichever one you're standing in
- * -- hens/pigs/cattle used to be buyable only by travelling to their own
- * district (Hen Haven, the Fold, Ox Fields).
+ * Livestock reuses the `buyOptionsForZone`/`StackAcresBuySection` pair the
+ * deleted signpost drawer used, fed every livestock zone that's currently
+ * unlocked rather than only whichever one you're standing in -- hens/pigs/
+ * cattle used to be buyable only by travelling to their own district (Hen
+ * Haven, the Fold, Ox Fields).
  *
  * "Sell" is the odd one out: every other tab spends Gold, this one is the
  * only place in the whole store that pays it. It reuses `onSell` wholesale
@@ -660,12 +751,11 @@ function StoreShelf({ icon, children }: { icon: PainterName; children: ReactNode
  * Workshop shelf just never listed the sixteen crops or the three raw
  * animal goods. This tab is that missing listing, not a new mechanic.
  */
-type StoreTab = "seeds" | "livestock" | "soil" | "feed" | "equipment" | "sell";
+type StoreTab = "seeds" | "livestock" | "feed" | "equipment" | "sell";
 
 const STORE_TABS: { id: StoreTab; label: string; icon: PainterName }[] = [
   { id: "seeds", label: "Seeds", icon: "ico-carrot" },
   { id: "livestock", label: "Livestock", icon: "ico-egg" },
-  { id: "soil", label: "Soil", icon: "ico-plant" },
   { id: "feed", label: "Feed", icon: "ico-feed" },
   { id: "equipment", label: "Tools", icon: "ico-scythe" },
   { id: "sell", label: "Sell", icon: "ico-gold" },
@@ -679,7 +769,7 @@ const STORE_TABS: { id: StoreTab; label: string; icon: PainterName }[] = [
 function StoreCost({ amount }: { amount: number }) {
   return (
     <span className="sa-store-cost">
-      <StackAcresIcon name="ico-gold" size={13} />
+      <StackAcresPixelIcon name="coin" />
       {amount.toLocaleString()}
     </span>
   );
@@ -751,54 +841,97 @@ function BuyQuantityControls({
   );
 }
 
-/**
- * Re-derives readiness, hunger and dry soil locally so a unit flips without a
- * network trip. Both freeze conditions are checked before readiness and both
- * stop the progress bar where it stood, mirroring lib/stackacres/units.ts
- * exactly -- if these two ever disagree the server wins, because it is the
- * only one that can pay.
- */
+/** Re-derives readiness, hunger and dry soil locally so a unit flips without a
+ *  network trip. See `withLocalClockUnit`. */
 function withLocalClock(units: StackAcresUnitSnapshot[], nowMs: number): StackAcresUnitSnapshot[] {
-  return units.map((unit) => {
-    if (unit.state === "mucked") return unit;
-    const ready = Date.parse(unit.readyAt);
-    const started = Date.parse(unit.startedAt);
-    const progressAt = (atMs: number) =>
-      ready > started ? Math.min(1, Math.max(0, (atMs - started) / (ready - started))) : 1;
+  return units.map((unit) => withLocalClockUnit(unit, nowMs));
+}
 
-    const hungry = unit.hungryAt !== null && Date.parse(unit.hungryAt) <= nowMs;
-    if (hungry) return { ...unit, state: "hungry" };
-    const driedAt = unit.thirstyAt === null ? null : Date.parse(unit.thirstyAt);
-    // `ready > driedAt` mirrors isStackAcresUnitDry's own carve-out: a crop
-    // that finished growing before the ground dried is not dry, it is just
-    // waiting to be picked. Dropping this here would flip a ripe row to dry
-    // between refetches even though the server would still collect it.
-    const dry = driedAt !== null && Number.isFinite(driedAt) && driedAt <= nowMs && ready > driedAt;
-    // `ready > driedAt` is already false for an unparseable readyAt, so this
-    // branch always has real timestamps to read the frozen bar at: the moment
-    // the soil went dry rather than now, so a frozen crop's bar stops where it
-    // stopped instead of creeping on to a full bar it cannot cash.
-    if (dry) return { ...unit, state: "dry", isWatered: false, progress: progressAt(driedAt) };
-    if (!Number.isFinite(ready) || !Number.isFinite(started)) return unit;
-    if (ready <= nowMs) return { ...unit, state: "ready", progress: 1, isWatered: true };
-    return { ...unit, state: "working", progress: progressAt(nowMs), isWatered: true };
-  });
+const NO_CLAIMS: ReadonlySet<ClaimKey> = new Set();
+
+/** The part of an answer a guess can touch, in the shape the farm holds it. */
+function farmFieldsOf(data: Partial<StackAcresResponse>): Partial<FarmFields> {
+  const fields: Partial<FarmFields> = {};
+  if (data.units) fields.units = data.units;
+  if (data.profile) fields.profile = data.profile;
+  if (typeof data.feed === "number") fields.feed = data.feed;
+  if (typeof data.water === "number") fields.water = data.water;
+  if (data.energy) fields.energy = data.energy;
+  if (data.capacity) fields.capacity = data.capacity;
+  if (data.seedStock) fields.seedStock = data.seedStock;
+  if (data.sectors) fields.sectors = data.sectors;
+  if (data.upkeep) fields.upkeep = data.upkeep;
+  // Through toStackAcresToolTier rather than a cast, for the same reason the
+  // store reads it that way: an unknown rung must degrade to a playable one.
+  if (data.tool) fields.tool = toStackAcresToolTier(data.tool);
+  if (data.cutters) fields.cutters = ownedStackAcresCutters(data.cutters);
+  if (typeof data.influence === "number") fields.influence = data.influence;
+  if (typeof data.greenhouseBuilt === "boolean") fields.greenhouseBuilt = data.greenhouseBuilt;
+  if (typeof data.cropFieldsUnlocked === "boolean") fields.cropFieldsUnlocked = data.cropFieldsUnlocked;
+  if (data.soilTiles) fields.soilTiles = data.soilTiles;
+  if (data.forageNodes) fields.forageNodes = data.forageNodes;
+  if (data.landObstacles) fields.landObstacles = data.landObstacles;
+  if (data.fences) fields.fences = data.fences;
+  if (data.secrets) fields.secrets = data.secrets;
+  if (data.secretDonations) fields.secretDonations = data.secretDonations;
+  if (data.synergy) fields.synergy = data.synergy;
+  // All four move together or not at all: a response either carries the
+  // processing track or predates it, and a half-applied one would show a
+  // contract next to inventory numbers from a different moment.
+  if (data.inventory && data.wheatPlots && data.machines) {
+    fields.contract = data.contract ?? null;
+    fields.inventory = data.inventory;
+    fields.machines = data.machines;
+    fields.wheatPlots = data.wheatPlots;
+  }
+  return fields;
 }
 
 /** The farm shell, over the top-down world (components/arcade/stackacres-td/). */
 export function StackAcresFarm() {
   const [units, setUnits] = useState<StackAcresUnitSnapshot[]>([]);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  /** The empire district's own resource HUD -- see StackAcresResponse's own
+   *  doc comment. Honest zeros until that map's economy exists. */
+  const [empire, setEmpire] = useState<EmpireSnapshot>(EMPTY_EMPIRE);
+  /** The city grocery as the server last said, and the manager's desk while it's open. */
+  const [grocery, setGrocery] = useState<GroceryView | null>(null);
+  const [desk, setDesk] = useState<{ tab: DeskTab; focus: string | null } | null>(null);
   const [feed, setFeed] = useState(0);
   const [water, setWater] = useState(WATER_CAPACITY);
   const [energy, setEnergy] = useState<StackAcresEnergyAnchor>(() => ({
     level: ENERGY_START,
     updatedAt: new Date().toISOString(),
   }));
+  /**
+   * The farm clock (lib/stackacres/clock.ts): this farm's offset, and how far
+   * the server's clock is ahead of this device's. A ref, because the map reads
+   * it every frame through `gameHourNow`.
+   */
+  const clockRef = useRef({ offsetMs: 0, skewMs: 0 });
+  /** While a sleep is on its way, the offset it replaced. A response that
+   *  still carries that one was read before the sleep landed. */
+  const sleepingFrom = useRef<number | null>(null);
+  const gameHourNow = useCallback(
+    () => gameHourAt(Date.now() + clockRef.current.skewMs, clockRef.current.offsetMs),
+    [],
+  );
+  const gameDayNow = useCallback(() => gameDayAt(Date.now() + clockRef.current.skewMs, clockRef.current.offsetMs), []);
+  /** The server's now, in ms: what the grocery's till is read against, whatever this device's clock says. */
+  const serverNowMs = useCallback(() => Date.now() + clockRef.current.skewMs, []);
+  /** The hour the HUD clock shows, re-read every couple of seconds. */
+  const [clockHour, setClockHour] = useState(() => gameHourAt(Date.now(), 0));
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockHour(gameHourNow()), 2000);
+    return () => window.clearInterval(timer);
+  }, [gameHourNow]);
+  /** The bed's "Go to sleep?" card, where the bed was tapped, or null. */
+  const [sleepDialog, setSleepDialog] = useState<TapPoint | null>(null);
   /** The map's own box, so a drag tool can be kept inside it. */
   const fieldRef = useRef<HTMLDivElement>(null);
   const [capacity, setCapacity] = useState<Partial<Record<StackAcresStock, number>>>({});
   const [toolTier, setToolTier] = useState<StackAcresToolTier>(STACKACRES_STARTING_TIER);
+  const [axe, setAxe] = useState<AxeLevel>(1);
   // Grass cutters owned, and the one last picked on this device. `cutter` is
   // what is actually in hand: the pick while it is still owned, else the best.
   const [cutters, setCutters] = useState<StackAcresCutter[]>([STACKACRES_STARTING_CUTTER]);
@@ -889,18 +1022,6 @@ export function StackAcresFarm() {
         grantedRelic: RelicId | null;
       };
   const [monkDialogue, setMonkDialogue] = useState<MonkDialogueState | null>(null);
-  /**
-   * The chop popup: opened by `onWorldTreeTap`, closed by "Not now"/"Close",
-   * or the next world tap (`onViewMoved`). Holds only the tapped node's id
-   * and where to anchor the popup -- its live ready/hits/respawn state is
-   * read straight off `woodNodes` every render, the same "state lives in the
-   * one server-derived list, the popup just names which entry" split.
-   */
-  const [chopPopup, setChopPopup] = useState<{ nodeId: string; at: TapPoint } | null>(null);
-  /** The mine popup: same split as `chopPopup` above, but for one of the
-   *  Mine's three boulders (lib/stackacres/stone-nodes.ts) -- its live
-   *  ready/hits/respawn state is read straight off `stoneNodes`. */
-  const [minePopup, setMinePopup] = useState<{ nodeId: string; at: TapPoint } | null>(null);
   // NPC friendship. Seeded to a fresh player's own answer for every NPC that
   // has one -- the same "fresh player" seed devotion above uses -- rather
   // than an empty object, so a render before the first read lands never has
@@ -908,7 +1029,7 @@ export function StackAcresFarm() {
   const [friendship, setFriendship] = useState<Record<NpcId, StackAcresFriendshipView>>(() => {
     const initial = {} as Record<NpcId, StackAcresFriendshipView>;
     FRIENDSHIP_NPCS.forEach((npc) => {
-      initial[npc] = friendshipView(freshFriendship(), new Date());
+      initial[npc] = friendshipView(npc, freshFriendship(), new Date());
     });
     return initial;
   });
@@ -926,7 +1047,7 @@ export function StackAcresFarm() {
         phase: "result";
         npc: NpcId;
         at: TapPoint;
-        outcome: GiftOutcome | "insufficient-item";
+        outcome: GiftOutcome | "insufficient-item" | GreetOutcome;
         points: number;
         grantedKeepsake: KeepsakeId | null;
       };
@@ -951,13 +1072,9 @@ export function StackAcresFarm() {
    *  starter grant was removed (see lib/stackacres/soil.ts's own "starter
    *  kit" section). */
   const [soilTiles, setSoilTiles] = useState<SoilTile[]>([]);
-  /** Bags bought from Ray but not laid down yet. Plain object rather than a Map
-   *  so a response can replace it wholesale. */
-  const [soilStock, setSoilStock] = useState<SoilStock>({});
   /** Crop seeds bought from Ray but not planted yet -- the ownership filter
    *  that keeps the gel dock from ever offering a crop the player isn't
-   *  carrying, see `cropFieldGelItems`. Same plain-object shape as
-   *  `soilStock` and for the same reason. */
+   *  carrying, see `cropFieldGelItems`. */
   const [seedStock, setSeedStock] = useState<SeedStock>({});
   const [upkeep, setUpkeep] = useState<StackAcresUpkeepState>(() => upkeepState(0, 0));
   /**
@@ -983,12 +1100,10 @@ export function StackAcresFarm() {
   const [cellar, setCellar] = useState<VatContainer | null>(null);
   /** The wild district a finger just landed on, if the clearing modal is up. */
   const [clearing, setClearing] = useState<SectorId | null>(null);
-  /** `clearing`'s own twin for the Crop Fields -- see
-   *  StackAcresCropFieldsModal's own header on why they need a separate
-   *  modal and a separate open flag since the 2026-09-08 district merge. */
-  const [cropFieldsModalOpen, setCropFieldsModalOpen] = useState(false);
-
   const [loaded, setLoaded] = useState(false);
+  /** The first read of the farm failed, so the loading screen offers a retry instead of an empty farm. */
+  const [loadFailed, setLoadFailed] = useState(false);
+  const hasLoadedOnce = useRef(false);
   const [worldReady, setWorldReady] = useState(false);
   /**
    * The intents with a request in the air right now, mirrored into render so
@@ -1001,6 +1116,11 @@ export function StackAcresFarm() {
    */
   const [pendingIntents, setPendingIntents] = useState<ReadonlySet<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!error) return;
+    const timer = window.setTimeout(() => setError(null), NOTICE_MS);
+    return () => window.clearTimeout(timer);
+  }, [error]);
   // Nothing on the map reads a held StackAcresTool any more; the belt replaced it
   // (lib/stackacres/toolbelt.ts). Kept only to satisfy the world contract's own prop.
   const tool: StackAcresTool = "inspect";
@@ -1097,6 +1217,15 @@ export function StackAcresFarm() {
    *  stone-nodes.ts. Same "fresh player" empty-until-first-response posture
    *  as `woodNodes` above. */
   const [stoneNodes, setStoneNodes] = useState<StoneNodeSnapshot[]>([]);
+  /** The forage bushes' ready/crop/respawn state, same "state lives in the
+   *  snapshot, never in the component" posture as `woodNodes` above. */
+  const [forageNodes, setForageNodes] = useState<ForageNodeSnapshot[]>([]);
+  /** What is still standing on land being cleared, same posture again
+   *  (lib/stackacres/land-clearing.ts). */
+  const [landObstacles, setLandObstacles] = useState<LandObstacleSnapshot[]>([]);
+  const [fences, setFences] = useState<FencePiece[]>([]);
+  /** Which map squares hold a piece, for the belt's "is there a fence here". */
+  const fencedSquares = useMemo(() => new Set(fences.map((piece) => fenceKey(piece.tx, piece.ty))), [fences]);
   /** Same sidecar for the Workshop and the vat: what the last processing
    *  call's answer said it did. `takeProcessingDelta` reads and clears it. */
   const lastProcessing = useRef<Pick<StackAcresResponse, "work" | "processed" | "sold" | "vatCollected"> | null>(null);
@@ -1153,6 +1282,49 @@ export function StackAcresFarm() {
     }
   }, []);
 
+  // "While you were away": read once per visit, after the welcome and the world
+  // are out of the way. `sa-last-seen` is bumped while the farm is open, so the
+  // gap it measures is the real time since the player last looked.
+  const [awayReport, setAwayReport] = useState<AwayReport | null>(null);
+  const awayChecked = useRef(false);
+  // What `sa-last-seen` held when this visit began, captured before the stamp
+  // below overwrites it.
+  const previousSeenMs = useRef<number | null>(null);
+  useEffect(() => {
+    if (!hasStarted) return;
+    const stamp = () => {
+      try {
+        window.localStorage.setItem("sa-last-seen", String(Date.now()));
+      } catch {
+        // Nothing to persist if storage is blocked.
+      }
+    };
+    try {
+      const stored = Number(window.localStorage.getItem("sa-last-seen"));
+      previousSeenMs.current = Number.isFinite(stored) && stored > 0 ? stored : null;
+    } catch {
+      previousSeenMs.current = null;
+    }
+    stamp();
+    const timer = window.setInterval(stamp, 30_000);
+    window.addEventListener("pagehide", stamp);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("pagehide", stamp);
+    };
+  }, [hasStarted]);
+  useEffect(() => {
+    if (!hasStarted || !loaded || !rayCheckDone || showWelcome || awayChecked.current) return;
+    const timer = window.setTimeout(() => {
+      awayChecked.current = true;
+      const lastSeenMs = previousSeenMs.current;
+      if (lastSeenMs !== null) {
+        setAwayReport(buildAwayReport({ units, machines: processing.machines, lastSeenMs, nowMs: Date.now() }));
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [hasStarted, loaded, rayCheckDone, showWelcome, units, processing.machines]);
+
   // The spotlight tour, same mechanism as the lobby and table halves
   // (lib/onboarding/use-onboarding-tour.ts): fires once per profile, server
   // side, across all three screens. Gated on the world actually being loaded
@@ -1160,7 +1332,7 @@ export function StackAcresFarm() {
   // splash for the player's attention.
   useOnboardingTour(profile, STACKACRES_TOUR_STEPS, hasStarted && loaded && rayCheckDone && !showWelcome);
 
-  useStackAcresMusic(hasStarted);
+  useStackAcresMusic(hasStarted, gameHourNow);
 
   /**
    * The ambient soundscape, started by the same gesture the music is.
@@ -1224,7 +1396,6 @@ export function StackAcresFarm() {
    * is no `tapSound` left to import. The app-wide mute is applied by the
    * shell, which is always mounted, so nothing is left for the hook to do.
    */
-  const sending = useRef(false);
   const mounted = useRef(true);
   const world = useRef<StackAcresWorldApi | null>(null);
   /**
@@ -1236,12 +1407,6 @@ export function StackAcresFarm() {
    * second "which plot is selected" any more.
    */
   const [place, setPlace] = useState<ZoneId>("farmstead");
-  // The district panel used to sit open over the map at all times, and then
-  // to open whenever a player travelled anywhere. It is deep management now
-  // -- capacity, buying outright, the standing list -- so it only opens when
-  // it is actually asked for: the Manage button, or the radial menu's own
-  // handoff. Travelling flies the camera and nothing else.
-  const [panelOpen, setPanelOpen] = useState(false);
   /**
    * Where the finger that started the request in flight landed, so the reward
    * floats out of the thing that was tapped rather than out of the middle of
@@ -1253,25 +1418,24 @@ export function StackAcresFarm() {
    *  Radish, and only sent as bait while they still do. */
   const [useBait, setUseBait] = useState(false);
   const baitOnHook = useRef(false);
+  /** The fish `catch-fish` just landed, kept until the gauge is off the
+   *  screen and the map can show it jumping out (see `onWorldFishHooked`). */
+  const landedFish = useRef<FishSpecies | null>(null);
   /**
-   * Critical Harvest Cascade: what the most recent SOLO collect's response
-   * said, for `triggerCascade` to read once `act`'s own promise -- and its
-   * `finally`'s `inFlight` cleanup -- has actually resolved.
+   * Critical Harvest Cascade: what each SOLO collect's response said, keyed
+   * by the crop it picked, for `triggerCascade` to read once `act`'s own
+   * promise has resolved.
    *
    * A ref, not a return value threaded through `act`: `act`'s declared return
    * type is `ContractActionResult`, owned by TownContractsModal.tsx and about
    * contract settlement, not harvests -- widening it to carry this feature's
    * own payload would be a layering violation for every other caller that
-   * already ignores what `act` returns. This is also NOT read from inside
-   * `act` itself: every `collect` action collapses to the same intent string
-   * (`intentOf` has no `unitIds` case), so a second `collect` fired while the
-   * first is still inside its own try block would be rejected by the very
-   * `inFlight` guard the cascade is trying to reuse. Set only for a one-unit
-   * sweep (a tap, never the Harvest-All button) and read/cleared exactly once
-   * by `triggerCascade`, which is the only thing that ever calls it -- see
-   * that function's own header for the rest of the contract.
+   * already ignores what `act` returns. Keyed by crop because two solo
+   * harvests can be in the air at once, and one answer must never be read as
+   * the other's. Set only for a one-unit sweep (a tap, never the Harvest-All
+   * button) and taken exactly once by `triggerCascade`.
    */
-  const lastHarvestRef = useRef<{ crit: boolean; units: StackAcresUnitSnapshot[] } | null>(null);
+  const lastHarvests = useRef(new Map<string, { crit: boolean; units: StackAcresUnitSnapshot[] }>());
   /**
    * The idempotency key for each action whose fate this browser does not know.
    *
@@ -1299,14 +1463,6 @@ export function StackAcresFarm() {
    * one intent pressed twice, feeding one hen and collecting another are not.
    */
   const inFlight = useRef(new Set<string>());
-  /**
-   * How many requests are in the air, across every intent. `sending.current`
-   * (the flag `refresh` reads to hold off a refetch that would clobber an
-   * optimistic patch) is now "this is non-zero" rather than its own boolean,
-   * so two overlapping actions both have to finish before a background
-   * refresh is allowed through.
-   */
-  const inFlightCount = useRef(0);
 
   /**
    * Add / remove one intent from both the ref (synchronous, what the
@@ -1315,8 +1471,6 @@ export function StackAcresFarm() {
    */
   const markInFlight = useCallback((intent: string) => {
     inFlight.current.add(intent);
-    inFlightCount.current += 1;
-    sending.current = true;
     setPendingIntents((prev) => {
       if (prev.has(intent)) return prev;
       const next = new Set(prev);
@@ -1326,8 +1480,6 @@ export function StackAcresFarm() {
   }, []);
   const clearInFlight = useCallback((intent: string) => {
     inFlight.current.delete(intent);
-    inFlightCount.current = Math.max(0, inFlightCount.current - 1);
-    if (inFlightCount.current === 0) sending.current = false;
     setPendingIntents((prev) => {
       if (!prev.has(intent)) return prev;
       const next = new Set(prev);
@@ -1365,49 +1517,18 @@ export function StackAcresFarm() {
    */
   const pendingUnitCreates = useRef(new Set<Promise<unknown>>());
   /**
-   * Refcounted: which unit ids carry an optimistic guess from an action that
-   * is STILL in the air, and how many overlapping in-flight actions are
-   * claiming each one.
-   *
-   * Every response this farm gets back is a full, authoritative unit list,
-   * not a diff -- one action's `snapshots()` read on the server can only
-   * know about writes that had already committed by the moment it ran. Two
-   * actions fired close together (planting four crops in a burst is four
-   * separate requests; two rapid taps on different tiles is two) race each
-   * other's full-list responses: whichever lands first does not yet know
-   * about the other's still-uncommitted write, so its `units` array is
-   * missing a just-created crop, or still shows an old field a sibling tap
-   * already painted watered/fed. A bare `setUnits(data.units)` would
-   * overwrite the sibling's correct, still-pending optimistic guess with
-   * that stale truth -- gone for a beat, then restored a moment later once
-   * the sibling's OWN response lands. That round trip is the flicker.
-   *
-   * `applyResponse` reads this to keep any unit id still claimed by someone
-   * else's in-flight action showing this browser's own guess instead of an
-   * incoming response's stale view of it. `act` populates it right after
-   * applying its own guess (see the diff against the pre-guess snapshot
-   * below) and releases its claim the instant its own response is about to
-   * be painted -- refcounted rather than a plain Set because two group
-   * actions can legitimately claim the same unit id at once (overlapping
-   * bed selections), and the second's release must not steal the first's
-   * still-live claim.
+   * What every guess still in the air is holding: one crop, one bed, one
+   * seed count, the can. An answer paints everything except these, so an
+   * answer read before a sibling's write never takes that sibling's guess
+   * off the screen. See lib/stackacres/pending-guesses.ts.
    */
-  const pendingOptimisticUnitIds = useRef(new Map<string, number>());
-  const claimOptimisticUnitIds = useCallback((ids: readonly string[]) => {
-    for (const id of ids) {
-      pendingOptimisticUnitIds.current.set(id, (pendingOptimisticUnitIds.current.get(id) ?? 0) + 1);
-    }
-  }, []);
-  const releaseOptimisticUnitIds = useCallback((ids: readonly string[]) => {
-    for (const id of ids) {
-      const count = pendingOptimisticUnitIds.current.get(id) ?? 0;
-      if (count <= 1) pendingOptimisticUnitIds.current.delete(id);
-      else pendingOptimisticUnitIds.current.set(id, count - 1);
-    }
-  }, []);
-  // Which unit is mid-"are you sure" for retiring. Never a plain confirm():
-  // retiring refunds nothing, so it has to be two deliberate taps.
-  const [retiringUnitId, setRetiringUnitId] = useState<string | null>(null);
+  const heldGuesses = useRef(new GuessClaims());
+  /**
+   * The farm as the last accepted answer had it. A guess that lets go puts
+   * what it held back to this, which is right whether its own answer landed,
+   * was refused, or lost the race to a newer one.
+   */
+  const confirmedFarm = useRef<Partial<FarmFields>>({});
   useEffect(() => () => { mounted.current = false; }, []);
 
   /**
@@ -1537,23 +1658,6 @@ export function StackAcresFarm() {
     return true;
   }, []);
   /**
-   * Bumped on every successful `applyResponse`, optimistic guesses included --
-   * unlike `revisionRef`, which only moves for a CONFIRMED response. Without
-   * this, two overlapping actions race `restoreFarmSnapshot`: action A's
-   * snapshot is taken at revision R, its guess applies (no revision, so R
-   * does not move), then action B's snapshot is ALSO taken at revision R and
-   * its own guess applies on top. If A is then refused, `restoreFarmSnapshot`
-   * saw revision R at capture and still sees R now and wrongly concludes
-   * nothing has happened since -- rolling the farm back past B's still-live,
-   * still-unconfirmed guess to the state from before either tap, which then
-   * flickers back to correct once B's real response lands. `restoreFarmSnapshot`
-   * checks this alongside the revision so a sibling guess applied in between
-   * is enough to skip the restore, the same way a fresher confirmed response
-   * already is.
-   */
-  const localGenRef = useRef(0);
-
-  /**
    * The held equipment rung, read the same way `unitsRef` is and for the same
    * reason: `act` needs it to name the multiple a crit just paid ("CRIT! x2"),
    * and it is the only plain VALUE that callback wants. Held in a ref rather
@@ -1567,75 +1671,114 @@ export function StackAcresFarm() {
     toolTierRef.current = toolTier;
   }, [toolTier]);
 
-  const applyResponse = useCallback((data: Partial<StackAcresResponse>, ownGuess: readonly string[] = []) => {
-    // An optimistic patch carries no revision and always applies (see
-    // `acceptRevision`'s own header); a real response that lost the race to
-    // a fresher one already on screen is dropped whole rather than merged
-    // field by field -- every field here comes off the SAME snapshot read,
-    // so a "fresher" `units` next to a stale `profile` from the same
-    // response is not a state this farm was ever actually in.
+  /**
+   * Lays `fields` over what is on screen, one setter per field, each through
+   * `layFarmField` (see its header for the two modes). Every write to the part
+   * of the farm a guess can touch goes through here: an answer, a guess, and a
+   * guess letting go.
+   */
+  const layFarm = useCallback((fields: Partial<FarmFields>, mode: LayMode) => {
+    const lay = <F extends GuessField>(field: F, set: Dispatch<SetStateAction<FarmFields[F]>>) => {
+      const next = fields[field];
+      if (next === undefined) return;
+      set((prev) => layFarmField(field, prev, next as FarmFields[F], mode));
+    };
+    lay("units", setUnits);
+    lay("profile", setProfile);
+    lay("feed", setFeed);
+    lay("water", setWater);
+    lay("energy", setEnergy);
+    lay("capacity", setCapacity);
+    lay("seedStock", setSeedStock);
+    lay("sectors", setSectors);
+    lay("upkeep", setUpkeep);
+    lay("tool", setToolTier);
+    lay("cutters", setCutters);
+    lay("influence", setInfluence);
+    lay("greenhouseBuilt", setGreenhouseBuilt);
+    lay("cropFieldsUnlocked", setCropFieldsUnlocked);
+    lay("soilTiles", setSoilTiles);
+    lay("forageNodes", setForageNodes);
+    lay("landObstacles", setLandObstacles);
+    lay("fences", setFences);
+    lay("secrets", setSecrets);
+    lay("secretDonations", setSecretDonations);
+    // Three atoms here, one field in a guess.
+    const { synergy } = fields;
+    if (synergy && takesNext("synergy", mode)) {
+      setSynergyUnlocked(synergy.unlocked);
+      setSynergyActive(synergy.active);
+      setFarmhandSpeedMultiplier(synergy.farmhandSpeedMultiplier);
+    }
+    // Four fields in one atom.
+    const { contract, inventory, machines, wheatPlots } = fields;
+    if (contract !== undefined || inventory || machines || wheatPlots) {
+      setProcessing((prev) => {
+        const next: FarmProcessing = {
+          contract: contract === undefined ? prev.contract : layFarmField("contract", prev.contract, contract, mode),
+          inventory: inventory ? layFarmField("inventory", prev.inventory, inventory, mode) : prev.inventory,
+          machines: machines ? layFarmField("machines", prev.machines, machines, mode) : prev.machines,
+          wheatPlots: wheatPlots ? layFarmField("wheatPlots", prev.wheatPlots, wheatPlots, mode) : prev.wheatPlots,
+        };
+        const same =
+          next.contract === prev.contract &&
+          next.inventory === prev.inventory &&
+          next.machines === prev.machines &&
+          next.wheatPlots === prev.wheatPlots;
+        return same ? prev : next;
+      });
+    }
+  }, []);
+
+  /** A guess letting go: whatever it held that nobody else still holds goes
+   *  back to the last accepted answer. */
+  const settleGuess = useCallback(
+    (keys: Iterable<ClaimKey>) => {
+      const freed = heldGuesses.current.release(keys);
+      if (freed.size > 0) layFarm(confirmedFarm.current, { base: "prev", keys: freed });
+    },
+    [layFarm],
+  );
+
+  /**
+   * Paints a server answer. `own` is what the answering action's own guess
+   * holds, which this answer is the truth for; anything held by a guess
+   * still in the air keeps that guess.
+   */
+  const applyResponse = useCallback((data: Partial<StackAcresResponse>, own: ReadonlySet<ClaimKey> = NO_CLAIMS) => {
+    // A response that lost the race to a fresher one already on screen is
+    // dropped whole rather than merged field by field -- every field here
+    // comes off the SAME snapshot read, so a "fresher" `units` next to a
+    // stale `profile` from the same response is not a state this farm was
+    // ever actually in.
     if (!acceptRevision(data.revision)) return;
-    // See localGenRef's own header: this moves for every applied snapshot,
-    // optimistic guesses included, which is what `revisionRef` alone cannot
-    // tell `restoreFarmSnapshot` about.
-    localGenRef.current += 1;
-    if (data.profile) setProfile(data.profile);
-    // A unit id still claimed by a SIBLING action that has not answered yet
-    // (see pendingOptimisticUnitIds's own header) keeps this browser's own
-    // guess instead of this response's view of it -- whether that means
-    // overriding a stale field this response predates, or, for a crop that
-    // response has never heard of yet, putting it back in at all.
-    //
-    // `ownGuess` is the ids an action's own guess touched. `act` claims them
-    // before painting that guess, and without this the guess would be shielded
-    // from itself: a watered crop kept its dry picture and a new seed was
-    // dropped as if removed, so neither showed until the server answered.
-    if (data.units) {
-      const incoming = data.units;
-      const own = new Set(ownGuess);
-      setUnits((prev) => {
-        const shielded = [...pendingOptimisticUnitIds.current.keys()].filter((id) => !own.has(id));
-        return shielded.length === 0 ? incoming : mergeIncomingStackAcresUnits(prev, incoming, shielded);
-      });
+    const fields = farmFieldsOf(data);
+    confirmedFarm.current = { ...confirmedFarm.current, ...fields };
+    layFarm(fields, { base: "next", keys: heldGuesses.current.heldBesides(own) });
+    if (data.clock) {
+      const { offsetMs, serverNowMs } = data.clock;
+      // Keep a sleep's own guess over a response read before it landed.
+      const stale = sleepingFrom.current !== null && offsetMs === sleepingFrom.current;
+      clockRef.current = { offsetMs: stale ? clockRef.current.offsetMs : offsetMs, skewMs: serverNowMs - Date.now() };
+      setClockHour(gameHourNow());
     }
-    if (typeof data.feed === "number") setFeed(data.feed);
-    if (typeof data.water === "number") setWater(data.water);
-    if (data.energy) setEnergy(data.energy);
-    if (data.capacity) setCapacity(data.capacity);
-    if (data.sectors) setSectors(data.sectors);
-    if (data.upkeep) setUpkeep(data.upkeep);
-    if (typeof data.influence === "number") setInfluence(data.influence);
-    // Through toStackAcresToolTier rather than a cast, for the same reason the
-    // store reads it that way: an unknown rung must degrade to a playable one.
-    if (data.tool) setToolTier(toStackAcresToolTier(data.tool));
-    if (data.cutters) setCutters(ownedStackAcresCutters(data.cutters));
-    if (data.synergy) {
-      setSynergyUnlocked(data.synergy.unlocked);
-      setSynergyActive(data.synergy.active);
-      setFarmhandSpeedMultiplier(data.synergy.farmhandSpeedMultiplier);
-    }
-    // All four move together or not at all: a response either carries the
-    // processing track or predates it, and a half-applied one would show a
-    // contract next to inventory numbers from a different moment.
-    if (data.inventory && data.wheatPlots && data.machines) {
-      setProcessing({
-        contract: data.contract ?? null,
-        inventory: data.inventory,
-        machines: data.machines,
-        wheatPlots: data.wheatPlots,
-      });
-    }
-    if (data.secrets) setSecrets(data.secrets);
-    if (data.secretDonations) setSecretDonations(data.secretDonations);
+    if (data.axe) setAxe(data.axe);
     if (data.devotion) setDevotion(data.devotion);
     if (data.friendship) setFriendship(data.friendship);
-    if (typeof data.greenhouseBuilt === "boolean") setGreenhouseBuilt(data.greenhouseBuilt);
-    if (typeof data.cropFieldsUnlocked === "boolean") setCropFieldsUnlocked(data.cropFieldsUnlocked);
-    if (data.woodNodes) setWoodNodes(data.woodNodes);
-    if (data.stoneNodes) setStoneNodes(data.stoneNodes);
-    // `!== undefined` on purpose, not a truthiness check: `null` is a real,
+    if (data.empire) setEmpire(data.empire);
+    if (data.grocery !== undefined) setGrocery(data.grocery);
+    // Fresh arrays on every answer; keeping the old one when nothing moved
+    // saves the map a redraw.
+    if (data.woodNodes) {
+      const next = data.woodNodes;
+      setWoodNodes((prev) => sameOrNext(prev, next));
+    }
+    if (data.stoneNodes) {
+      const next = data.stoneNodes;
+      setStoneNodes((prev) => sameOrNext(prev, next));
+    }
     // `!== undefined` rather than a truthiness check: null is the real
-    // "no vat placed" answer, and an optimistic patch carries no field.
+    // "no vat placed" answer.
     if (data.vat !== undefined) setVat(data.vat);
     if (data.cellar !== undefined) setCellar(data.cellar);
     if (data.work || data.processed || data.sold || data.vatCollected) {
@@ -1654,19 +1797,8 @@ export function StackAcresFarm() {
       lastCrossbreedHarvest.current = data.crossbreedResult;
     }
     if (data.blueprints) setBlueprints(data.blueprints);
-    // Every response carries the FULL purchased list, not a diff, so a feed
-    // or a water tap that never touched the soil still hands this a fresh
-    // array from JSON. `soilTilesEqual` is what stops that from becoming a
-    // new state identity (and, downstream, a scene repaint) on every
-    // unrelated action -- see that function's own doc comment.
-    if (data.soilTiles) {
-      setSoilTiles((prev) => (soilTilesEqual(prev, data.soilTiles!) ? prev : data.soilTiles!));
-    }
-    if (data.soilStock) setSoilStock(data.soilStock);
-    if (data.seedStock) setSeedStock(data.seedStock);
-    if (data.blueprints) setBlueprints(data.blueprints);
     if (data.story) setStoryView(data.story);
-  }, [acceptRevision]);
+  }, [acceptRevision, layFarm, gameHourNow]);
 
   /**
    * Everything an optimistic prediction reads, gathered off live state. A
@@ -1685,6 +1817,7 @@ export function StackAcresFarm() {
       capacity,
       seedStock,
       toolTier,
+      axe,
       cutters,
       sectors,
       upkeep,
@@ -1699,7 +1832,13 @@ export function StackAcresFarm() {
       cropFieldsUnlocked,
       // This profile's placed soil.
       soilTiles,
-      soilStock,
+      // The bushes, so a pick can name the seed it is about to take and turn
+      // the bush picked-over without waiting on the round trip.
+      forageNodes,
+      // What is still standing on land being cleared, so a swing counts down
+      // under the finger.
+      landObstacles,
+      fences,
       inventory: processing.inventory,
       wheatPlots: processing.wheatPlots,
       machines: processing.machines,
@@ -1713,7 +1852,11 @@ export function StackAcresFarm() {
       energy,
       capacity,
       seedStock,
+      forageNodes,
+      landObstacles,
+      fences,
       toolTier,
+      axe,
       cutters,
       sectors,
       upkeep,
@@ -1727,117 +1870,13 @@ export function StackAcresFarm() {
       greenhouseBuilt,
       cropFieldsUnlocked,
       soilTiles,
-      soilStock,
     ],
   );
 
-  /**
-   * A copy of every farm atom an optimistic patch might touch, taken the
-   * instant before a guess is applied. Restored verbatim when the server
-   * refuses or the request never lands -- see `act`.
-   */
-  const captureFarmSnapshot = useCallback(
-    () => ({
-      // The revision on screen the instant this guess is taken -- so
-      // `restoreFarmSnapshot` can tell whether anything else has landed
-      // since. See that function's own header.
-      revision: revisionRef.current,
-      // The local generation the instant this guess is taken -- catches a
-      // SIBLING optimistic guess applied in between, which never moves
-      // `revision`. See localGenRef's own header.
-      localGen: localGenRef.current,
-      units,
-      profile,
-      feed,
-      water,
-      energy,
-      capacity,
-      // seedStock IS guessed at by the "stock" predictor above, so a
-      // refused or dropped planting has to be able to put the spent seed
-      // back. soilTiles/soilStock now join it: place-soil-tile spends a bag
-      // (soilStock) and adds a bed (soilTiles) optimistically, same as
-      // place-pipe does for irrigation below.
-      seedStock,
-      sectors,
-      upkeep,
-      influence,
-      toolTier,
-      cutters,
-      synergyUnlocked,
-      synergyActive,
-      farmhandSpeedMultiplier,
-      processing,
-      secrets,
-      secretDonations,
-      greenhouseBuilt,
-      cropFieldsUnlocked,
-      soilTiles,
-      soilStock,
-    }),
-    [
-      units,
-      profile,
-      feed,
-      water,
-      energy,
-      capacity,
-      seedStock,
-      sectors,
-      upkeep,
-      influence,
-      toolTier,
-      cutters,
-      synergyUnlocked,
-      synergyActive,
-      farmhandSpeedMultiplier,
-      processing,
-      secrets,
-      secretDonations,
-      greenhouseBuilt,
-      cropFieldsUnlocked,
-      soilTiles,
-      soilStock,
-    ],
-  );
-  type FarmSnapshot = ReturnType<typeof captureFarmSnapshot>;
-  const restoreFarmSnapshot = useCallback((snap: FarmSnapshot) => {
-    // A different action's fresher response can land while this one is still
-    // out (the refusal or dropped-connection path that calls this awaits a
-    // fetch first) -- and that response already overwrote whatever this
-    // guess touched with the true DB state, which by definition never held a
-    // guess that was refused or never confirmed. Restoring anyway would undo
-    // that newer, confirmed state rather than this guess, which is not what
-    // a rollback is for. Skip when anything has landed since the snapshot --
-    // a confirmed response (revision moved) or a sibling optimistic guess
-    // applied on top (localGen moved, see its own header) either one.
-    if (snap.revision !== revisionRef.current) return;
-    if (snap.localGen !== localGenRef.current) return;
-    setUnits(snap.units);
-    setProfile(snap.profile);
-    setFeed(snap.feed);
-    setWater(snap.water);
-    setEnergy(snap.energy);
-    setCapacity(snap.capacity);
-    setSeedStock(snap.seedStock);
-    setSectors(snap.sectors);
-    setUpkeep(snap.upkeep);
-    setInfluence(snap.influence);
-    setToolTier(snap.toolTier);
-    setCutters(snap.cutters);
-    setSynergyUnlocked(snap.synergyUnlocked);
-    setSynergyActive(snap.synergyActive);
-    setFarmhandSpeedMultiplier(snap.farmhandSpeedMultiplier);
-    setProcessing(snap.processing);
-    setSecrets(snap.secrets);
-    setSecretDonations(snap.secretDonations);
-    setGreenhouseBuilt(snap.greenhouseBuilt);
-    setSoilTiles(snap.soilTiles);
-    setSoilStock(snap.soilStock);
-    setCropFieldsUnlocked(snap.cropFieldsUnlocked);
-  }, []);
-
+  // Safe with taps in the air: an answer never paints over what a guess still
+  // holds (see heldGuesses), so there is nothing to hold a refresh off for.
   const refresh = useCallback(async () => {
-    if (sending.current) return;
+    let ok = false;
     try {
       const response = await fetch("/api/stackacres", { cache: "no-store" });
       if (response.status === 429) return;
@@ -1849,14 +1888,31 @@ export function StackAcresFarm() {
         return;
       }
       const data = (await response.json()) as Partial<StackAcresResponse>;
-      if (!mounted.current || sending.current) return;
-      if (response.ok) applyResponse(data);
+      if (!mounted.current) return;
+      if (response.ok) {
+        applyResponse(data);
+        ok = true;
+      }
     } catch {
-      // A dropped read is not worth a banner; the farm just stays as it was.
+      // A dropped read is not worth a banner once the farm is up; it just stays as it was.
     } finally {
-      if (mounted.current) setLoaded(true);
+      if (mounted.current) {
+        if (ok) {
+          hasLoadedOnce.current = true;
+          setLoadFailed(false);
+          setLoaded(true);
+        } else if (!hasLoadedOnce.current) {
+          // Nothing has ever come back, so there is no farm to leave as it was.
+          setLoadFailed(true);
+        }
+      }
     }
   }, [applyResponse]);
+
+  const retryLoad = useCallback(() => {
+    setLoadFailed(false);
+    void refresh();
+  }, [refresh]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void refresh(), 0);
@@ -1947,37 +2003,23 @@ export function StackAcresFarm() {
       setError(null);
       // Assume the server says yes. `predictStackAcresAction` returns the
       // patch a success would produce (or null when the outcome is a dice
-      // roll we won't fake), applied through the very same `applyResponse`
-      // the real answer uses. `snapshot` is what a refusal or a dropped
-      // request rolls back to.
-      const snapshot = captureFarmSnapshot();
-      const patch = predictStackAcresAction(requested, buildPredictContext());
+      // roll we won't fake). It paints only what it changed, and holds that
+      // until this action lets go in `finally`, so no other answer can paint
+      // over it meanwhile (see heldGuesses). Letting go also undoes it when
+      // the server said no or never answered.
+      const guessedFrom = buildPredictContext();
+      const patch = predictStackAcresAction(requested, guessedFrom);
       const optimisticApplied = patch !== null;
-      // Claimed the instant the guess is on screen, released the instant
-      // THIS action's own answer is about to be painted (success below) or,
-      // failing that, once it is done trying entirely (`finally`) -- see
-      // pendingOptimisticUnitIds's own header. A made-up crop is already held
-      // by its own sowing's claim until that lands, so a guess on one claims
-      // nothing yet; it is carried onto the real row further down.
-      const guessedIds = patch?.units ? touchedUnitIds(snapshot.units, patch.units) : [];
-      const touchedIds = provisional ? [] : [...guessedIds];
-      if (touchedIds.length > 0) claimOptimisticUnitIds(touchedIds);
-      let touchedClaimReleased = false;
-      const releaseTouchedClaim = () => {
-        if (touchedClaimReleased) return;
-        touchedClaimReleased = true;
-        if (touchedIds.length > 0) releaseOptimisticUnitIds(touchedIds);
-      };
-      if (patch) applyResponse(patch, guessedIds);
-      // The unit resets instantly (above), but the payout itself is a dice
-      // roll this layer won't fake -- see predictStackAcresAction's header.
-      // A player who taps and hears/sees nothing until the round trip lands
-      // reads that gap as lag, so say the honest, numberless part out loud
-      // right away; the real toast overwrites this the moment the response
-      // is in, and a refusal below retracts it.
-      if (requested.action === "collect" && optimisticApplied) {
-        setLastCollect({ text: "Your gold will arrive in your wallet shortly...", nonce: Date.now() });
-      }
+      const guessed = patch ? guessClaims(guessedFrom, patch) : [];
+      // A made-up crop is already held by its own sowing until that lands, so
+      // a guess on one does not hold it too; it is carried onto the real row
+      // further down. Holding it here would leave the made-up crop standing
+      // beside the real one once the sowing answered.
+      const ownClaims = new Set(
+        createsStackAcresUnit(requested) ? guessed : guessed.filter((key) => !isClaimOnUnit(key, isOptimisticUnitId)),
+      );
+      heldGuesses.current.claim(ownClaims);
+      if (patch) layFarm(patch, { base: "prev", keys: new Set(guessed) });
       // Every shop purchase without its own call-site toast gets one here --
       // see `purchaseCueText`'s own header for why this is the one place to
       // do it and which actions it deliberately skips.
@@ -2006,9 +2048,8 @@ export function StackAcresFarm() {
         if (provisional) {
           const resolved = await settleProvisionalTargets(requested);
           if (!resolved) {
-            // The crop it was aimed at never went in. Re-read rather than unpick
-            // the guess by hand: the sowing's own rollback can skip itself when
-            // this guess landed on top of it.
+            // The crop it was aimed at never went in. The guess goes back in
+            // `finally`; re-read too, for anything the sowing left behind.
             if (optimisticApplied) window.setTimeout(() => void refresh(), 0);
             const notYet = "That one is not in the ground yet. Give it a second.";
             if (mounted.current) setError(notYet);
@@ -2029,24 +2070,13 @@ export function StackAcresFarm() {
           // else on screen as it now stands. The can and purse were already
           // spent by the first guess.
           const landed = unitsFromLastCreate.current;
-          const carried =
-            optimisticApplied && landed
-              ? predictStackAcresAction(body, { ...buildPredictContext(), units: landed })
-              : null;
-          if (landed && carried?.units) {
-            const moved = touchedUnitIds(landed, carried.units);
-            touchedIds.push(...moved);
-            claimOptimisticUnitIds(moved);
-            const touched = new Set(moved);
-            const next = new Map(carried.units.map((unit) => [unit.id, unit]));
-            localGenRef.current += 1;
-            setUnits((prev) =>
-              prev.flatMap((unit) => {
-                if (!touched.has(unit.id)) return [unit];
-                const guess = next.get(unit.id);
-                return guess ? [guess] : [];
-              }),
-            );
+          const carriedFrom = landed ? { ...guessedFrom, units: landed } : null;
+          const carried = optimisticApplied && carriedFrom ? predictStackAcresAction(body, carriedFrom) : null;
+          if (carriedFrom && carried?.units) {
+            const moved = guessClaims(carriedFrom, { units: carried.units });
+            for (const key of moved) ownClaims.add(key);
+            heldGuesses.current.claim(moved);
+            layFarm({ units: carried.units }, { base: "prev", keys: new Set(moved) });
           }
         }
         // A key held over from an attempt that never came back makes this press
@@ -2074,11 +2104,9 @@ export function StackAcresFarm() {
         );
         if (response.status === 429) {
           // Rejected before it reached the farm, so the server applied
-          // nothing -- but this browser did, so put the guess back.
+          // nothing. The guess goes back when this action lets go in
+          // `finally`.
           answered = true;
-          if (optimisticApplied) restoreFarmSnapshot(snapshot);
-          // A request that waited has usually had a newer answer land on top of
-          // its guess, which makes the restore above skip itself. Re-read.
           if (waits) window.setTimeout(() => void refresh(), 0);
           const header = Number(response.headers.get("Retry-After"));
           const seconds = Number.isFinite(header) && header > 0 ? header : DEFAULT_RETRY_AFTER_SECONDS;
@@ -2099,17 +2127,17 @@ export function StackAcresFarm() {
           // harsh error tone on an ordinary event teaches a player to dread
           // their own farm.
           refusedSound();
-          // Nothing was written, so unwind the optimistic guess FIRST --
-          // purse, capacity, feed, the lot -- then overlay whatever
-          // authoritative unit list the refusal carried on top.
-          if (optimisticApplied) restoreFarmSnapshot(snapshot);
-          // A refusal carries the true round; paint it, and only raise a
-          // banner when there is no round to speak for itself. Gated by the
-          // same freshness check `applyResponse` uses -- a refusal that lost
-          // the race to a fresher response already on screen must not paint
-          // its own, now-stale, units back over it.
-          if (data.round && acceptRevision(data.round.revision)) setUnits(data.round.units);
-          if (data.profile) setProfile(data.profile);
+          // Nothing was written, so the guess goes back when this action lets
+          // go in `finally`. The refusal carries the true round; paint it (a
+          // stale one is dropped like any answer), and only raise a banner
+          // when there is no round to speak for itself.
+          applyResponse(
+            {
+              ...(data.round ? { units: data.round.units, revision: data.round.revision } : {}),
+              ...(data.profile ? { profile: data.profile } : {}),
+            },
+            ownClaims,
+          );
           // A refused purchase takes its own instant toast back too -- left
           // standing, "Bought a Hen!" would sit on screen next to the refusal
           // banner claiming the opposite.
@@ -2122,18 +2150,15 @@ export function StackAcresFarm() {
             // all, and nothing is actually inbound.
             setLastCollect(null);
           }
-          // Re-read once this request has let go of the send lock, so the
-          // farm shows the server's truth rather than what this browser
-          // thought it could send.
-          // A request that waited re-reads for the same reason as the 429 above.
-          if (body.action === "collect" || waits) window.setTimeout(() => void refresh(), 0);
+          // Re-read, so the farm shows the server's truth rather than what this
+          // browser thought it could send. The round only carries units, and a
+          // refused bed or fence may well be standing on the server already.
+          if (optimisticApplied || waits) window.setTimeout(() => void refresh(), 0);
           return { ok: false, message: data.error ?? "That did not go through." };
         }
-        // Released before painting the response -- this action's own guess
-        // is about to be superseded by its own truth, so it must not go on
-        // shielding whatever it touched from getting that truth applied.
-        releaseTouchedClaim();
-        applyResponse(data);
+        // This action's own claims are the one thing this answer is the truth
+        // for, so they do not shield it.
+        applyResponse(data, ownClaims);
         // What a tap on the just-made crop will match its provisional id
         // against, recorded before React has committed the list above.
         if (createGate && data.units) unitsFromLastCreate.current = data.units;
@@ -2146,88 +2171,21 @@ export function StackAcresFarm() {
           const { harvest } = data;
           const single = body.unitIds?.length === 1 ? body.unitIds[0] : null;
           // Critical Harvest Cascade: stash it for `triggerCascade` to pick
-          // up once this call has fully returned -- see lastHarvestRef's own
-          // header for why that has to happen outside this function.
-          if (single) lastHarvestRef.current = { crit: harvest.crit, units: data.units ?? [] };
-          // Fired here rather than on the press because the ANIMAL is what
-          // makes this sound worth having, and only the response knows which
-          // unit actually paid out: a hen clucking as the eggs go in the
-          // basket is the moment the farm most needs to feel alive. A
-          // whole-farm sweep plays the loudest thing it brought in.
-          const sounded = single
-            ? unitsRef.current.find((candidate) => candidate.id === single)
-            : unitsRef.current.find((candidate) => candidate.state === "ready");
+          // up once this call has fully returned -- see lastHarvests' own
+          // header.
+          if (single) lastHarvests.current.set(single, { crit: harvest.crit, units: data.units ?? [] });
+          // A tapped crop already sounded on the press; a sweep sounds here
+          // with the loudest thing it brought in.
+          const sounded = single ? undefined : unitsRef.current.find((candidate) => candidate.state === "ready");
           if (sounded) collectSound(sounded.stock);
           if (single) setCelebrate({ unitId: single, nonce: Date.now() });
-          // The toast leads with what went into the barn, because that is
-          // what a harvest is now -- it pays no Gold, and selling is a
-          // separate choice made at the Workshop.
-          const tallyText = harvest.tally
-            .map((line) => itemLabel(line.item, line.quantity))
-            .join(", ");
-          // A weather-worn unit used to raise the same red banner a real
-          // refusal does, which read as a broken error over an ordinary farm
-          // event. It rides along on the same gold toast instead -- the mess
-          // itself keeps asking to be cleared via its cue bubble on the map,
-          // so the toast only has to give the player the heads-up once.
-          const muckedNote =
-            harvest.mucked > 0
-              ? harvest.mucked === 1
-                ? " -- 1 came up weather-worn, tap it to clear"
-                : ` -- ${harvest.mucked} came up weather-worn, tap them to clear`
-              : "";
-          setLastCollect({
-            text: `+${tallyText} to the barn${muckedNote}`,
-            nonce: Date.now(),
-          });
-          if (anchor) {
-            // A one-unit sweep floats its produce, which is what a tap on that
-            // animal was asking about. A whole-farm sweep floats a count:
-            // naming five kinds of produce over one thumb is unreadable.
-            const float =
-              single && harvest.tally.length === 1
-                ? collectFloat(harvest.tally[0].item, harvest.tally[0].quantity)
-                : { text: `+${harvest.units} brought in`, icon: "ico-harvest" };
-            world.current?.floatAt(anchor, float.text, "gain", float.icon as PainterName);
-          }
-          // A critical harvest gets its own line: a player who cannot see WHY
-          // the haul was bigger than usual has not really been told the
-          // ladder is working.
-          if (harvest.crit && harvest.critBonus.length > 0) {
-            goldSound();
-            setLastCollect({
-              text: `Rich pickings! +${harvest.critBonus
-                .map((line) => itemLabel(line.item, line.quantity))
-                .join(", ")}${muckedNote}`,
-              nonce: Date.now(),
-            });
-            // And the world's own answer to it, on the unit that got lucky:
-            // the crit flash names the exact multiple the ladder just paid.
-            // `1 + critBonus` rather than `critBonus`, because the label reads
-            // as a TOTAL ("CRIT! x2" for the Golden Spade's bonus of 1) -- see
-            // `critFlashLabel`. A whole-farm sweep has no single unit to hang
-            // this on, so it keeps the toast alone.
-            if (single) {
-              world.current?.celebrateCrit(
-                single,
-                1 + stackacresToolTierDef(toolTierRef.current).critBonus,
-              );
-            }
+          // A critical harvest shows on the crop itself: the crit flash names
+          // the multiple the ladder just paid. `1 + critBonus` because the
+          // label reads as a total ("CRIT! x2" for a bonus of 1).
+          if (single && harvest.crit && harvest.critBonus.length > 0) {
+            world.current?.celebrateCrit(single, 1 + stackacresToolTierDef(toolTierRef.current).critBonus);
           }
         }
-        // The other three a finger can start from the map. No produce to
-        // name, so the float just confirms the verb landed.
-        const done =
-          body.action === "feed"
-            ? "Fed"
-            : body.action === "water"
-              ? "Watered"
-              : body.action === "clear"
-                ? "Cleared"
-                : body.action === "stock"
-                  ? "Seeded"
-                  : null;
-        if (anchor && done) world.current?.floatAt(anchor, done, "gain");
         if (body.action === "upgrade-tool" && data.upgraded) {
           goldSound();
           setLastCollect({
@@ -2263,20 +2221,14 @@ export function StackAcresFarm() {
             nonce: Date.now(),
           });
         }
-        // A cast pays no Gold -- it fills the shelf, same as a harvest. The
-        // farmer is already playing his reel-and-lift by the time this lands
-        // (the gauge's `onLanded` fired both at once); this is the actual
-        // catch, once the server's dice roll is in, so it is the first point
-        // anything can name the fish. Floats over the bobber, which is where
-        // the player has been looking for the whole fight.
         if ((body.action === "feed" || body.action === "feed-pen") && data.fed) {
           setLastCollect({ text: data.fed.toast, nonce: Date.now() });
         }
+        // A cast pays no Gold -- it fills the shelf, same as a harvest. This
+        // is the server's dice roll, the first point anything knows which fish
+        // it was. The map shows it once the gauge is gone (`onWorldFishHooked`).
         if (body.action === "catch-fish" && data.fishCaught) {
-          const label = machineItemLabel(data.fishCaught.species, 1);
-          waterSound();
-          setLastCollect({ text: `Caught ${label}!`, nonce: Date.now() });
-          if (anchor) world.current?.floatAt(anchor, `+1 ${label}`, "gain");
+          landedFish.current = data.fishCaught.species;
         }
         // A stalk pays no Gold either -- it fills the shelf with meat and a
         // pelt. The scope's own banner already played; this names what the
@@ -2291,29 +2243,12 @@ export function StackAcresFarm() {
           });
           if (anchor) world.current?.floatAt(anchor, `+${meatLabel}, +${peltLabel}`, "gain");
         }
-        // A swing pays no Gold either -- it fills the shelf with Wood. A
-        // lost race (someone/something else felled it a beat earlier)
-        // leaves `woodChopped` null: no float, no toast, just the fresh
-        // `woodNodes` state already applied above by `applyResponse`.
-        if (body.action === "chop-tree" && data.woodChopped) {
-          const { quantity, felled } = data.woodChopped;
-          const label = machineItemLabel("wood", quantity);
-          waterSound();
-          setLastCollect({ text: felled ? `Timber! +${label}` : `+${label}`, nonce: Date.now() });
-          if (anchor) world.current?.floatAt(anchor, `+${label}`, "gain");
-          if (felled) setChopPopup(null);
-        }
-        // Same shape again for a landed mining swing: fills the shelf with
-        // Stone, moves no Gold. A refused swing (the boulder was already
-        // broken) leaves `stoneMined.landed` false: no float, no toast, just
-        // the fresh `stoneNodes` state already applied above.
-        if (body.action === "mine-stone" && data.stoneMined?.landed) {
-          const { amount, broke } = data.stoneMined;
-          const label = machineItemLabel("stone", amount);
-          waterSound();
-          setLastCollect({ text: broke ? `Cracked! +${label}` : `+${label}`, nonce: Date.now() });
-          if (anchor) world.current?.floatAt(anchor, `+${label}`, "gain");
-          if (broke) setMinePopup(null);
+        // Chopping, mining and clearing are answered in the scene: the swing,
+        // the strike and the pieces bursting into his hands. Only a sector
+        // opening gets a line of its own.
+        if (data.landCleared) {
+          const { sectorOpened, ground } = data.landCleared;
+          if (sectorOpened && isClearableSector(ground)) setLastCollect({ text: `${sectorLabel(ground)} is yours!`, nonce: Date.now() });
         }
         // The zone's own optimistic puff already fired on the press (see
         // stackacres-scene.ts's `secretDiscoveryPuff`, called from the
@@ -2361,7 +2296,28 @@ export function StackAcresFarm() {
             const keepsake = KEEPSAKE_CATALOGUE[data.gift.grantedKeepsake];
             goldSound();
             setLastCollect({
-              text: `${keepsake.icon} Ray gives you his ${keepsake.label}`,
+              text: `${keepsake.icon} ${NPC_GIFT_CATALOGUE[data.gift.npc].label} gives you their ${keepsake.label}`,
+              nonce: Date.now(),
+            });
+          }
+        }
+        // A plain "say hi" -- same shape as a gift's own result handling
+        // just above, minus the item and its refusal outcome. A tap that
+        // has nothing else to say (Ray's own line already spent, or a
+        // traveler whose quest is done) still moves this relationship
+        // forward.
+        if (body.action === "greet-npc" && data.greet) {
+          setGiftDialogue((prev) => (prev ? { phase: "result", at: prev.at, ...data.greet! } : null));
+          if (data.greet.outcome === "greeted") {
+            panelSound();
+            if (anchor) world.current?.floatAt(anchor, "👋", "gain");
+            world.current?.emote(body.npc, "exclaim");
+          }
+          if (data.greet.grantedKeepsake) {
+            const keepsake = KEEPSAKE_CATALOGUE[data.greet.grantedKeepsake];
+            goldSound();
+            setLastCollect({
+              text: `${keepsake.icon} ${NPC_GIFT_CATALOGUE[data.greet.npc].label} gives you their ${keepsake.label}`,
               nonce: Date.now(),
             });
           }
@@ -2374,16 +2330,21 @@ export function StackAcresFarm() {
         // own. This block is only the toast for a traveler's line finishing.
         if (body.action === "story-turn-in" && data.storyResult) {
           if (data.storyResult.outcome === "advanced") {
-            panelSound();
+            questStepSound();
             world.current?.emote(data.storyResult.traveler, "note");
           }
           if (data.storyResult.outcome === "completed") {
             goldSound();
             world.current?.emote(data.storyResult.traveler, "sparkle");
-            if (typeof data.storyResult.granted === "string" && isStoryItemId(data.storyResult.granted)) {
-              const item = STORY_ITEM_CATALOGUE[data.storyResult.granted];
-              setLastCollect({ text: `${item.icon} ${TRAVELER_CATALOGUE[data.storyResult.traveler].name} leaves you the ${item.label}`, nonce: Date.now() });
-            }
+          }
+          // A quest's own reward can land on any turn-in, not only the
+          // line's last one; the line's keepsake only ever lands alongside a
+          // "completed" outcome. Both can be present at once on a line's
+          // final quest that also declares its own `rewards`.
+          const granted = data.storyResult.granted.filter(isStoryItemId).map((id) => STORY_ITEM_CATALOGUE[id]);
+          if (granted.length > 0) {
+            const text = granted.map((item) => `${item.icon} ${item.label}`).join(", ");
+            setLastCollect({ text: `${TRAVELER_CATALOGUE[data.storyResult.traveler].name} leaves you ${text}`, nonce: Date.now() });
           }
         }
         if (body.action === "unlock-synergy-perk" && data.synergyUnlock?.success) {
@@ -2393,21 +2354,20 @@ export function StackAcresFarm() {
             nonce: Date.now(),
           });
         }
-        return { ok: true, reward: data.contractReward };
+        return { ok: true, reward: data.contractReward, groceryPaid: data.groceryPaid };
       } catch {
-        // The outcome is unknown -- the write may well have committed. Put
-        // the guess back so nothing false is on screen, then re-read the
-        // farm from the server for the truth.
-        if (optimisticApplied) restoreFarmSnapshot(snapshot);
+        // The outcome is unknown -- the write may well have committed. The
+        // guess goes back in `finally` so nothing false is on screen, then
+        // the re-read shows the truth.
         window.setTimeout(() => void refresh(), 0);
         const unreachable = "Could not reach the farm. Check your connection.";
         if (mounted.current) setError(unreachable);
         return { ok: false, message: unreachable };
       } finally {
-        // Safety net for the refusal and dropped-connection paths, which
-        // roll the guess back rather than supersede it -- a no-op if the
-        // success path above already released this action's claim.
-        releaseTouchedClaim();
+        // Lets go of the guess. After a success this changes nothing (its
+        // answer is already on screen); otherwise it puts back what the last
+        // accepted answer had.
+        settleGuess(ownClaims);
         if (createGate) {
           pendingUnitCreates.current.delete(createGate.promise);
           createGate.settle();
@@ -2421,16 +2381,13 @@ export function StackAcresFarm() {
     },
     [
       applyResponse,
-      acceptRevision,
       refresh,
       markInFlight,
       clearInFlight,
-      captureFarmSnapshot,
-      restoreFarmSnapshot,
       buildPredictContext,
       settleProvisionalTargets,
-      claimOptimisticUnitIds,
-      releaseOptimisticUnitIds,
+      layFarm,
+      settleGuess,
     ],
   );
 
@@ -2456,12 +2413,16 @@ export function StackAcresFarm() {
       if (!entry) return;
       if (entry.timer !== null) window.clearTimeout(entry.timer);
       batchWindows.current.delete(kind);
-      const body = drainActionBatch(entry.window);
+      // A crop some harvest already in the air names is on its way.
+      const collecting = kind === "collect" ? unitsBeingCollected(inFlight.current) : null;
+      const body = actionForUnits(
+        kind,
+        collecting ? entry.window.queued.filter((id) => !collecting.has(id)) : entry.window.queued,
+      );
       if (!body) return;
-      // `collect` collapses to one intent whatever it names, so a batch can
-      // arrive while the leading tap's own request is still out. Waiting a
-      // window is the difference between these taps landing late and being
-      // refused as duplicates.
+      // The same request can still be in the air (the same crops, or the same
+      // water anchor). Waiting a window is the difference between these taps
+      // landing late and being refused as duplicates.
       if (inFlight.current.has(intentOf(body)) && attempt < BATCH_FLUSH_ATTEMPTS) {
         const reopened = reopenActionBatch(kind, entry.window.queued, Date.now());
         batchWindows.current.set(kind, {
@@ -2491,17 +2452,13 @@ export function StackAcresFarm() {
    */
   const tapBatched = useCallback(
     (kind: BatchableAction, unitId: string): void => {
+      // A second press at a crop already being harvested is the same press.
+      // (A second press at a crop already being watered is left to `act`'s
+      // own duplicate guard, which keys water per crop.)
+      if (kind === "collect" && unitsBeingCollected(inFlight.current).has(unitId)) return;
       const open = batchWindows.current.get(kind);
       if (open?.timer != null) window.clearTimeout(open.timer);
-      const lone = actionForUnits(kind, [unitId]);
-      // `collect` collapses to one intent whatever it names, so an in-flight
-      // one says nothing about THIS unit: queue the press rather than let it
-      // be refused as a duplicate of somebody else's harvest. `water` keys
-      // per unit, so an in-flight one means this very crop is already being
-      // watered -- leave that to `act`'s duplicate guard, or a second press
-      // would queue a second can-load for a crop that is already wet.
-      const busy = kind === "collect" && lone !== null && inFlight.current.has(intentOf(lone));
-      const tap = coalesceActionTap(open?.window ?? null, kind, unitId, Date.now(), busy);
+      const tap = coalesceActionTap(open?.window ?? null, kind, unitId, Date.now());
       if (tap.flush) void act(tap.flush);
       if (tap.send) void act(tap.send);
       if (tap.full) {
@@ -2561,32 +2518,28 @@ export function StackAcresFarm() {
   });
 
   // Shows/hides each traveler as their own unlock is met (nobody stands on
-  // the farm before that -- see `paintTravelers`/`setTravelerUnlocks` in
-  // stackacres-scene.ts), then hangs a quest badge over every one who's
-  // unlocked and has one to show -- "!" to offer, "?" ready to hand in,
-  // nothing while mid-quest or done. "Push, never rebuild": an unchanged
-  // unlock set or cue set is a no-op on the scene's own side.
+  // the farm before that -- see `setTravelerUnlocks` in the scene). "Push,
+  // never rebuild": an unchanged unlock set is a no-op on the scene's side.
   // useLayoutEffect because `story.view` is server-confirmed.
   useLayoutEffect(() => {
     if (!story.view) return;
     const unlocked: Record<string, boolean> = {};
-    const cues: Record<string, "available" | "ready"> = {};
-    for (const [id, traveler] of Object.entries(story.view.travelers)) {
-      unlocked[id] = traveler.unlocked;
-      if (!traveler.unlocked || traveler.done) continue;
-      if (!traveler.met) cues[id] = "available";
-      else if (traveler.ready) cues[id] = "ready";
-    }
+    for (const [id, traveler] of Object.entries(story.view.travelers)) unlocked[id] = traveler.unlocked;
     world.current?.setTravelerUnlocks(unlocked as TravelerUnlocks);
-    world.current?.setStoryCues(cues as StoryCues);
   }, [story.view]);
 
-  /** Who a closed wild gate is waiting on, for its sheet. */
-  const clearingOpener = useMemo(() => {
-    const traveler = clearing ? WILD_AREA_TRAVELER[clearing] : undefined;
-    if (!traveler) return null;
-    return { name: TRAVELER_CATALOGUE[traveler].name, hint: story.view?.travelers[traveler].hint ?? null };
-  }, [clearing, story.view]);
+  /** How far this sector's clearing has got, for its sheet. */
+  const clearingProgress = useMemo(
+    () =>
+      clearing && isClearableSector(clearing)
+        ? landClearingProgress(clearing, landObstacles)
+        : { cleared: 0, total: 0 },
+    [clearing, landObstacles],
+  );
+
+  // No wild sector is waiting on a traveler any more (2026-09-28: the four that
+  // were are gone, ../../../lib/stackacres/zones.ts's own header) -- the sheet's
+  // `opener` prop, for "this gate opens when X arrives", is always null now.
 
   // No effect needed to disarm the retire confirmation on district change:
   // StackAcresUnitRows only ever renders the current district's own units
@@ -2631,19 +2584,17 @@ export function StackAcresFarm() {
 
   /**
    * Ray carries two separate interactions: his own story line (he is one of
-   * the eleven travelers, `TRAVELER_IDS` in travelers.ts) and the
+   * the three travelers, `TRAVELER_IDS` in travelers.ts) and the
    * gift-giving loop `friendship.ts` only ever wired to him. Before this, a
-   * tap always opened gifts, so his "!"/"?" badge (`setStoryCues`, driven by
-   * the exact same `met`/`ready` read below) lied -- his line could never
-   * start and Leo's finale, which needs all ten travelers plus Ray, could
-   * never be reached. Story first when he actually has something to say,
-   * same as every other traveler; gifts otherwise, so the everyday loop
-   * still works once his current beat is done.
+   * tap always opened gifts, so his story line could never start. Story
+   * first when he actually has something to say, same as every other
+   * traveler; gifts otherwise, so the everyday loop still works once his
+   * current beat is done.
    */
   const onWorldRayTap = useCallback(
     (at: TapPoint) => {
       const ray = story.view?.travelers.ray;
-      const hasSomethingToSay = ray && ray.unlocked && !ray.done && (!ray.met || ray.ready);
+      const hasSomethingToSay = ray && travelerHasStoryToTell(ray);
       if (hasSomethingToSay) {
         story.open("ray", at);
         return;
@@ -2656,12 +2607,29 @@ export function StackAcresFarm() {
   /**
    * A finger landed on one of the eleven story travelers. `at` is already
    * the point over their head (the scene computed it), not the finger --
-   * see stackacres-scene.ts's `travelerHeadPoint`. Nothing here calls the
-   * server; `story.open` only decides which node to show, and only a
-   * committing button inside the bubble ever reaches `storySubmit` below.
+   * see stackacres-scene.ts's `travelerHeadPoint`. `story.open` only decides
+   * which node to show; nothing here calls the server unless the fallback
+   * below fires, and only a committing button inside the bubble ever
+   * reaches `storySubmit`.
+   *
+   * Pierre and Ivy carry the same two-layer interaction Ray does
+   * (`onWorldRayTap`'s own header): story first when they have something to
+   * say, the greet/gift dialogue otherwise. Before this, once their quest
+   * line finished a tap only ever opened the same static "nothing new" story
+   * bubble forever -- see lib/stackacres/friendship.ts's own header for why
+   * they, and not the other eight travelers, are in FRIENDSHIP_NPCS.
    */
   const onWorldTravelerTap = useCallback(
     (traveler: TravelerId, at: TapPoint) => {
+      const lines = TRAVELER_GIFT_LINES[traveler];
+      if (lines) {
+        const view = story.view?.travelers[traveler];
+        const hasSomethingToSay = view && view.unlocked && !view.done && (!view.met || view.ready);
+        if (!hasSomethingToSay && view?.unlocked) {
+          setGiftDialogue({ npc: traveler as NpcId, phase: "greeting", at, line: lines[Math.floor(Math.random() * lines.length)] });
+          return;
+        }
+      }
       story.open(traveler, at);
     },
     [story],
@@ -2672,6 +2640,51 @@ export function StackAcresFarm() {
     panelSound();
     setShowHouse(true);
   }, []);
+
+  /** The bed: by night it offers sleep, by day it says when you can. */
+  const onWorldBedTap = useCallback(
+    (at: TapPoint) => {
+      if (!canSleepAt(gameHourNow())) {
+        refusedSound();
+        setError(NOT_SLEEPY);
+        return;
+      }
+      panelSound();
+      setSleepDialog(at);
+    },
+    [gameHourNow],
+  );
+
+  /**
+   * Sleep: the clock jumps to 6 AM here while the view is dark, then the
+   * server is asked. A refusal puts the old offset back, and `act` shows why.
+   * No toast on success: waking up to morning light is the answer.
+   */
+  const onSleep = useCallback(() => {
+    setSleepDialog(null);
+    const whileDark = async () => {
+      const from = clockRef.current.offsetMs;
+      sleepingFrom.current = from;
+      clockRef.current = {
+        ...clockRef.current,
+        offsetMs: offsetAfterSleep(Date.now() + clockRef.current.skewMs, from),
+      };
+      setClockHour(gameHourNow());
+      try {
+        const result = await act({ action: "sleep" });
+        if (!result.ok) {
+          clockRef.current = { ...clockRef.current, offsetMs: from };
+          setClockHour(gameHourNow());
+          // Another device may have slept already; read the farm's real clock.
+          window.setTimeout(() => void refresh(), 0);
+        }
+      } finally {
+        sleepingFrom.current = null;
+      }
+    };
+    if (world.current) void world.current.sleep(whileDark);
+    else void whileDark();
+  }, [act, gameHourNow, refresh]);
 
   /** The Eat tab in the player's house (./stackacres-kitchen.tsx). */
   const onEat = useCallback((item: FoodItem) => act({ action: "eat", item }), [act]);
@@ -2735,21 +2748,16 @@ export function StackAcresFarm() {
     [act],
   );
 
-  const onCollect = useCallback(
-    (unit: StackAcresUnitSnapshot) => {
-      // Silent on the press on purpose: the collection announces itself when
-      // it lands (in `act`), with the voice of the animal that actually paid
-      // out. A chrome click in front of that is one sound too many, and it is
-      // the app's click rather than the farm's.
-      //
-      // Batched: this row sits in a list of rows, so it gets pressed down the
-      // list faster than one round trip. Before, the second press was refused
-      // as a duplicate of the first (every `collect` shares one intent) and
-      // did nothing at all.
-      tapBatched("collect", unit.id);
+  /** The only path that ever sends `greet-npc`. Same "no optimistic guess"
+   *  posture `onGiveGift` above takes -- a keepsake only ever shows once the
+   *  server confirms it. */
+  const onGreetNpc = useCallback(
+    (npc: NpcId) => {
+      void act({ action: "greet-npc", npc });
     },
-    [tapBatched],
+    [act],
   );
+
   /**
    * Bring in everything that is ready, in one act. This is the only control
    * that can earn a Bountiful Harvest: the synergy is a property of what was
@@ -2762,61 +2770,6 @@ export function StackAcresFarm() {
     void act({ action: "collect" });
   }, [act]);
 
-  // Feed/water/clear used to tend the tapped unit locally here, ahead of the
-  // network, via a dedicated `tendLocally`. That is now `act`'s own job --
-  // `predictStackAcresAction` runs the identical `optimisticallyFedUnit`/
-  // `optimisticallyWateredUnit` math the instant the request is sent, so a
-  // second local tend here would double-apply it. These handlers now only
-  // supply the press's own sound.
-  const onFeed = useCallback(
-    (unit: StackAcresUnitSnapshot) => {
-      feedSound(unit.stock);
-      const zone = stockZone(unit.stock);
-      // Feeding is per pen now, so the side panel's Feed feeds the whole pen.
-      if (PEN_ZONE_IDS.includes(zone)) void act({ action: "feed-pen", zone });
-      else void act({ action: "feed", unitId: unit.id });
-    },
-    [act],
-  );
-  const onWater = useCallback(
-    (unit: StackAcresUnitSnapshot) => {
-      if (water < 1) {
-        refusedSound();
-        setError("Your watering can is empty. Fill it at the well.");
-        return;
-      }
-      waterSound();
-      // Batched, same as `onCollect` above: a row in a list of rows. The can
-      // itself is still checked per press, and the server clamps a batch to
-      // whatever water is actually left (`predictStackAcresAction` does the
-      // same locally), exactly as a group drop already does.
-      tapBatched("water", unit.id);
-    },
-    [tapBatched, water],
-  );
-  const onClear = useCallback(
-    (unit: StackAcresUnitSnapshot) => {
-      muckSound();
-      void act({ action: "clear", unitId: unit.id });
-    },
-    [act],
-  );
-  const onArmRetire = useCallback((unit: StackAcresUnitSnapshot) => {
-    panelSound();
-    setRetiringUnitId(unit.id);
-  }, []);
-  const onCancelRetire = useCallback(() => {
-    panelSound();
-    setRetiringUnitId(null);
-  }, []);
-  const onConfirmRetire = useCallback(
-    (unit: StackAcresUnitSnapshot) => {
-      retireSound();
-      setRetiringUnitId(null);
-      void act({ action: "retire", unitId: unit.id });
-    },
-    [act],
-  );
 
   const onSeed = useCallback(
     (stock: StackAcresStock) => {
@@ -2840,29 +2793,6 @@ export function StackAcresFarm() {
     [act],
   );
 
-  /** The backpack's three uses for a held secret item -- see the "Hidden
-   *  secrets" panel section below. */
-  const onDonateSecretItem = useCallback(
-    (itemId: SecretItemId) => {
-      panelSound();
-      void act({ action: "donate-secret-item", itemId });
-    },
-    [act],
-  );
-  const onConsumeSecretItem = useCallback(
-    (itemId: SecretItemId) => {
-      goldSound();
-      void act({ action: "consume-secret-item", itemId });
-    },
-    [act],
-  );
-  const onTradeSecretItem = useCallback(
-    (itemId: SecretItemId) => {
-      buySound();
-      void act({ action: "trade-secret-item", itemId });
-    },
-    [act],
-  );
 
   const travel = useCallback(
     (zone: ZoneId) => {
@@ -2881,42 +2811,38 @@ export function StackAcresFarm() {
   const travelToPlace = useCallback(
     (id: MapPlaceId) => {
       setShowMap(false);
-      if (id === "cropfields") {
+      // The Crop Fields are not a place with a gate on it any more -- they
+      // are overgrown ground the player walks straight onto and breaks
+      // himself (see stackacres-service.ts's `placeStackAcresSoilTile`), so
+      // this only aims the camera at them.
+      if (id === "cropfields" || id === "city" || id === "farfield") {
         travelSound();
-        world.current?.focusZone("cropfields");
-        setCropFieldsModalOpen(!cropFieldsUnlocked);
+        world.current?.focusZone(id);
         return;
       }
       travel(id);
     },
-    [travel, cropFieldsUnlocked],
+    [travel],
   );
 
   /** The map button: the farmer's own place is read off the scene here, on the
    *  press, since React has no way to observe him walking. */
   const openMap = useCallback(() => {
-    panelSound();
+    mapSound();
     setMapHere(world.current?.currentPlace() ?? "farmstead");
     setShowMap(true);
   }, []);
 
-  /** Every place, in map order, with whose gate is shut and what opens it. */
+  /** Every place, in map order: the City, the Homestead, the Far Field and the Homestead's Crop Fields.
+   *  All are always open, so this never has a locked label to show. */
   const mapPlaces = useMemo(
     () =>
       mapPlaceStates(
-      mapHere,
-      (id) => (id === "cropfields" ? cropFieldsUnlocked : isSectorUnlocked(id, sectors)),
-      (id) => {
-        if (id === "cropfields") {
-          return `Unlock for ${CROP_FIELDS_UNLOCK_COST_GOLD.toLocaleString()} Gold`;
-        }
-        const traveler = WILD_AREA_TRAVELER[id];
-        if (traveler) return `Opens when ${TRAVELER_CATALOGUE[traveler].name} arrives`;
-        const check = sectorClearCheck(id, { unlocked: sectors, unitCount: units.length });
-        return `Clear for ${check.cost.toLocaleString()} Gold`;
-      },
-    ),
-    [mapHere, cropFieldsUnlocked, sectors, units.length],
+        mapHere,
+        () => true,
+        () => null,
+      ),
+    [mapHere],
   );
 
   // The view moving under whatever is pinned to it closes both screen-
@@ -2925,17 +2851,70 @@ export function StackAcresFarm() {
   // Where the farmer just arrived, for a moment. The counter keys the tag, so going through two doors quickly
   // replays it rather than leaving the first one fading.
   const [placeTag, setPlaceTag] = useState<{ name: string; n: number } | null>(null);
-  const onPlaceEntered = useCallback((name: string) => setPlaceTag((was) => ({ name, n: (was?.n ?? 0) + 1 })), []);
+  /**
+   * Whether the farmer is standing on the empire district, so its own
+   * resource HUD (Gold/Wood/Wheat/Workers, top-left) can stay up rather than
+   * fading like `placeTag` -- unlike that banner, this has to persist for as
+   * long as the player is there. Keyed off the same display name the scene
+   * hands `onPlaceEntered` (scene.ts's AREA_NAMES.empire, "The Far Field")
+   * rather than a shared import, since scene.ts pulls in Phaser and this file
+   * must not force that into the shell's own bundle.
+   */
+  const [onEmpireMap, setOnEmpireMap] = useState(false);
+  /** The same for the grocery, whose Arrange key and desk are only there. */
+  const [onGroceryMap, setOnGroceryMap] = useState(false);
+  /** The farmer is out on the Homestead itself (not a room, the City or the Far Field): where the herd is set down. */
+  const [onHomesteadMap, setOnHomesteadMap] = useState(true);
+  const onPlaceEntered = useCallback((name: string) => {
+    setPlaceTag((was) => ({ name, n: (was?.n ?? 0) + 1 }));
+    setOnHomesteadMap(name === "The Homestead");
+    setOnEmpireMap(name === "The Far Field");
+    setOnGroceryMap(name === "The Grocery");
+    if (name !== "The Grocery") setDesk(null);
+  }, []);
   useEffect(() => {
     if (!placeTag) return;
     const timer = window.setTimeout(() => setPlaceTag(null), 1900);
     return () => window.clearTimeout(timer);
   }, [placeTag]);
 
+  const farmerTile = useCallback(() => world.current?.farmerTile() ?? null, []);
+  const build = useEmpireBuild({
+    active: onEmpireMap,
+    empire,
+    gold: profile?.goldBalance ?? 0,
+    unlimitedGold: profile?.unlimitedGold ?? false,
+    act,
+    farmerTile,
+  });
+  const herdPlace = useHerdPlace({ active: onHomesteadMap, units: liveUnits, act });
+  const arrange = useGroceryArrange({
+    active: onGroceryMap && grocery?.owned === true,
+    grocery,
+    gold: profile?.goldBalance ?? 0,
+    unlimitedGold: profile?.unlimitedGold ?? false,
+    act,
+    farmerTile,
+  });
+  // What the grocery room draws and who works in it: the owner's, or the store as it was built.
+  const groceryLayout = arrange.layout;
+  const groceryStaff = grocery?.owned ? grocery.staff : null;
+  const groceryScene = useMemo<GroceryScene | null>(
+    () => (groceryLayout && groceryStaff ? { layout: groceryLayout, staff: groceryStaff } : null),
+    [groceryLayout, groceryStaff],
+  );
+  const onJobBoardTap = useCallback(() => setDesk({ tab: "hiring", focus: null }), []);
+  const onStoreDeskTap = useCallback(() => setDesk({ tab: "till", focus: null }), []);
+  const onStaffTap = useCallback((name: string) => setDesk({ tab: "staff", focus: name }), []);
+  const onDeskArrange = useCallback(() => {
+    setDesk(null);
+    arrange.openTray();
+  }, [arrange]);
+
   const onViewMoved = useCallback(() => {
     setMonkDialogue(null);
-    setChopPopup(null);
     setGiftDialogue(null);
+    setSleepDialog(null);
     story.close();
   }, [story]);
 
@@ -2948,19 +2927,17 @@ export function StackAcresFarm() {
    * all) and why this goes exactly one generation deep.
    *
    * Called ONLY from onWorldUnitTap's own collect branch, and only after
-   * that branch's own `act(...)` call has fully settled -- reading
-   * `lastHarvestRef` any earlier would race `act`'s `inFlight` guard, since
-   * every `collect` action collapses to the same intent string regardless of
-   * which units it names. `originUnitId`/`originStock` are the just-tapped
-   * unit as it stood BEFORE the harvest, handed in by the caller's own
-   * closure rather than re-read here: a consumed, non-permanent crop is gone
-   * from `units` the instant it settles, so there would be nothing left in
-   * state to look its stock up from afterward.
+   * that branch's own `act(...)` call has fully settled. `originUnitId`/
+   * `originStock` are the just-tapped unit as it stood BEFORE the harvest,
+   * handed in by the caller's own closure rather than re-read here: a
+   * consumed, non-permanent crop is gone from `units` the instant it
+   * settles, so there would be nothing left in state to look its stock up
+   * from afterward.
    */
   const triggerCascade = useCallback(
     async (originUnitId: string, originStock: StackAcresStock) => {
-      const result = lastHarvestRef.current;
-      lastHarvestRef.current = null;
+      const result = lastHarvests.current.get(originUnitId);
+      lastHarvests.current.delete(originUnitId);
       if (!result || !result.crit) return;
       const targets = findCascadeTargets(
         result.units,
@@ -2983,8 +2960,7 @@ export function StackAcresFarm() {
    * A finger landed on a unit's own picture. It pops immediately -- before
    * anything has been sent, which is the whole point: the farm answers the
    * touch, and the network answers a moment later. What happens next is
-   * `tapActionFor`'s call, off the same `unitRowAction` the sidebar's rows
-   * read, so the map and the list can never disagree.
+   * `tapActionFor`'s call, off `unitRowAction`.
    *
    * A refusal never leaves the browser. There is no room on a canvas for a
    * disabled button with a title attribute explaining itself, so the reason
@@ -3151,13 +3127,18 @@ export function StackAcresFarm() {
    * the map through `endFishingCast` so the farmer acts it out -- the gauge is
    * its own Phaser scene and cannot reach him itself.
    *
-   * The species here is DIFFICULTY ONLY, rolled locally to pick how hard the
-   * fight is; the fish this cast actually lands is the server's roll inside
-   * `catch-fish`, so the gauge's copy stays species-free and the response's
-   * toast is what names the catch.
+   * The species here is DIFFICULTY ONLY, rolled locally from the odds the
+   * cast's own distance gives, to pick how hard the fight is; the fish this
+   * cast actually lands is the server's roll inside `catch-fish`, so the
+   * gauge's copy stays species-free.
+   *
+   * A landed fish is shown once both the answer is in and the gauge has
+   * closed, the way Stardew waits for its fishing bar to go before the fish
+   * comes out of the water: it jumps into the farmer's hands and he holds it
+   * up with "+1 Trout" over it (`revealCatch`).
    */
   const onWorldFishHooked = useCallback(
-    (at: TapPoint) => {
+    (at: TapPoint, castPower: number) => {
       tapAnchor.current = at;
       // Checked before the fight, so a tired player is never made to land a
       // fish the server would refuse. The server checks again on `catch-fish`.
@@ -3168,14 +3149,16 @@ export function StackAcresFarm() {
         return;
       }
       panelSound();
+      let landing: Promise<unknown> | null = null;
       world.current?.startFishingGauge({
-        species: rollGaugeDifficulty(),
+        species: rollGaugeDifficulty(castTier(castPower)),
         title: "Something's on the line!",
         landedHint: "Reeling it in...",
         onLanded: () => {
           world.current?.endFishingCast("landed");
+          landedFish.current = null;
           // Read at the moment of landing so a toggle flipped mid-fight counts.
-          void act({ action: "catch-fish", bait: baitOnHook.current });
+          landing = act({ action: "catch-fish", bait: baitOnHook.current, cast: castPower });
         },
         onEscaped: () => {
           world.current?.endFishingCast("escaped");
@@ -3183,11 +3166,30 @@ export function StackAcresFarm() {
           // bobber, where the player was already looking.
           world.current?.floatAt(at, "It got away.", "deny");
         },
-        // A no-op after either outcome above, and the thing that saves the
-        // player from a farmer stuck mid-fight when there was no gauge to
-        // fight on: `startFishingGauge` answers a missing map with `onClosed`
-        // alone, and the cast is still holding input at that point.
-        onClosed: () => world.current?.endFishingCast("escaped"),
+        // After a landed fight, the reveal. Otherwise a no-op after the
+        // escape above, and the thing that saves the player from a farmer
+        // stuck mid-fight when there was no gauge to fight on:
+        // `startFishingGauge` answers a missing map with `onClosed` alone,
+        // and the cast is still holding input at that point.
+        onClosed: () => {
+          if (!landing) {
+            world.current?.endFishingCast("escaped");
+            return;
+          }
+          // `act` never rejects. A refusal or a lost connection leaves no
+          // fish, and the line comes in empty.
+          void landing.then(() => {
+            const species = landedFish.current;
+            landedFish.current = null;
+            if (!mounted.current) return;
+            if (!species) {
+              world.current?.revealCatch(null);
+              return;
+            }
+            setLastCollect({ text: `Caught ${machineItemLabel(species, 1)}!`, nonce: Date.now() });
+            world.current?.revealCatch({ species, noun: machineItemNoun(species, 1) });
+          });
+        },
       });
     },
     [act, energy],
@@ -3230,6 +3232,8 @@ export function StackAcresFarm() {
     (unitId: string) => {
       // Six slots side by side in one panel: the same press-down-the-list
       // burst `onCollect` batches for, for the same reason.
+      const unit = unitsRef.current.find((candidate) => candidate.id === unitId);
+      if (unit) collectSound(unit.stock);
       tapBatched("collect", unitId);
     },
     [tapBatched],
@@ -3253,6 +3257,21 @@ export function StackAcresFarm() {
   );
 
   /**
+   * A finger landed on one of a quest's own named spots. Unlike a hidden
+   * zone there is nothing to discover here, so there is no local puff or
+   * `discovery` response to layer on -- the server's own `story` slice in
+   * the response is all that moves.
+   */
+  const onWorldQuestPlaceTap = useCallback(
+    (placeId: QuestPlaceId, at: TapPoint) => {
+      tapAnchor.current = at;
+      if (inFlight.current.has("reach-quest-place")) return;
+      void act({ action: "reach-quest-place", placeId });
+    },
+    [act],
+  );
+
+  /**
    * A finger landed on land nobody has cleared. There is nothing standing
    * there to act on, so this is a question rather than an action: what is
    * under the growth, what it costs, and what is still in the way.
@@ -3262,19 +3281,6 @@ export function StackAcresFarm() {
    * you already understand, and this is a permanent purchase with conditions
    * on it. It is worth stopping for.
    */
-  const onWorldLockedTap = useCallback((zone: ZoneId) => {
-    panelSound();
-    setPlace(zone);
-    setClearing(zone);
-  }, []);
-
-  /** `onWorldLockedTap`'s own twin for the Crop Fields -- see
-   *  StackAcresCropFieldsModal's own header. */
-  const onWorldCropFieldsLockedTap = useCallback(() => {
-    panelSound();
-    setCropFieldsModalOpen(true);
-  }, []);
-
   /**
    * The town board's two actions, handed down as promises rather than as
    * fire-and-forget calls: the sheet debits its own shelf before either goes
@@ -3288,6 +3294,11 @@ export function StackAcresFarm() {
 
   const onRequestContract = useCallback(
     () => act({ action: "request-contract" }),
+    [act],
+  );
+
+  const onPassContract = useCallback(
+    () => act({ action: "pass-contract" }),
     [act],
   );
 
@@ -3327,6 +3338,13 @@ export function StackAcresFarm() {
     [workshopAct],
   );
   const onWork = useCallback(() => workshopAct({ action: "work" }), [workshopAct]);
+  const onUpgradeAxe = useCallback(
+    (pay: AxePayment) => {
+      buySound();
+      return workshopAct({ action: "upgrade-axe", pay });
+    },
+    [workshopAct],
+  );
   const onSell = useCallback(
     (item: MachineItemId, quantity: number) => {
       sellSound();
@@ -3419,21 +3437,6 @@ export function StackAcresFarm() {
     [act],
   );
 
-  const onClearSector = useCallback(
-    (sector: SectorId) => {
-      buySound();
-      setClearing(null);
-      void act({ action: "clear-sector", sector });
-    },
-    [act],
-  );
-
-  const onUnlockCropFields = useCallback(() => {
-    buySound();
-    setCropFieldsModalOpen(false);
-    void act({ action: "unlock-crop-fields" });
-  }, [act]);
-
   /**
    * Tilling a bed straight out of the radial ring, or dragged across N tiles
    * by the soil brush -- see optimistic-actions.ts's `place-soil-tile` case.
@@ -3443,13 +3446,9 @@ export function StackAcresFarm() {
    * of that, not a stand-in for a picture that has not arrived yet.
    */
   const onPlaceSoilTile = useCallback(
-    (tx: number, ty: number, tier: SoilTier = SOIL_DEFAULT_TIER) => {
-      buySound();
-      setLastCollect({ text: "Staking out the bed…", nonce: Date.now() });
-      // The tier names WHICH bed; the server reads its price from
-      // SOIL_TIER_DEFS, so nothing here has to send (or can lie about) a cost.
+    (tx: number, ty: number) => {
       const key = `${tx},${ty}`;
-      const request = act({ action: "place-soil-tile", tx, ty, tier });
+      const request = act({ action: "place-soil-tile", tx, ty });
       // Held only until this exact request settles -- see
       // `pendingSoilPlacements`'s own header -- so `onRadialSeed` can wait
       // out a till it just fired before planting the same bed.
@@ -3468,7 +3467,6 @@ export function StackAcresFarm() {
   const onRemoveSoilTile = useCallback(
     (tx: number, ty: number) => {
       buySound();
-      setLastCollect({ text: "Clearing the bed…", nonce: Date.now() });
       void act({ action: "remove-soil-tile", tx, ty });
     },
     [act],
@@ -3571,6 +3569,7 @@ export function StackAcresFarm() {
           armed: Boolean(
             square.tile && armedLift && armedLift.tx === square.tile.tx && armedLift.ty === square.tile.ty,
           ),
+          fenced: square.tile ? fencedSquares.has(soilSquareFenceKey(square.tile)) : false,
         },
         {
           water,
@@ -3578,17 +3577,18 @@ export function StackAcresFarm() {
           shelfFeed: processing.inventory,
           gold,
           nowMs,
-          soilStock,
-          tier: BELT_DEFAULT_TIER,
           seed,
           seedsHeld: seed ? seedStock[seed] ?? 0 : 0,
+          wood: processing.inventory.wood ?? 0,
         },
       );
       // Anything that is not the second half of a lift disarms it, so an armed
       // bed never sits waiting through a walk across the farm.
-      if (action.kind !== "arm-lift" && action.kind !== "lift" && armedLift) setArmedLift(null);
+      if (action.kind !== "arm-lift" && action.kind !== "lift" && action.kind !== "arm-unfence" && action.kind !== "unfence" && armedLift) {
+        setArmedLift(null);
+      }
       if (action.kind === "idle") return;
-      if (action.kind === "arm-lift") {
+      if (action.kind === "arm-lift" || action.kind === "arm-unfence") {
         if (square.stroke) return;
         setArmedLift({ tx: action.tx, ty: action.ty });
         world.current?.floatAt(square.at, action.reason, "deny");
@@ -3612,19 +3612,25 @@ export function StackAcresFarm() {
       const voice = !square.stroke || sowRun.current === null;
       switch (action.kind) {
         case "water":
-          if (voice) waterSound();
+          // The splash is the scene's, on the frame the can tips (farmerAction above).
           // `tapBatched` sends the first press straight away and folds anything
           // within the window behind it into one plural request, so a lone crop
           // never pays for a batch it is not part of.
           tapBatched("water", action.unitId);
           return;
         case "collect": {
+          // Already on its way: a second pull would play for nothing.
+          if (unitsBeingCollected(inFlight.current).has(action.unitId)) return;
           const picked = liveUnits.find((candidate) => candidate.id === action.unitId);
+          if (picked) collectSound(picked.stock);
+          world.current?.pullCrop(action.unitId);
           // NOT batched, even mid-stroke: the Critical Harvest Cascade chains off
           // THIS request's own settled result, and a batched send has no promise
-          // to hand back to the press that joined it.
+          // to hand back to the press that joined it. Its own intent names this
+          // crop, so a harvest already in the air never blocks it.
           void act({ action: "collect", unitIds: [action.unitId] }).then((result) => {
             if (result.ok && picked) void triggerCascade(action.unitId, picked.stock);
+            else lastHarvests.current.delete(action.unitId);
           });
           return;
         }
@@ -3643,7 +3649,9 @@ export function StackAcresFarm() {
           void act({ action: "clear", unitId: action.unitId });
           return;
         case "till":
-          onPlaceSoilTile(action.tx, action.ty, action.tier);
+          // On the blade's strike, the same beat the scene drops the clod on.
+          if (voice) window.setTimeout(hoeSound, HOE_STRIKE_MS);
+          onPlaceSoilTile(action.tx, action.ty);
           return;
         case "lift":
           setArmedLift(null);
@@ -3657,26 +3665,31 @@ export function StackAcresFarm() {
           }
           onSowTile(action.tx, action.ty, action.stock);
           return;
+        case "fence": {
+          if (voice) buySound();
+          const { mx, my } = soilToMapTile(action.tx, action.ty);
+          void act({ action: "place-fence", tx: mx, ty: my });
+          return;
+        }
+        case "unfence": {
+          setArmedLift(null);
+          const { mx, my } = soilToMapTile(action.tx, action.ty);
+          void act({ action: "remove-fence", tx: mx, ty: my });
+          return;
+        }
       }
     },
-    [act, belt, feed, gold, liveUnits, nowMs, processing.inventory, onPlaceSoilTile, onSowTile, feedPen, seed, seedStock, onRemoveSoilTile, armedLift, queueSow, tapBatched, soilMapForTiles, soilStock, triggerCascade, water],
+    [act, fencedSquares, belt, feed, gold, liveUnits, nowMs, processing.inventory, onPlaceSoilTile, onSowTile, feedPen, seed, seedStock, onRemoveSoilTile, armedLift, queueSow, tapBatched, soilMapForTiles, triggerCascade, water],
   );
 
   const onMoveSoilTileGroup = useCallback(
     (tx: number, ty: number, toTx: number, toTy: number) => {
       buySound();
-      setLastCollect({ text: "Shifting the bed…", nonce: Date.now() });
       void act({ action: "move-soil-tile-group", tx, ty, toTx, toTy });
     },
     [act],
   );
 
-  /** The ring's own way through to the deep end -- Manage on the radial menu
-   *  is the only door into the drawer now. */
-  const openPanel = useCallback(() => {
-    panelSound();
-    setPanelOpen(true);
-  }, []);
 
   const districtUnits = useMemo(
     () => liveUnits.filter((unit) => stockZone(unit.stock) === place),
@@ -3685,18 +3698,21 @@ export function StackAcresFarm() {
 
   /**
    * The soundscape follows the player: which district they travelled to, and
-   * what hour it is. `timeOfDay` is the music's own, so the two layers can
-   * never disagree about whether it is night.
+   * what hour the farm clock says. `timeOfDay` is the music's own, so the two
+   * layers can never disagree about whether it is night.
    *
-   * Re-read on a slow interval rather than derived from `nowMs`: that clock
+   * Re-read on its own interval rather than derived from `nowMs`: that clock
    * only ticks while something is growing, so a farm sitting idle across 6pm
    * would keep its daylight birds until the player did something.
    */
-  const [tod, setTod] = useState(() => timeOfDay());
+  // The first read is before any snapshot, so it is the shared clock; the
+  // interval below picks up this farm's own offset.
+  const [tod, setTod] = useState(() => timeOfDay(gameHourAt(Date.now(), 0)));
   useEffect(() => {
-    const timer = window.setInterval(() => setTod(timeOfDay()), 60_000);
+    // A game day is 13 minutes, so the soundscape looks every 5 seconds.
+    const timer = window.setInterval(() => setTod(timeOfDay(gameHourNow())), 5_000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [gameHourNow]);
   useEffect(() => {
     setAmbiencePlace(tod);
   }, [tod]);
@@ -3741,10 +3757,51 @@ export function StackAcresFarm() {
     () => ({ sectors, influence, greenhouseBuilt, cropFieldsUnlocked }),
     [sectors, influence, greenhouseBuilt, cropFieldsUnlocked],
   );
-  const buyOptions: BuyOption[] = useMemo(
-    () => buyOptionsForZone(place, { units: liveUnits, gold, capacity }),
-    [place, liveUnits, gold, capacity],
+
+  /**
+   * The Journal (lib/stackacres/journal.ts): the chip's line and the sheet
+   * behind it, both off one derivation so they cannot say different things.
+   *
+   * It reads `liveUnits` rather than `units`, so a crop the optimistic layer
+   * has already moved off dry is off the "gone dry" line at the same instant
+   * the bed on screen darkens. Nothing here is fetched and nothing is stored.
+   */
+  const journal = useMemo(
+    () =>
+      journalView({
+        gold,
+        inventory: processing.inventory,
+        built: builtKinds,
+        units: liveUnits,
+        contract: processing.contract,
+        vat,
+        cellar,
+        story: storyView,
+        progress: shopProgress,
+        machines: processing.machines,
+        woodNodes,
+        stoneNodes,
+        forageNodes,
+        nowMs,
+      }),
+    [
+      gold,
+      processing.inventory,
+      processing.contract,
+      processing.machines,
+      builtKinds,
+      liveUnits,
+      vat,
+      cellar,
+      storyView,
+      shopProgress,
+      woodNodes,
+      stoneNodes,
+      forageNodes,
+      nowMs,
+    ],
   );
+
 
   /** The Supply Store's Livestock shelf: every livestock kind whose own
    *  district is unlocked, not just whichever one `place` happens to be --
@@ -3756,10 +3813,14 @@ export function StackAcresFarm() {
    *  clearing sheet. */
   const livestockBuyOptions: BuyOption[] = useMemo(
     () =>
+      // Sheep and cattle are set down wherever the player likes (lib/stackacres/herd.ts),
+      // so their old districts no longer gate them.
       Array.from(new Set(STACKACRES_LIVESTOCK.map(stockZone)))
-        .filter((zone) => isSectorUnlocked(zone, sectors))
-        .flatMap((zone) => buyOptionsForZone(zone, { units: liveUnits, gold, capacity })),
-    [sectors, liveUnits, gold, capacity],
+        .filter((zone) => isSectorUnlocked(zone, sectors) || stocksInZone(zone).some(isHerdStock))
+        .flatMap((zone) =>
+          buyOptionsForZone(zone, { units: liveUnits, gold, capacity, inventory: processing.inventory }),
+        ),
+    [sectors, liveUnits, gold, capacity, processing.inventory],
   );
   const lockedPens = useMemo(() => lockedLivestock(sectors), [sectors]);
 
@@ -3786,9 +3847,6 @@ export function StackAcresFarm() {
     [liveUnits],
   );
   const carrying = readyUnits.length;
-  // The Workshop's "something is ready" dot lived on the deleted places list
-  // (`workshopAttention`, lib/stackacres/workshop.ts). If it comes back, it
-  // belongs on the windmill sprite as a glow.
 
   /**
    * A finger landed on the brush at the Ancestral Oak. From here it is a
@@ -3805,6 +3863,13 @@ export function StackAcresFarm() {
   const onWorldThicketTap = useCallback(
     (at: TapPoint) => {
       tapAnchor.current = at;
+      // Checked before the stalk, so a tired player is never made to finish
+      // one the server would refuse. The server checks again on `bag-quarry`.
+      if (energyAt(energy, new Date()) < HUNTING_STALK_ENERGY) {
+        refusedSound();
+        world.current?.floatAt(at, TOO_TIRED_TO_HUNT, "deny");
+        return;
+      }
       world.current?.startHuntScope({
         species: rollQuarryDifficulty(),
         weapon: bestWeapon(shopProgress),
@@ -3820,44 +3885,71 @@ export function StackAcresFarm() {
         },
       });
     },
-    [act, shopProgress],
+    [act, energy, shopProgress],
+  );
+
+  /** Checked before he swings the axe or clears land, so a tired farmer is
+   *  told so instead of swinging at nothing. The server checks again. */
+  const onWorldMaySwing = useCallback(
+    (at: TapPoint) => {
+      if (energyAt(energy, new Date()) >= AXE_SWING_ENERGY) return true;
+      refusedSound();
+      world.current?.floatAt(at, TOO_TIRED_TO_CHOP, "deny");
+      return false;
+    },
+    [energy],
   );
 
   /**
-   * A finger landed on one of the Homestead's own trees. Opens the chop
-   * popup on whichever node the map named -- its live ready/hits/respawn
-   * state comes off `woodNodes`, read fresh on every render, so a tree
-   * felled a moment ago by this same player (or, once this ships past one
-   * browser, a stale local read) always shows the truth rather than
-   * whatever it looked like the instant the popup opened.
+   * The farmer has walked up to one of the Homestead's own trees and is
+   * already swinging (the scene plays the swing, and refuses the tap itself
+   * when the tree is still a stump). One tap is one swing.
    */
-  const onWorldTreeTap = useCallback((nodeId: string, at: TapPoint) => {
-    setChopPopup({ nodeId, at });
-  }, []);
-
-  /** The only path that ever sends `chop-tree`. `sweet` is the popup's own
-   *  local verdict on the swing's timing (lib/stackacres/chop.ts) -- it
-   *  never decides whether the swing lands, only how much Wood it pays. */
-  const onChopSwing = useCallback(
-    (nodeId: string, sweet: boolean) => {
-      void act({ action: "chop-tree", nodeId, sweet });
+  const onWorldTreeTap = useCallback(
+    (nodeId: string, at: TapPoint) => {
+      tapAnchor.current = at;
+      void act({ action: "chop-tree", nodeId });
     },
     [act],
   );
 
-  /** A finger landed on one of the Mine's own boulders. Same split as
-   *  `onWorldTreeTap` -- opens the shared swing popup in mine mode on
-   *  whichever node the map named. */
-  const onWorldStoneTap = useCallback((nodeId: string, at: TapPoint) => {
-    setMinePopup({ nodeId, at });
-  }, []);
+  /**
+   * A finger landed on one of the Homestead's forage bushes.
+   *
+   * Fires the pick straight off, like a swing at a tree, and the optimistic
+   * layer paints the seed before the server answers
+   * (lib/stackacres/optimistic-actions.ts).
+   */
+  const onWorldForageTap = useCallback(
+    (nodeId: string, at: TapPoint) => {
+      const bush = forageNodes.find((node) => node.nodeId === nodeId);
+      // A bare bush says so rather than sending a request the server will
+      // only refuse: the picked-over art is already on screen, so a silent
+      // no-op would read as a dropped tap.
+      if (bush && !bush.ready) {
+        world.current?.floatAt(at, "Picked over", "deny");
+        return;
+      }
+      forageSound();
+      void act({ action: "gather-forage", nodeId });
+    },
+    [act, forageNodes],
+  );
 
-  /** The only path that ever sends `mine-stone`. `sweet` is the popup's own
-   *  local verdict on the swing's timing (lib/stackacres/chop.ts) -- it
-   *  never decides whether the swing lands, only how much Stone it pays. */
-  const onMineSwing = useCallback(
-    (nodeId: string, sweet: boolean) => {
-      void act({ action: "mine-stone", nodeId, quality: sweet ? "sweet" : "hit" });
+  /** A swing at one of the Mine's own boulders. Same split as `onWorldTreeTap`. */
+  const onWorldStoneTap = useCallback(
+    (nodeId: string, at: TapPoint) => {
+      tapAnchor.current = at;
+      void act({ action: "mine-stone", nodeId });
+    },
+    [act],
+  );
+
+  /** A swing at something standing on land being cleared. Same split as `onWorldTreeTap`. */
+  const onWorldLandTap = useCallback(
+    (obstacleId: string, at: TapPoint) => {
+      tapAnchor.current = at;
+      void act({ action: "work-land", obstacleId });
     },
     [act],
   );
@@ -3885,7 +3977,7 @@ export function StackAcresFarm() {
             farmer walking across it once it lands: the picture says it before the words do. */}
         <div className="sa-rotate-ground" aria-hidden="true" />
         <div className="sa-rotate-card" role="status" aria-live="polite">
-          <StackAcresLogo className="sa-rotate-logo" aria-hidden="true" />
+          <StackAcresLogo variant="stacked" className="sa-rotate-logo" alt="" aria-hidden="true" />
           <div className="sa-rotate-stage" aria-hidden="true">
             <span className="sa-rotate-phone">
               <span className="sa-rotate-screen" />
@@ -3915,9 +4007,6 @@ export function StackAcresFarm() {
     );
   }
 
-  const district = STACKACRES_ZONES[place];
-  const placeLocked = !isSectorUnlocked(place, sectors);
-
 
   // Everything in .sa-hud besides Gold and the upkeep-owed pill -- see the
   // header's own comment for why this is one fragment referenced from either
@@ -3925,8 +4014,13 @@ export function StackAcresFarm() {
   // drawer (compactNav), never both.
   const secondaryHud = (
     <>
+      {/* The Journal's own entry point -- moved off the persistent left-hand
+          nav row (it used to be a chip with its own line of text and a
+          progress bar, always on screen) and folded into this same
+          standing-badge row as the Forge and Crossbreeding Bed below it. */}
+      <StackAcresJournalChip view={journal} onOpen={() => { journalSound(); setShowGoals(true); }} />
       <span className="sa-feed" title="Feed servings">
-        <StackAcresIcon name="ico-feed" size={16} />
+        <StackAcresPixelIcon name="sack" />
         <strong>{feed}</strong>
         <span className="sa-sr">feed servings</span>
       </span>
@@ -3934,7 +4028,7 @@ export function StackAcresFarm() {
         className={clsx("sa-feed sa-water", { "is-empty": water < 1 })}
         title="Water in your can. Fill it at the well."
       >
-        <StackAcresIcon name="ico-water" size={16} />
+        <StackAcresPixelIcon name="water" />
         <strong>{water}</strong>
         <span className="sa-sr">of {WATER_CAPACITY} water in your can</span>
       </span>
@@ -3986,15 +4080,71 @@ export function StackAcresFarm() {
           {placeTag.name}
         </div>
       )}
+      {/* The empire district's own persistent resource HUD -- v1 scaffold,
+          docs/stackacres-second-map-direction.md section 6a. Gold is the
+          same shared balance the header pill below shows; Wood/Wheat/Workers
+          are honest zeros (StackAcresResponse's own doc comment) until that
+          map's clearing/hiring economy exists. Only up while actually on
+          that map, top-left, over the canvas like every other pinned panel
+          in .sa-field. */}
+      {onEmpireMap && (
+        <div className="sa-empire-hud" role="status" aria-label="Empire district resources">
+          <span className="sa-empire-stat" title="Gold">
+            <StackAcresPixelIcon name="coin" />
+            <strong>{profile?.unlimitedGold ? "∞" : profile ? profile.goldBalance.toLocaleString() : "—"}</strong>
+          </span>
+          <span className="sa-empire-stat" title="Wood">
+            <StackAcresPixelIcon name="wood" />
+            <strong>{empire.wood.toLocaleString()}</strong>
+          </span>
+          <span className="sa-empire-stat" title="Metal">
+            <StackAcresPixelIcon name="metal" />
+            <strong>{empire.metal.toLocaleString()}</strong>
+          </span>
+          <span className="sa-empire-stat" title="Wheat">
+            <StackAcresPixelIcon name="wheat" />
+            <strong>{empire.wheat.toLocaleString()}</strong>
+          </span>
+          <span className="sa-empire-stat" title="Workers">
+            <StackAcresPixelIcon name="workers" />
+            <strong>{empire.workers.toLocaleString()}</strong>
+          </span>
+        </div>
+      )}
+      {build.controls}
+      {arrange.controls}
+      {herdPlace.controls}
+      {desk && grocery && (
+        <GroceryDesk
+          grocery={grocery}
+          tab={desk.tab}
+          onTab={(tab) => setDesk({ tab, focus: null })}
+          focus={desk.focus}
+          gold={profile?.goldBalance ?? 0}
+          unlimitedGold={profile?.unlimitedGold ?? false}
+          act={act}
+          serverNowMs={serverNowMs}
+          onArrange={onDeskArrange}
+          onClose={() => setDesk(null)}
+        />
+      )}
       <header className="floor-bar">
         <div className="floor-bar-left">
-          <FloorBackLink />
-          <button type="button" className="htp-trigger" onClick={openMap}>
-            <MapPin size={13} aria-hidden="true" /> Map
+          {/* Not the shared FloorBackLink: that one leaves for the StackChips
+              games list, but StackAcres has its own front door now (Play /
+              Profile / Settings / Leave, stackacres-play-screen.tsx) -- this
+              returns there instead of bouncing a player all the way out of
+              the farm. */}
+          <button
+            type="button"
+            className="floor-back"
+            onClick={() => { panelSound(); setHasStarted(false); }}
+          >
+            <StackAcresPixelIcon name="back" /> Back
           </button>
-          {chapterNow && (
-            <StackAcresGoalChip view={chapterNow} onOpen={() => { panelSound(); setShowGoals(true); }} />
-          )}
+          <button type="button" className="htp-trigger" onClick={openMap}>
+            <StackAcresPixelIcon name="map" /> Map
+          </button>
         </div>
         {/* One purse now. The farm's own currency is gone, so the Gold pill
             the rest of the app already shows is the whole story, and it keeps
@@ -4024,16 +4174,17 @@ export function StackAcresFarm() {
               className="sa-upkeep"
               title={`Land maintenance on ${upkeep.plots} plots. Comes out of your next sale, contract or vat batch.`}
             >
-              <StackAcresIcon name="ico-gold" size={16} />
+              <StackAcresPixelIcon name="coin" />
               <strong>-{upkeep.due.toLocaleString()}</strong>
               <span className="sa-sr">Gold of land maintenance due</span>
             </span>
           )}
           <span
             className="sa-energy"
-            title="Energy. Fishing uses it. Eat at your house to fill it up."
+            title="Energy. Fishing, chopping and clearing land use it. Eat at your house to fill it up."
           >
-            <span className="sa-energy-label">Energy</span>
+            <StackAcresPixelIcon name="energy" />
+            <span className="sa-sr">Energy</span>
             <span className="sa-energy-bar" aria-hidden="true">
               <span style={{ width: `${(energyAt(energy, new Date(nowMs)) / ENERGY_MAX) * 100}%` }} />
             </span>
@@ -4047,7 +4198,7 @@ export function StackAcresFarm() {
             </label>
           )}
           <span className="gold-balance floor-wallet" data-tour="sa-gold-balance" title="Gold">
-            <Coins size={13} aria-hidden="true" />
+            <StackAcresPixelIcon name="coin" />
             {/* A profile that never arrived (the paired land/unit fetch threw,
                 so the whole /api/stackacres response was discarded) is "we
                 don't know yet," not "zero" -- this once read as broke for a
@@ -4062,14 +4213,9 @@ export function StackAcresFarm() {
         {/* The world. Everything after it inside .sa-field is chrome pinned
             over the canvas; the canvas itself is the only thing that moves
             when the player drags. */}
-        {/* `data-drawer` is read by 52-stackacres.css so the signpost rail can
-            give up the drawer's column while it is open -- five signs do not
-            fit beside a 320px drawer on a phone, and the one that fell off the
-            end was Ray's, which is the only way into the store. */}
         <div
           ref={fieldRef}
           className="sa-field"
-          data-drawer={panelOpen ? "open" : "shut"}
           data-tour="sa-farm-world"
         >
           {loaded && (
@@ -4077,6 +4223,18 @@ export function StackAcresFarm() {
               units={liveUnits}
               woodNodes={woodNodes}
               stoneNodes={stoneNodes}
+              forageNodes={forageNodes}
+              landObstacles={landObstacles}
+              fences={fences}
+              empireBuildings={build.shown}
+              buildMode={build.buildMode || arrange.buildMode || herdPlace.buildMode}
+              buildGhost={build.ghost}
+              onBuildTap={onGroceryMap ? arrange.onBuildTap : onEmpireMap ? build.onBuildTap : herdPlace.onBuildTap}
+              grocery={groceryScene}
+              groceryGhost={arrange.ghost}
+              onJobBoardTap={onJobBoardTap}
+              onStoreDeskTap={onStoreDeskTap}
+              onStaffTap={onStaffTap}
               onUseSquare={onUseSquare}
               useKeyLabel={BELT_TOOL_DEFS[belt].label}
               tool={tool}
@@ -4094,17 +4252,20 @@ export function StackAcresFarm() {
               onDockTap={onWorldFishHooked}
               onThicketTap={onWorldThicketTap}
               onTreeTap={onWorldTreeTap}
+              maySwing={onWorldMaySwing}
               onStoneTap={onWorldStoneTap}
+              onForageTap={onWorldForageTap}
+              onLandTap={onWorldLandTap}
               onGreenhouseTap={onWorldGreenhouseTap}
               onMonkTap={onWorldMonkTap}
               onRayTap={onWorldRayTap}
               onHouseTap={onWorldHouseTap}
+              onBedTap={onWorldBedTap}
+              clockHour={gameHourNow}
+              clockDay={gameDayNow}
               onTravelerTap={onWorldTravelerTap}
               onSecretZoneTap={onWorldSecretZoneTap}
-              sectors={sectors}
-              cropFieldsUnlocked={cropFieldsUnlocked}
-              onLockedSectorTap={onWorldLockedTap}
-              onCropFieldsLockedTap={onWorldCropFieldsLockedTap}
+              onQuestPlaceTap={onWorldQuestPlaceTap}
               onViewMoved={onViewMoved}
               onPlaceEntered={onPlaceEntered}
               soilTiles={mergedSoilTiles}
@@ -4113,7 +4274,15 @@ export function StackAcresFarm() {
           )}
           {bootPhase !== "hidden" && (
             <div className={clsx("sa-loading", bootPhase === "hiding" && "sa-loading-hiding")}>
-              <StackAcresLogo className="sa-loading-logo" aria-hidden="true" />
+              <StackAcresLogo variant="stacked" className="sa-loading-logo" alt="" aria-hidden="true" />
+              {loadFailed && (
+                <div className="sa-loading-error" role="alert">
+                  <p>The farm didn&apos;t load.</p>
+                  <button type="button" className="sa-cta" onClick={retryLoad}>
+                    Try again
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -4125,6 +4294,14 @@ export function StackAcresFarm() {
               tree, just with no visual footprint to reclaim the space for. */}
           <h1 className="sr-only">StackAcres</h1>
 
+          {/* The farm clock, pinned under the top bar's right end. The bar is
+              already full on a narrow landscape phone, so the clock hangs
+              below it instead of pushing the Gold pill off screen. */}
+          <p className="sa-clock" title="Time on the farm. A day lasts 13 minutes. Sleep in your bed from 6 PM.">
+            {isNightHour(clockHour) ? <Moon size={14} aria-hidden="true" /> : <Sun size={14} aria-hidden="true" />}
+            <strong>{clockLabel(clockHour)}</strong>
+          </p>
+
           {lastCollect && (
             <p key={lastCollect.nonce} className="sa-toast" role="status">
               {lastCollect.text}
@@ -4134,14 +4311,13 @@ export function StackAcresFarm() {
           {/* The tool belt, top left. The places list is gone and so is the old
               tool dock: Shop, Blueprints, Town Board and Workshop are walked up
               to (Ray, the signpost, the windmill), and the ground is worked with
-              whichever slot is held plus the Use key beside the thumb stick. */}
+              whichever slot is held plus the Use key across from the thumb stick. */}
           <StackAcresToolbelt
             held={belt}
             onPick={pickBeltTool}
             seed={seed}
             seedIcon={seed ? STOCK_ICON[seed] : null}
             seedsHeld={seed ? seedStock[seed] ?? 0 : 0}
-            soilHeld={soilStock[BELT_DEFAULT_TIER] ?? 0}
             water={water}
             onOpenSeeds={() => {
               panelSound();
@@ -4160,10 +4336,6 @@ export function StackAcresFarm() {
                 setSeedWheelOpen(false);
               }}
               onClose={() => setSeedWheelOpen(false)}
-              onManage={() => {
-                setSeedWheelOpen(false);
-                openPanel();
-              }}
             />
           )}
 
@@ -4180,47 +4352,9 @@ export function StackAcresFarm() {
             />
           )}
 
-          {/* The chop popup, same screen-anchored treatment as the
-              monk dialogue above. Missing from `woodNodes` only for the
-              instant before the first response lands; a fresh node reads as
-              standing and full-health, so this never needs a loading state. */}
-          {chopPopup && (
-            <StackAcresChopPopup
-              at={chopPopup.at}
-              kind="chop"
-              node={
-                woodNodes.find((node) => node.nodeId === chopPopup.nodeId) ?? {
-                  ready: true,
-                  hitsRemaining: WOOD_HITS_TO_FELL,
-                  respawnProgress: null,
-                }
-              }
-              busy={pendingByPrefix(`chop-tree:${chopPopup.nodeId}`)}
-              onSwing={(sweet) => onChopSwing(chopPopup.nodeId, sweet)}
-              onClose={() => setChopPopup(null)}
-            />
-          )}
-
-          {/* The mine popup, same screen-anchored treatment as the chop
-              popup above -- one component, "mine" kind (see
-              lib/stackacres/chop.ts's own header). Missing from `stoneNodes`
-              only for the instant before the first response lands; a fresh
-              node reads as standing and full-health. */}
-          {minePopup && (
-            <StackAcresChopPopup
-              at={minePopup.at}
-              kind="mine"
-              node={
-                stoneNodes.find((node) => node.nodeId === minePopup.nodeId) ?? {
-                  ready: true,
-                  hitsRemaining: STONE_HITS_TO_BREAK,
-                  respawnProgress: null,
-                }
-              }
-              busy={pendingByPrefix(`mine-stone:${minePopup.nodeId}`)}
-              onSwing={(sweet) => onMineSwing(minePopup.nodeId, sweet)}
-              onClose={() => setMinePopup(null)}
-            />
+          {/* The bed's "Go to sleep?" card, pinned where the bed was tapped. */}
+          {sleepDialog && (
+            <StackAcresSleepDialogue at={sleepDialog} onSleep={onSleep} onClose={() => setSleepDialog(null)} />
           )}
 
           {/* NPC friendship's gift dialogue, same screen-anchored treatment
@@ -4233,8 +4367,9 @@ export function StackAcresFarm() {
               inventory={processing.inventory}
               friendship={friendship[giftDialogue.npc]}
               result={giftDialogue}
-              busy={pendingByPrefix(`give-gift:${giftDialogue.npc}`)}
+              busy={pendingByPrefix(`give-gift:${giftDialogue.npc}`) || pendingByPrefix(`greet-npc:${giftDialogue.npc}`)}
               onGift={(item) => onGiveGift(giftDialogue.npc, item)}
+              onGreet={() => onGreetNpc(giftDialogue.npc)}
               onClose={() => setGiftDialogue(null)}
             />
           )}
@@ -4253,10 +4388,6 @@ export function StackAcresFarm() {
               onClose={story.close}
             />
           )}
-
-          <div className="sa-side">
-            {error && <p className="duel-error" role="alert">{error}</p>}
-          </div>
 
           {/* Bring the whole farm in at once.
               THIS IS THE ONLY CONTROL THAT CAN EARN A SYNERGY, and that is why
@@ -4280,145 +4411,6 @@ export function StackAcresFarm() {
             </button>
           )}
 
-          {/* The district panel: deep management, not the way you play.
-              The fast loop is on the canvas now -- tap a ripe crop to collect
-              it, tap empty ground to seed it -- so this no longer opens itself
-              when a player travels somewhere. Manage on the radial menu is
-              how it comes back, and it holds what a tap has no business
-              doing: Gold spends, and the full standing list. That list is
-              also the keyboard and screen-reader path to every canvas tap,
-              which is why it is still here rather than deleted along with
-              the loop it used to be. */}
-          <aside
-            id="sa-district-panel"
-            className={clsx("sa-district-panel", { "is-open": panelOpen })}
-            data-zone={place}
-            aria-label={`${district.label} panel`}
-            inert={!panelOpen}
-          >
-            <div className="sa-panel-head">
-              <div className="sa-ray-row">
-                <img src="/stackacres/sprites/grandfather-ray-portrait.webp" alt="" className="sa-ray-portrait" />
-                <span className="sa-ray-name">Ray</span>
-              </div>
-              <button
-                type="button"
-                className="sa-panel-close"
-                aria-label="Close panel"
-                onClick={() => { panelSound(); setPanelOpen(false); }}
-              >
-                <X size={20} aria-hidden="true" />
-              </button>
-            </div>
-            <h2 className="sa-district-title">{district.label}</h2>
-            <p className="sa-district-blurb">{district.blurb}</p>
-
-            {/* A small, secondary section -- shown on every district, since a
-                held secret item is not tied to any one of them -- for whatever
-                Hidden secrets has turned up. Hidden entirely while nothing is
-                held, so a player who never finds one never sees an empty
-                backpack taking up room on this panel. */}
-            {SECRET_ITEM_IDS.filter((itemId) => (secrets.held[itemId] ?? 0) > 0).map((itemId) => {
-              const item = SECRET_ITEM_CATALOGUE[itemId];
-              const held = secrets.held[itemId] ?? 0;
-              return (
-                <div className="sa-panel-section" key={itemId}>
-                  <h3 className="sa-group-label">Hidden secrets</h3>
-                  <p className="sa-panel-note">
-                    {item.icon} {held} {held === 1 ? item.label : `${item.label}s`} -- {item.blurb}
-                  </p>
-                  <div className="sa-buy-actions">
-                    <button
-                      type="button"
-                      className="sa-buy-btn"
-                      disabled={isPending(`donate-secret-item:${itemId}`)}
-                      onClick={() => onDonateSecretItem(itemId)}
-                    >
-                      <span className="sa-buy-label">Donate to Ray</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="sa-buy-btn is-gold"
-                      disabled={isPending(`consume-secret-item:${itemId}`) || secrets.boostArmed}
-                      onClick={() => onConsumeSecretItem(itemId)}
-                    >
-                      <span className="sa-buy-label">
-                        {secrets.boostArmed ? "A boost is already armed" : "Consume for a crit boost"}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      className="sa-buy-btn is-expand"
-                      disabled={isPending(`trade-secret-item:${itemId}`)}
-                      onClick={() => onTradeSecretItem(itemId)}
-                    >
-                      <span className="sa-buy-label">Trade to Ray for Land Maintenance</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Wild land has no farm on it to manage, so the drawer offers
-                the one thing that IS available there rather than a buy list
-                for pens that do not exist and a standing list that is always
-                empty. It is the same modal a tap on the trees opens -- there
-                is exactly one way to buy land, reached from two places. */}
-            {placeLocked ? (
-              <div className="sa-panel-section">
-                <h3 className="sa-group-label">Uncleared land</h3>
-                <p className="sa-panel-note">{STACKACRES_SECTORS[place].promise}</p>
-                <button
-                  type="button"
-                  className="sa-cta"
-                  onClick={() => { panelSound(); setClearing(place); }}
-                >
-                  What would clearing it cost?
-                </button>
-              </div>
-            ) : (
-              <>
-                {/* Buy comes first now. Seeding one cycle is the one thing on
-                    this panel a tap on the map also does; buying outright and
-                    expanding capacity are Gold, are permanent, and are the reason
-                    to open this at all -- so they lead, rather than sitting under
-                    a list of things you could have collected by touching them. */}
-                <div className="sa-panel-section">
-                  <h3 className="sa-group-label">Buy &amp; expand</h3>
-                  <StackAcresBuySection
-                    options={buyOptions}
-                    isPending={isPending}
-                    onSeed={onSeed}
-                    onBuyOutright={onBuyOutright}
-                    onExpand={onExpand}
-                  />
-                </div>
-
-                <div className="sa-panel-section">
-                  <h3 className="sa-group-label">What&apos;s here</h3>
-                  <p className="sa-panel-note">
-                    Tap anything on the map to collect, feed, water or clear it. These rows do the
-                    same, and are how you retire something you own outright.
-                  </p>
-                  <StackAcresUnitRows
-                    units={districtUnits}
-                    nowMs={nowMs}
-                    feed={feed}
-                    gold={gold}
-                    isPending={isPending}
-                    armedUnitId={retiringUnitId}
-                    onCollect={onCollect}
-                    onFeed={onFeed}
-                    onWater={onWater}
-                    onClear={onClear}
-                    onArmRetire={onArmRetire}
-                    onConfirmRetire={onConfirmRetire}
-                    onCancelRetire={onCancelRetire}
-                  />
-                </div>
-              </>
-            )}
-          </aside>
         </div>
       </div>
 
@@ -4493,10 +4485,6 @@ export function StackAcresFarm() {
                 </p>
               );
             })()}
-
-            {/* The page's own banner sits behind the scrim, so a refusal raised
-                by a button in here has to be answered in here. */}
-            {error && <p className="duel-error" role="alert">{error}</p>}
 
             <div className="sa-store-tabs" role="tablist" aria-label="Store shelf">
               {STORE_TABS.map((tab) => (
@@ -4574,7 +4562,7 @@ export function StackAcresFarm() {
                 <>
                   <p className="sa-sheet-note">
                     Buy an animal outright, or Cycle Lease one for a single production run. A greyed
-                    pen opens once you clear its land.
+                    pen is not open yet.
                   </p>
                   <div className="sa-panel-section">
                     <StackAcresBuySection
@@ -4608,49 +4596,6 @@ export function StackAcresFarm() {
                       ))}
                     </div>
                   )}
-                </>
-              )}
-
-              {storeTab === "soil" && (
-                <>
-                  <p className="sa-sheet-note">
-                    Buy bags here, then tap bare ground in the Crop Fields to lay a bed. A bed you
-                    take up again is spent, so pick the spot first.
-                  </p>
-                  <div className="sa-stock-cards">
-                    {STORE_SOIL_TIERS.map((tier) => {
-                      const def = soilTierDef(tier);
-                      const held = soilStock[tier] ?? 0;
-                      // Tier-blind by design (see farm-actions.ts's `intentOf`):
-                      // one soil purchase in flight, of any tier or size, holds
-                      // every tier's buttons here rather than just this one's.
-                      // (Moot while the shop sells one tier, but this stays
-                      // correct if a second one is ever added back.)
-                      const pending = isPending("buy-soil");
-                      return (
-                        <div key={tier} className="sa-stock-card">
-                          <h3>{def.label}</h3>
-                          <p className="sa-stock-terms">{def.blurb}</p>
-                          <p className="sa-stock-yield">
-                            <StoreCost amount={def.price} /> / bag
-                          </p>
-                          <BuyQuantityControls
-                            unitPrice={def.price}
-                            maxQuantity={SOIL_BAGS_PER_PURCHASE}
-                            gold={gold}
-                            pending={pending}
-                            onBuy={(quantity) => {
-                              buySound();
-                              void act({ action: "buy-soil", tier, quantity });
-                            }}
-                          />
-                          <p className="sa-sheet-note">
-                            {held} in the barn
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
                 </>
               )}
 
@@ -4936,7 +4881,6 @@ export function StackAcresFarm() {
 
       {showHouse && (
         <StackAcresHouse
-          error={error}
           onClose={() => { panelSound(); setShowHouse(false); }}
           energy={energyAt(energy, new Date(nowMs))}
           inventory={processing.inventory}
@@ -4958,11 +4902,7 @@ export function StackAcresFarm() {
       )}
 
       {showGoals && (
-        <StackAcresGoalsSheet
-          views={chapters}
-          currentNumber={chapterNow?.chapter.number ?? null}
-          onClose={() => { panelSound(); setShowGoals(false); }}
-        />
+        <StackAcresJournalSheet view={journal} onClose={() => { panelSound(); setShowGoals(false); }} />
       )}
 
       {chapterCard && (
@@ -4973,7 +4913,7 @@ export function StackAcresFarm() {
         <StackAcresMapSheet
           places={mapPlaces}
           onTravel={travelToPlace}
-          onClose={() => { panelSound(); setShowMap(false); }}
+          onClose={() => { mapSound(); setShowMap(false); }}
         />
       )}
 
@@ -4982,30 +4922,15 @@ export function StackAcresFarm() {
           sector={clearing}
           unlocked={sectors}
           unitCount={units.length}
-          goldBalance={profile?.goldBalance ?? null}
-          unlimitedGold={profile?.unlimitedGold === true}
           upkeepOutstanding={upkeep.due}
-          busy={pendingByPrefix("clear-sector")}
-          opener={clearingOpener}
-          onClear={onClearSector}
+          opener={null}
+          progress={clearingProgress}
           onClose={() => { panelSound(); setClearing(null); }}
         />
       )}
 
-      {cropFieldsModalOpen && (
-        <StackAcresCropFieldsModal
-          unlocked={cropFieldsUnlocked}
-          unitCount={units.length}
-          goldBalance={profile?.goldBalance ?? null}
-          unlimitedGold={profile?.unlimitedGold === true}
-          upkeepOutstanding={upkeep.due}
-          busy={pendingByPrefix("unlock-crop-fields")}
-          onUnlock={onUnlockCropFields}
-          onClose={() => { panelSound(); setCropFieldsModalOpen(false); }}
-        />
-      )}
-
       {showWelcome && <StackAcresRayWelcome onClose={dismissWelcome} />}
+      {awayReport && !showWelcome && <StackAcresAwayReport report={awayReport} onClose={() => setAwayReport(null)} />}
       {showGreenhouse && (
         <StackAcresGreenhousePanel
           built={greenhouseBuilt}
@@ -5023,12 +4948,11 @@ export function StackAcresFarm() {
           inventory={processing.inventory}
           contract={processing.contract}
           influence={influence}
-          busy={isPending("fulfill-contract") || isPending("request-contract")}
+          busy={isPending("fulfill-contract") || isPending("request-contract") || isPending("pass-contract")}
           onSettle={onSettleContract}
           onRequest={onRequestContract}
+          onPass={onPassContract}
           onClose={() => { panelSound(); setShowContracts(false); }}
-          unlockedSectors={sectors}
-          onTravel={travel}
         />
       )}
       {/* The vat's sheet replaces the Workshop while it is up rather than
@@ -5047,6 +4971,8 @@ export function StackAcresFarm() {
           onWork={onWork}
           onSell={onSell}
           onOpenVat={() => { panelSound(); setShowVat(true); }}
+          axe={axe}
+          onUpgradeAxe={onUpgradeAxe}
           onClose={() => { panelSound(); setShowWorkshop(false); }}
         />
       )}
@@ -5116,6 +5042,15 @@ export function StackAcresFarm() {
           onHarvest={onHarvestCrossbreed}
           onClose={() => { panelSound(); setShowCrossbreed(false); }}
         />
+      )}
+
+      {/* Refusals pop up mid-screen, over any open sheet, and fade on their own.
+          The server only ever sends text written for the player
+          (lib/server/public-error.ts). */}
+      {error && (
+        <p className="sa-notice" role="alert">
+          {error}
+        </p>
       )}
     </main>
   );

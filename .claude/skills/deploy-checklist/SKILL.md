@@ -13,6 +13,10 @@ and buy-in refunds paid nothing.
 
 - A migration and the code that calls it are one change; ship together. Before merging, run
   `supabase migration list --linked` and confirm the migration is on the remote.
+- After applying a migration with the Supabase MCP tool, rename its file so the timestamp matches
+  the version prod recorded (`select version from supabase_migrations.schema_migrations where
+  name = '<name>'`). The tool stamps its own apply time, so skipping this lets the folder drift
+  out of order again.
 - `main` is Vercel's production branch, not any feature branch — pushing elsewhere only produces a
   Preview deploy. Verify a real deploy via `gh api repos/Nikkayowill/poker/deployments` (Production
   environment) and against the live site itself, not just that the merge succeeded.

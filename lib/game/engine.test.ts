@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   advanceTimedTurn,
   applyPlayerAction,
+  archiveTable,
   claimSeat,
   chooseBotAction,
   createGame,
@@ -308,16 +309,19 @@ describe("server game engine", () => {
     // assumed away.
     let mintedTotal = 0;
 
-    while (completed < 12) {
+    // 24 hands, not 12: uncalled bets no longer count toward the rake, so a
+    // short run of limped pots can legitimately take no rake at all.
+    while (completed < 24) {
       game = advanceBotsUntilHuman(game);
       if (game.status === "complete") {
         rakeTaken += game.rake;
         expect(game.seats.reduce((sum, seat) => sum + seat.stack, 0) + rakeTaken)
           .toBe(startingTotal + mintedTotal);
         completed += 1;
-        if (completed >= 12 || game.seats[0].stack === 0) break;
+        if (completed >= 24 || game.seats[0].stack === 0) break;
         const wasBustedBot = game.seats.map((seat) => !seat.isHuman && seat.stack <= 0);
-        game = applyPlayerAction(game, { type: "next-hand" }, token);
+        // Dealt the way the server deals it, once the scheduled beat passes.
+        game = dealNextHandIfDue(game, Date.parse(game.nextHandAt ?? "")).state;
         game.seats.forEach((seat, index) => {
           if (wasBustedBot[index] && seat.stack > 0) mintedTotal += TIER_CONFIG[game.tier].minBuyIn;
         });
@@ -336,7 +340,7 @@ describe("server game engine", () => {
         }
       }
       safety += 1;
-      expect(safety).toBeLessThan(500);
+      expect(safety).toBeLessThan(1000);
     }
     expect(completed).toBeGreaterThan(0);
     expect(rakeTaken).toBeGreaterThan(0);
@@ -613,13 +617,13 @@ describe("server game engine", () => {
 
     const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
     expect(complete.status).toBe("complete");
-    // Gross side pots are 400/400/200; 4% of the 1,000 total would be 40, but
-    // the 3xBB cap (bigBlind 10) holds it to 30, split proportionally as
-    // 12/12/6.
+    // Side pots are 400/400, plus seat 2's uncalled 200 coming back unraked.
+    // 4% of the contested 800 would be 32, but the 3xBB cap (bigBlind 10)
+    // holds it to 30, split 15/15.
     expect(complete.rake).toBe(30);
-    expect(complete.winners.find((winner) => winner.seatId === complete.seats[0].id)?.amount).toBe(388);
-    expect(complete.winners.find((winner) => winner.seatId === complete.seats[1].id)?.amount).toBe(388);
-    expect(complete.winners.find((winner) => winner.seatId === complete.seats[2].id)?.amount).toBe(194);
+    expect(complete.winners.find((winner) => winner.seatId === complete.seats[0].id)?.amount).toBe(385);
+    expect(complete.winners.find((winner) => winner.seatId === complete.seats[1].id)?.amount).toBe(385);
+    expect(complete.winners.find((winner) => winner.seatId === complete.seats[2].id)?.amount).toBe(200);
     expect(complete.winners.some((winner) => winner.seatId === complete.seats[3].id)).toBe(false);
   });
 
@@ -1002,6 +1006,20 @@ describe("bot identity", () => {
     expect(game.opponentReads?.[hostToken]).toBeDefined();
     expect(game.opponentReads?.["long-gone-token"]).toBeUndefined();
   });
+
+  it("never sends opponent reads to a client, since they are keyed by session token", () => {
+    const hostToken = crypto.randomUUID();
+    const game = createGame(hostToken, "Host");
+    game.opponentReads = {
+      [hostToken]: { hands: 10, vpipHands: 4, raisesFaced: 6, foldsToRaise: 3 },
+    };
+
+    for (const viewer of [hostToken, crypto.randomUUID()]) {
+      const snapshot = toSnapshot(game, viewer);
+      expect(snapshot).not.toHaveProperty("opponentReads");
+      expect(JSON.stringify(snapshot)).not.toContain(hostToken);
+    }
+  });
 });
 
 describe("heads-up blinds", () => {
@@ -1091,26 +1109,34 @@ describe("multi-human seating", () => {
     );
     const claimed = state.seats[seatIndex];
 
+    // The bot's posted blind stays in the pot as dead money; the player's
+    // stack is exactly the 1000 they paid, not 1000 less the bot's blind.
     expect(claimed.committed).toBeGreaterThan(0);
-    expect(claimed.stack + claimed.committed).toBe(1000);
+    expect(claimed.stack).toBe(1000);
+    expect(claimed.status).toBe("out");
+    expect(state.pot).toBe(state.seats.reduce((sum, seat) => sum + seat.committed, 0));
     state.seats.forEach((seat, index) => {
       if (index === seatIndex) return;
       expect(seat.stack + seat.committed).toBe(othersBefore[index]);
     });
   });
 
-  it("rejects a buy-in smaller than chips the open seat already committed", () => {
+  it("never charges the joiner for chips the bot left committed", () => {
     const game = createGame(crypto.randomUUID(), "Host");
-    // Above even the table's fixed buy-in (1000), so clamping the requested
-    // amount up to that fixed buy-in still isn't enough to cover it.
+    // More than the table's whole buy-in, which used to make the claim throw.
     game.seats[1].committed = 1500;
 
-    expect(() => claimSeat(
-      game,
-      crypto.randomUUID(),
-      testProfile("Guest"),
-      500,
-    )).toThrow(/covers this seat's committed chips/i);
+    const { state, seatIndex } = claimSeat(game, crypto.randomUUID(), testProfile("Guest"), 500);
+    expect(state.seats[seatIndex].stack).toBe(1000);
+  });
+
+  it("gives the full buy-in between hands, when committed is last hand's leftover", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    game.status = "complete";
+    game.seats[1].committed = 40;
+
+    const { state, seatIndex } = claimSeat(game, crypto.randomUUID(), testProfile("Guest"), 1000);
+    expect(state.seats[seatIndex].stack).toBe(1000);
   });
 
   it("returns the same seat on a repeat claim instead of taking another one", () => {
@@ -1363,7 +1389,7 @@ describe("stakes tiers and buy-ins", () => {
     game = claimed.state;
     expect(claimed.seatIndex).toBe(1);
     const seat = game.seats[claimed.seatIndex];
-    expect(seat.stack + seat.committed).toBe(500_000); // clamped down to 500k's fixed buy-in
+    expect(seat.stack).toBe(500_000); // clamped down to 500k's fixed buy-in
   });
 
   it("lets a busted seat rebuy between hands, clamped to the table's tier", () => {
@@ -1412,7 +1438,7 @@ describe("stakes tiers and buy-ins", () => {
     // Whatever was requested clamps to the table's fixed 1,000 buy-in --
     // inheriting the bot's 1,750 would be redeemable free chips.
     const seat = game.seats[claimed.seatIndex];
-    expect(seat.stack + seat.committed).toBe(1000);
+    expect(seat.stack).toBe(1000);
   });
 });
 
@@ -1525,7 +1551,7 @@ describe("rake", () => {
     const { game, tokens } = riverShowdown(5000);
     let complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
     expect(complete.rake).toBeGreaterThan(0);
-    complete = applyPlayerAction(complete, { type: "next-hand" }, tokens[0]);
+    complete = dealNextHandIfDue(complete, Date.parse(complete.nextHandAt!)).state;
     expect(complete.rake).toBe(0);
   });
 
@@ -1612,6 +1638,30 @@ describe("rake", () => {
     complete.seats.forEach((seat) => expect(seat.streetBet).toBe(0));
   });
 
+  it("hands an uncalled bet back unraked when everyone folds to it", () => {
+    // 300 contested plus a 500 bet nobody called. Raking the full 800 would
+    // take the 30 cap; only the contested 300 is raked, at 4%.
+    const { game, tokens } = preflopUncontested(150);
+    game.street = "flop";
+    game.community = cards("2c 3d 7h");
+    Object.assign(game.seats[0], { committed: 650, streetBet: 500 });
+    game.currentBet = 500;
+    const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
+    expect(complete.rake).toBe(12);
+    expect(complete.winners[0].amount).toBe(788);
+    expect(complete.seats[0].stack).toBe(500 + 788);
+  });
+
+  it("returns an uncalled overbet at showdown before raking", () => {
+    // Seat 0 put in 400 against an all-in of 150: 300 is contested, the
+    // other 250 comes straight back.
+    const { game, tokens } = riverShowdown(150);
+    game.seats[0].committed = 400;
+    const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
+    expect(complete.rake).toBe(12);
+    expect(complete.winners[0].amount).toBe(288 + 250);
+  });
+
   it("rakes an all-in pot that was run out from preflop", () => {
     // The board is dealt by showdown() itself here, so `community` is empty
     // when the hand begins resolving and five cards long by the time rake is
@@ -1623,6 +1673,95 @@ describe("rake", () => {
     const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
     expect(complete.community).toHaveLength(5);
     expect(complete.rake).toBe(12);
+  });
+});
+
+describe("dealing the next hand", () => {
+  function finishedHand() {
+    const token = crypto.randomUUID();
+    const game = createGame(token, "Host");
+    game.status = "complete";
+    game.nextHandAt = new Date(Date.now() + 60_000).toISOString();
+    return { game, token };
+  }
+
+  it("refuses a client next-hand before the scheduled deal", () => {
+    const { game, token } = finishedHand();
+    expect(() => applyPlayerAction(game, { type: "next-hand" }, token)).toThrow(/on its own/i);
+    expect(game.status).toBe("complete");
+  });
+
+  it("refills a between-hands rebuy but waits for the scheduled deal", () => {
+    const { game, token } = finishedHand();
+    game.seats[0].stack = 0;
+    const handNumber = game.handNumber;
+
+    applyPlayerAction(game, { type: "rebuy", amount: 1000 }, token);
+
+    expect(game.seats[0].stack).toBe(1000);
+    expect(game.status).toBe("complete");
+    expect(game.handNumber).toBe(handNumber);
+    // The scheduled deal picks the refilled seat up.
+    dealNextHandIfDue(game, Date.parse(game.nextHandAt!));
+    expect(game.status).toBe("playing");
+    expect(game.seats[0].status).not.toBe("out");
+  });
+});
+
+describe("archiving a table", () => {
+  it("cashes every human out once and refuses anything after", () => {
+    const token = crypto.randomUUID();
+    const game = createGame(token, "Host");
+    game.status = "complete";
+    const human = game.seats.find((seat) => seat.ownerToken === token)!;
+    const stack = human.stack;
+    const version = game.version;
+
+    const released = archiveTable(game);
+
+    expect(released).toEqual([{ ownerToken: token, name: human.name, cashedOut: stack }]);
+    expect(human.stack).toBe(0);
+    expect(game.status).toBe("archived");
+    expect(game.version).toBe(version + 1);
+    expect(archiveTable(game)).toEqual([]);
+    expect(() => applyPlayerAction(game, { type: "leave-seat" }, token)).toThrow(/closed/i);
+    expect(() => claimSeat(game, crypto.randomUUID(), testProfile("Late"))).toThrow(/closed/i);
+  });
+
+  it("finishes a live hand by the clock rules before cashing out", () => {
+    const token = crypto.randomUUID();
+    const game = createGame(token, "Host");
+    const humanIndex = game.seats.findIndex((seat) => seat.ownerToken === token);
+    const botIndex = (humanIndex + 1) % game.seats.length;
+    game.street = "river";
+    game.community = cards("2c 3d 7h 8s 9c");
+    game.currentBet = 0;
+    game.seats.forEach((seat) => {
+      Object.assign(seat, { acted: true, streetBet: 0, committed: 0, status: "folded" });
+    });
+    Object.assign(game.seats[humanIndex], {
+      status: "active", stack: 500, committed: 200, acted: false, holeCards: cards("As Ad"),
+    });
+    Object.assign(game.seats[botIndex], { status: "all-in", stack: 0, committed: 200, holeCards: cards("Ks Kd") });
+    game.pot = 400;
+    game.currentPlayer = humanIndex;
+
+    const released = archiveTable(game);
+
+    // Auto-check, aces win 400 less the 16 rake.
+    expect(released[0].cashedOut).toBe(500 + 384);
+    expect(game.status).toBe("archived");
+    expect(game.currentPlayer).toBeNull();
+  });
+
+  it("never cashes out a tournament seat's live stack", () => {
+    const tokens = Array.from({ length: SEAT_COUNT }, () => crypto.randomUUID());
+    const game = createTournamentGame(
+      tokens.map((token, i) => ({ token, profile: testProfile(`P${i}`) })),
+      "1k",
+    );
+    expect(archiveTable(game)).toEqual([]);
+    expect(game.status).toBe("archived");
   });
 });
 

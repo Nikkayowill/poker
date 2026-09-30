@@ -65,13 +65,21 @@ export type SectorId = ZoneId;
  *              it yet
  *
  * The third one is new, and it exists to stop a lie. A locked sector's modal
- * offers to clear the land for Gold and promises what appears when you do. The
- * re-lay reserved ground for four places whose systems do not exist (Town
- * Square, the Mine, the Coastal Market, the Ancestral Oak) so that building
- * them later does not shift the rest of the map -- and selling somebody Town
- * Square today would take real Gold for an empty field. A wild sector
- * therefore looks exactly like a claimable one from outside (same overgrowth,
- * same tap) and says what is coming instead of naming a price.
+ * offers to clear the land for Gold and promises what appears when you do,
+ * and selling something with no home to appear IN would take real Gold for
+ * nothing. It applied to four districts (Town Square, the Mine, the Coastal
+ * Market, the Ancestral Oak) that no longer exist at all -- removed
+ * 2026-09-28 along with the eight travelers who stood in them
+ * (../story/travelers.ts's own header) -- so nothing is `wild` right now.
+ * `wallow` and `oxfields` (the Fold, Cattle Pasture) STAY `claimable` even
+ * though their own district floor plan is gone with the same six: clearing
+ * has always meant walking onto the land and chopping it
+ * (../land-clearing.ts), and there is no map to walk onto, so they are
+ * unreachable the way they already were under HOMESTEAD_ONLY -- not because
+ * anything here changed. Kayo, 2026-09-28: keep the Gold gate and the whole
+ * downstream economy exactly as they are; a place-it-yourself building (the
+ * pattern ./empire-buildings.ts already has for the Far Field's Barn) is the
+ * planned way back in, not built yet.
  */
 export type SectorState = "home" | "claimable" | "wild";
 
@@ -97,13 +105,6 @@ export const HOME_SECTORS: readonly SectorId[] = ["farmstead", "henhaven"];
 export const HOME_SECTOR: SectorId = "farmstead";
 
 /**
- * Ground the re-lay reserved with no system under it yet. Never unlockable by
- * any route -- not by Gold, not by an explicitly cleared row, not by owning
- * stock there (no stock kind maps to one). See `SectorState`.
- */
-export const WILD_SECTORS: readonly SectorId[] = ["townsquare", "mine", "coast", "oak"];
-
-/**
  * The order the outer sectors are cleared in.
  *
  * NOT `zonesByDistance`'s order, and the difference is deliberate. The
@@ -112,23 +113,20 @@ export const WILD_SECTORS: readonly SectorId[] = ["townsquare", "mine", "coast",
  * sheep, then cattle -- because what a player is really buying is access to
  * the next thing worth keeping, and the walk to it is beside the point.
  *
- * TWO RUNGS, NOT THREE, since the 2026-09-08 map restructure. Crops used to
- * be the first rung here (`meadow`, 15,000 Gold, unlocked before the Fold);
- * they still cost the same 15,000 Gold and still need to be unlocked before
- * anything grows, but the district they lived in merged into the Farmstead
- * (a HOME sector, never locked -- see ./zones.ts's own header on the merge),
- * so that gate could not stay a SECTOR clear. It is its own standalone flag
- * now -- see ./crop-fields.ts -- decoupled from this ladder entirely.
- * `wallow` no longer names a `requires` sector because of it: nothing left
- * in `SECTOR_IDS` is what used to come before it.
+ * STILL CLAIMABLE as of 2026-09-28, on purpose, even though the district
+ * floor plan clearing used to reveal (the Fold, Cattle Pasture) is gone with
+ * the six removed districts (../story/travelers.ts's own header): Kayo kept
+ * the Gold gate and the whole downstream economy -- capacity, hunger,
+ * feeding, harvest -- exactly as they were, only asking that a placed
+ * building (the pattern ./empire-buildings.ts already has for the Far
+ * Field's Barn) take the fixed floor plan's place once that is built. Until
+ * then this is unreachable the same way it always was under HOMESTEAD_ONLY,
+ * not because it was reclassified: nothing can walk onto ground with no map
+ * and chop what stands there (../land-clearing.ts).
  */
 export const SECTOR_LADDER: readonly SectorId[] = ["wallow", "oxfields"];
 
-export const SECTOR_IDS: readonly SectorId[] = [
-  ...HOME_SECTORS,
-  ...SECTOR_LADDER,
-  ...WILD_SECTORS,
-];
+export const SECTOR_IDS: readonly SectorId[] = [...HOME_SECTORS, ...SECTOR_LADDER];
 
 export interface SectorDef {
   id: SectorId;
@@ -196,7 +194,7 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     // Crop Fields' unlock is no longer a sector this can chain off.
     requires: null,
     requiresUnits: 4,
-    promise: "Cleared, this becomes your Sheep Pens.",
+    promise: "Cleared, this becomes your Sheep Pens -- built where you put them.",
   },
   oxfields: {
     id: "oxfields",
@@ -204,45 +202,7 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     clearCost: 100_000,
     requires: "wallow",
     requiresUnits: 6,
-    promise: "Cleared, this becomes your Cattle Pens — the best-paying stock on the farm.",
-  },
-
-  // The four wild areas. They are never bought: each gate opens when its
-  // traveler arrives (story/travelers.ts's WILD_AREA_TRAVELER). `clearCost: 0`
-  // is not a free sector: a wild sector is refused before a price is ever
-  // read, by `sectorClearCheck` here and by `clearStackAcresSector` on the
-  // server. `promise` says what is past the gate.
-  townsquare: {
-    id: "townsquare",
-    state: "wild",
-    clearCost: 0,
-    requires: null,
-    requiresUnits: 0,
-    promise: "Past this gate: the town square.",
-  },
-  mine: {
-    id: "mine",
-    state: "wild",
-    clearCost: 0,
-    requires: null,
-    requiresUnits: 0,
-    promise: "Past this gate: the mine.",
-  },
-  coast: {
-    id: "coast",
-    state: "wild",
-    clearCost: 0,
-    requires: null,
-    requiresUnits: 0,
-    promise: "Past this gate: the shore.",
-  },
-  oak: {
-    id: "oak",
-    state: "wild",
-    clearCost: 0,
-    requires: null,
-    requiresUnits: 0,
-    promise: "Past this gate: the old oak wood.",
+    promise: "Cleared, this becomes your Cattle Pens -- built where you put them.",
   },
 };
 
@@ -332,10 +292,15 @@ export function sectorClearCheck(
   context: { unlocked: readonly SectorId[]; unitCount: number },
 ): SectorClearCheck {
   const def = STACKACRES_SECTORS[id];
-  // Checked before `alreadyOpen`, and before the price is read at all: wild
-  // ground is never open and never for sale, so neither branch below applies.
+  // Checked before `alreadyOpen`: wild ground is never open and never for
+  // sale, so neither branch below applies. Unreachable right now -- no
+  // sector is wild since the four that were went with their own districts
+  // (see `SectorState`'s own header) -- kept for the next one that is.
+  // `cost` still reads `def.clearCost` rather than 0 when it does fire: a
+  // priced-but-not-yet-buildable sector should say what it will cost, not
+  // that nothing has been decided.
   if (def.state === "wild") {
-    return { id, cost: 0, ok: false, requirements: [], alreadyOpen: false, wild: true };
+    return { id, cost: def.clearCost, ok: false, requirements: [], alreadyOpen: false, wild: true };
   }
   if (isSectorUnlocked(id, context.unlocked)) {
     return { id, cost: def.clearCost, ok: false, requirements: [], alreadyOpen: true, wild: false };
@@ -542,78 +507,26 @@ export function sectorOvergrowth(id: SectorId): OvergrowthItem[] {
 }
 
 /**
- * The one thing standing on a wild sector that is not undergrowth.
- *
- * Only two of the four get one, and their own blurbs decide which. The
- * Ancestral Oak's says "something old stands here" and the Mine Entrance's
- * says "a way in" -- both promise something visible NOW, and neither had it:
- * every wild sector was scrub and nothing else, so the places the copy calls
- * landmarks looked exactly like the places it does not.
- *
- * The Coastal Market ("stalls and a dock, ONCE there is anything to trade")
- * and the Town Square ("the town is still only a board you post to") promise
- * the opposite -- their content explicitly does not exist yet -- so building
- * either would contradict both the copy and this module's own rule that
- * locked ground must not look like somewhere already built.
- *
- * Both use art the woodland already paints, so this adds no assets: a
- * broadleaf and a boulder at better than twice the size anything else on the
- * map grows to. A real mine head is a sprite somebody has to draw; an outcrop
- * you can pick out from across the map is what the existing set can honestly
- * give.
+ * The one thing standing on a wild sector that is not undergrowth. Empty as
+ * of 2026-09-28: the four wild districts it used to decorate (the Ancestral
+ * Oak, the Mine Entrance) are gone outright (../story/travelers.ts's own
+ * header). The Fold and Cattle Pasture never wanted a landmark either, wild
+ * or not: they are ordinary farmland waiting to be cleared, not a place
+ * with a character.
  */
 const SECTOR_LANDMARK: Readonly<
   Partial<Record<SectorId, { kind: SceneryKind; scale: number; clearing: number }>>
-> = {
-  oak: { kind: "tree1", scale: 2.6, clearing: 34 },
-  mine: { kind: "boulder", scale: 2.4, clearing: 26 },
-};
+> = {};
 
 /**
  * What grows on one particular piece of wild ground, over the common mix.
- *
- * All four wild sectors used to deal from the same three pools, so the Mine,
- * the Coast, the Oak and the Town Square were the same anonymous scrub in
- * four places -- the player has no way to tell which is which until they tap
- * it. These accents are still the RIGHT story for locked land (nothing built,
- * nobody's farm) and still use only kinds the woodland already paints, so
- * they need no art: what changes is that the Mine is visibly stony, the Coast
- * washed with driftwood and low cover, the Oak genuinely wooded, and the Town
- * Square rubble under weeds.
- *
- * A sector with no entry keeps the common mix, which is what the two
- * claimable sectors on the ladder (`wallow`, `oxfields`) want -- they are
- * ordinary farmland waiting to be cleared, not a place with a character.
+ * Empty as of 2026-09-28 for the same reason `SECTOR_LANDMARK` above is: its
+ * four entries decorated the four wild districts that are now gone. A
+ * sector with no entry here keeps the common mix, which is what the Fold
+ * and Cattle Pasture have always wanted: ordinary farmland, not a place
+ * with a character.
  */
-const SECTOR_FLAVOUR: Readonly<Partial<Record<SectorId, OvergrowthFlavour>>> = {
-  // Stone, and the scrub that grows in the cracks of it. Conifers only up
-  // top: the default canopy is mostly broadleaf, and a mine hillside under
-  // oak and ash reads as the Ancestral Oak's wood rather than as stony
-  // ground.
-  mine: {
-    canopy: ["pine3", "pine6", "pine8"],
-    scrub: ["boulder", "boulder", "rock", "rock", "rock", "scrubBristle", "scrubMound", "bush2"],
-    floor: ["rock", "tuft", "tuft2", "weed3", "weed5"],
-  },
-  // Driftwood and low salt-bitten cover, no canopy to speak of.
-  coast: {
-    canopy: ["pine4", "pine7", "bush3"],
-    scrub: ["log", "log", "rock", "scrubPlume", "scrubMound", "bush", "bush3"],
-    floor: ["tuft", "tuft2", "frond2", "frond5", "weed6", "flower2"],
-  },
-  // The one place that is meant to be a wood.
-  oak: {
-    canopy: ["tree1", "tree1", "tree2", "tree3", "tree3"],
-    scrub: ["bush", "bush2", "bush3", "scrubLeafy", "scrubThicket", "log"],
-    floor: ["mushroom", "mushroom", "frond2", "frond5", "tuft", "weed6", "flower3"],
-  },
-  // A square somebody left: fallen stone, and weeds through it.
-  townsquare: {
-    canopy: ["tree2", "bush3", "pine5"],
-    scrub: ["rock", "rock", "log", "boulder", "scrubBristle", "scrubPlume", "bush"],
-    floor: ["weed3", "weed5", "weed6", "tuft", "flower1", "flower3"],
-  },
-};
+const SECTOR_FLAVOUR: Readonly<Partial<Record<SectorId, OvergrowthFlavour>>> = {};
 
 /** One sector's accent over the common mix. Every field is optional; whatever
  *  is absent falls back to the shared pool. */

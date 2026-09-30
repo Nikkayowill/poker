@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { navigateWithOrb } from "@/lib/loading/orb-transition";
 import { tapSound } from "@/lib/audio/ui-sounds";
 import { browserSessionStorage } from "@/lib/profile/session-continuity";
 import { LeaveGameConfirmModal } from "@/components/leave-game-confirm-modal";
@@ -48,28 +49,36 @@ export function markEmbeddedFloorNav(): void {
  * passes `true` plus a `confirmMessage` describing what's actually at stake
  * there; every other caller omits it and gets the old, unguarded click.
  */
+/** Leaves a game the same way the back link does, for a game's own Leave button. */
+export function useFloorBack(): () => void {
+  const router = useRouter();
+  return () => {
+    const store = browserSessionStorage();
+    if (!store?.getItem(EMBEDDED_NAV_KEY)) {
+      navigateWithOrb(() => router.push("/games"));
+      return;
+    }
+    store.removeItem(EMBEDDED_NAV_KEY);
+    navigateWithOrb(() => router.back());
+  };
+}
+
 export function FloorBackLink({
   confirmLeave = false,
   confirmMessage,
 }: { confirmLeave?: boolean; confirmMessage?: string } = {}) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
-
-  const navigateBack = () => {
-    const store = browserSessionStorage();
-    if (!store?.getItem(EMBEDDED_NAV_KEY)) {
-      router.push("/games");
-      return;
-    }
-    store.removeItem(EMBEDDED_NAV_KEY);
-    router.back();
-  };
+  const navigateBack = useFloorBack();
 
   return (
     <>
       <Link
         className="floor-back"
         href="/games"
+        // With a confirm, the click only opens the modal; its Leave button
+        // starts the orb instead.
+        data-orb={confirmLeave ? "off" : undefined}
         onClick={(event) => {
           tapSound();
           if (confirmLeave) {
@@ -81,7 +90,7 @@ export function FloorBackLink({
           if (!store?.getItem(EMBEDDED_NAV_KEY)) return;
           store.removeItem(EMBEDDED_NAV_KEY);
           event.preventDefault();
-          router.back();
+          navigateWithOrb(() => router.back());
         }}
       >
         ← Ante Up

@@ -34,7 +34,7 @@ import { machineItemLabel } from "@/lib/stackacres/machine-items";
  *
  * TownContractsModal only ever debits inventory optimistically -- a
  * contract never costs Gold to fulfill, it PAYS Gold. Forging spends both
- * at once (supabase/migrations/20260905130000_stackacres_tool_enchantments.sql's
+ * at once (supabase/migrations/20260905042510_stackacres_tool_enchantments.sql's
  * `forge_stackacres_enchantment`), so the overlay here tracks one in-flight
  * spend as a single record (`pendingForge`) rather than a list the way the
  * contracts sheet tracks requirement lines -- this component only ever has

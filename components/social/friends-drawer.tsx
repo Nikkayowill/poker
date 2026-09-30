@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { navigateWithOrb } from "@/lib/loading/orb-transition";
 import { Check, Copy, RotateCw, Send, Spade, UserMinus, UserPlus, X } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { useClipboardCopy } from "@/components/use-clipboard-copy";
@@ -895,7 +896,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
                       <button
                         type="button"
                         className="friend-accept invite-join"
-                        onClick={() => { selectSound(); router.push("/games/heads-up"); }}
+                        onClick={() => { selectSound(); navigateWithOrb(() => router.push("/games/heads-up")); }}
                       >
                         <Spade size={13} aria-hidden="true" />
                         Play
@@ -1001,7 +1002,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
                           // against them, not against everyone.
                           suggested: String(suggestedWager(person.duelRecord)),
                         });
-                        router.push(`/games/${game}?${params.toString()}`);
+                        navigateWithOrb(() => router.push(`/games/${game}?${params.toString()}`));
                       }}
                     >
                       <option value="" disabled>Challenge…</option>
@@ -1024,7 +1025,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
                       onClick={() => {
                         selectSound();
                         const params = new URLSearchParams({ invite: person.profileId, name: person.displayName });
-                        router.push(`/games/heads-up?${params.toString()}`);
+                        navigateWithOrb(() => router.push(`/games/heads-up?${params.toString()}`));
                       }}
                     >
                       <Spade size={13} aria-hidden="true" />Heads-Up

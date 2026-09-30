@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { navigateWithOrb } from "@/lib/loading/orb-transition";
 import { Swords, UserPlus, X } from "lucide-react";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { CHALLENGEABLE_DUELS } from "@/lib/pvp/duel-list";
@@ -68,7 +69,7 @@ export function ChallengeSeatControl({
     selectSound();
     close();
     const params = new URLSearchParams({ challenge: profileId, name: displayName });
-    router.push(`/games/${game}?${params.toString()}`);
+    navigateWithOrb(() => router.push(`/games/${game}?${params.toString()}`));
   };
 
   const addFriend = useCallback(async () => {

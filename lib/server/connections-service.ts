@@ -30,12 +30,12 @@ import {
 } from "./daily-puzzle-store";
 import {
   MIN_ANTE_UP_WAGER,
-  WAGER_MULTIPLIER_BY_MISTAKES,
   anteUpConnectionsPayout,
   connectionsDailyBonusMultiplier,
+  connectionsStakeRules,
 } from "@/lib/arcade/ante-up-connections";
 import type { WagerLadder } from "@/lib/arcade/ante-up-ladder";
-import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
+import { anteUpStakeProblem } from "@/lib/arcade/ante-up-stakes";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { applyAchievementEvent } from "./achievement-store";
 import { creditDailyBonus } from "./daily-puzzle-bonus";
@@ -48,6 +48,7 @@ import {
   spendStakeLedgered,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
+import { recordSoloResult } from "./solo-earnings-store";
 
 /**
  * Everything between a Connections request and the board.
@@ -230,10 +231,11 @@ export async function startConnectionsPuzzle(
       400,
     );
   }
-  // One flat ceiling; see lib/arcade/ante-up-stakes.ts and Word Stack's twin
-  // of this check. Deliberately after the resume short-circuit above.
-  const overCeiling = anteUpWagerCeilingProblem(CONNECTIONS_GAME, null, wagerInput);
-  if (overCeiling) throw new ConnectionsRequestError(overCeiling, 400);
+  // No ceiling: a bigger stake allows fewer mistakes instead
+  // (connectionsMaxMistakesFor below). Deliberately after the resume
+  // short-circuit above.
+  const stakeProblem = anteUpStakeProblem(CONNECTIONS_GAME, null, wagerInput);
+  if (stakeProblem) throw new ConnectionsRequestError(stakeProblem, 400);
 
   // The puzzle is the canonical one for this day: pickDaily only actually
   // runs on that day's first-ever ask and is cached forever after -- see
@@ -266,11 +268,13 @@ export async function startConnectionsPuzzle(
     throw new ConnectionsRequestError(`You need ${wagerInput.toLocaleString()} Gold to wager this.`, 400);
   }
 
+  // The stake band's rules are copied onto the round so a live round never changes.
+  const stakeRules = connectionsStakeRules(wagerInput);
   const round: StoredConnectionsRound = {
-    ...startConnectionsRound(puzzle, randomInt),
+    ...startConnectionsRound(puzzle, randomInt, { maxMistakes: stakeRules.maxMistakes }),
     wager: wagerInput,
     // Copied in only for a real wager; see the field's own doc comment.
-    ...(wagerInput > 0 ? { wagerLadder: WAGER_MULTIPLIER_BY_MISTAKES } : {}),
+    ...(wagerInput > 0 ? { wagerLadder: stakeRules.ladder } : {}),
   };
 
   let stored: StoredConnections;
@@ -425,6 +429,14 @@ export async function playConnectionsGuess(
         console.error("connections.wager_payout_credit_failed", { profileId: profile.id, payout, error });
       });
     }
+    // The daily board settles once, so the profile and day are the idempotency
+    // key. Recorded after the credit, win or lose, for the rank and the tracker.
+    await recordSoloResult(profile.id, token, {
+      game: "connections",
+      correlationId: `connections:${profile.id}:${current.day}`,
+      wager: current.round.wager,
+      payout,
+    });
   } else if (complete && isToday) {
     // The per-game daily bonus, replacing the retired flat "daily_brain_game"
     // mission; see lib/server/daily-puzzle-bonus.ts. Pays even on a loss, at

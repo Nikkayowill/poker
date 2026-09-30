@@ -5,7 +5,7 @@ import {
   resignAnteUpMemoryAttempt,
   toAnteUpMemoryErrorResponse,
 } from "@/lib/server/ante-up-memory-service";
-import { MEMORY_TILES } from "@/lib/arcade/puzzles/memory";
+import { MEMORY_MAX_TILES } from "@/lib/arcade/puzzles/memory";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
@@ -20,7 +20,8 @@ export const runtime = "nodejs";
 const flipSchema = z.object({
   action: z.literal("flip"),
   version: z.number().int().positive(),
-  index: z.number().int().min(0).max(MEMORY_TILES - 1),
+  // The largest board a stake can deal; the engine checks the attempt's own size.
+  index: z.number().int().min(0).max(MEMORY_MAX_TILES - 1),
 });
 
 const resignSchema = z.object({ action: z.literal("resign") });

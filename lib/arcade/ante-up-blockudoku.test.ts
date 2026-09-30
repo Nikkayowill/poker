@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ANTE_UP_BLOCKUDOKU_GRANDMASTER,
   ANTE_UP_BLOCKUDOKU_TIERS,
+  anteUpBlockudokuTerms,
   anteUpBlockudokuDeadline,
   anteUpBlockudokuPayout,
   anteUpBlockudokuPlacementProblem,
@@ -13,7 +15,7 @@ import {
   toAnteUpBlockudokuSnapshot,
   type AnteUpBlockudokuAttempt,
 } from "./ante-up-blockudoku";
-import { BLOCKUDOKU_SHAPES, GRID_CELLS, type BlockudokuShape } from "./puzzles/blockudoku";
+import { BLOCKUDOKU_PIECE_SETS, BLOCKUDOKU_SHAPES, GRID_CELLS, type BlockudokuShape } from "./puzzles/blockudoku";
 
 const NOW = new Date("2026-09-18T12:00:00.000Z");
 const LATER = new Date("2026-09-18T12:05:00.000Z");
@@ -52,6 +54,49 @@ describe("startAnteUpBlockudoku", () => {
     expect(attempt.status).toBe("active");
     expect(attempt.board.status).toBe("active");
     expect(attempt.board.startedAt).toBeNull();
+  });
+});
+
+describe("tiers", () => {
+  it("deals each tier its own piece set, harder going up", () => {
+    expect(ANTE_UP_BLOCKUDOKU_TIERS.casual.pieceSet).toBe("classic");
+    expect(ANTE_UP_BLOCKUDOKU_TIERS.standard.pieceSet).toBe("big");
+    expect(ANTE_UP_BLOCKUDOKU_TIERS.hardcore.pieceSet).toBe("expert");
+    expect(ANTE_UP_BLOCKUDOKU_TIERS.standard.targetScore).toBeGreaterThan(ANTE_UP_BLOCKUDOKU_TIERS.casual.targetScore);
+    expect(ANTE_UP_BLOCKUDOKU_TIERS.hardcore.targetScore).toBeGreaterThan(ANTE_UP_BLOCKUDOKU_TIERS.standard.targetScore);
+  });
+
+  it("starts the round on the tier's piece set", () => {
+    for (const difficulty of ["casual", "standard", "hardcore"] as const) {
+      const attempt = startAnteUpBlockudoku(difficulty, 1000, 11, NOW);
+      const set = ANTE_UP_BLOCKUDOKU_TIERS[difficulty].pieceSet;
+      expect(attempt.board.pieceSet).toBe(set);
+      const allowed = new Set(BLOCKUDOKU_PIECE_SETS[set].map((entry) => entry.id));
+      for (const piece of attempt.board.inventory) expect(allowed.has(piece?.id ?? "")).toBe(true);
+    }
+  });
+
+  it("plays Hardcore as Grandmaster at a 1M+ stake, and only Hardcore", () => {
+    expect(anteUpBlockudokuTerms("hardcore", 999_999)).toBe(ANTE_UP_BLOCKUDOKU_TIERS.hardcore);
+    expect(anteUpBlockudokuTerms("hardcore", 1_000_000)).toBe(ANTE_UP_BLOCKUDOKU_GRANDMASTER);
+    expect(anteUpBlockudokuTerms("standard", 1_000_000)).toBe(ANTE_UP_BLOCKUDOKU_TIERS.standard);
+    expect(ANTE_UP_BLOCKUDOKU_GRANDMASTER.targetScore).toBeGreaterThan(ANTE_UP_BLOCKUDOKU_TIERS.hardcore.targetScore);
+
+    const attempt = startAnteUpBlockudoku("hardcore", 1_000_000, 11, NOW);
+    expect(attempt.targetScore).toBe(ANTE_UP_BLOCKUDOKU_GRANDMASTER.targetScore);
+    expect(attempt.timeLimitMs).toBe(ANTE_UP_BLOCKUDOKU_GRANDMASTER.timeLimitMs);
+    expect(attempt.board.pieceSet).toBe("master");
+  });
+
+  it("still plays an attempt stored before piece sets existed", () => {
+    const fresh = startAnteUpBlockudoku("hardcore", 1000, 11, NOW);
+    const legacyBoard = { ...fresh.board };
+    delete legacyBoard.pieceSet;
+    const legacy = withInventory({ ...fresh, board: legacyBoard }, [shape("single"), null, null]);
+    const next = placeAnteUpBlockudokuPiece(legacy, 0, 0, 0, NOW, 99);
+    expect(next.board.moves).toBe(1);
+    const classic = new Set(BLOCKUDOKU_SHAPES.map((entry) => entry.id));
+    for (const piece of next.board.inventory) expect(classic.has(piece?.id ?? "")).toBe(true);
   });
 });
 

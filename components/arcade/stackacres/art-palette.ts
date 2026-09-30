@@ -51,13 +51,16 @@ export const RAMPS = {
   // zones.ts's Ox Fields/Fold mood) depend on staying duller than what's
   // around them, so brightening them would undercut the exact hierarchy
   // that makes owned land read as the most inviting thing in frame.
-  /** Open ground outside a plot. */
-  grass: { top: "#9be23f", side: "#67ab2c", rim: "#3d6f19" },
+  /** Open ground outside a plot. 2026-09-25: darker and more saturated
+   *  (Kayo: grass needed "more contrast and a darker detailed version, more
+   *  rich"), matching the same enrichment pass applied to grass-tile.webp
+   *  and the standalone grass-mid/stubble/tall sprites. */
+  grass: { top: "#84dc11", side: "#4d9d08", rim: "#295c05" },
   /** A cleared, owned plot -- deliberately the warmest, brightest green on
    *  screen, because owned land must be the most inviting thing in frame. */
-  lawn: { top: "#b3ee66", side: "#79c136", rim: "#4a7d1f" },
+  lawn: { top: "#a0ea3f", side: "#5fb60e", rim: "#346b05" },
   /** Land nobody has cleared: darker and cooler, so owned land wins. */
-  wild: { top: "#5e9b3a", side: "#487a2b", rim: "#33591d" },
+  wild: { top: "#458b1c", side: "#316812", rim: "#20470a" },
   path: { top: "#f7d98c", side: "#dbb46a", rim: "#9f7c40" },
   // The flat FILL colour worked ground draws where nothing is standing on it
   // -- the Ox Fields cattle ground (never textured at all) and the soil-tool

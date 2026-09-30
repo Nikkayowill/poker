@@ -43,6 +43,12 @@ export type ArcadeGameId =
   | "nonogram"
   | "blockudoku"
   | "word-fill-in"
+  | "sequence-recall"
+  | "quick-math"
+  | "pattern-predictor"
+  | "trivia-blitz"
+  | "lights-out"
+  | "word-guess"
   | "chess-duel"
   | "checkers-duel"
   | "othello-duel"
@@ -243,6 +249,64 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     entryCost: 0,
     status: "live",
     href: "/games/word-fill-in",
+  },
+  // ---- Brain Games: quick, sharp rounds that don't need any specialist
+  // background -- memory, speed, pattern recognition, logic, vocabulary.
+  // Same wager-or-free model as the boards above; see lib/arcade/brain-streak.ts,
+  // lib/arcade/brain-lights-out.ts and lib/arcade/brain-word-guess.ts.
+  {
+    id: "sequence-recall",
+    name: "Sequence Recall",
+    blurb: "Watch a growing flash pattern, repeat it back exactly",
+    kind: "wager",
+    entryCost: 0,
+    status: "live",
+    href: "/games/sequence-recall",
+  },
+  {
+    id: "quick-math",
+    name: "Quick Math Sprint",
+    blurb: "Sixty seconds, as many right answers as you can get",
+    kind: "wager",
+    entryCost: 0,
+    status: "live",
+    href: "/games/quick-math",
+  },
+  {
+    id: "pattern-predictor",
+    name: "Pattern Predictor",
+    blurb: "A number sequence hides a rule -- spot it before it spots you",
+    kind: "wager",
+    entryCost: 0,
+    status: "live",
+    href: "/games/pattern-predictor",
+  },
+  {
+    id: "trivia-blitz",
+    name: "Trivia Blitz",
+    blurb: "Rapid-fire true or false, forty-five seconds on the clock",
+    kind: "wager",
+    entryCost: 0,
+    status: "live",
+    href: "/games/trivia-blitz",
+  },
+  {
+    id: "lights-out",
+    name: "Lights Out",
+    blurb: "Turn every light off in as few moves as you can",
+    kind: "wager",
+    entryCost: 0,
+    status: "live",
+    href: "/games/lights-out",
+  },
+  {
+    id: "word-guess",
+    name: "Word Guess",
+    blurb: "Classic hangman -- guess the word before six misses",
+    kind: "wager",
+    entryCost: 0,
+    status: "live",
+    href: "/games/word-guess",
   },
   // ---- Duels: skill/social games staked against another player, not the
   // house. Winner takes the pot both players anted; see lib/pvp/. Priced at
@@ -480,6 +544,42 @@ export function arcadeFloorSummary(games: readonly ArcadeGame[] = ARCADE_GAMES):
       .slice(0, FLOOR_PREVIEW_COUNT)
       .map((game) => game.name),
   };
+}
+
+/** How many games the Play tab's rail shows before it hands off to "All N games". */
+const PLAY_RAIL_COUNT = 10;
+
+/**
+ * What the Play tab's two rails show from the catalogue: one duel to sit next
+ * to Hold'em, then a short mix of solo wagers and duels for the Ante Up rail.
+ *
+ * The mix is two wagers to every duel. Wagers come first in the catalogue and
+ * there are more of them, so a plain slice would fill the rail with solo
+ * games and never show that the arcade has head-to-head play. The featured
+ * duel is left out of `cards` so one game is never on screen twice. Rows with
+ * no href are dropped: a card that cannot open anything is a dead tap.
+ */
+export function playRailGames(games: readonly ArcadeGame[] = ARCADE_GAMES): {
+  featuredDuel: ArcadeGame | null;
+  cards: ArcadeGame[];
+  total: number;
+} {
+  const { free, duels, wagers, staked } = splitArcadeFloor(games);
+  const openable = (list: ArcadeGame[]) => list.filter((entry) => entry.href !== null);
+  const duelPool = openable(duels);
+  const featuredDuel = duelPool[0] ?? null;
+  const solo = [...openable(free), ...openable(wagers), ...openable(staked)];
+  const restDuels = duelPool.slice(1);
+
+  const cards: ArcadeGame[] = [];
+  let s = 0;
+  let d = 0;
+  while (cards.length < PLAY_RAIL_COUNT && (s < solo.length || d < restDuels.length)) {
+    for (let i = 0; i < 2 && s < solo.length && cards.length < PLAY_RAIL_COUNT; i += 1) cards.push(solo[s++]);
+    if (d < restDuels.length && cards.length < PLAY_RAIL_COUNT) cards.push(restDuels[d++]);
+  }
+
+  return { featuredDuel, cards, total: solo.length + duelPool.length };
 }
 
 export function arcadeActionLabel(game: ArcadeGame, wallet: ArcadeWallet): string {

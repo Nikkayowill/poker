@@ -1,10 +1,13 @@
+import type { FencePiece } from "@/lib/stackacres/fences";
+import type { EmpireBuildingKind, PlacedEmpireBuilding, Tile } from "@/lib/stackacres/empire-buildings";
+import type { GroceryItemKind, GroceryPlacement } from "@/lib/stackacres/grocery-layout";
 import type { Ref } from "react";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
-import type { SectorId } from "@/lib/stackacres/sectors";
 import type { StackAcresCutter } from "@/lib/stackacres/cutters";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
+import type { QuestPlaceId } from "@/lib/stackacres/story/places";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
 import type { TravelerId } from "@/lib/stackacres/story/travelers";
@@ -13,9 +16,10 @@ import type { HuntingWeapon, QuarrySpecies } from "@/lib/stackacres/hunting";
 import type { PainterName } from "./stackacres-art";
 import type { WorldPoint } from "@/lib/stackacres/world";
 import type { SoilTile } from "@/lib/stackacres/soil";
-import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
 import type { StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
+import type { ForageNodeSnapshot } from "@/lib/stackacres/forage";
+import type { LandObstacleSnapshot } from "@/lib/stackacres/land-clearing";
 
 /**
  * What the farm shell (stackacres-farm.tsx) hands the map under it, and what it
@@ -46,6 +50,10 @@ export interface StackAcresSceneUnit {
   /** Seed waiting for its first water; drawn as a sown heap. See
    *  `StackAcresUnitSnapshot.seed`. */
   seed: boolean;
+  /** Sheep and cattle: the Homestead map square the animal was set down on
+   *  (lib/stackacres/herd.ts), or null/absent when it has not been placed. */
+  mapTx?: number | null;
+  mapTy?: number | null;
 }
 
 /** Where a tap landed, in CSS pixels relative to the canvas host -- which is
@@ -119,11 +127,11 @@ export interface HuntScopeRequest {
 /** How a fight ended, as the map needs to act it out. */
 export type FishingCastOutcome = "landed" | "escaped";
 
-/** What a traveler's badge says: a quest to offer, or one ready to hand in. */
-export type StoryCue = "available" | "ready";
-
-/** One badge per traveler that has one; a missing key means none. */
-export type StoryCues = Readonly<Partial<Record<TravelerId, StoryCue>>>;
+/** The fish a landed cast gave, as the server rolled it, and its name for "+1 Trout". */
+export interface RevealedFish {
+  readonly species: FishSpecies;
+  readonly noun: string;
+}
 
 
 /** One flag per traveler: has their unlock been met yet. Read straight off
@@ -145,9 +153,14 @@ export interface StackAcresWorldApi {
   focusZone: (zone: MapPlaceId) => void;
   /** Which map place the farmer is standing in right now. */
   currentPlace: () => MapPlaceId;
+  /** The map square under the farmer's feet, in the area he is in. */
+  farmerTile: () => Tile | null;
   /** The squash-and-stretch a tapped unit answers with, before the network
    *  has said anything at all. */
   popUnit: (unitId: string) => void;
+  /** A ripe crop is picked: it comes out of the ground and hops into the
+   *  farmer's hands. Called just before the collect goes out. */
+  pullCrop: (unitId: string) => void;
   /** Critical Harvest Cascade: the same gold-burst `celebrate` triggers for a
    *  solo unit, fanned out across several units with a stagger between each
    *  so a chain reads as a chain. See stackacres-scene.ts's own method. */
@@ -199,9 +212,8 @@ export interface StackAcresWorldApi {
   startHuntScope: (request: HuntScopeRequest) => void;
   /**
    * Hands the gauge's answer back to the map, so the farmer can act it out:
-   * landed pulls the catch up out of the water, escaped snaps the rod back on
-   * a slack line. Either way the line comes in and the input lock the cast put
-   * on comes off.
+   * landed keeps him on a bent rod until `revealCatch`, escaped snaps the rod
+   * back on a slack line and takes the input lock the cast put on off.
    *
    * The shell calls this from the same `onLanded`/`onEscaped` it already had
    * -- it has to be told, because the fight happens in a separate Phaser scene
@@ -209,17 +221,20 @@ export interface StackAcresWorldApi {
    * fishing-gauge-scene.ts's own header on why it is its own scene).
    */
   endFishingCast: (outcome: FishingCastOutcome) => void;
+  /**
+   * After a landed fight, once `catch-fish` has answered and the gauge is
+   * off the screen: the fish jumps out of the water into the farmer's hands
+   * and he holds it up with "+1 Trout" over it. Null when there is no fish
+   * after all (the request failed), and the line comes in empty. Either way
+   * this is what gives him back after a landed fight.
+   */
+  revealCatch: (fish: RevealedFish | null) => void;
   /** A line of text that lifts off the tap and fades -- the reward, or the
    *  reason there wasn't one. */
   floatAt: (at: TapPoint, text: string, tone: "gain" | "deny", icon?: PainterName) => void;
-  /** Hangs a quest badge ("!" to offer, "?" ready to hand in) over each
-   *  traveler named, and takes down the rest. Same "push, never rebuild"
-   *  contract as `setSoil`: stackacres-farm.tsx calls this whenever its
-   *  story view changes, and an unchanged badge is a no-op. */
-  setStoryCues: (cues: StoryCues) => void;
   /** Shows or hides each traveler as their own unlock is met -- nobody
    *  stands on the farm before that. Same "push, never rebuild" contract as
-   *  `setStoryCues`: called with the full eleven-entry record whenever the
+   *  `setSoil`: called with the full eleven-entry record whenever the
    *  story view changes, a no-op where nothing flipped. */
   setTravelerUnlocks: (unlocked: TravelerUnlocks) => void;
   /** Placed soil beds (lib/stackacres/soil.ts), passed straight through to
@@ -230,7 +245,7 @@ export interface StackAcresWorldApi {
    *  must always reflect. */
   soilTiles: () => SoilTile[];
   setSoil: (tiles: readonly SoilTile[]) => void;
-  placeSoilAt: (x: number, y: number, tier?: SoilTier) => boolean;
+  placeSoilAt: (x: number, y: number) => boolean;
   removeSoilAt: (x: number, y: number) => boolean;
   /** Outlines the tile a pending bed will actually land on, snapped through
    *  the same `soilTileAt` the placement uses. `null` clears it. Pushed from
@@ -245,6 +260,35 @@ export interface StackAcresWorldApi {
   /** A world point as pixels inside the field, for pointing a drag tool at a
    *  fixed spot. Null until the scene has booted. */
   fieldPointFor: (x: number, y: number) => TapPoint | null;
+  /**
+   * Goes to sleep in the bed: a sleepy bubble, a fade to black, `whileDark`
+   * (the shell moves the clock and asks the server), then the room fades back
+   * up in morning light. Input waits for the whole of it. Resolves once the
+   * view is back; with no map to fade, it just runs `whileDark`.
+   */
+  sleep: (whileDark: () => Promise<void> | void) => Promise<void>;
+}
+
+/** A building being placed: where it would stand, and whether it may. */
+export interface BuildGhost {
+  kind: EmpireBuildingKind;
+  tx: number;
+  ty: number;
+  ok: boolean;
+}
+
+/** A fixture or piece of decor being placed in the grocery: where it would stand, and whether it may. */
+export interface GroceryGhost {
+  kind: GroceryItemKind;
+  tx: number;
+  ty: number;
+  ok: boolean;
+}
+
+/** The grocery as its owner has it, for the room to draw and its people to work. */
+export interface GroceryScene {
+  layout: readonly GroceryPlacement[];
+  staff: readonly string[];
 }
 
 export interface StackAcresWorldProps {
@@ -253,6 +297,31 @@ export interface StackAcresWorldProps {
   woodNodes: readonly WoodNodeSnapshot[];
   /** The Mine's boulders, so a mined-out one shows as rubble until it re-forms. */
   stoneNodes: readonly StoneNodeSnapshot[];
+  /** The Homestead's forage bushes, so a picked one shows as a bare stub
+   *  until its seed heads come back. */
+  forageNodes: readonly ForageNodeSnapshot[];
+  /** What is still standing on land being cleared, so a felled obstacle
+   *  disappears and an emptied sector stops being overgrown. */
+  landObstacles: readonly LandObstacleSnapshot[];
+  /** Every fence piece the farm has put up, by Homestead map square (lib/stackacres/fences.ts). */
+  fences: readonly FencePiece[];
+  /** The buildings standing on the Far Field (lib/stackacres/empire-buildings.ts). */
+  empireBuildings: readonly PlacedEmpireBuilding[];
+  /** Placing a building: taps pick a square (`onBuildTap`) instead of walking the farmer there. */
+  buildMode: boolean;
+  /** The building being placed, drawn see-through over green or red squares, or null. */
+  buildGhost: BuildGhost | null;
+  onBuildTap: (tile: Tile) => void;
+  /** The grocery as its owner has it, or null for the store as it was built, crew and all. */
+  grocery: GroceryScene | null;
+  /** The fixture or decor being placed in the grocery, drawn see-through over green or red squares, or null. */
+  groceryGhost: GroceryGhost | null;
+  /** The farmer walked up to the grocery's Help Wanted board. */
+  onJobBoardTap: () => void;
+  /** The farmer walked up to the grocery manager's desk. */
+  onStoreDeskTap: () => void;
+  /** A finger landed on someone working at the grocery. */
+  onStaffTap: (name: string, at: TapPoint) => void;
   tool: StackAcresTool;
   /** Fired once, by nonce, to trigger the gold-burst effect on one unit --
    *  the client-side twin of a confirmed collect. */
@@ -292,25 +361,35 @@ export interface StackAcresWorldProps {
    * water, the swing, the wait for a bite -- and only calls this once there is
    * something to fight, so a cast the player backs out of never reaches the
    * shell at all. `at` is where the bobber is sitting, which is where the
-   * cast's own lines belong. See scene.ts's `beginCast`.
+   * cast's own lines belong. `castPower` is the power bar the cast was thrown
+   * on, 0 to 1: how far out it landed, which `catch-fish` rolls against.
+   * See scene.ts's `beginCast`.
    */
-  onDockTap: (at: TapPoint) => void;
+  onDockTap: (at: TapPoint, castPower: number) => void;
   /** A finger landed on the treeline at the Ancestral Oak -- the entryway to
    *  a stalk, the way the dock is the entryway to a cast. The shell decides
    *  whether one is on offer and with which weapon; the map only reports the
    *  tap. */
   onThicketTap: (at: TapPoint) => void;
   /** A finger landed on one of the Homestead's own choppable trees (see
-   *  lib/stackacres/tree-nodes.ts). The shell decides whether that id is a
-   *  real, currently-choppable node and opens the chop popup; the map only
-   *  reports the tap, the same split `onThicketTap` already takes. */
+   *  lib/stackacres/tree-nodes.ts). The farmer is already swinging his axe at
+   *  it, and the shell sends the swing; a stump still growing back never gets
+   *  here, the map says so itself. */
   onTreeTap: (nodeId: string, at: TapPoint) => void;
+  /** Whether he has the energy for a swing that costs it: the axe, and any
+   *  swing on land being cleared. False once the shell has said why. Asked
+   *  before the swing, so a tired farmer never swings at nothing. */
+  maySwing: (at: TapPoint) => boolean;
   /** A finger landed on one of the Mine's three tagged boulders (see
-   *  lib/stackacres/stone-nodes.ts). The shell decides whether that id is a
-   *  real, currently-mineable node and opens the shared swing popup in mine
-   *  mode; the map only reports the tap, the same split `onTreeTap` already
-   *  takes. */
+   *  lib/stackacres/stone-nodes.ts). A pick swing, same split as `onTreeTap`. */
   onStoneTap: (nodeId: string, at: TapPoint) => void;
+  /** A finger landed on one of the Homestead's four forage bushes (see
+   *  lib/stackacres/forage.ts). The shell sends the pick straight off. */
+  onForageTap: (nodeId: string, at: TapPoint) => void;
+  /** A finger landed on something standing on land still being cleared (see
+   *  lib/stackacres/land-clearing.ts). An axe or pick swing, same split as
+   *  `onTreeTap`. */
+  onLandTap: (obstacleId: string, at: TapPoint) => void;
   /** A finger landed on the Greenhouse's own footprint: the shell's cue to
    *  open its panel, which shows either the build screen or the slots. */
   onGreenhouseTap: () => void;
@@ -324,6 +403,15 @@ export interface StackAcresWorldProps {
   /** A finger landed on the player's house. Opens the house panel (the
    *  kitchen), never anything of Ray's -- see stackacres-farm.tsx's `onWorldHouseTap`. */
   onHouseTap: (at: TapPoint) => void;
+  /** The farmer walked up to the bed in the farmhouse. The shell decides
+   *  whether it is late enough to sleep. */
+  onBedTap: (at: TapPoint) => void;
+  /** The farm clock's game hour right now (lib/stackacres/clock.ts). The map
+   *  reads it for its light, its critters and who is sleepy. */
+  clockHour: () => number;
+  /** The farm clock's game day number (lib/stackacres/clock.ts): the people on
+   *  their rounds keep a slightly different day each day. */
+  clockDay: () => number;
   /** A finger landed on one of the eleven story travelers (see
    *  lib/stackacres/story/placement.ts). `at` is the point over their head,
    *  where the dialogue bubble hangs; see stackacres-farm.tsx's
@@ -333,20 +421,11 @@ export interface StackAcresWorldProps {
    *  lib/stackacres/secrets.ts's `HIDDEN_ZONES`). The scene has already fired
    *  its own local `secretDiscoveryPuff` by the time this callback runs. */
   onSecretZoneTap: (zoneId: HiddenZoneId, at: TapPoint) => void;
-  /** Land the player may work (lib/stackacres/sectors.ts). Everything else
-   *  is drawn as wild growth and has no farm on it to tap. */
-  sectors: SectorId[];
-  /** Whether the Crop Fields have been unlocked (lib/stackacres/crop-fields.ts)
-   *  -- the `sectors` equivalent for ground that is not a `SectorId` any more
-   *  since the 2026-09-08 district merge folded it into the Farmstead. */
-  cropFieldsUnlocked: boolean;
-  /** A finger landed anywhere on land that has not been cleared -- the offer
-   *  to buy it, answered by the clearing modal in stackacres-farm.tsx. */
-  onLockedSectorTap: (zone: ZoneId, at: TapPoint) => void;
-  /** `onLockedSectorTap`'s own twin for the Crop Fields -- see
-   *  StackAcresSceneCallbacks' own doc comment on why they need a separate
-   *  callback since the 2026-09-08 district merge. */
-  onCropFieldsLockedTap: (at: TapPoint) => void;
+  /** A finger landed on a quest's own named spot (see
+   *  lib/stackacres/story/places.ts's `QUEST_PLACES`) -- a "go to X" quest
+   *  objective's whole job. Unlike `onSecretZoneTap` there is nothing to
+   *  discover here, only a visit to record. */
+  onQuestPlaceTap: (placeId: QuestPlaceId, at: TapPoint) => void;
   /** The camera moved, so anything the shell pinned to a screen position is
    *  now pointing at the wrong part of the world. */
   onViewMoved: () => void;

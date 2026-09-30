@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { guessWordFillInCell, wordFillInSlotCells } from "./puzzles/word-fill-in";
+import {
+  GRID_SIZE,
+  LARGE_GRID_SIZE,
+  guessWordFillInCell,
+  startWordFillInRound,
+  wordFillInSlotCells,
+} from "./puzzles/word-fill-in";
 import {
   ANTE_UP_WORD_FILL_IN_TIERS,
+  anteUpWordFillInTerms,
   anteUpWordFillInClearProblem,
   anteUpWordFillInDeadline,
   anteUpWordFillInPlaceProblem,
@@ -49,6 +56,43 @@ describe("startAnteUpWordFillIn", () => {
     expect(attempt.startedAt).toBe(NOW.toISOString());
     // The round's own clock has not started; only guessing starts it.
     expect(attempt.round.startedAt).toBeNull();
+  });
+});
+
+describe("tier grids", () => {
+  it("deals Quick a regular grid and Marathon a large one", () => {
+    expect(ANTE_UP_WORD_FILL_IN_TIERS.quick.grid).toBe("regular");
+    expect(ANTE_UP_WORD_FILL_IN_TIERS.marathon.grid).toBe("large");
+    const meta = { id: "a", version: 1 };
+    const quick = startAnteUpWordFillIn("quick", 1000, 8, NOW);
+    const marathon = startAnteUpWordFillIn("marathon", 1000, 8, NOW);
+    expect(toAnteUpWordFillInSnapshot(quick, meta, NOW).gridSize).toBe(GRID_SIZE);
+    expect(toAnteUpWordFillInSnapshot(marathon, meta, NOW).gridSize).toBe(LARGE_GRID_SIZE);
+    expect(marathon.round.words.length).toBeGreaterThan(quick.round.words.length);
+  });
+
+  it("shortens Marathon's clock at each stake band and leaves Quick alone", () => {
+    const clock = (wager: number) => anteUpWordFillInTerms("marathon", wager).timeLimitMs;
+    expect(clock(0)).toBe(ANTE_UP_WORD_FILL_IN_TIERS.marathon.timeLimitMs);
+    expect(clock(10_000)).toBe(390_000);
+    expect(clock(100_000)).toBe(300_000);
+    expect(clock(1_000_000)).toBe(230_000);
+    expect(anteUpWordFillInTerms("quick", 1_000_000)).toBe(ANTE_UP_WORD_FILL_IN_TIERS.quick);
+    expect(startAnteUpWordFillIn("marathon", 100_000, 8, NOW).timeLimitMs).toBe(300_000);
+  });
+
+  it("still reads a Marathon attempt stored on the old 9x9 grid", () => {
+    const legacy: AnteUpWordFillInAttempt = {
+      ...startAnteUpWordFillIn("marathon", 1000, 8, NOW),
+      round: startWordFillInRound(8),
+      timeLimitMs: 15 * 60 * 1000,
+    };
+    const snapshot = toAnteUpWordFillInSnapshot(legacy, { id: "a", version: 1 }, NOW);
+    expect(snapshot.gridSize).toBe(GRID_SIZE);
+    expect(snapshot.board.slots).toEqual(wordFillInSlotCells(legacy.round.templateIndex));
+    expect(snapshot.timeLimitMs).toBe(15 * 60 * 1000);
+    const solved = solve(legacy, NOW);
+    expect(solved.status).toBe("won");
   });
 });
 

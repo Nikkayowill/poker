@@ -129,12 +129,44 @@ describe("opening an attempt", () => {
     expect(await balance(token)).toBe(50_000);
   });
 
-  it("allows a wager on the easy board the old ceiling would have refused", async () => {
-    // The per-difficulty ceiling in lib/arcade/ante-up-stakes.ts was removed;
-    // a wager is now bounded only by the player's own balance.
-    const { token } = await funded(1_000_000);
-    const { attempt } = await openAnteUpNonogram(token, "easy", 25_000);
-    expect(attempt.wager).toBe(25_000);
+  it("refuses a board too small for the stake, with the reason, and leaves the wallet alone", async () => {
+    const { token } = await funded(5_000_000);
+    const cases = [
+      ["easy", 10_000, "Medium"],
+      ["medium", 100_000, "Hard"],
+      ["hard", 1_000_000, "Expert"],
+    ] as const;
+    for (const [tier, wager, needs] of cases) {
+      const opening = openAnteUpNonogram(token, tier, wager);
+      await expect(opening).rejects.toBeInstanceOf(AnteUpNonogramRequestError);
+      await expect(opening).rejects.toThrow(`plays ${needs} or harder`);
+    }
+    expect(await balance(token)).toBe(5_000_000);
+  });
+
+  it("opens the smallest board each stake band allows", async () => {
+    const cases = [
+      ["medium", 10_000],
+      ["hard", 100_000],
+      ["expert", 1_000_000],
+      ["master", 1_000_000],
+    ] as const;
+    for (const [tier, wager] of cases) {
+      const { token } = await funded(5_000_000);
+      const { attempt } = await openAnteUpNonogram(token, tier, wager);
+      expect(attempt.difficulty).toBe(tier);
+      expect(attempt.wager).toBe(wager);
+    }
+  });
+
+  it("leaves free play and small stakes on every board", async () => {
+    for (const tier of ["easy", "medium", "hard", "expert", "master"] as const) {
+      for (const wager of [0, 9_999]) {
+        const { token } = await funded();
+        const { attempt } = await openAnteUpNonogram(token, tier, wager);
+        expect(attempt.difficulty).toBe(tier);
+      }
+    }
   });
 
   it("lets a bigger board take a bigger wager", async () => {
@@ -560,5 +592,15 @@ describe("the picture", () => {
 
     const on = await openAnteUpNonogram(token, "easy", 0);
     expect(on.attempt.board.autoCross).toBe(true);
+  });
+
+  it("turns auto-cross off from a 100k stake, whatever was asked for", async () => {
+    const { token } = await funded(5_000_000);
+    const small = await openAnteUpNonogram(token, "medium", 99_999, { autoCross: true });
+    expect(small.attempt.board.autoCross).toBe(true);
+    await resignAnteUpNonogramAttempt(token);
+
+    const big = await openAnteUpNonogram(token, "hard", 100_000, { autoCross: true });
+    expect(big.attempt.board.autoCross).toBe(false);
   });
 });

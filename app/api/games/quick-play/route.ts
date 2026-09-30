@@ -14,6 +14,7 @@ import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { withRequestSessionCookie } from "@/lib/server/session";
 import { resolvePlayerForTableEntry } from "@/lib/server/table-entry";
 import { resolveTierEntry } from "@/lib/server/tier-entry";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -58,6 +59,13 @@ export async function POST(request: NextRequest) {
       if (!openGameId) break;
       const loaded = await getStoredGame(openGameId);
       if (!loaded) continue;
+      // Already sitting here: hand back the seat they have, free, the same
+      // way the join route treats alreadySeated. claimSeat would return the
+      // existing seat anyway, so charging first would take a buy-in for nothing.
+      if (loaded.seats.some((seat) => seat.ownerToken === token)) {
+        joined = loaded;
+        break;
+      }
       // Every seat claim is a real buy-in. Inheriting an outgoing bot's chips
       // for free used to be harmless, but those chips are now redeemable for
       // Gold when the player stands up, so a free seat would be a faucet.
@@ -101,7 +109,7 @@ export async function POST(request: NextRequest) {
     });
     return withRequestSessionCookie(request, response, token);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not find you a table.";
+    const message = publicErrorMessage(error, "Could not find you a table.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

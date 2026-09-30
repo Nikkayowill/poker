@@ -28,10 +28,15 @@
  * the fence tiers the districts are priced against -- and nothing here
  * reads or writes it.
  *
- * The Ancestral Oak is where this happens (art/stackacres-td/AREAS.md
- * already calls its forest edge "the natural source of bears"), which puts
- * the whole loop behind that area's own Level 3 gate without this file
- * needing a gate of its own.
+ * The Ancestral Oak was where this happened: its map had the only "thicket"
+ * tag in the game (art/stackacres-td/areas/rig/oak.py), so reaching the Oak
+ * WAS the gate, without this file needing one of its own. That has been
+ * moot since HOMESTEAD_ONLY shut every outer district on 2026-09-22 --
+ * nothing in the live game has tapped a thicket since -- and the Oak's map
+ * is gone outright as of 2026-09-28 (../story/travelers.ts's own header),
+ * so there is currently no way back in. Everything below still compiles and
+ * still holds its own tests; it is waiting on a thicket somewhere reachable,
+ * not rewritten.
  */
 
 import { levelUnlock, storyLevel, type StoryUnlock } from "./story/unlocks";

@@ -49,9 +49,7 @@ export function missionSignalsForEvent(event: MissionEvent): MissionSignal[] {
       return playedSomething("heads_up_matches_won");
     case "puzzle_completed":
       return playedSomething("puzzles_completed");
-    case "level_gained":
-      // Zero levels is not a signal at all -- awardWager calls this
-      // unconditionally, and most wagers cross none.
-      return event.levels > 0 ? [{ metric: "levels_gained", delta: event.levels }] : [];
+    case "rank_points_gained":
+      return event.points > 0 ? [{ metric: "rank_points_gained", delta: event.points }] : [];
   }
 }

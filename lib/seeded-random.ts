@@ -1,9 +1,12 @@
 /**
- * Deterministic randomness shared by every seeded puzzle/duel engine
- * (Sudoku, Minesweeper, Word Stack/Connections' daily draw, Word Race,
- * Trivia Showdown). Each of these used to carry its own byte-for-byte copy
- * -- consolidated here so a bug in either function is fixed once, not
- * rediscovered per game.
+ * Deterministic randomness shared by the seeded puzzle engines (Sudoku,
+ * Minesweeper, Word Stack/Connections' daily draw). Each used to carry its
+ * own byte-for-byte copy -- consolidated here so a bug in either function is
+ * fixed once, not rediscovered per game.
+ *
+ * Not for hidden information in a staked duel. A 31-bit seed can be recovered
+ * from what a match reveals; Liar's Dice, Cribbage, Trivia and Word Race draw
+ * from lib/pvp/secure-random.ts instead.
  */
 
 /** FNV-1a. Any stable string hash would do; this one is short and has no dependencies. */
@@ -21,10 +24,8 @@ export function hashString(value: string): number {
  * accumulator and a float in [0, 1) out. `mulberry32` below is a thin
  * closure wrapper around this for callers that just want "the next number";
  * this raw form exists for a caller that has to carry the accumulator itself
- * across a serialized/persisted state rather than close over it in memory --
- * lib/cribbage/deck.ts's `rngState` is the one so far (a cribbage match runs
- * an unbounded number of deals, so it can't pre-generate a fixed sequence up
- * front the way a single-seed generator's callers do). Keep both forms
+ * across a serialized/persisted state rather than close over it in memory
+ * (Cribbage used to, before its deals moved to the CSPRNG). Keep both forms
  * calling this one implementation: a PRNG bug fixed in one and not the other
  * is exactly the duplication this module exists to prevent.
  */

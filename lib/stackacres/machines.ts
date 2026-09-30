@@ -29,10 +29,10 @@
 import { canStartRecipe, recipesForMachine, type RecipeId } from "./recipes";
 import type { StackAcresInventory } from "./inventory";
 import { siloFeedsLeft } from "./feed-silo";
-import type { MachineRawItem } from "./machine-items";
+import type { MaterialCost } from "./machine-items";
 import { stackacresExchangeDay } from "./exchange";
 
-export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat", "oven", "stew_pot", "counter", "feed_silo", "cellar", "farm_kitchen"] as const;
+export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat", "oven", "stew_pot", "counter", "feed_silo", "cellar", "farm_kitchen", "smelter"] as const;
 export type MachineKind = (typeof MACHINE_KINDS)[number];
 
 export function isMachineKind(value: string): value is MachineKind {
@@ -40,13 +40,9 @@ export function isMachineKind(value: string): value is MachineKind {
 }
 
 /** One material line a machine's placement also spends, alongside its Gold
- *  `placeCost` -- the same shape ./blueprints.ts's `BlueprintRequirement`
- *  takes, kept as its own narrower interface here rather than imported so
- *  this file never has to import from ./blueprints.ts for one field. */
-export interface MachineMaterialCost {
-  readonly item: MachineRawItem;
-  readonly quantity: number;
-}
+ *  `placeCost`. The shape is ./machine-items.ts's now, shared with land
+ *  clears and pen slots; the old name is kept so call sites read the same. */
+export type MachineMaterialCost = MaterialCost;
 
 export interface MachineDef {
   label: string;
@@ -111,6 +107,10 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
   // own: it cooks the player's standing order while they are away, at double
   // yield (./farm-kitchen.ts).
   farm_kitchen: { label: "Farm Kitchen", placeCost: 60_000 },
+  // The Workshop's furnace: melts Iron Ore into Metal, the one material the
+  // Far Field's buildings cannot be raised without. Built of stone like the
+  // Silo and Cellar, and priced as a mid-game step, not a late one.
+  smelter: { label: "Smelter", placeCost: 3_000, materials: [{ item: "stone", quantity: 25 }] },
 };
 
 /** Flat total, and deliberately equal to the number of kinds: with the
@@ -124,8 +124,9 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
  *  any one kind needed more room. Raised 4 -> 5 with the Oven
  *  and 5 -> 6 with the Stew Pot, 6 -> 7 with the Kitchen
  *  Counter, 7 -> 8 with the Feed Silo and 8 -> 9 with the Preserves
- *  Cellar and 9 -> 10 with the Farm Kitchen, same reason. */
-export const MACHINE_CAP = 10;
+ *  Cellar, 9 -> 10 with the Farm Kitchen and 10 -> 11 with the Smelter, same
+ *  reason. */
+export const MACHINE_CAP = 11;
 
 export type MachineStatus = "idle" | "working";
 

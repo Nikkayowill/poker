@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { navigateWithOrb } from "@/lib/loading/orb-transition";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
@@ -11,6 +12,10 @@ import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { selectSound } from "@/lib/audio/ui-sounds";
 import { isStakesTier, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { createRequestSequence } from "@/lib/ui/request-sequence";
+import { watchInvalidations } from "@/lib/realtime/watch-invalidations";
+import { SNG_STATE_CHANGED, sitAndGoLobbyChannelName, sitAndGoTableChannelName } from "@/lib/sit-and-go/sit-and-go-channel";
+import { browserSupabase } from "@/lib/supabase/browser-client";
 
 /**
  * The client half of a Sit & Go: the tier lobby, the waiting room, and the
@@ -24,7 +29,6 @@ import type { PlayerProfile } from "@/lib/profile/types";
  * to rebuild any slice of it.
  */
 
-const POLL_MS = 2000;
 const MAX_SEATS = 6;
 
 export interface SitAndGoTable {
@@ -74,7 +78,8 @@ export function SitAndGoShell() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const sending = useRef(false);
+  // Keeps a poll that left before a join or leave from flipping the lobby back.
+  const [sequence] = useState(() => createRequestSequence());
   const mounted = useRef(true);
   const redirected = useRef(false);
   // Load-bearing even though its return value goes unused: this is what
@@ -86,25 +91,26 @@ export function SitAndGoShell() {
   useArcadeSound();
 
   const refresh = useCallback(async () => {
-    if (sending.current) return;
+    const ticket = sequence.beginRead();
+    if (!ticket) return;
     try {
       const response = await fetch("/api/sit-and-go", { cache: "no-store" });
       const data = (await response.json()) as Partial<LobbyResponse>;
-      if (!mounted.current || sending.current) return;
+      if (!mounted.current || !sequence.acceptRead(ticket)) return;
       if (response.ok) {
         if (data.profile) setProfile(data.profile);
         if (data.tables) setOpenTables(data.tables);
         if (data.table !== undefined) setTable(data.table ?? null);
       }
     } catch {
-      // A dropped poll is not worth a banner; the next one is two seconds away.
+      // A dropped read is not worth a banner; the next ping or reconnect reads again.
     } finally {
       if (mounted.current) setLoaded(true);
     }
-  }, [setProfile]);
+  }, [sequence, setProfile]);
 
   const send = useCallback(async (url: string, body: unknown) => {
-    sending.current = true;
+    const done = sequence.beginWrite();
     setBusy(true);
     setError(null);
     try {
@@ -126,10 +132,10 @@ export function SitAndGoShell() {
     } catch {
       if (mounted.current) setError("Could not reach the table. Check your connection.");
     } finally {
-      sending.current = false;
+      done();
       if (mounted.current) setBusy(false);
     }
-  }, [setProfile]);
+  }, [sequence, setProfile]);
 
   // The tier picked one level up, in the main buy-in flow's own format
   // picker (BuyInModal / MobileShell) -- `?tier=<id>`, carried straight
@@ -147,18 +153,29 @@ export function SitAndGoShell() {
 
   useEffect(() => {
     mounted.current = true;
-    // A background tab would otherwise poll every POLL_MS forever.
-    const poll = () => {
-      if (!document.hidden) void refresh();
-    };
-    const first = window.setTimeout(poll, 0);
-    const timer = window.setInterval(poll, POLL_MS);
+    const first = window.setTimeout(() => void refresh(), 0);
     return () => {
       mounted.current = false;
       window.clearTimeout(first);
-      window.clearInterval(timer);
     };
   }, [refresh]);
+
+  // Cross-browser sync: a table appearing or filling in the open list, a seat
+  // taken, the table dealing. A trigger pings sng:lobby and sng:<tableId> on
+  // every write to the sit-and-go tables and this re-reads, so nothing polls.
+  // Keyed on the table id rather than the table object, so a version bump
+  // does not tear the channel down.
+  const tableId = table?.id ?? null;
+  useEffect(() => {
+    const supabase = browserSupabase();
+    if (!supabase) return;
+    return watchInvalidations({
+      supabase,
+      channelName: tableId ? sitAndGoTableChannelName(tableId) : sitAndGoLobbyChannelName(),
+      event: SNG_STATE_CHANGED,
+      refresh,
+    });
+  }, [tableId, refresh]);
 
   // The instant the 6th seat fills, the table is active with a real gameId.
   // Edge-triggered (once per table id) so a stray extra poll after the
@@ -166,7 +183,7 @@ export function SitAndGoShell() {
   useEffect(() => {
     if (table?.status !== "active" || !table.gameId || redirected.current) return;
     redirected.current = true;
-    router.push(`/?table=${table.gameId}`);
+    navigateWithOrb(() => router.push(`/?table=${table.gameId}`));
   }, [table, router]);
 
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;

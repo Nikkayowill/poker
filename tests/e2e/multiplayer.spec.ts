@@ -4,6 +4,7 @@ type Snapshot = {
   id: string;
   version: number;
   handNumber: number;
+  nextHandAt: string | null;
   status: "playing" | "complete";
   street: string;
   currentPlayer: number | null;
@@ -213,6 +214,9 @@ test("six isolated players keep private cards, action order, layout, pot, and re
     expect(state.seats.reduce((sum, seat) => sum + seat.stack, 0) + state.rake).toBe(6000);
 
     const nextActor = state.seats.find((seat) => seat.stack > 0)!.position;
+    // The server refuses next-hand until the between-hands pause is over.
+    const due = Date.parse(state.nextHandAt ?? "");
+    if (Number.isFinite(due)) await pages[0].waitForTimeout(Math.max(0, due - Date.now()) + 100);
     const next = await contexts[nextActor].request.post(`/api/games/${id}/actions`, {
       data: { type: "next-hand" },
     });

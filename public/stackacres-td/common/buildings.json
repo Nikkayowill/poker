@@ -1,0 +1,52 @@
+{
+ "frames": {
+  "barn": {
+   "frame": {
+    "x": 2,
+    "y": 2,
+    "w": 206,
+    "h": 206
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 206,
+    "h": 206
+   },
+   "sourceSize": {
+    "w": 206,
+    "h": 206
+   }
+  },
+  "barn-shadow": {
+   "frame": {
+    "x": 210,
+    "y": 2,
+    "w": 246,
+    "h": 28
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 246,
+    "h": 28
+   },
+   "sourceSize": {
+    "w": 246,
+    "h": 28
+   }
+  }
+ },
+ "meta": {
+  "image": "buildings.png",
+  "size": {
+   "w": 458,
+   "h": 210
+  },
+  "scale": "1"
+ }
+}

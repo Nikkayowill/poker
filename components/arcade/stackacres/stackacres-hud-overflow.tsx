@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { MoreHorizontal } from "lucide-react";
+import { StackAcresPixelIcon } from "./stackacres-pixel-icon";
 
 /**
  * The HUD's overflow drawer, gated on `compactNav` (`useTightLandscape`,
@@ -76,7 +76,7 @@ export function StackAcresHudOverflow({ children }: { children: ReactNode }) {
         title="More"
         onClick={() => setOpen((value) => !value)}
       >
-        <MoreHorizontal size={18} aria-hidden="true" />
+        <StackAcresPixelIcon name="more" />
       </button>
       {open && (
         // Any tap inside -- the Feed readout, a badge that opens its own

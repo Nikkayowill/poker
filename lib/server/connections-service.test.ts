@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PUZZLE_EPOCH_DAY, pickDaily, previousDay, puzzleDay } from "@/lib/arcade/puzzles/daily";
 import { CONNECTIONS_PUZZLES } from "@/lib/arcade/puzzles/connections-puzzles";
 import type { ConnectionsLevel } from "@/lib/arcade/puzzles/connections";
-import { __resetDailyPuzzlesForTest, createPuzzleRound, getPuzzleRound } from "./daily-puzzle-store";
+import {
+  __resetDailyPuzzlesForTest,
+  advancePuzzleRound,
+  createPuzzleRound,
+  getPuzzleRound,
+} from "./daily-puzzle-store";
 import {
   CONNECTIONS_GAME,
   ConnectionsRequestError,
@@ -433,5 +438,65 @@ describe("a failed canon lookup does not take the stake", () => {
     expect((await ensureProfile(token)).goldBalance).toBe(before);
     // And no half-open round was left behind to burn the day's attempt.
     expect(await getPuzzleRound<StoredConnectionsRound>(id, CONNECTIONS_GAME, today())).toBeNull();
+  });
+});
+
+describe("a big stake allows fewer mistakes", () => {
+  async function fundedPlayer(gold: number) {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    const delta = gold - profile.goldBalance;
+    if (delta !== 0) await adjustGold(profile.id, delta);
+    return { token, id: profile.id };
+  }
+
+  /** Two distinct wrong selections, so neither is refused as a repeat. */
+  function twoWrong(): string[][] {
+    return [scattered(), ([0, 1, 2, 3] as ConnectionsLevel[]).map((level) => group(level)[1])];
+  }
+
+  it("keeps four mistakes under 10k", async () => {
+    const { token } = await fundedPlayer(50_000);
+    const view = await startConnectionsPuzzle(token, 9_999);
+    expect(view.round?.mistakesAllowed).toBe(4);
+  });
+
+  it("allows three at 10k", async () => {
+    const { token, id } = await fundedPlayer(50_000);
+    const view = await startConnectionsPuzzle(token, 10_000);
+    expect(view.round?.mistakesAllowed).toBe(3);
+    const stored = await getPuzzleRound<StoredConnectionsRound>(id, CONNECTIONS_GAME, today());
+    expect(stored?.round.maxMistakes).toBe(3);
+  });
+
+  it("ends a 100k board on the second mistake", async () => {
+    const { token } = await fundedPlayer(500_000);
+    await startConnectionsPuzzle(token, 100_000);
+    const view = await playAll(token, twoWrong());
+    expect(view.round?.status).toBe("lost");
+    expect(view.round?.mistakesAllowed).toBe(2);
+    expect(view.round?.payout).toBe(0);
+  });
+
+  it("ends a 1M board on the first mistake", async () => {
+    const { token } = await fundedPlayer(3_000_000);
+    await startConnectionsPuzzle(token, 1_000_000);
+    const view = await playAll(token, [scattered()]);
+    expect(view.round?.status).toBe("lost");
+    expect(view.round?.mistakesAllowed).toBe(1);
+  });
+
+  it("plays a round stored before the limit existed under the old four", async () => {
+    const { token, id } = await fundedPlayer(500_000);
+    await startConnectionsPuzzle(token, 100_000);
+    const opened = await getPuzzleRound<StoredConnectionsRound>(id, CONNECTIONS_GAME, today());
+    if (!opened) throw new Error("no round");
+    const legacy: StoredConnectionsRound = { ...opened.round };
+    delete legacy.maxMistakes;
+    await advancePuzzleRound<StoredConnectionsRound>(opened, legacy, false);
+
+    const view = await playAll(token, twoWrong(), 2);
+    expect(view.round?.status).toBe("active");
+    expect(view.round?.mistakesAllowed).toBe(4);
   });
 });

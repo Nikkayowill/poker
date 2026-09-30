@@ -7,7 +7,6 @@ import {
   isHeadToHeadGame,
   isLeaderboardGameId,
   leaderboardGame,
-  leaderboardTabs,
 } from "./contract";
 
 describe("registry completeness", () => {
@@ -34,24 +33,6 @@ describe("registry completeness", () => {
   it("keys every entry's gameId to match its own registry key", () => {
     for (const [key, contract] of Object.entries(LEADERBOARD_GAMES)) {
       expect(contract.gameId).toBe(key);
-    }
-  });
-});
-
-describe("leaderboardTabs", () => {
-  it("leads with the three cross-game tabs, then every registered game", () => {
-    const tabs = leaderboardTabs();
-    expect(tabs[0]).toEqual({ id: "poker", label: "Poker" });
-    expect(tabs[1]).toEqual({ id: "global", label: "Global" });
-    expect(tabs[2]).toEqual({ id: "friends", label: "Friends" });
-    expect(tabs.slice(3).map((tab) => tab.id).sort()).toEqual(Object.keys(LEADERBOARD_GAMES).sort());
-  });
-
-  it("keeps the three cross-game tab ids clear of every game id", () => {
-    // app/api/leaderboard/route.ts dispatches on this one string, so a game
-    // registered as "friends" would shadow the friends board entirely.
-    for (const reserved of ["poker", "global", "friends"]) {
-      expect(LEADERBOARD_GAMES[reserved]).toBeUndefined();
     }
   });
 });

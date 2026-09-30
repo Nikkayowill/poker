@@ -17,6 +17,7 @@
  *   contract-fulfilled   <- fulfill-contract
  *   enchantment-forged   <- forge-enchantment
  *   crossbreed-harvested <- harvest-crossbreed
+ *   place-reached        <- reach-quest-place
  *
  * `deliver` objectives are not events. They read the inventory at turn-in.
  */
@@ -27,6 +28,7 @@ import type { FishSpecies } from "../fishing";
 import type { RecipeId } from "../recipes";
 import type { HiddenZoneId } from "../secrets";
 import type { SectorId } from "../sectors";
+import type { QuestPlaceId } from "./places";
 
 export type StoryEvent =
   | { readonly kind: "harvested"; readonly stock: StackAcresStock; readonly count: number }
@@ -40,6 +42,7 @@ export type StoryEvent =
   | { readonly kind: "soil-placed"; readonly count: number }
   | { readonly kind: "contract-fulfilled" }
   | { readonly kind: "enchantment-forged" }
-  | { readonly kind: "crossbreed-harvested"; readonly item: CrossbreedItem };
+  | { readonly kind: "crossbreed-harvested"; readonly item: CrossbreedItem }
+  | { readonly kind: "place-reached"; readonly placeId: QuestPlaceId };
 
 export type StoryEventKind = StoryEvent["kind"];

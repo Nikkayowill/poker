@@ -481,7 +481,8 @@ export async function leaveCribbageTable(
  * Writes the next state, but only if nobody else already did: identical
  * contract to lib/server/pvp-match-store.ts's advancePvpMatch, generalized
  * from a winner seat to a winner profile id since cribbage has no fixed
- * seat-to-profile mapping the way a 2-tuple duel does.
+ * seat-to-profile mapping the way a 2-tuple duel does. A settle with a null
+ * winnerId completes a table that ended on a forfeit.
  *
  * Returns null on a lost race. The caller must not pay out on a null
  * return; this guard is the entire reason a pot is credited exactly once.
@@ -489,7 +490,7 @@ export async function leaveCribbageTable(
 export async function advanceCribbageTable(
   current: StoredCribbageTable,
   next: CribbageState,
-  settle: { winnerId: string } | null,
+  settle: { winnerId: string | null } | null,
 ): Promise<StoredCribbageTable | null> {
   const supabase = adminClient();
   const version = current.version + 1;

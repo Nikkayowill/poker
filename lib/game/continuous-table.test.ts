@@ -9,7 +9,7 @@ import {
   scheduleNextHand,
   vacateSeat,
 } from "./engine";
-import { planTurnClock, type TurnClockInput } from "./turn-clock";
+import { DEADLINE_GRACE_MS, planTurnClock, type TurnClockInput } from "./turn-clock";
 import type { GameState } from "./types";
 import { defaultEquipped } from "@/lib/cosmetics/catalog";
 
@@ -239,7 +239,7 @@ describe("the browser clock between hands", () => {
     // Previously "no turn deadline" meant idle, which is exactly why a
     // finished table sat there until somebody pressed Deal.
     const plan = planTurnClock(input({ nextHandAt: at(4_000) }), NOW);
-    expect(plan).toEqual({ kind: "advance-at", delayMs: 4_000, rank: 0 });
+    expect(plan).toEqual({ kind: "advance-at", delayMs: 4_000 + DEADLINE_GRACE_MS, rank: 0 });
   });
 
   it("still rests when there is nothing to wait for", () => {
@@ -257,6 +257,6 @@ describe("the browser clock between hands", () => {
       input({ turnDeadlineAt: at(1_000), nextHandAt: at(9_000) }),
       NOW,
     );
-    expect(plan).toEqual({ kind: "advance-at", delayMs: 1_000, rank: 0 });
+    expect(plan).toEqual({ kind: "advance-at", delayMs: 1_000 + DEADLINE_GRACE_MS, rank: 0 });
   });
 });

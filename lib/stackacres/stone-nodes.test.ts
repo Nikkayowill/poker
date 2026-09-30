@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   HITS_TO_BREAK,
+  ORE_PER_BREAK,
   REGROW_MS,
+  STONE_PER_SWING,
   STONE_NODE_IDS,
   applyMiningSwing,
   effectiveNodeState,
@@ -9,6 +11,7 @@ import {
   hasRegrown,
   isNodeMineable,
   isStoneNodeId,
+  oreForSwing,
   regrowLabel,
 } from "./stone-nodes";
 
@@ -29,43 +32,46 @@ describe("applyMiningSwing", () => {
   it("takes exactly HITS_TO_BREAK swings to break a fresh node", () => {
     let node = freshStoneNode("stone:mine-1");
     for (let i = 0; i < HITS_TO_BREAK - 1; i += 1) {
-      const result = applyMiningSwing(node, "hit", NOW);
+      const result = applyMiningSwing(node, NOW);
       expect(result.broke).toBe(false);
       node = result.node;
     }
-    const final = applyMiningSwing(node, "hit", NOW);
+    const final = applyMiningSwing(node, NOW);
     expect(final.broke).toBe(true);
     expect(final.node.brokenAt).toBe(NOW.toISOString());
     expect(final.node.hitsRemaining).toBe(0);
   });
 
-  it("pays out more Stone for a sweet swing than a plain one", () => {
-    const node = freshStoneNode("stone:mine-1");
-    const hit = applyMiningSwing(node, "hit", NOW);
-    const sweet = applyMiningSwing(node, "sweet", NOW);
-    expect(sweet.yield).toBeGreaterThan(hit.yield);
+  it("pays STONE_PER_SWING (2) for every landed swing", () => {
+    expect(STONE_PER_SWING).toBe(2);
+    expect(applyMiningSwing(freshStoneNode("stone:mine-1"), NOW).yield).toBe(2);
+  });
+
+  it("pays Iron Ore only for the swing that breaks the node", () => {
+    let node = freshStoneNode("stone:mine-1");
+    let ore = 0;
+    for (let i = 0; i < HITS_TO_BREAK; i += 1) {
+      const result = applyMiningSwing(node, NOW);
+      ore += oreForSwing(result.broke);
+      node = result.node;
+    }
+    expect(ore).toBe(ORE_PER_BREAK);
+    expect(oreForSwing(false)).toBe(0);
   });
 
   it("never lands on an already-broken node that has not regrown", () => {
     const broken = { nodeId: "stone:mine-1" as const, hitsRemaining: 0, brokenAt: NOW.toISOString(), version: 4 };
     const soon = new Date(NOW.getTime() + 1000);
-    const result = applyMiningSwing(broken, "sweet", soon);
+    const result = applyMiningSwing(broken, soon);
     expect(result.broke).toBe(false);
     expect(result.yield).toBe(0);
     expect(result.node).toEqual(broken);
   });
 
-  it("quality never changes whether the swing lands, only the yield", () => {
-    const broken = { nodeId: "stone:mine-1" as const, hitsRemaining: 0, brokenAt: NOW.toISOString(), version: 4 };
-    const soon = new Date(NOW.getTime() + 1000);
-    expect(applyMiningSwing(broken, "hit", soon).yield).toBe(0);
-    expect(applyMiningSwing(broken, "sweet", soon).yield).toBe(0);
-  });
-
   it("regrows and accepts a swing once the regrow window has fully elapsed", () => {
     const broken = { nodeId: "stone:mine-1" as const, hitsRemaining: 0, brokenAt: NOW.toISOString(), version: 4 };
     const later = new Date(NOW.getTime() + REGROW_MS);
-    const result = applyMiningSwing(broken, "hit", later);
+    const result = applyMiningSwing(broken, later);
     expect(result.broke).toBe(false);
     expect(result.yield).toBeGreaterThan(0);
     expect(result.node.hitsRemaining).toBe(HITS_TO_BREAK - 1);

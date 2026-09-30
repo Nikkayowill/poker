@@ -25,7 +25,7 @@
  * does): a test hands it a fixed sequence instead of patching Math.random.
  */
 
-import { FISH_SPECIES, pickCaughtFish, type FishSpecies } from "./fishing";
+import { FISH_SPECIES, pickCaughtFish, type CastTier, type FishSpecies } from "./fishing";
 import { clampFrameMs } from "./world";
 
 /** Length of the fish marker as a fraction of the track. Shared by all
@@ -326,6 +326,6 @@ export function gaugeSpeciesLadder(): readonly FishSpecies[] {
  * why the gauge's own copy never names a species -- see
  * `FishingGaugeSceneOptions.title`.
  */
-export function rollGaugeDifficulty(random: () => number = Math.random): FishSpecies {
-  return pickCaughtFish(random);
+export function rollGaugeDifficulty(cast: CastTier, random: () => number = Math.random): FishSpecies {
+  return pickCaughtFish(random, false, cast);
 }

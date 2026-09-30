@@ -13,16 +13,17 @@ interface Handle {
   };
 }
 
-/** Where things stand on the Homestead (public/stackacres-td/areas/homestead/area.json). */
-const TREE_3 = { x: 159, y: 29 };
+/** Where things stand on the Homestead (public/stackacres-td/areas/homestead/area.json).
+ *  The four choppable trees stand in the yard, between the buildings and the lake. */
+const TREE_3 = { x: 566, y: 170 };
 /** Trunk tiles that only one tree stands on: tree 3's outer tile, and tree 4's middle one. */
-const TREE_3_OUTER = { x: 168, y: 24 };
-const TREE_4_MIDDLE = { x: 584, y: 24 };
-const BUSH = { x: 208, y: 132 };
-/** Boulders are shared by every player and the mining spec breaks the first, so this uses the third. It can only run once per server. */
-const MINE_3 = { x: 300, y: 236 };
-const MINE_3_TILE = { x: 296, y: 232 };
-const HOUSE_WALL = { x: 120, y: 136 };
+const TREE_3_OUTER = { x: 584, y: 168 };
+const TREE_4_MIDDLE = { x: 728, y: 232 };
+/** Bush 1 of the four berried ones, which are the forage nodes (lib/stackacres/forage.ts). */
+const BUSH = { x: 250, y: 300 };
+/** Bush 2, picked by the forage test below so the walk-through test above keeps its own. */
+const FORAGE_BUSH = { x: 764, y: 300 };
+const HOUSE_WALL = { x: 472, y: 248 };
 
 test.use({ viewport: { width: 932, height: 430 } });
 
@@ -59,6 +60,14 @@ function sceneCall<M extends SceneMethod>(page: Page, method: M, ...args: Parame
   ) as Promise<SceneResult<M>>;
 }
 
+/** How many swings a tree or boulder still owes, off the server's own snapshot. */
+async function hitsLeft(page: Page, list: "woodNodes" | "stoneNodes", nodeId: string): Promise<number> {
+  const view = (await (await page.request.get("/api/stackacres")).json()) as Record<string, { nodeId: string; hitsRemaining: number; ready: boolean }[] | undefined>;
+  const node = view[list]?.find((candidate) => candidate.nodeId === nodeId);
+  if (!node) return -1;
+  return node.ready ? node.hitsRemaining : 0;
+}
+
 test("felling a tree in the game leaves a stump, and only that tree", async ({ context, page }) => {
   await openStackAcres(context, page);
   expect(await sceneCall(page, "nodeDrawn", "tree:homestead-3")).toBe("standing");
@@ -66,16 +75,19 @@ test("felling a tree in the game leaves a stump, and only that tree", async ({ c
   expect(await sceneCall(page, "isBlockedAt", TREE_3_OUTER)).toBe(true);
   await sceneCall(page, "placeFarmer", "homestead", { x: TREE_3.x, y: TREE_3.y + 40 });
   await page.waitForTimeout(500);
-  const point = await sceneCall(page, "clientPointFor", TREE_3.x, TREE_3.y - 6);
+  // The trunk BASE, not the canopy. Tree 3 stands at the top edge of the map,
+  // where the camera cannot scroll any further up, so its crown sits behind
+  // the HUD's own chips -- a click there lands on a button, not the canvas.
+  const point = await sceneCall(page, "clientPointFor", TREE_3.x, TREE_3.y);
   await page.mouse.click(point.x, point.y);
 
-  const popup = page.getByRole("dialog", { name: "Tree" });
-  await expect(popup).toBeVisible({ timeout: 10_000 });
-  const swing = popup.locator(".sa-chop-popup-swing");
-  for (let hit = 1; hit <= 3; hit++) {
-    await expect(swing).toBeEnabled();
-    await swing.click();
-    if (hit < 3) expect(await sceneCall(page, "nodeDrawn", "tree:homestead-3")).toBe("standing");
+  // No popup: each tap is one swing. The next tap waits for the server to count this one.
+  await expect.poll(() => hitsLeft(page, "woodNodes", "homestead-3"), { timeout: 10_000 }).toBe(2);
+  expect(await sceneCall(page, "nodeDrawn", "tree:homestead-3")).toBe("standing");
+  for (const left of [1, 0]) {
+    await page.waitForTimeout(700);
+    await page.mouse.click(point.x, point.y);
+    await expect.poll(() => hitsLeft(page, "woodNodes", "homestead-3"), { timeout: 10_000 }).toBe(left);
   }
 
   await expect.poll(() => sceneCall(page, "nodeDrawn", "tree:homestead-3")).toBe("spent");
@@ -92,7 +104,7 @@ test("a tree felled earlier is already a stump when the farm opens", async ({ co
   ).toBe(true);
   for (let swing = 0; swing < 3; swing++) {
     const response = await context.request.post("/api/stackacres/actions", {
-      data: { action: "chop-tree", nodeId: "homestead-4", sweet: false },
+      data: { action: "chop-tree", nodeId: "homestead-4" },
     });
     expect(response.ok()).toBe(true);
   }
@@ -122,32 +134,40 @@ test("a bush is walked through, and a house wall still stops you", async ({ cont
   expect(Math.abs(arrived.y - BUSH.y)).toBeLessThan(14);
 });
 
-test("mining a boulder from the map pays Stone, and four swings leave rubble", async ({ context, page }) => {
+test("picking a bush gives crop seed and leaves it picked over", async ({ context, page }) => {
   await openStackAcres(context, page);
-  await sceneCall(page, "placeFarmer", "mine", { x: MINE_3.x, y: MINE_3.y + 40 });
+  expect(await sceneCall(page, "nodeDrawn", "forage:homestead-2")).toBe("standing");
+
+  // What the bush is carrying is a pure function of its pick count, so the
+  // view can name the seed before the pick -- which is what makes the pick
+  // fully predictable client-side (lib/stackacres/forage.ts).
+  const before = (await (await context.request.get("/api/stackacres")).json()) as {
+    forageNodes?: { nodeId: string; ready: boolean; crop: string }[];
+    seedStock?: Record<string, number>;
+  };
+  const bush = before.forageNodes?.find((node) => node.nodeId === "homestead-2");
+  expect(bush?.ready).toBe(true);
+  const crop = bush!.crop;
+  const held = before.seedStock?.[crop] ?? 0;
+
+  await sceneCall(page, "placeFarmer", "homestead", { x: FORAGE_BUSH.x - 40, y: FORAGE_BUSH.y + 10 });
   await page.waitForTimeout(500);
-  expect(await sceneCall(page, "nodeDrawn", "stone:mine-3")).toBe("standing");
-  expect(await sceneCall(page, "isBlockedAt", MINE_3_TILE)).toBe(true);
-  const point = await sceneCall(page, "clientPointFor", MINE_3.x, MINE_3.y - 6);
+  const point = await sceneCall(page, "clientPointFor", FORAGE_BUSH.x, FORAGE_BUSH.y - 4);
   await page.mouse.click(point.x, point.y);
 
-  const popup = page.getByRole("dialog", { name: "Boulder" });
-  await expect(popup).toBeVisible({ timeout: 10_000 });
-  const swing = popup.locator(".sa-chop-popup-swing");
-  for (let hit = 1; hit <= 4; hit++) {
-    await expect(swing).toBeEnabled();
-    await swing.click();
-    if (hit === 1) {
-      await expect
-        .poll(async () => {
-          const view = (await (await context.request.get("/api/stackacres")).json()) as { inventory?: Record<string, number> };
-          return view.inventory?.stone ?? 0;
-        })
-        .toBeGreaterThan(0);
-    }
-  }
+  // No popup, unlike a tree or a boulder: a pick is one stoop.
+  await expect
+    .poll(async () => {
+      const view = (await (await context.request.get("/api/stackacres")).json()) as {
+        seedStock?: Record<string, number>;
+      };
+      return view.seedStock?.[crop] ?? 0;
+    })
+    .toBeGreaterThan(held);
 
-  await expect.poll(() => sceneCall(page, "nodeDrawn", "stone:mine-3")).toBe("spent");
-  expect(await sceneCall(page, "nodeDrawn", "stone:mine-1")).toBe("standing");
-  expect(await sceneCall(page, "isBlockedAt", MINE_3_TILE)).toBe(false);
+  await expect.poll(() => sceneCall(page, "nodeDrawn", "forage:homestead-2")).toBe("spent");
+  // Only that bush: the other three still carry seed.
+  expect(await sceneCall(page, "nodeDrawn", "forage:homestead-3")).toBe("standing");
+  // And it is still walked through once picked.
+  expect(await sceneCall(page, "isBlockedAt", FORAGE_BUSH)).toBe(false);
 });

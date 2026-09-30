@@ -11,6 +11,7 @@ import {
   type TriviaSnapshot,
   type TriviaState,
 } from "./trivia";
+import { seededRandomInt } from "./secure-random";
 import { TRIVIA_QUESTIONS } from "./trivia-questions";
 
 /**
@@ -19,6 +20,13 @@ import { TRIVIA_QUESTIONS } from "./trivia-questions";
  * definition, so putting them back here is a cast and not a hole.
  */
 const game = TRIVIA_DUEL as unknown as DuelGame<TriviaState, unknown, TriviaSnapshot>;
+
+/** createState with the optional RandomInt the erased contract type does not name. */
+const createWith = TRIVIA_DUEL.createState as (
+  seed: number,
+  now: number,
+  randomInt?: (maxExclusive: number) => number,
+) => TriviaState;
 
 const T0 = 1_700_000_000_000;
 
@@ -29,12 +37,13 @@ function questionFor(state: TriviaState, index: number) {
   return question;
 }
 
-/** The right choice for the question at `index`, and one that is not. */
+/** The right choice for the question at `index` as shown on screen, and one that is not. */
 function rightChoice(state: TriviaState, index: number): number {
-  return questionFor(state, index).answerIndex;
+  const bankAnswer = questionFor(state, index).answerIndex;
+  return state.choiceOrders?.[index]?.indexOf(bankAnswer) ?? bankAnswer;
 }
 function wrongChoice(state: TriviaState, index: number): number {
-  return (questionFor(state, index).answerIndex + 1) % 4;
+  return (rightChoice(state, index) + 1) % 4;
 }
 
 function answer(state: TriviaState, seat: DuelSeat, choice: number, now: number): TriviaState {
@@ -143,13 +152,21 @@ describe("scoring constants", () => {
 /* ----------------------------------------------------------------- setup */
 
 describe("createState", () => {
-  it("deals the same questions in the same order for the same seed", () => {
-    const a = game.createState(4242, T0);
-    const b = game.createState(4242, T0);
+  it("deals the same questions and order only for the same injected RandomInt", () => {
+    const a = createWith(0, T0, seededRandomInt(4242));
+    const b = createWith(0, T0, seededRandomInt(4242));
     expect(a.questionIds).toEqual(b.questionIds);
+    expect(a.choiceOrders).toEqual(b.choiceOrders);
   });
 
-  it("deals a different set for almost every other seed", () => {
+  it("does not derive the deal from the match seed", () => {
+    // Seven questions from a bank this deep matching by chance is negligible.
+    const a = game.createState(4242, T0);
+    const b = game.createState(4242, T0);
+    expect(a.questionIds).not.toEqual(b.questionIds);
+  });
+
+  it("deals a different set for almost every match", () => {
     const seeds = Array.from({ length: 60 }, (_, index) => index * 7 + 1);
     const dealt = seeds.map((seed) => game.createState(seed, T0).questionIds.join(","));
     // Not "all differ" -- a shuffle is allowed to collide, and a test that
@@ -413,7 +430,9 @@ describe("snapshot redaction", () => {
   });
 
   it("never carries a question the players have not reached", () => {
-    const state = game.createState(43, T0);
+    // A pinned deal: this checks for future text by substring, and a random
+    // deal can put a later answer ("Six") inside the current prompt by chance.
+    const state = createWith(43, T0, seededRandomInt(43));
     const serialized = JSON.stringify(game.snapshot(state, 0, T0 + 100));
     for (let index = 1; index < TRIVIA_QUESTION_COUNT; index += 1) {
       const future = questionFor(state, index);
@@ -510,5 +529,88 @@ describe("snapshot timing", () => {
     expect(snap.remainingMs).toBe(0);
     expect(snap.questionNumber).toBe(TRIVIA_QUESTION_COUNT);
     expect(snap.history).toHaveLength(TRIVIA_QUESTION_COUNT);
+  });
+});
+
+/* ----------------------------------------------------------- choice order */
+
+describe("choice order", () => {
+  it("stores one permutation of the four choices per question", () => {
+    const state = game.createState(1, T0);
+    expect(state.choiceOrders).toHaveLength(TRIVIA_QUESTION_COUNT);
+    for (const order of state.choiceOrders ?? []) {
+      expect([...order].sort()).toEqual([0, 1, 2, 3]);
+    }
+  });
+
+  it("shows the choices in the stored order and judges the shown position", () => {
+    const base = game.createState(1, T0);
+    const state: TriviaState = { ...base, choiceOrders: base.questionIds.map(() => [3, 2, 1, 0]) };
+    const question = questionFor(state, 0);
+    const snap = game.snapshot(state, 0, T0);
+    expect(snap.question?.choices).toEqual([...question.choices].reverse());
+
+    const shownRight = 3 - question.answerIndex;
+    const right = answer(state, 0, shownRight, T0 + 100);
+    expect(right.answers[0]?.[0]?.correct).toBe(true);
+    // Reversed order never leaves an answer where the bank had it.
+    const bankPosition = answer(state, 1, question.answerIndex, T0 + 100);
+    expect(bankPosition.answers[0]?.[1]?.correct).toBe(false);
+
+    const both = answer(right, 1, (shownRight + 1) % 4, T0 + 200);
+    expect(game.snapshot(both, 1, T0 + 200).question?.answerIndex).toBe(shownRight);
+  });
+
+  it("spreads the shown answer position across a run of matches", () => {
+    const seen = new Set<number>();
+    for (let match = 0; match < 60; match += 1) {
+      const state = game.createState(1, T0);
+      seen.add(rightChoice(state, 0));
+    }
+    expect(seen.size).toBe(4);
+  });
+
+  it("shows a legacy match with no stored order in bank order", () => {
+    const { choiceOrders: _dropped, ...legacy } = game.createState(1, T0);
+    void _dropped;
+    const question = questionFor(legacy, 0);
+    expect(game.snapshot(legacy, 0, T0).question?.choices).toEqual(question.choices);
+    const right = answer(legacy, 0, question.answerIndex, T0 + 100);
+    expect(right.answers[0]?.[0]?.correct).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------ score redaction */
+
+describe("the opponent's score during a question", () => {
+  it("holds back their points for the open question until the reveal", () => {
+    const state = game.createState(1, T0);
+    const theyAnswered = answer(state, 1, rightChoice(state, 0), T0 + 500);
+
+    const mine = game.snapshot(theyAnswered, 0, T0 + 600);
+    expect(mine.seats[1]?.answered).toBe(true);
+    expect(mine.seats[1]?.score).toBe(0);
+    expect(mine.seats[1]?.correct).toBeUndefined();
+
+    // Their own view shows their points straight away.
+    expect(game.snapshot(theyAnswered, 1, T0 + 600).seats[1]?.score).toBeGreaterThan(0);
+
+    // A wrong answer looks exactly the same from the other seat.
+    const wrong = answer(state, 1, wrongChoice(state, 0), T0 + 500);
+    expect(game.snapshot(wrong, 0, T0 + 600).seats[1]).toEqual(mine.seats[1]);
+
+    // At the reveal the points land.
+    const revealed = game.snapshot(theyAnswered, 0, T0 + TRIVIA_QUESTION_MS);
+    expect(revealed.seats[1]?.score).toBe(theyAnswered.scores[1]);
+  });
+
+  it("keeps earlier questions' points visible", () => {
+    const state = game.createState(1, T0);
+    const one = answer(state, 1, rightChoice(state, 0), T0 + 500);
+    const both = answer(one, 0, wrongChoice(state, 0), T0 + 600);
+    const { state: next, now } = toNextQuestion(both);
+    const again = answer(next, 1, rightChoice(next, 1), now + 300);
+    const view = game.snapshot(again, 0, now + 400);
+    expect(view.seats[1]?.score).toBe(both.scores[1]);
   });
 });

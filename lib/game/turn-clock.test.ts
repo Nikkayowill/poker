@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { advanceRank, BACKUP_STAGGER_MS, planTurnClock, type TurnClockInput } from "./turn-clock";
+import {
+  ADVANCE_RETRY_BASE_MS,
+  ADVANCE_RETRY_MAX_MS,
+  advanceRank,
+  BACKUP_STAGGER_MS,
+  classifyAdvance,
+  DEADLINE_GRACE_MS,
+  planAdvanceRetry,
+  planTurnClock,
+  type TurnClockInput,
+} from "./turn-clock";
 
 const NOW = Date.parse("2026-07-28T12:00:00.000Z");
 const at = (offsetMs: number) => new Date(NOW + offsetMs).toISOString();
@@ -41,16 +51,19 @@ describe("the queue of browsers willing to advance", () => {
 });
 
 describe("when to ask the server to advance", () => {
-  it("waits exactly until the deadline for the browser at the front", () => {
+  it("waits until just past the deadline for the browser at the front", () => {
+    // The grace covers a device clock running a little ahead of the server's.
     const plan = planTurnClock(input({ turnDeadlineAt: at(1_800) }), NOW);
-    expect(plan).toEqual({ kind: "advance-at", delayMs: 1_800, rank: 0 });
+    expect(plan).toEqual({ kind: "advance-at", delayMs: 1_800 + DEADLINE_GRACE_MS, rank: 0 });
+    expect(DEADLINE_GRACE_MS).toBeGreaterThanOrEqual(150);
+    expect(DEADLINE_GRACE_MS).toBeLessThanOrEqual(250);
   });
 
   it("holds each backup a beat further back", () => {
     const second = planTurnClock(input({ turnDeadlineAt: at(1_800), myHumanRank: 1 }), NOW);
     const third = planTurnClock(input({ turnDeadlineAt: at(1_800), myHumanRank: 2 }), NOW);
-    expect(second).toEqual({ kind: "advance-at", delayMs: 1_800 + BACKUP_STAGGER_MS, rank: 1 });
-    expect(third).toEqual({ kind: "advance-at", delayMs: 1_800 + 2 * BACKUP_STAGGER_MS, rank: 2 });
+    expect(second).toEqual({ kind: "advance-at", delayMs: 1_800 + DEADLINE_GRACE_MS + BACKUP_STAGGER_MS, rank: 1 });
+    expect(third).toEqual({ kind: "advance-at", delayMs: 1_800 + DEADLINE_GRACE_MS + 2 * BACKUP_STAGGER_MS, rank: 2 });
     // The stagger has to outlast a round trip, or the backups fire before the
     // front browser's success can cancel them and we are back to a stampede.
     expect(BACKUP_STAGGER_MS).toBeGreaterThan(500);
@@ -82,5 +95,59 @@ describe("when to ask the server to advance", () => {
     const snapshot = input({ turnDeadlineAt: at(2_500) });
     const plans = [0, 1, 2, 3].map(() => planTurnClock(snapshot, NOW));
     expect(new Set(plans.map((p) => JSON.stringify(p))).size).toBe(1);
+  });
+});
+
+describe("after an advance that did not move the table", () => {
+  const planned = { turnDeadlineAt: at(0), nextHandAt: null };
+
+  it("reads new deadlines as the table moving on", () => {
+    expect(classifyAdvance(planned, { turnDeadlineAt: at(3_000), nextHandAt: null }, 3_000))
+      .toEqual({ kind: "moved" });
+    // A finished hand swaps the turn deadline for a next-hand one.
+    expect(classifyAdvance(planned, { turnDeadlineAt: null, nextHandAt: at(2_800) }, 2_800))
+      .toEqual({ kind: "moved" });
+  });
+
+  it("reads the same deadlines as nothing having happened", () => {
+    expect(classifyAdvance(planned, planned, 150)).toEqual({ kind: "not-due", retryAfterMs: 150 });
+  });
+
+  it("stops once the table has moved, since the new snapshot plans the next ask", () => {
+    expect(planAdvanceRetry({ kind: "moved" }, 0)).toEqual({ kind: "stop" });
+  });
+
+  it("asks again when the server says the deadline is still ahead, by the server's clock", () => {
+    // The fix for a device clock running fast: before, this answer was
+    // ignored and nothing ever asked again.
+    expect(planAdvanceRetry({ kind: "not-due", retryAfterMs: 400 }, 0))
+      .toEqual({ kind: "retry", delayMs: 400 + DEADLINE_GRACE_MS });
+  });
+
+  it("backs off a failed request up to a ceiling instead of giving up", () => {
+    const delays = [0, 1, 2, 3, 4, 5, 6, 7].map((attempt) => {
+      const plan = planAdvanceRetry({ kind: "failed", status: null }, attempt);
+      return plan.kind === "retry" ? plan.delayMs : -1;
+    });
+    expect(delays[0]).toBe(ADVANCE_RETRY_BASE_MS);
+    expect(delays).toEqual([...delays].sort((a, b) => a - b));
+    expect(Math.max(...delays)).toBe(ADVANCE_RETRY_MAX_MS);
+    // Never a tight loop: the storm this module replaced was a 200ms floor.
+    expect(Math.min(...delays)).toBeGreaterThanOrEqual(500);
+  });
+
+  it("backs off when the deadline has passed but nothing moved", () => {
+    expect(planAdvanceRetry({ kind: "not-due", retryAfterMs: 0 }, 2))
+      .toEqual({ kind: "retry", delayMs: ADVANCE_RETRY_BASE_MS * 4 });
+    expect(planAdvanceRetry({ kind: "not-due", retryAfterMs: null }, 0))
+      .toEqual({ kind: "retry", delayMs: ADVANCE_RETRY_BASE_MS });
+  });
+
+  it("stops on answers a retry cannot change", () => {
+    for (const status of [401, 403, 404]) {
+      expect(planAdvanceRetry({ kind: "failed", status }, 0)).toEqual({ kind: "stop" });
+    }
+    expect(planAdvanceRetry({ kind: "failed", status: 409 }, 0).kind).toBe("retry");
+    expect(planAdvanceRetry({ kind: "failed", status: 429 }, 0).kind).toBe("retry");
   });
 });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { playWordStackGuess, toWordStackErrorResponse } from "@/lib/server/word-stack-service";
+import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 
@@ -45,6 +46,14 @@ export async function POST(request: NextRequest) {
       return withRequestSessionCookie(
         request,
         NextResponse.json({ error: "A guess is five letters." }, { status: 400 }),
+        token,
+      );
+    }
+    // A guess can settle a wager or the daily bonus, both paid in Gold.
+    if (await isBanned(token)) {
+      return withRequestSessionCookie(
+        request,
+        NextResponse.json({ error: "Your account has been suspended." }, { status: 403 }),
         token,
       );
     }

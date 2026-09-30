@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StackAcresMachineSnapshot } from "./machines";
-import {
-  finishedMachineCount,
-  machineOfKind,
-  workDue,
-  workshopAttention,
-} from "./workshop";
+import { finishedMachineCount, machineOfKind, workDue } from "./workshop";
 
 const NOW = Date.parse("2026-09-09T12:00:00.000Z");
 
@@ -48,21 +43,6 @@ describe("work due", () => {
     expect(workDue([machine()], NOW)).toBe(false);
     expect(
       workDue([machine({ status: "working", readyAt: new Date(NOW).toISOString() })], NOW),
-    ).toBe(true);
-  });
-});
-
-describe("workshopAttention", () => {
-  it("dots the signpost for due work or a collectible vat, and nothing else", () => {
-    expect(workshopAttention({ machines: [], vat: null, nowMs: NOW })).toBe(false);
-    expect(workshopAttention({ machines: [], vat: { status: "aging" }, nowMs: NOW })).toBe(false);
-    expect(workshopAttention({ machines: [], vat: { status: "collectible" }, nowMs: NOW })).toBe(true);
-    expect(
-      workshopAttention({
-        machines: [machine({ status: "working", readyAt: new Date(NOW).toISOString() })],
-        vat: null,
-        nowMs: NOW,
-      }),
     ).toBe(true);
   });
 });

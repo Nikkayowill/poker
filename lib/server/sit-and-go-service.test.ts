@@ -1,8 +1,9 @@
 import { randomUUID } from "crypto";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as gameStore from "./game-store";
 import { createStoredGame, getStoredGame } from "./game-store";
 import { __resetLeaderboardMemory, getGameLeaderboard } from "./leaderboard-store";
-import { adjustGold, ensureProfile } from "./profile-store";
+import { adjustGold, creditGoldByProfileLedgered, ensureProfile } from "./profile-store";
 import {
   joinSitAndGoTable,
   leaveSitAndGoTable,
@@ -13,9 +14,17 @@ import {
   readSitAndGoTableById,
   settleSitAndGoIfFinished,
   SitAndGoRequestError,
+  sweepUndealtSitAndGoTables,
   type SitAndGoTableView,
 } from "./sit-and-go-service";
-import { __resetSitAndGoTablesForTest } from "./sit-and-go-store";
+import * as sitAndGoStore from "./sit-and-go-store";
+import {
+  __backdateSitAndGoTableStartForTest,
+  __resetSitAndGoTablesForTest,
+  claimSitAndGoSeat,
+  getSitAndGoTableById,
+  leaveSitAndGoTable as leaveSitAndGoTableRow,
+} from "./sit-and-go-store";
 
 /**
  * The Sit & Go money contract, in memory mode.
@@ -73,6 +82,10 @@ async function registerSix(players: Array<{ token: string }>): Promise<SitAndGoT
 beforeEach(() => {
   __resetSitAndGoTablesForTest();
   __resetLeaderboardMemory();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("opening and joining", () => {
@@ -183,7 +196,109 @@ describe("Gold ledger", () => {
   });
 });
 
+describe("a deal whose game can't be started", () => {
+  it("cancels the table and refunds every entry fee once when the game write fails", async () => {
+    const { players, total } = await group(6);
+    const before = await total();
+    vi.spyOn(gameStore, "createStoredGame").mockRejectedValueOnce(new Error("db down"));
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const last = await registerSix(players);
+    expect(last.status).toBe("cancelled");
+    expect(last.gameId).toBeNull();
+    expect(await total()).toBe(before);
+    for (const player of players) {
+      expect((await readMySitAndGoTable(player.token)).table).toBeNull();
+    }
+  });
+
+  it("archives the game and refunds when the game can't be linked to the table", async () => {
+    const { players, total } = await group(6);
+    const before = await total();
+    const realCreate = gameStore.createStoredGame;
+    const written: string[] = [];
+    vi.spyOn(gameStore, "createStoredGame").mockImplementation(async (state) => {
+      written.push(state.id);
+      return realCreate(state);
+    });
+    vi.spyOn(sitAndGoStore, "setSitAndGoGameId").mockResolvedValueOnce(null);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const last = await registerSix(players);
+    expect(last.status).toBe("cancelled");
+    expect(written).toHaveLength(1);
+    expect((await getStoredGame(written[0]))?.status).toBe("archived");
+    expect(await total()).toBe(before);
+  });
+
+  it("sweeps a table a crash left active with no game, refunding each fee exactly once", async () => {
+    const { players, total } = await group(6);
+    const before = await total();
+    // Both deal-failure paths out: the table stays active with no game,
+    // which is what a crash between the two deal steps leaves behind.
+    vi.spyOn(gameStore, "createStoredGame").mockRejectedValueOnce(new Error("crash"));
+    vi.spyOn(sitAndGoStore, "cancelStaleSitAndGoTable").mockResolvedValueOnce(null);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const stuck = await registerSix(players);
+    expect(stuck.status).toBe("active");
+    expect(stuck.gameId).toBeNull();
+    expect(await total()).toBe(before - ENTRY_FEE * 6);
+
+    // Too fresh to sweep: a real deal could still be finishing.
+    expect(await sweepUndealtSitAndGoTables()).toBe(0);
+
+    __backdateSitAndGoTableStartForTest(stuck.id, new Date(Date.now() - 10 * 60 * 1000).toISOString());
+    expect(await sweepUndealtSitAndGoTables()).toBe(1);
+    expect((await getSitAndGoTableById(stuck.id))?.status).toBe("cancelled");
+    expect(await total()).toBe(before);
+
+    expect(await sweepUndealtSitAndGoTables()).toBe(0);
+    expect(await total()).toBe(before);
+    // Everyone is free to register again.
+    const { table } = await openSitAndGoTable(players[0].token, TIER);
+    expect(table.status).toBe("waiting");
+  });
+
+  it("builds the game from the seats read after the table is locked", async () => {
+    const { players } = await group(6);
+    const newcomer = await funded();
+    const realDeal = sitAndGoStore.dealSitAndGoTable;
+    vi.spyOn(sitAndGoStore, "dealSitAndGoTable").mockImplementationOnce(async (tableId, expectedSeats) => {
+      // Between the pre-deal seat count and the lock, one registrant is
+      // swapped for another. The count still matches.
+      await leaveSitAndGoTableRow(tableId, players[1].id);
+      await claimSitAndGoSeat(tableId, newcomer.id, newcomer.token, `test_stake:${newcomer.id}`);
+      return realDeal(tableId, expectedSeats);
+    });
+
+    const dealt = await registerSix(players);
+    expect(dealt.status).toBe("active");
+    const game = await getStoredGame(dealt.gameId!);
+    const seated = game?.seats.map((seat) => seat.profileId) ?? [];
+    expect(seated).toContain(newcomer.id);
+    expect(seated).not.toContain(players[1].id);
+  });
+});
+
 describe("leaving before the deal", () => {
+  it("credits the refund under the entry fee's own correlation id, so the reconcile cron can't refund it again", async () => {
+    const { players: [host, joiner] } = await group(2);
+    const { table } = await openSitAndGoTable(host.token, TIER);
+    const before = await balance(joiner.token);
+    await joinSitAndGoTable(joiner.token, table.id);
+    await leaveSitAndGoTable(joiner.token, table.id);
+
+    const rows = ledgerRows(joiner.id);
+    expect(rows.map((row) => row.kind).sort()).toEqual(["credit", "debit"]);
+    const [feeId, refundId] = rows.map((row) => row.key.replace(/:(debit|credit)$/, ""));
+    expect(refundId).toBe(feeId);
+
+    const cron = await creditGoldByProfileLedgered(joiner.id, ENTRY_FEE, feeId, "reconciliation_refund:test");
+    expect(cron).toMatchObject({ success: true, alreadyApplied: true });
+    expect(await balance(joiner.token)).toBe(before);
+  });
+
   it("refunds exactly once, and rejects a second leave", async () => {
     const { players: [host, joiner] } = await group(2);
     const { table } = await openSitAndGoTable(host.token, TIER);
@@ -254,6 +369,25 @@ describe("settlement", () => {
     await settleSitAndGoIfFinished(game); // e.g. a second poll racing the first
 
     expect(await balance(players[0].token)).toBe(before + ENTRY_FEE * 6);
+  });
+
+  it("pays the prize pool once, under the table's ledger key, however often it is settled", async () => {
+    const { players, total } = await group(6);
+    const before = await total();
+    const full = await registerSix(players);
+    const game = (await getStoredGame(full.gameId!))!;
+    const winner = game.seats[0];
+    const winnerToken = players.find((player) => player.id === winner.profileId)!.token;
+    const winnerBefore = await balance(winnerToken);
+    game.tournament = { ...game.tournament!, winnerProfileId: winner.profileId };
+
+    const paid = await settleSitAndGoIfFinished(game);
+    expect(paid?.goldBalance).toBe(winnerBefore + ENTRY_FEE * 6);
+    // A completed table must not pay a second pot, ledger row or not.
+    expect(await settleSitAndGoIfFinished(game)).toBeNull();
+    expect(await balance(winnerToken)).toBe(winnerBefore + ENTRY_FEE * 6);
+    expect(await total()).toBe(before);
+    expect(ledgerRows(winner.profileId!).some((row) => row.key === `sit_and_go_payout:${full.id}:credit`)).toBe(true);
   });
 
   it("is a no-op for a table with no winner yet", async () => {

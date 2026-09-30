@@ -14,7 +14,7 @@ import { adminClient } from "./supabase-admin";
  *
  * A DELIBERATELY NEW STORE, NOT AN EXTENSION OF stackacres-store.ts's own
  * `homestead_units`/`homestead_plots` history -- see
- * supabase/migrations/20260905130000_stackacres_crossbreeding.sql's own
+ * supabase/migrations/20260905061017_stackacres_crossbreeding.sql's own
  * header for why this feature could not reuse either. Same twin-branch
  * shape every other StackAcres store uses (Supabase when configured, an
  * in-process Map otherwise), and the same core invariant: a write is a

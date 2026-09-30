@@ -16,6 +16,7 @@ import { FARM_KITCHEN_RECIPES } from "@/lib/stackacres/farm-kitchen";
 import { HIDDEN_ZONE_IDS, SECRET_ITEM_IDS } from "@/lib/stackacres/secrets";
 import { WOOD_NODE_IDS } from "@/lib/stackacres/tree-nodes";
 import { STONE_NODE_IDS } from "@/lib/stackacres/stone-nodes";
+import { FORAGE_NODE_IDS } from "@/lib/stackacres/forage";
 import { SYNERGY_ARCHETYPES, SYNERGY_MAX_ACTIVE_SLOTS } from "@/lib/stackacres/synergy-perks";
 import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
 import { ALL_MACHINE_ITEM_IDS, MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
@@ -23,21 +24,23 @@ import { FORGE_ENCHANTMENT_IDS } from "@/lib/stackacres/forge";
 import { STACKACRES_BUYABLE_CUTTERS } from "@/lib/stackacres/cutters";
 import { CROSSBREED_GRID_COLS, CROSSBREED_GRID_ROWS } from "@/lib/stackacres/crossbreeding";
 import { FRIENDSHIP_NPCS, GIFTABLE_ITEMS } from "@/lib/stackacres/friendship";
+import { STORY_ITEM_IDS } from "@/lib/stackacres/story/items";
+import { QUEST_PLACE_IDS } from "@/lib/stackacres/story/places";
 import { TRAVELER_IDS } from "@/lib/stackacres/story/travelers";
 import {
   activateStackAcresSynergyPerk,
   buildStackAcresGreenhouse,
   buyStackAcresFeed,
   buyStackAcresStock,
-  clearStackAcresSector,
+  workStackAcresLand,
   clearStackAcresUnit,
-  unlockStackAcresCropFields,
   consumeStackAcresSecretItem,
   donateStackAcresSecretItem,
   expandStackAcresCapacity,
   feedStackAcres,
   feedStackAcresPen,
   eatStackAcresFoodAction,
+  sleepStackAcres,
   retireStackAcresStock,
   harvestStackAcres,
   runStackAcresAction,
@@ -48,17 +51,20 @@ import {
   tradeStackAcresSecretItemToRay,
   unlockStackAcresSynergyPerk,
   upgradeStackAcresTool,
+  upgradeStackAcresAxe,
   buyStackAcresCutter,
   waterStackAcres,
   waterStackAcresGroup,
   drawStackAcresWater,
   bagStackAcresQuarry,
   chopStackAcresWoodTree,
+  gatherStackAcresForage,
   mineStackAcresStoneNode,
   catchStackAcresFish,
   placeStackAcresMachine,
   workStackAcres,
   requestStackAcresContract,
+  passStackAcresContract,
   fulfillStackAcresTownContract,
   sellStackAcresItem,
   processStackAcresRecipeAction,
@@ -71,16 +77,31 @@ import {
   forgeStackAcresToolEnchantment,
   plantStackAcresCrossbreedBed,
   harvestStackAcresCrossbreedBed,
-  buyStackAcresSoil,
   placeStackAcresSoilTile,
+  placeStackAcresAnimal,
+  pickUpStackAcresAnimal,
+  placeStackAcresFencePiece,
+  removeStackAcresFencePiece,
+  buyEmpireBuilding,
+  placeOwnedEmpireBuilding,
+  pickUpOwnedEmpireBuilding,
+  takeOverStackAcresGrocery,
+  hireStackAcresGroceryWorker,
+  fireStackAcresGroceryWorker,
+  collectStackAcresGroceryTill,
+  buyStackAcresGroceryItem,
+  placeStackAcresGroceryItem,
+  storeStackAcresGroceryItem,
   removeStackAcresSoilTile,
   moveStackAcresSoilTileGroup,
   buyStackAcresSeed,
   prayAtStackAcresShrine,
   giveStackAcresGift,
+  greetStackAcresNpc,
   sealStackAcresVat,
   collectStackAcresVat,
   meetStackAcresTraveler,
+  reachStackAcresQuestPlace,
   turnInStackAcresTravelerQuest,
 } from "@/lib/server/stackacres-service";
 import { stackAcresActionGate } from "@/lib/server/profile-store";
@@ -88,7 +109,6 @@ import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { stackacresLocked } from "@/lib/server/stackacres-access";
 import { readSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 import { resolveChronoNow } from "@/lib/server/chrono-delorean";
-import { SOIL_BAGS_PER_PURCHASE, SOIL_TIERS } from "@/lib/stackacres/soil-tiers";
 
 export const runtime = "nodejs";
 
@@ -105,7 +125,7 @@ export const runtime = "nodejs";
  * `collect` (harvest) MOVES NO GOLD AT ALL any more -- it always credits
  * inventory, for every item, not just wheat/milk/wool. FIFTEEN ACTIONS SPEND
  * GOLD and exactly THREE PAY IT OUT, and that asymmetry is what keeps this
- * safe. `expand-capacity`, `clear-sector`, `unlock-crop-fields`, `stock`,
+ * safe. `expand-capacity`, `clear-sector`, `stock`,
  * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `buy-cutter`,
  * `place-machine`, `unlock-synergy-perk` and `place-soil-tile` all spend; `sell`, `fulfill-contract`
  * and `collect-vat` pay, all three under the SAME flat per-player daily
@@ -137,12 +157,10 @@ export const runtime = "nodejs";
  * a probability an existing roll already makes, inside `collect` and `work`
  * respectively, and neither moves Gold.
  *
- * `clear-sector` is the one piece of land buying that came back: three of the
- * four districts start under wild growth, and clearing one is a permanent,
- * unrefunded Gold spend. Keeping cleared land then costs a daily fee, netted
- * off whichever action next pays the player any Gold (see
- * `netUpkeepFromPayout`, lib/server/stackacres-service.ts), not something any
- * one action here asks for.
+ * LAND IS NEVER SOLD. A sector opens when the last thing standing on it has
+ * been cut down (`work-land`, which spends energy and pays the barn). Keeping cleared
+ * land then costs a daily fee, netted off whichever action next pays the
+ * player any Gold (see `netUpkeepFromPayout`, lib/server/stackacres-service.ts).
  *
  * `prestige-reset` moves no Gold either, and is not like `work`/`process`'s
  * "inventory only" either: it is the one action with no undo, trading the
@@ -188,18 +206,14 @@ const intentKeySchema = z.string().min(8).max(100).optional();
 
 const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("expand-capacity"), stock: stockSchema }),
-  // Buying a district's wild ground outright. Gold, once, permanent.
-  z.object({
-    action: z.literal("clear-sector"),
-    sector: z.enum(ZONE_IDS as unknown as [string, ...string[]]),
-  }),
-  // No field, unlike `clear-sector`: there is only one such flag, not one
-  // per district. Gold, once, permanent -- see unlockStackAcresCropFields's
-  // own header on why this is not a `clear-sector` variant.
-  z.object({ action: z.literal("unlock-crop-fields") }),
+  // Clearing land. `work-land` is one swing and costs energy. It names no
+  // sector: the obstacle id says which land it stands on, so a request cannot
+  // claim a field it has not worked.
+  z.object({ action: z.literal("work-land"), obstacleId: z.string().min(3).max(40) }),
   // No field: the ladder is walked one rung at a time from whatever the
   // SERVER says is held, so a request cannot name a rung and skip one.
   z.object({ action: z.literal("upgrade-tool") }),
+  z.object({ action: z.literal("upgrade-axe"), pay: z.enum(["materials", "gold"]) }),
   z.object({ action: z.literal("buy-cutter"), cutter: z.enum(STACKACRES_BUYABLE_CUTTERS) }),
   // Builds the Greenhouse once, spending processing-track goods, not Gold --
   // see buildStackAcresGreenhouse's own header.
@@ -256,31 +270,33 @@ const bodySchema = z.discriminatedUnion("action", [
   // The dock's cast, completed. Fills the shelf, same as a harvest -- moves
   // no Gold. Which fish is the server's own dice roll.
   // `bait` spends one Radish for better odds.
-  z.object({ action: z.literal("catch-fish"), bait: z.boolean() }),
+  z.object({ action: z.literal("catch-fish"), bait: z.boolean(), cast: z.number().min(0).max(1) }),
   // A completed stalk at the Oak's treeline. Fills the shelf with meat and a
   // pelt, same as a catch -- moves no Gold. Which quarry it was is the
   // server's own dice roll.
   z.object({ action: z.literal("bag-quarry") }),
   // One swing at a tree (lib/stackacres/wood.ts). Fills the shelf with Wood,
-  // same as a catch or a bagged stalk -- moves no Gold. `sweet` is the chop
-  // minigame's own client-side timing verdict (lib/stackacres/chop.ts); it
-  // only changes how much Wood the swing pays, never whether it lands.
+  // same as a catch or a bagged stalk -- moves no Gold.
   z.object({
     action: z.literal("chop-tree"),
     nodeId: z.enum(WOOD_NODE_IDS as unknown as [string, ...string[]]),
-    sweet: z.boolean(),
   }),
   // One swing at one of the Mine's Stone nodes. Fills the shelf with Stone,
-  // same as a catch or a bagged stalk -- moves no Gold. `quality` is the
-  // client's own timing grade off the shared chop/mine popup
-  // (lib/stackacres/chop.ts) and only ever changes how much Stone a landed
-  // swing pays out -- never whether it lands, which the node's own
-  // server-owned hit count and regrow window decide
+  // same as a catch or a bagged stalk -- moves no Gold. Whether it lands is
+  // the node's own server-owned hit count and regrow window
   // (lib/stackacres/stone-nodes.ts).
   z.object({
     action: z.literal("mine-stone"),
     nodeId: z.enum(STONE_NODE_IDS),
-    quality: z.enum(["hit", "sweet"]),
+  }),
+  // One pick at one of the Homestead's forage bushes. Fills the SEED shelf,
+  // not the inventory, and moves no Gold. There is no crop
+  // named here: which seed a bush carries is a pure function of its own
+  // stored pick count (lib/stackacres/forage.ts), so the client never gets
+  // to name the prize.
+  z.object({
+    action: z.literal("gather-forage"),
+    nodeId: z.enum(FORAGE_NODE_IDS),
   }),
   z.object({ action: z.literal("clear"), unitId: unitIdSchema }),
   z.object({
@@ -306,6 +322,9 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("eat"),
     item: z.enum(FOOD_ITEMS as unknown as [string, ...string[]]),
   }),
+  // Sleeps in the farmhouse bed: the farm clock jumps to 6 AM. The server
+  // reads the hour itself and refuses by day. Moves nothing else.
+  z.object({ action: z.literal("sleep") }),
   // Processing: wheat, machines, Town Contracts. Move no Gold.
   z.object({
     action: z.literal("place-machine"),
@@ -324,6 +343,8 @@ const bodySchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("request-contract") }),
   z.object({ action: z.literal("fulfill-contract") }),
+  // One a UTC day, and it moves nothing. See passStackAcresContract.
+  z.object({ action: z.literal("pass-contract") }),
   // The Fermenting Vat. `seal-vat` spends Cheese (never Gold) and locks it
   // inside the vat's own manifest; `collect-vat` is the one action here that
   // pays -- through the same daily ceiling `fulfill-contract` does. See
@@ -428,31 +449,59 @@ const bodySchema = z.discriminatedUnion("action", [
   // (floor(worldX / 64), floor(worldY / 64)), same bounding posture as
   // place-pipe above -- the coordinate range is generous but not unbounded,
   // and placeStackAcresSoilTile itself is what actually confines a tile to
-  // the Crop Fields. `place-soil-tile` spends Gold -- how MUCH is set by the
-  // tier and read from SOIL_TIER_DEFS on the server, never from the body, so
-  // the client only ever names which bed it wants. `remove-soil-tile` moves
-  // none. The tier is optional so a client from before tiers shipped still
-  // places a plain bed.
+  // the Crop Fields. Breaking ground is free: `place-soil-tile` and
+  // `remove-soil-tile` move no Gold and no stock.
   z.object({
     action: z.literal("place-soil-tile"),
     tx: z.number().int().min(-512).max(512),
     ty: z.number().int().min(-512).max(512),
-    tier: z.enum(SOIL_TIERS).optional(),
-  }),
-  // Ray's soil shelf. SPENDS Gold (tier price x quantity, both read from
-  // SOIL_TIER_DEFS on the server) and moves no coordinate; `place-soil-tile`
-  // below now spends a BAG rather than Gold, so soil costs the player exactly
-  // once, here.
-  z.object({
-    action: z.literal("buy-soil"),
-    tier: z.enum(SOIL_TIERS),
-    quantity: z.number().int().min(1).max(SOIL_BAGS_PER_PURCHASE),
   }),
   z.object({
     action: z.literal("remove-soil-tile"),
     tx: z.number().int().min(-512).max(512),
     ty: z.number().int().min(-512).max(512),
   }),
+  // Fence pieces, by Homestead map square. Wood only, both ways; no Gold.
+  z.object({ action: z.literal("place-fence"), tx: z.number().int().min(0).max(255), ty: z.number().int().min(0).max(255) }),
+  z.object({ action: z.literal("remove-fence"), tx: z.number().int().min(0).max(255), ty: z.number().int().min(0).max(255) }),
+  z.object({ action: z.literal("place-animal"), unitId: z.string().uuid(), tx: z.number().int().min(0).max(255), ty: z.number().int().min(0).max(255) }),
+  z.object({ action: z.literal("pick-up-animal"), unitId: z.string().uuid() }),
+  // Far Field buildings, by the top-left map square of their plan
+  // (lib/stackacres/empire-buildings.ts). Buying SPENDS Gold, Wood and Metal,
+  // priced on the server; placing an owned one and picking it up move nothing.
+  z.object({
+    action: z.literal("buy-building"),
+    kind: z.string().max(32),
+    tx: z.number().int().min(0).max(255),
+    ty: z.number().int().min(0).max(255),
+  }),
+  z.object({
+    action: z.literal("place-building"),
+    id: z.string().uuid(),
+    tx: z.number().int().min(0).max(255),
+    ty: z.number().int().min(0).max(255),
+  }),
+  z.object({ action: z.literal("pick-up-building"), id: z.string().uuid() }),
+  // The city grocery (lib/stackacres/grocery.ts). Taking it over is free and development-only; hiring and
+  // buying fixtures SPEND Gold, priced on the server; emptying the till CREDITS takings less wages; firing,
+  // moving and storing move nothing.
+  z.object({ action: z.literal("grocery-take-over") }),
+  z.object({ action: z.literal("grocery-hire"), name: z.string().min(1).max(24) }),
+  z.object({ action: z.literal("grocery-fire"), name: z.string().min(1).max(24) }),
+  z.object({ action: z.literal("grocery-collect") }),
+  z.object({
+    action: z.literal("grocery-buy"),
+    kind: z.string().max(32),
+    tx: z.number().int().min(0).max(63),
+    ty: z.number().int().min(0).max(63),
+  }),
+  z.object({
+    action: z.literal("grocery-place"),
+    id: z.string().min(1).max(48),
+    tx: z.number().int().min(0).max(63),
+    ty: z.number().int().min(0).max(63),
+  }),
+  z.object({ action: z.literal("grocery-store"), id: z.string().min(1).max(48) }),
   // Hold-tap lift, tap-to-drop. `(tx, ty)` names the bed picked up (and,
   // through it, the whole contiguous group touching it -- see
   // stackacres-service.ts's `moveStackAcresSoilTileGroup`); `(toTx, toTy)` is
@@ -488,6 +537,13 @@ const bodySchema = z.discriminatedUnion("action", [
     npc: z.enum(FRIENDSHIP_NPCS as unknown as [string, ...string[]]),
     item: z.enum(GIFTABLE_ITEMS as unknown as [string, ...string[]]),
   }),
+  // NPC friendship: a plain "say hi", no item and its own day gate
+  // (lib/stackacres/friendship.ts's `applyGreet`) -- what a click on an NPC
+  // with nothing left to gift or nothing new to say still does.
+  z.object({
+    action: z.literal("greet-npc"),
+    npc: z.enum(FRIENDSHIP_NPCS as unknown as [string, ...string[]]),
+  }),
   // The travelers' story (lib/stackacres/story/). Neither moves Gold:
   // `story-meet` accepts a traveler's first quest, `story-turn-in` hands the
   // active one in, debiting only the items it asked for and paying a story
@@ -500,6 +556,16 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("story-turn-in"),
     traveler: z.enum(TRAVELER_IDS as unknown as [string, ...string[]]),
+    /** Only meaningful when the active quest offers 2+ rewards; ignored otherwise. */
+    reward: z.enum(STORY_ITEM_IDS as unknown as [string, ...string[]]).optional(),
+  }),
+  // A quest's own "go to this spot" objective. Moves no Gold and no items --
+  // the server records that the named place was reached and nothing more; see
+  // lib/stackacres/story/places.ts's own header on why this is a separate id
+  // space from the hidden-zone taps above.
+  z.object({
+    action: z.literal("reach-quest-place"),
+    placeId: z.enum(QUEST_PLACE_IDS as unknown as [string, ...string[]]),
   }),
 ]);
 
@@ -529,12 +595,12 @@ function run(token: string, action: StackAcresAction, now: Date) {
   switch (action.action) {
     case "expand-capacity":
       return expandStackAcresCapacity(token, action.stock, now);
-    case "clear-sector":
-      return clearStackAcresSector(token, action.sector, now);
-    case "unlock-crop-fields":
-      return unlockStackAcresCropFields(token, now);
+    case "work-land":
+      return workStackAcresLand(token, action.obstacleId, now);
     case "upgrade-tool":
       return upgradeStackAcresTool(token, now);
+    case "upgrade-axe":
+      return upgradeStackAcresAxe(token, action.pay, now);
     case "buy-cutter":
       return buyStackAcresCutter(token, action.cutter, now);
     case "build-greenhouse":
@@ -568,15 +634,19 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "draw-water":
       return drawStackAcresWater(token, now);
     case "catch-fish":
-      return catchStackAcresFish(token, action.bait, now);
+      return catchStackAcresFish(token, action.bait, action.cast, now);
     case "eat":
       return eatStackAcresFoodAction(token, action.item, now);
+    case "sleep":
+      return sleepStackAcres(token, now);
     case "bag-quarry":
       return bagStackAcresQuarry(token, now);
     case "chop-tree":
-      return chopStackAcresWoodTree(token, action.nodeId, action.sweet, now);
+      return chopStackAcresWoodTree(token, action.nodeId, now);
+    case "gather-forage":
+      return gatherStackAcresForage(token, action.nodeId, now);
     case "mine-stone":
-      return mineStackAcresStoneNode(token, action.nodeId, action.quality, now);
+      return mineStackAcresStoneNode(token, action.nodeId, now);
     case "clear":
       return clearStackAcresUnit(token, action.unitId, now);
     case "buy-feed":
@@ -593,6 +663,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return requestStackAcresContract(token, now);
     case "fulfill-contract":
       return fulfillStackAcresTownContract(token, now);
+    case "pass-contract":
+      return passStackAcresContract(token, now);
     case "seal-vat":
       return sealStackAcresVat(token, now);
     case "collect-vat":
@@ -628,11 +700,37 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "harvest-crossbreed":
       return harvestStackAcresCrossbreedBed(token, action.plotId, now);
     case "place-soil-tile":
-      return placeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty, tier: action.tier }, now);
-    case "buy-soil":
-      return buyStackAcresSoil(token, { tier: action.tier, quantity: action.quantity }, now);
+      return placeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
     case "remove-soil-tile":
       return removeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
+    case "place-fence":
+      return placeStackAcresFencePiece(token, { tx: action.tx, ty: action.ty }, now);
+    case "remove-fence":
+      return removeStackAcresFencePiece(token, { tx: action.tx, ty: action.ty }, now);
+    case "place-animal":
+      return placeStackAcresAnimal(token, { unitId: action.unitId, tx: action.tx, ty: action.ty }, now);
+    case "pick-up-animal":
+      return pickUpStackAcresAnimal(token, { unitId: action.unitId }, now);
+    case "buy-building":
+      return buyEmpireBuilding(token, { kind: action.kind, tx: action.tx, ty: action.ty }, now);
+    case "place-building":
+      return placeOwnedEmpireBuilding(token, { id: action.id, tx: action.tx, ty: action.ty }, now);
+    case "pick-up-building":
+      return pickUpOwnedEmpireBuilding(token, { id: action.id }, now);
+    case "grocery-take-over":
+      return takeOverStackAcresGrocery(token, now);
+    case "grocery-hire":
+      return hireStackAcresGroceryWorker(token, { name: action.name }, now);
+    case "grocery-fire":
+      return fireStackAcresGroceryWorker(token, { name: action.name }, now);
+    case "grocery-collect":
+      return collectStackAcresGroceryTill(token, now);
+    case "grocery-buy":
+      return buyStackAcresGroceryItem(token, { kind: action.kind, tx: action.tx, ty: action.ty }, now);
+    case "grocery-place":
+      return placeStackAcresGroceryItem(token, { id: action.id, tx: action.tx, ty: action.ty }, now);
+    case "grocery-store":
+      return storeStackAcresGroceryItem(token, { id: action.id }, now);
     case "move-soil-tile-group":
       return moveStackAcresSoilTileGroup(
         token,
@@ -645,19 +743,24 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return prayAtStackAcresShrine(token, now);
     case "give-gift":
       return giveStackAcresGift(token, action.npc, action.item, now);
+    case "greet-npc":
+      return greetStackAcresNpc(token, action.npc, now);
     case "story-meet":
       return meetStackAcresTraveler(token, action.traveler, now);
     case "story-turn-in":
-      return turnInStackAcresTravelerQuest(token, action.traveler, now);
+      return turnInStackAcresTravelerQuest(token, action.traveler, action.reward, now);
+    case "reach-quest-place":
+      return reachStackAcresQuestPlace(token, action.placeId, now);
   }
 }
 
 export async function POST(request: NextRequest) {
   const startedAt = performance.now();
   // Every action here moves one purse at most once and the guards make
-  // replays idempotent; 60/min covers a fast restocking ritual plus feeding
-  // and watering with a wide margin.
-  const limited = await enforceRateLimit(request, "stackacres:act", 60, 60 * 1000);
+  // replays idempotent. Hoeing and harvesting are one request per bed, and a
+  // held Use key walking a row works four or five beds a second, so 60/min ran
+  // out in about fifteen seconds of play and undid the beds just hoed.
+  const limited = await enforceRateLimit(request, "stackacres:act", 300, 60 * 1000);
   if (limited) return limited;
 
   // Access is granted to a PROFILE, so the session cookie is what says who is

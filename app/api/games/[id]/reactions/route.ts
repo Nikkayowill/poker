@@ -5,6 +5,7 @@ import { isBanned } from "@/lib/server/profile-store";
 import { checkRateLimit, enforceRateLimit, rateLimited } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
 import { adminClient } from "@/lib/server/supabase-admin";
+import { settleTournamentIfDecided } from "@/lib/server/tournament-settlement";
 import {
   PLAYER_REACTION,
   REACTION_COOLDOWN_MS,
@@ -58,6 +59,10 @@ export async function POST(
 
   const game = await loadGameWithTimeouts(id);
   if (!game) return NextResponse.json({ error: "Table not found." }, { status: 404 });
+  // The timed advance in that load can be the step that names a
+  // tournament's winner, and nothing else would settle it then. Never
+  // throws, and pays nothing on a table that is already settled.
+  await settleTournamentIfDecided(game, ownerToken);
   const seat = game.seats.find((candidate) => candidate.ownerToken === ownerToken);
   if (!seat) return NextResponse.json({ error: "You are not seated at this table." }, { status: 403 });
 

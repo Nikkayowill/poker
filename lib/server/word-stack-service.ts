@@ -16,6 +16,7 @@ import {
   submitWordStackGuess,
   toWordStackSnapshot,
   wordStackGuessProblem,
+  wordStackHardModeProblem,
   type WordStackRound,
   type WordStackSnapshot,
 } from "@/lib/arcade/puzzles/word-stack";
@@ -31,12 +32,12 @@ import {
 } from "./daily-puzzle-store";
 import {
   MIN_ANTE_UP_WAGER,
-  WAGER_MULTIPLIER_BY_GUESSES,
   anteUpWordStackPayout,
   wordStackDailyBonusMultiplier,
+  wordStackStakeRules,
 } from "@/lib/arcade/ante-up-word-stack";
 import type { WagerLadder } from "@/lib/arcade/ante-up-ladder";
-import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
+import { anteUpStakeProblem } from "@/lib/arcade/ante-up-stakes";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { applyAchievementEvent } from "./achievement-store";
 import { creditDailyBonus } from "./daily-puzzle-bonus";
@@ -49,6 +50,7 @@ import {
   spendStakeLedgered,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
+import { recordSoloResult } from "./solo-earnings-store";
 
 /**
  * Everything between a Word Stack request and the board.
@@ -139,11 +141,12 @@ export interface WordStackView {
 
 /**
  * `unknown-word` is a player typing a non-word: expected, costs nothing, and
- * the board should shrug rather than show an error banner.
+ * the board should shrug rather than show an error banner. `hard-mode` is the
+ * same kind of refusal for a guess that skips a revealed hint.
  */
 export class WordStackRequestError extends ArcadeRequestError<
   WordStackSnapshot,
-  "unknown-word" | "rolled-over" | "stale"
+  "unknown-word" | "hard-mode" | "rolled-over" | "stale"
 > {
   readonly name = "WordStackRequestError";
 }
@@ -265,12 +268,11 @@ export async function startWordStackPuzzle(
       400,
     );
   }
-  // One flat ceiling: there is no harder board to earn a bigger one with, and
-  // the shared daily word is the same for everybody. See
-  // lib/arcade/ante-up-stakes.ts. Deliberately after the resume short-circuit
-  // above -- a resumed round already ignores the client's wager.
-  const overCeiling = anteUpWagerCeilingProblem(WORD_STACK_GAME, null, wagerInput);
-  if (overCeiling) throw new WordStackRequestError(overCeiling, 400);
+  // No ceiling: a bigger stake plays hard mode instead (wordStackStakeRules
+  // below). Deliberately after the resume short-circuit above, since a
+  // resumed round already ignores the client's wager.
+  const stakeProblem = anteUpStakeProblem(WORD_STACK_GAME, null, wagerInput);
+  if (stakeProblem) throw new WordStackRequestError(stakeProblem, 400);
 
   // The answer is the canonical one for this day: pickDaily only actually
   // runs on that day's first-ever ask (today's first opener, or an
@@ -300,11 +302,14 @@ export async function startWordStackPuzzle(
     throw new WordStackRequestError(`You need ${wagerInput.toLocaleString()} Gold to wager this.`, 400);
   }
 
+  // The stake band's rules are copied onto the round so a live round never changes.
+  const stakeRules = wordStackStakeRules(wagerInput);
   const round: StoredWordStackRound = {
     ...startWordStackRound(answer),
+    ...(stakeRules.hardMode ? { hardMode: true } : {}),
     wager: wagerInput,
     // Copied in only for a real wager; see the field's own doc comment.
-    ...(wagerInput > 0 ? { wagerLadder: WAGER_MULTIPLIER_BY_GUESSES } : {}),
+    ...(wagerInput > 0 ? { wagerLadder: stakeRules.ladder } : {}),
   };
 
   let stored: StoredWordStack;
@@ -407,7 +412,7 @@ export async function playWordStackGuess(
   if (problem === "finished") {
     throw new WordStackRequestError("That puzzle is already done.", 409, { round: snapshot(current) });
   }
-  if (problem) {
+  if (problem && problem !== "hard-mode") {
     throw new WordStackRequestError("A guess is five letters.", 400, { round: snapshot(current) });
   }
 
@@ -418,6 +423,15 @@ export async function playWordStackGuess(
   if (!isAllowedWordStackGuess(input.guess)) {
     throw new WordStackRequestError("Not in the word list.", 400, {
       reason: "unknown-word",
+      round: snapshot(current),
+    });
+  }
+
+  // Checked after the dictionary so a non-word still reads "Not in the word list".
+  const hardModeProblem = wordStackHardModeProblem(current.round, input.guess);
+  if (hardModeProblem) {
+    throw new WordStackRequestError(hardModeProblem, 400, {
+      reason: "hard-mode",
       round: snapshot(current),
     });
   }
@@ -466,6 +480,14 @@ export async function playWordStackGuess(
         console.error("word-stack.wager_payout_credit_failed", { profileId: profile.id, payout, error });
       });
     }
+    // The daily board settles once, so the profile and day are the idempotency
+    // key. Recorded after the credit, win or lose, for the rank and the tracker.
+    await recordSoloResult(profile.id, token, {
+      game: "word-stack",
+      correlationId: `word-stack:${profile.id}:${current.day}`,
+      wager: current.round.wager,
+      payout,
+    });
   } else if (complete && isToday) {
     // The per-game daily bonus, replacing the retired flat "daily_brain_game"
     // mission (see lib/server/daily-puzzle-bonus.ts). Pays even on a loss, at

@@ -57,11 +57,11 @@ test.describe("phone lobby", () => {
 
     // The arcade floor's own heading, proving the route component rendered
     // inline rather than a second copy of the catalogue.
-    await expect(pane(page, "Ante Up").getByRole("heading", { name: "Every game beside the table." }))
+    await expect(pane(page, "Ante Up").getByRole("heading", { name: "Wager against the House or challenge a friend." }))
       .toBeVisible();
 
-    await nav.getByRole("button", { name: "Profile", exact: true }).click();
-    await expect(pane(page, "Profile").getByRole("heading", { name: "The leaderboard." }))
+    await nav.getByRole("button", { name: "Leaderboard", exact: true }).click();
+    await expect(pane(page, "Leaderboard").getByRole("heading", { name: "The leaderboard." }))
       .toBeVisible();
   });
 
@@ -83,12 +83,30 @@ test.describe("phone lobby", () => {
   test("a horizontal drag turns the page", async ({ page }) => {
     await enterAsGuest(page);
     const nav = tabBar(page);
-    await expect(nav.getByRole("button", { name: "Texas Hold'em", exact: true }))
+    await expect(nav.getByRole("button", { name: "Play", exact: true }))
       .toHaveAttribute("aria-current", "page");
 
     const box = await page.locator(".mshell-viewport").boundingBox();
     if (!box) throw new Error("no swipe viewport");
-    const y = box.y + box.height * 0.6;
+    // Start on the empty right side of the "Play" heading row: outside the
+    // sideways rails, and not a link, which the browser would drag natively.
+    const play = pane(page, "Texas Hold'em");
+    // The first-run strip arrives with the session and moves everything below
+    // it, so measure only once the session is ready.
+    await expect(play.getByRole("button", { name: "Take a seat" })).toBeEnabled();
+    const head = play.locator(".mshell-section-head").first();
+    // Settled means the same top edge on two reads a frame apart.
+    let last = -1;
+    await expect.poll(async () => {
+      const top = (await head.boundingBox())?.y ?? -1;
+      const settled = top === last;
+      last = top;
+      await page.waitForTimeout(150);
+      return settled;
+    }).toBe(true);
+    const headBox = await head.boundingBox();
+    if (!headBox) throw new Error("no section head");
+    const y = headBox.y + headBox.height / 2;
 
     // Right to left, well past the 16% settle threshold.
     await page.mouse.move(box.x + box.width - 40, y);
@@ -99,6 +117,41 @@ test.describe("phone lobby", () => {
     await page.mouse.up();
 
     await expect(nav.getByRole("button", { name: "Ante Up", exact: true }))
+      .toHaveAttribute("aria-current", "page");
+  });
+
+  test("the Play tab shows the Ante Up rail, and All games opens the full floor", async ({ page }) => {
+    await enterAsGuest(page);
+    const play = pane(page, "Texas Hold'em");
+
+    await expect(play.getByRole("heading", { name: "Ante Up" })).toBeVisible();
+    await expect(play.locator(".mshell-game-card").first()).toBeVisible();
+
+    await play.getByRole("button", { name: /^All \d+ games$/ }).click();
+    await expect(tabBar(page).getByRole("button", { name: "Ante Up", exact: true }))
+      .toHaveAttribute("aria-current", "page");
+    await expect(pane(page, "Ante Up").getByRole("heading", { name: "Wager against the House or challenge a friend." }))
+      .toBeVisible();
+  });
+
+  /* The rails scroll sideways, so a drag that starts on one must not also turn
+     the page. HORIZONTAL_SCROLLER in mobile-shell.tsx is what keeps them apart. */
+  test("a horizontal drag on a rail does not turn the page", async ({ page }) => {
+    await enterAsGuest(page);
+    const rail = pane(page, "Texas Hold'em").locator(".mshell-rail").last();
+    await rail.scrollIntoViewIfNeeded();
+    const box = await rail.boundingBox();
+    if (!box) throw new Error("no rail");
+    const y = box.y + box.height / 2;
+
+    await page.mouse.move(box.x + box.width - 40, y);
+    await page.mouse.down();
+    for (let step = 1; step <= 8; step += 1) {
+      await page.mouse.move(box.x + box.width - 40 - step * 34, y, { steps: 2 });
+    }
+    await page.mouse.up();
+
+    await expect(tabBar(page).getByRole("button", { name: "Play", exact: true }))
       .toHaveAttribute("aria-current", "page");
   });
 
@@ -119,7 +172,7 @@ test.describe("phone lobby", () => {
     }
     await page.mouse.up();
 
-    await expect(nav.getByRole("button", { name: "Texas Hold'em", exact: true }))
+    await expect(nav.getByRole("button", { name: "Play", exact: true }))
       .toHaveAttribute("aria-current", "page");
   });
 

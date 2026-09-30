@@ -11,6 +11,7 @@ import { latestStripeSubscription } from "@/lib/server/stripe-store";
 import { pendingAcceptances } from "@/lib/server/legal-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -142,7 +143,7 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json({ url: session.url });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not start Stripe checkout.";
+    const message = publicErrorMessage(error, "Could not start Stripe checkout.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

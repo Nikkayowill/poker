@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   GRID_SIZE,
+  LARGE_GRID_SIZE,
+  LARGE_TEMPLATE_COUNT,
   TEMPLATE_COUNT,
   clearWordFillInSlot,
   guessWordFillInCell,
@@ -14,6 +16,7 @@ import {
   startWordFillInRound,
   wordFillInElapsedMs,
   wordFillInGuessProblem,
+  wordFillInTemplateSize,
   wordFillInView,
   type WordFillInRound,
 } from "./word-fill-in";
@@ -361,5 +364,74 @@ describe("clearWordFillInSlot", () => {
     expect(wordFillInClearProblem(round, 0)).toBe("already-empty");
     expect(clearWordFillInSlot(round, 0, NOW)).toBe(round);
     expect(round.startedAt).toBeNull();
+  });
+});
+
+describe("large grids", () => {
+  it("deals an 11x11 grid from the large templates", () => {
+    const round = startWordFillInRound(1, "large");
+    expect(round.templateIndex).toBeGreaterThanOrEqual(TEMPLATE_COUNT);
+    expect(round.templateIndex).toBeLessThan(TEMPLATE_COUNT + LARGE_TEMPLATE_COUNT);
+    expect(wordFillInTemplateSize(round.templateIndex)).toBe(LARGE_GRID_SIZE);
+    expect(round.pattern).toHaveLength(LARGE_GRID_SIZE * LARGE_GRID_SIZE);
+    expect(round.solution).toHaveLength(LARGE_GRID_SIZE * LARGE_GRID_SIZE);
+    expect(round.guesses).toHaveLength(LARGE_GRID_SIZE * LARGE_GRID_SIZE);
+  });
+
+  it("is a bigger puzzle than any regular grid: more words, and more crossings", () => {
+    const crossings = (templateIndex: number) => {
+      const seen = new Map<number, number>();
+      for (const cells of wordFillInSlotCells(templateIndex)) for (const cell of cells) seen.set(cell, (seen.get(cell) ?? 0) + 1);
+      return [...seen.values()].filter((count) => count > 1).length;
+    };
+    const regularMax = Math.max(...Array.from({ length: TEMPLATE_COUNT }, (_, i) => wordFillInSlotCells(i).length));
+    const regularCrossings = Math.max(...Array.from({ length: TEMPLATE_COUNT }, (_, i) => crossings(i)));
+    for (let i = TEMPLATE_COUNT; i < TEMPLATE_COUNT + LARGE_TEMPLATE_COUNT; i += 1) {
+      expect(wordFillInSlotCells(i).length).toBeGreaterThan(regularMax);
+      expect(crossings(i)).toBeGreaterThan(regularCrossings);
+    }
+  });
+
+  it("fills every large template, not just a fallback, across many seeds", () => {
+    for (let seed = 0; seed < 80; seed += 1) {
+      const round = startWordFillInRound(seed, "large");
+      // Seeds walk the templates in turn; landing on the intended one means it filled first try.
+      expect(round.templateIndex).toBe(TEMPLATE_COUNT + (seed % LARGE_TEMPLATE_COUNT));
+      expect(new Set(round.words).size).toBe(round.words.length);
+      const slots = wordFillInSlotCells(round.templateIndex);
+      expect(slots).toHaveLength(round.words.length);
+      const covered = new Set(slots.flat());
+      for (let i = 0; i < round.pattern.length; i += 1) expect(covered.has(i)).toBe(round.pattern[i] === ".");
+    }
+  });
+
+  it("keeps the regular pool to the regular templates", () => {
+    for (let seed = 0; seed < 12; seed += 1) {
+      const round = startWordFillInRound(seed);
+      expect(round.templateIndex).toBeLessThan(TEMPLATE_COUNT);
+      expect(round.pattern).toHaveLength(GRID_SIZE * GRID_SIZE);
+    }
+  });
+
+  it("bounds guesses by the round's own grid", () => {
+    const round = startWordFillInRound(3, "large");
+    const lastOpen = round.pattern.lastIndexOf(".");
+    expect(lastOpen).toBeGreaterThanOrEqual(CELL_COUNT);
+    expect(wordFillInGuessProblem(round, lastOpen, "a")).toBeNull();
+    expect(wordFillInGuessProblem(round, round.pattern.length, "a")).toBe("out-of-bounds");
+  });
+
+  it("solves by placing every listed word, and reports its size in the view", () => {
+    let round = startWordFillInRound(21, "large");
+    expect(wordFillInView(round).size).toBe(LARGE_GRID_SIZE);
+    answers(round).forEach((word, slot) => {
+      round = placeWordFillInWord(round, slot, word, NOW);
+    });
+    expect(round.status).toBe("solved");
+  });
+
+  it("reads a round stored before large grids existed as 9x9", () => {
+    for (let i = 0; i < TEMPLATE_COUNT; i += 1) expect(wordFillInTemplateSize(i)).toBe(GRID_SIZE);
+    expect(wordFillInView(startWordFillInRound(2)).size).toBe(GRID_SIZE);
   });
 });

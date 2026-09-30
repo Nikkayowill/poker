@@ -22,7 +22,7 @@
  *
  * gameId values here, and the game_id lists baked into the
  * global_leaderboard_entries() SQL function
- * (supabase/migrations/20260820120000_game_leaderboard_stats.sql), must stay
+ * (supabase/migrations/20260820184750_game_leaderboard_stats.sql), must stay
  * hand-in-sync; that migration's own comment points back at this file.
  */
 
@@ -72,7 +72,7 @@ function winRatePct(stats: LeaderboardStats): number {
 /**
  * "W3" / "L5" / "—" for a signed streak.
  *
- * Exported because the friends board (components/leaderboard/leaderboard.tsx)
+ * Exported because the friends drawer (components/social/friends-drawer.tsx)
  * renders the same idea from head-to-head rows, and two hand-written versions
  * of "how a streak reads" is exactly the kind of near-miss that shows up as
  * one screen saying L5 and another saying -5.
@@ -164,24 +164,4 @@ export function isLeaderboardGameId(value: unknown): value is LeaderboardGameId 
  */
 export function isHeadToHeadGame(gameId: string): boolean {
   return leaderboardGame(gameId) !== null;
-}
-
-/**
- * Every tab the leaderboard page offers, poker, Global and Friends always
- * first.
- *
- * Client-safe (no "server-only" import anywhere in this file's dependency
- * chain), unlike app/api/leaderboard/route.ts. components/leaderboard/
- * leaderboard.tsx imports this directly rather than the route module.
- */
-export function leaderboardTabs(): { id: string; label: string }[] {
-  return [
-    { id: "poker", label: "Poker" },
-    { id: "global", label: "Global" },
-    // Not a game: your own record against each friend, and the one tab whose
-    // rows differ per viewer. It sits with the two cross-game tabs rather
-    // than after the per-game ones for that reason.
-    { id: "friends", label: "Friends" },
-    ...Object.values(LEADERBOARD_GAMES).map((contract) => ({ id: contract.gameId, label: contract.label })),
-  ];
 }

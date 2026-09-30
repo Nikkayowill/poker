@@ -3,7 +3,7 @@ import { adminClient } from "./supabase-admin";
 
 /**
  * The raw shape `stackacres_read_batch` (migration
- * 20260914000000_stackacres_read_batch.sql) hands back: one field per table,
+ * 20260914011736_stackacres_read_batch.sql) hands back: one field per table,
  * whole rows, exactly as `to_jsonb`/`jsonb_agg` serialize them -- untyped
  * beyond "an object" or "an array of objects" on purpose. Nothing here
  * parses or defaults anything; that stays where it always lived, in the
@@ -47,17 +47,27 @@ export interface StackAcresReadBatch {
   aging_manifests: Record<string, unknown>[];
   cutters: Record<string, unknown>[];
   story: Record<string, unknown> | null;
-  drones: Record<string, unknown>[];
   /** Absent until the Chapter 1 migration redefines the batch. */
   energy?: Record<string, unknown> | null;
+  /** Absent until the clock migration (20260924045748) redefines the batch. */
+  clock?: Record<string, unknown> | null;
+  /** Absent until the Far Field batch migration (20260928232207) redefines the batch. */
+  wood_nodes?: Record<string, unknown>[];
+  land_obstacles?: Record<string, unknown>[];
+  forage_nodes?: Record<string, unknown>[];
+  axe?: Record<string, unknown> | null;
+  fences?: Record<string, unknown>[];
+  empire_buildings?: Record<string, unknown>[];
+  grocery?: Record<string, unknown> | null;
 }
 
 /**
- * One Postgres round trip in place of the ~30 `view()` used to fire in
- * parallel -- see the migration's own header for which three reads are
+ * One Postgres round trip in place of the ~37 `view()` used to fire in
+ * parallel -- see the migration's own header for which two reads are
  * deliberately NOT folded in here (they're already their own aggregate/
- * idle-sweep RPCs, not a plain per-table select) and why whole rows, not a
- * hand-typed column list, cross this boundary.
+ * idle-sweep RPCs, not a plain per-table select), plus Stone's global read
+ * (not per-profile, so it can't be a batch RPC argument), and why whole
+ * rows, not a hand-typed column list, cross this boundary.
  *
  * Returns null in memory mode (no Supabase configured) -- there is no batch
  * to fetch, and callers fall back to the exact same per-table reads this

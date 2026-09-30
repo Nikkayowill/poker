@@ -1,7 +1,8 @@
 import { randomUUID } from "crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createGame } from "@/lib/game/engine";
-import type { StakesTier } from "@/lib/game/tiers";
+import { applyPlayerAction, createGame, createHeadsUpGame } from "@/lib/game/engine";
+import type { Card } from "@/lib/game/types";
+import { TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { getPlayerStanding } from "./stats-store";
 import { ensureProfile } from "./profile-store";
 import { joinSitAndGoTable, openSitAndGoTable, readSitAndGoTableById } from "./sit-and-go-service";
@@ -15,6 +16,7 @@ import {
   findOpenPublicGame,
   getStoredGame,
   loadGameWithTimeouts,
+  updateStoredGame,
 } from "./game-store";
 
 function dueGame() {
@@ -223,8 +225,14 @@ describe("stale-table matchmaking and archival (memory mode)", () => {
   // asserts an *exact* winner uses its own tier, distinct from "1k" and from
   // each other, rather than racing leftovers from the rest of the file or
   // from earlier tests in this same block.
+  // Bought in at the tier's own amount. The default 1000 is far below a
+  // high tier's big blind, which rounds most bot stacks to zero and can open
+  // the table already "complete" with only the host funded.
+  const tierGame = (tier: StakesTier) =>
+    createGame(randomUUID(), "You", undefined, { tier, buyIn: TIER_CONFIG[tier].minBuyIn });
+
   function backdatedGame(msAgo: number, tier: StakesTier) {
-    const game = createGame(randomUUID(), "You", undefined, { tier });
+    const game = tierGame(tier);
     const stamp = new Date(Date.now() - msAgo).toISOString();
     game.createdAt = stamp;
     game.updatedAt = stamp;
@@ -239,7 +247,7 @@ describe("stale-table matchmaking and archival (memory mode)", () => {
     const stale = backdatedGame(31 * 60_000, "500k");
     await createStoredGame(stale);
 
-    const fresh = createGame(randomUUID(), "You", undefined, { tier: "500k" });
+    const fresh = tierGame("500k");
     await createStoredGame(fresh);
 
     expect(await findOpenPublicGame(fresh.tier)).toBe(fresh.id);
@@ -259,15 +267,87 @@ describe("stale-table matchmaking and archival (memory mode)", () => {
     const before = await ensureProfile(token, "Ghost");
     const game = createGame(token, "Ghost");
     game.updatedAt = new Date(Date.now() - 60_000).toISOString();
-    const stake = game.seats.find((seat) => seat.ownerToken === token)!.stack;
+    // The opening hand is live, so the seat has blinds in the pot. Those are
+    // played out, not lost: with every other seat a bot, the away human's
+    // blind comes back to them only if the hand's rules say so. Here we only
+    // check the credit matches what the archived state says they walked with.
     await createStoredGame(game);
 
     const archivedCount = await archiveStaleGames();
     expect(archivedCount).toBeGreaterThanOrEqual(1);
-    expect((await getStoredGame(game.id))?.status).toBe("archived");
+    const stored = (await getStoredGame(game.id))!;
+    expect(stored.status).toBe("archived");
+    const seat = stored.seats.find((candidate) => candidate.ownerToken === token)!;
+    expect(seat.stack).toBe(0);
 
     const after = await ensureProfile(token);
-    expect(after.goldBalance).toBe(before.goldBalance + stake);
+    expect(after.goldBalance).toBeGreaterThan(before.goldBalance);
+  });
+
+  /** A river spot where the away human holds aces against an all-in bot. */
+  function abandonedRiver(token: string) {
+    const toCards = (values: string): Card[] => values.split(" ").map((value) => ({
+      rank: value.slice(0, -1) as Card["rank"],
+      suit: ({ c: "clubs", d: "diamonds", h: "hearts", s: "spades" } as const)[value.at(-1) as "c" | "d" | "h" | "s"],
+    }));
+    const game = createGame(token, "Ghost");
+    const human = game.seats.findIndex((seat) => seat.ownerToken === token);
+    const bot = (human + 1) % game.seats.length;
+    game.street = "river";
+    game.community = toCards("2c 3d 7h 8s 9c");
+    game.currentBet = 0;
+    game.seats.forEach((seat) => {
+      Object.assign(seat, { acted: true, streetBet: 0, committed: 0, status: "folded" });
+    });
+    Object.assign(game.seats[human], {
+      status: "active", stack: 500, committed: 200, acted: false, holeCards: toCards("As Ad"),
+    });
+    Object.assign(game.seats[bot], { status: "all-in", stack: 0, committed: 200, holeCards: toCards("Ks Kd") });
+    game.pot = 400;
+    game.currentPlayer = human;
+    game.turnStartedAt = new Date(Date.now() - 60_000).toISOString();
+    game.turnDeadlineAt = new Date(Date.now() - 45_000).toISOString();
+    game.updatedAt = new Date(Date.now() - 60_000).toISOString();
+    return game;
+  }
+
+  it("plays out a hand abandoned mid-pot instead of losing the chips in it", async () => {
+    const token = randomUUID();
+    const before = await ensureProfile(token, "Ghost");
+    await createStoredGame(abandonedRiver(token));
+
+    await archiveStaleGames();
+
+    // The away human times out into a check, aces win the 400 pot less 4%
+    // rake, and they walk with 500 behind plus 384.
+    expect((await ensureProfile(token)).goldBalance).toBe(before.goldBalance + 884);
+  });
+
+  it("never pays an archived table out twice", async () => {
+    const token = randomUUID();
+    const before = await ensureProfile(token, "Ghost");
+    const game = abandonedRiver(token);
+    await createStoredGame(game);
+    // A copy read before the sweep, like a request that was already in flight.
+    const staleCopy = (await getStoredGame(game.id))!;
+
+    await archiveStaleGames();
+    const paid = (await ensureProfile(token)).goldBalance;
+    expect(paid).toBe(before.goldBalance + 884);
+
+    // Leaving the archived table is refused outright.
+    const archived = (await getStoredGame(game.id))!;
+    expect(() => applyPlayerAction(archived, { type: "leave-seat" }, token)).toThrow(/closed/i);
+
+    // The in-flight copy still says "playing", but its write loses the
+    // version race, so the actions route never reaches its credit.
+    const left = applyPlayerAction(staleCopy, { type: "leave-seat" }, token);
+    await expect(updateStoredGame(left, { type: "leave-seat" }, token)).rejects.toThrow(/changed/i);
+
+    // A second sweep finds nothing left to pay.
+    await archiveStaleGames();
+    expect((await ensureProfile(token)).goldBalance).toBe(paid);
+    expect((await getStoredGame(game.id))?.status).toBe("archived");
   });
 
   it("refunds an abandoned Sit & Go's ORIGINAL entry fee, not a live stack, and cancels rather than completes it", async () => {
@@ -366,15 +446,77 @@ describe("stale-table matchmaking and archival (memory mode)", () => {
 
     await archiveStaleGames();
 
-    // The game itself is left alone -- it's already "complete", not
-    // "playing", so this sweep never touches games.status at all.
-    expect((await getStoredGame(gameId))?.status).toBe("complete");
+    // Archived before the refund, so a match whose escrow is gone can never
+    // go on to name a winner.
+    expect((await getStoredGame(gameId))?.status).toBe("archived");
     const { table: cancelled } = await readHeadsUpTableById(tokens[0], opened.id);
     expect(cancelled.status).toBe("cancelled");
     expect(cancelled.winnerId).toBeNull();
 
     for (let i = 0; i < 2; i += 1) {
       expect(await ensureProfile(tokens[i]).then((p) => p.goldBalance)).toBe(before[i].goldBalance);
+    }
+  });
+
+  it("leaves a long-running heads-up match alone while its players are still at it", async () => {
+    const tokens = [randomUUID(), randomUUID()];
+    const before = await Promise.all(tokens.map((token) => ensureProfile(token)));
+    const { table: opened } = await openHeadsUpQuickPlay(tokens[0], "1k");
+    await openHeadsUpQuickPlay(tokens[1], "1k");
+    // Started well past the stale window, but the game itself is fresh.
+    __backdateHeadsUpTableStartForTest(opened.id, new Date(Date.now() - 60_000).toISOString());
+
+    await archiveStaleGames();
+
+    const { table } = await readHeadsUpTableById(tokens[0], opened.id);
+    expect(table.status).toBe("active");
+    expect((await getStoredGame(table.gameId!))?.status).not.toBe("archived");
+    for (let i = 0; i < 2; i += 1) {
+      // Still down the stake: nothing was refunded out from under the match.
+      expect(await ensureProfile(tokens[i]).then((p) => p.goldBalance)).toBe(before[i].goldBalance - table.stake);
+    }
+  });
+
+  it("pays the winner of a decided heads-up match the sweep finds, instead of refunding both", async () => {
+    const tokens = [randomUUID(), randomUUID()];
+    const before = await Promise.all(tokens.map((token) => ensureProfile(token)));
+    const { table: opened } = await openHeadsUpQuickPlay(tokens[0], "1k");
+    const { table: matched } = await openHeadsUpQuickPlay(tokens[1], "1k");
+    const gameId = matched.gameId!;
+
+    const game = (await getStoredGame(gameId))!;
+    const winner = game.seats.find((seat) => seat.ownerToken === tokens[0])!;
+    const loser = game.seats.find((seat) => seat.ownerToken === tokens[1])!;
+    winner.stack += loser.stack;
+    loser.stack = 0;
+    loser.status = "out";
+    game.status = "complete";
+    game.tournament!.winnerProfileId = winner.profileId;
+    game.updatedAt = new Date(Date.now() - 60_000).toISOString();
+    await createStoredGame(game);
+    __backdateHeadsUpTableStartForTest(opened.id, new Date(Date.now() - 60_000).toISOString());
+
+    await archiveStaleGames();
+
+    const { table } = await readHeadsUpTableById(tokens[0], opened.id);
+    expect(table.status).toBe("completed");
+    expect(table.winnerId).toBe(winner.profileId);
+    expect(await ensureProfile(tokens[0]).then((p) => p.goldBalance)).toBe(before[0].goldBalance + table.stake);
+    expect(await ensureProfile(tokens[1]).then((p) => p.goldBalance)).toBe(before[1].goldBalance - table.stake);
+  });
+
+  it("archives a tournament game never linked to its table without paying its stacks out", async () => {
+    const tokens = [randomUUID(), randomUUID()];
+    const profiles = await Promise.all(tokens.map((token) => ensureProfile(token)));
+    const game = createHeadsUpGame(tokens.map((token, i) => ({ token, profile: profiles[i] })), "1k");
+    game.updatedAt = new Date(Date.now() - 60_000).toISOString();
+    await createStoredGame(game);
+
+    await archiveStaleGames();
+
+    expect((await getStoredGame(game.id))?.status).toBe("archived");
+    for (let i = 0; i < 2; i += 1) {
+      expect(await ensureProfile(tokens[i]).then((p) => p.goldBalance)).toBe(profiles[i].goldBalance);
     }
   });
 

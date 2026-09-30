@@ -5,7 +5,7 @@
  * reasoning exactly: the eligibility check and the multiplier arithmetic have
  * to be testable without a database, and they have to be the SAME arithmetic
  * the SQL side runs, because `reset_stackacres_prestige` in
- * 20260905140000_stackacres_prestige_reset.sql cannot import this file. Both
+ * 20260905120642_stackacres_prestige_reset.sql cannot import this file. Both
  * sides are hand-kept in step -- the same discipline
  * homestead_units_enforce_stock_shape's yield ceilings already require -- and
  * `prestige.test.ts` pins the numbers here so a drift is a failing test, not

@@ -1,5 +1,6 @@
 import "server-only";
 import { randomUUID } from "crypto";
+import { AXE_LEVELS, STARTING_AXE_LEVEL, isAxeLevel, type AxeLevel } from "@/lib/stackacres/axe";
 import type { StackAcresUnitRow } from "@/lib/stackacres/units";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
 import type { SectorId } from "@/lib/stackacres/sectors";
@@ -19,11 +20,27 @@ import {
   type MachineItemId,
   type MachineProcessedItem,
 } from "@/lib/stackacres/machine-items";
+import {
+  isStackAcresContractStatus,
+  type StackAcresContractStatus,
+} from "@/lib/stackacres/contracts";
+import { stackacresExchangeDay } from "@/lib/stackacres/exchange";
 import type { StackAcresInventory } from "@/lib/stackacres/inventory";
 import type { StackAcresWheatPlotRow } from "@/lib/stackacres/wheat-plot";
 import { isMachineKind, type MachineKind, type StackAcresMachineRow } from "@/lib/stackacres/machines";
 import { isWoodNodeId, type WoodNodeId } from "@/lib/stackacres/tree-nodes";
 import { freshWoodNodeState, type WoodNodeState } from "@/lib/stackacres/wood";
+import {
+  freshLandObstacleState,
+  landObstacle,
+  type LandObstacleState,
+} from "@/lib/stackacres/land-clearing";
+import {
+  freshForageNodeState,
+  isForageNodeId,
+  type ForageNodeId,
+  type ForageNodeState,
+} from "@/lib/stackacres/forage";
 import { isRecipeId, type RecipeId } from "@/lib/stackacres/recipes";
 import type { AgingManifest } from "@/lib/stackacres/aging";
 import {
@@ -88,6 +105,7 @@ declare global {
   var __riverRoomStackAcresCapacity: Map<string, number> | undefined;
   var __riverRoomStackAcresFeed: Map<string, number> | undefined;
   var __riverRoomStackAcresTool: Map<string, StackAcresToolTier> | undefined;
+  var __riverRoomStackAcresAxe: Map<string, AxeLevel> | undefined;
   var __riverRoomStackAcresCutters: Map<string, Set<StackAcresBuyableCutter>> | undefined;
   var __riverRoomStackAcresUpkeep: Map<string, number> | undefined;
   var __riverRoomStackAcresHarvests: StackAcresHarvestEntry[] | undefined;
@@ -110,6 +128,8 @@ declare global {
   var __riverRoomStackAcresEnergy: Map<string, StoredStackAcresEnergy> | undefined;
   var __riverRoomStackAcresStory: Map<string, { story: StoredStory; version: number }> | undefined;
   var __riverRoomStackAcresWoodNodes: Map<string, StoredWoodNode> | undefined;
+  var __riverRoomStackAcresLandObstacles: Map<string, StoredLandObstacle> | undefined;
+  var __riverRoomStackAcresForageNodes: Map<string, StoredForageNode> | undefined;
 }
 
 const memoryUnits = globalThis.__riverRoomStackAcresUnits ?? new Map<string, StoredStackAcresUnit>();
@@ -135,6 +155,10 @@ globalThis.__riverRoomStackAcresEnergy = memoryEnergy;
  *  entry is zero extra slots. */
 const memoryTool = globalThis.__riverRoomStackAcresTool ?? new Map<string, StackAcresToolTier>();
 globalThis.__riverRoomStackAcresTool = memoryTool;
+
+/** Each player's axe level. A missing entry is the starting axe. */
+const memoryAxe = globalThis.__riverRoomStackAcresAxe ?? new Map<string, AxeLevel>();
+globalThis.__riverRoomStackAcresAxe = memoryAxe;
 
 /** Cutters each player has bought, keyed by profile id. A missing entry is
  *  only the free Scythe. */
@@ -255,6 +279,17 @@ globalThis.__riverRoomStackAcresFriendship = memoryFriendship;
 const memoryWoodNodes = globalThis.__riverRoomStackAcresWoodNodes ?? new Map<string, StoredWoodNode>();
 globalThis.__riverRoomStackAcresWoodNodes = memoryWoodNodes;
 
+/** Land obstacles (lib/stackacres/land-clearing.ts), keyed the same way. A
+ *  missing entry is a standing, untouched obstacle. */
+const memoryLandObstacles =
+  globalThis.__riverRoomStackAcresLandObstacles ?? new Map<string, StoredLandObstacle>();
+globalThis.__riverRoomStackAcresLandObstacles = memoryLandObstacles;
+
+/** Forageable bushes (lib/stackacres/forage.ts), keyed the same way. */
+const memoryForageNodes =
+  globalThis.__riverRoomStackAcresForageNodes ?? new Map<string, StoredForageNode>();
+globalThis.__riverRoomStackAcresForageNodes = memoryForageNodes;
+
 /** Test seam only: the memory branch is process-global. */
 export function __resetStackAcresForTest(): void {
   memoryUnits.clear();
@@ -279,6 +314,8 @@ export function __resetStackAcresForTest(): void {
   memoryDevotion.clear();
   memoryFriendship.clear();
   memoryWoodNodes.clear();
+  memoryForageNodes.clear();
+  memoryLandObstacles.clear();
 }
 
 /** Test seam only: what the memory-branch collection ledger recorded. */
@@ -287,7 +324,7 @@ export function __stackacresHarvestsForTest(): readonly StackAcresHarvestEntry[]
 }
 
 const UNIT_COLUMNS =
-  "id, profile_id, stock, status, stake, yield_quantity, started_at, ready_at, last_fed_at, last_watered_at, muck_fee, permanent, version, created_at, housed_in, soil_slot, feed_bonus";
+  "id, profile_id, stock, status, stake, yield_quantity, started_at, ready_at, last_fed_at, last_watered_at, muck_fee, permanent, version, created_at, housed_in, soil_slot, feed_bonus, map_tx, map_ty";
 
 export interface UnitDbRow {
   id: string;
@@ -307,6 +344,8 @@ export interface UnitDbRow {
   housed_in: string | null;
   soil_slot: number | string | null;
   feed_bonus: number | string;
+  map_tx?: number | string | null;
+  map_ty?: number | string | null;
 }
 
 /** Same parser `listStackAcresUnits`/`getStackAcresUnit`/etc. already call as
@@ -336,6 +375,8 @@ function fromRow(row: UnitDbRow): StoredStackAcresUnit {
     housedIn: row.housed_in === "greenhouse" ? "greenhouse" : null,
     soilSlot: row.soil_slot === null || row.soil_slot === undefined ? null : Number(row.soil_slot),
     feedBonus: Number(row.feed_bonus),
+    mapTx: row.map_tx === null || row.map_tx === undefined ? null : Number(row.map_tx),
+    mapTy: row.map_ty === null || row.map_ty === undefined ? null : Number(row.map_ty),
   };
 }
 
@@ -450,7 +491,7 @@ export async function createStackAcresUnit(
     readyAt: Date;
     lastFedAt: Date | null;
     /** Null for a crop sown as dry seed, and for livestock, which never runs
-     *  dry. Set only when a pipe or hydro bed already waters the crop. */
+     *  dry. Set only when a water source already waters the crop. */
     lastWateredAt: Date | null;
     /** True when this was bought outright with Gold rather than sown. */
     permanent: boolean;
@@ -474,7 +515,7 @@ export async function createStackAcresUnit(
 
   if (!supabase) {
     // Mirrors the database's own partial unique index (see the
-    // 20260908120000 migration): two sows racing for the same slot in memory
+    // 20260909204011_stackacres_soil_slot_unique migration): two sows racing for the same slot in memory
     // mode must fail the same way they would against Postgres.
     if (soilSlot !== null) {
       const taken = [...memoryUnits.values()].some(
@@ -500,6 +541,8 @@ export async function createStackAcresUnit(
       housedIn,
       soilSlot,
       feedBonus: 0,
+      mapTx: null,
+      mapTy: null,
     };
     memoryUnits.set(unit.id, clone(unit));
     return clone(unit);
@@ -529,6 +572,47 @@ export async function createStackAcresUnit(
     throw new Error(`Could not stock that: ${error.message}`);
   }
   return fromRow(data as UnitDbRow);
+}
+
+/**
+ * Sets an animal down on a Homestead map square, or picks it up (both null).
+ * Never bumps `version`: where an animal stands is not part of any settlement,
+ * so a collect racing a placement must not fail because of it.
+ *
+ * "taken" is another of this profile's animals already on that square, which
+ * the database's own unique index enforces so two racing placements cannot both
+ * land. "missing" is a unit that is not this profile's.
+ */
+export async function setStackAcresUnitPosition(
+  profileId: string,
+  unitId: string,
+  position: { tx: number; ty: number } | null,
+): Promise<"ok" | "taken" | "missing"> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const unit = memoryUnits.get(unitId);
+    if (!unit || unit.profileId !== profileId) return "missing";
+    if (position) {
+      const taken = [...memoryUnits.values()].some(
+        (other) => other.id !== unitId && other.profileId === profileId && other.mapTx === position.tx && other.mapTy === position.ty,
+      );
+      if (taken) return "taken";
+    }
+    unit.mapTx = position ? position.tx : null;
+    unit.mapTy = position ? position.ty : null;
+    return "ok";
+  }
+  const { data, error } = await supabase
+    .from("homestead_units")
+    .update({ map_tx: position ? position.tx : null, map_ty: position ? position.ty : null })
+    .eq("id", unitId)
+    .eq("profile_id", profileId)
+    .select("id");
+  if (error) {
+    if (error.code === "23505") return "taken";
+    throw new Error(`Could not move that animal: ${error.message}`);
+  }
+  return data && data.length > 0 ? "ok" : "missing";
 }
 
 /**
@@ -679,7 +763,7 @@ export async function collectStackAcresUnit(
     // A re-sown crop goes back in as dry seed (`wateredAt` null) exactly as a
     // freshly stocked one does, and its first water restarts the clock from
     // there (see `seedClockOnFirstWater`), so the time it sat ripe is never
-    // charged. The caller passes `wateredAt` only when a pipe or hydro bed
+    // charged. The caller passes `wateredAt` only when a water source
     // already waters it. `last_fed_at` deliberately does NOT get reset (see
     // the doc comment above): an animal can be fed at any time, so being
     // hungry the moment it restarts costs the player a serving and nothing
@@ -822,8 +906,7 @@ export async function retireStackAcresUnit(current: StoredStackAcresUnit): Promi
  * Deletes a unit row outright -- any status, permanent or not -- version-
  * guarded. No refund: see `removeStackAcresSoilTile` in
  * stackacres-service.ts, the only caller. Lifting the bed a crop stands on
- * takes the crop with it, the same spent-sink rule the bed itself already
- * follows (see `SOIL_TILE_PRICE_GOLD`'s own doc comment on soil.ts). A lost
+ * takes the crop with it. A lost
  * race -- the unit already moved on, harvested or cleared or retired out
  * from under this -- returns null rather than throwing, the same contract
  * `retireStackAcresUnit`/`clearStackAcresMuck` above already keep.
@@ -1319,6 +1402,56 @@ export async function upgradeStackAcresToolTier(
   });
   if (error) throw new Error(`Could not update your equipment: ${error.message}`);
   return data === null ? null : toStackAcresToolTier(data);
+}
+
+/** The axe this player holds (lib/stackacres/axe.ts). No row is the starting
+ *  axe. A stored level this build does not know reads as the nearest real one,
+ *  so a farm always loads. */
+/** Same clamp-to-a-known-level logic below, pulled out for the batch RPC path. */
+export function stackAcresAxeLevelFromBatchRow(row: { level?: unknown } | null): AxeLevel {
+  const level = Number(row?.level ?? STARTING_AXE_LEVEL);
+  const top = AXE_LEVELS[AXE_LEVELS.length - 1];
+  const clamped = Math.min(top, Math.max(STARTING_AXE_LEVEL, Math.trunc(Number.isFinite(level) ? level : STARTING_AXE_LEVEL)));
+  return isAxeLevel(clamped) ? clamped : STARTING_AXE_LEVEL;
+}
+
+export async function readStackAcresAxeLevel(profileId: string): Promise<AxeLevel> {
+  const supabase = adminClient();
+  if (!supabase) return memoryAxe.get(profileId) ?? STARTING_AXE_LEVEL;
+
+  const { data, error } = await supabase.from("homestead_axe").select("level").eq("profile_id", profileId).maybeSingle();
+  if (error) throw new Error(`Could not read your axe: ${error.message}`);
+  return stackAcresAxeLevelFromBatchRow(data as { level?: unknown } | null);
+}
+
+/**
+ * Raises a player's axe one level, GUARDED on the level they were last seen
+ * holding. Null on a lost race or a stale `from`, and null is never an
+ * upgrade: the caller has already been paid and refunds on null.
+ */
+export async function upgradeStackAcresAxeLevel(profileId: string, from: AxeLevel, to: AxeLevel): Promise<AxeLevel | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    if ((memoryAxe.get(profileId) ?? STARTING_AXE_LEVEL) !== from) return null;
+    memoryAxe.set(profileId, to);
+    return to;
+  }
+
+  if (from === STARTING_AXE_LEVEL) {
+    // No row yet is the starting axe. The primary key lets exactly one insert win.
+    const { error } = await supabase.from("homestead_axe").insert({ profile_id: profileId, level: to });
+    if (!error) return to;
+    if (error.code !== "23505") throw new Error(`Could not update your axe: ${error.message}`);
+  }
+  const { data, error } = await supabase
+    .from("homestead_axe")
+    .update({ level: to, updated_at: new Date().toISOString() })
+    .eq("profile_id", profileId)
+    .eq("level", from)
+    .select("level")
+    .maybeSingle();
+  if (error) throw new Error(`Could not update your axe: ${error.message}`);
+  return data ? to : null;
 }
 
 /** Every cutter this player owns, Scythe first. No rows means only the Scythe. */
@@ -2042,7 +2175,7 @@ export function machineFromRow(row: MachineDbRow): StoredMachine {
     status: row.status === "working" ? "working" : "idle",
     startedAt: row.started_at ? String(row.started_at) : null,
     readyAt: row.ready_at ? String(row.ready_at) : null,
-    // A row written before 20260904170000 and still working reads as a Mill
+    // A row written before 20260905022349 and still working reads as a Mill
     // batch of Flour, which is what it is -- the migration backfills exactly
     // that, and this fallback only matters if that backfill were ever missed.
     recipeId: row.recipe_id && isRecipeId(row.recipe_id) ? row.recipe_id : null,
@@ -2479,12 +2612,15 @@ export interface StoredContract {
   quantity: number;
   goldReward: number;
   influenceReward: number;
-  status: "open" | "fulfilled";
+  status: StackAcresContractStatus;
   createdAt: string;
+  /** When it stopped being open, for either terminal status. Null while
+   *  open, and null on every row that predates the column. */
+  resolvedAt: string | null;
 }
 
 const CONTRACT_COLUMNS =
-  "id, profile_id, item, quantity, gold_reward, influence_reward, status, created_at";
+  "id, profile_id, item, quantity, gold_reward, influence_reward, status, created_at, resolved_at";
 
 export interface ContractDbRow {
   id: string;
@@ -2495,6 +2631,7 @@ export interface ContractDbRow {
   influence_reward: number | string;
   status: string;
   created_at: string;
+  resolved_at?: string | null;
 }
 
 export function contractFromRow(row: ContractDbRow): StoredContract {
@@ -2505,8 +2642,9 @@ export function contractFromRow(row: ContractDbRow): StoredContract {
     quantity: Number(row.quantity),
     goldReward: Number(row.gold_reward),
     influenceReward: Number(row.influence_reward),
-    status: row.status === "fulfilled" ? "fulfilled" : "open",
+    status: isStackAcresContractStatus(row.status) ? row.status : "open",
     createdAt: String(row.created_at),
+    resolvedAt: row.resolved_at ? String(row.resolved_at) : null,
   };
 }
 
@@ -2566,6 +2704,7 @@ export async function createStackAcresContract(
       influenceReward: def.influenceReward,
       status: "open",
       createdAt: now,
+      resolvedAt: null,
     };
     memoryContracts.set(contract.id, { ...contract });
     return { ...contract };
@@ -2601,23 +2740,78 @@ export async function createStackAcresContract(
 export async function fulfillStackAcresContract(current: StoredContract): Promise<StoredContract | null> {
   const supabase = adminClient();
 
+  return resolveStackAcresContract(current, "fulfilled", new Date(), "settle");
+}
+
+/**
+ * Marks a contract passed, exactly once, and frees the board.
+ *
+ * Same status guard as fulfilling, and for the same reason: two tabs racing
+ * the same contract must resolve it once. Nothing is spent and nothing is
+ * paid -- a pass is the release valve on a one-slot board, rate-limited to
+ * one a UTC day by the service (see `contractPassSpent`), never by this.
+ */
+export async function passStackAcresContract(
+  current: StoredContract,
+  now: Date,
+): Promise<StoredContract | null> {
+  return resolveStackAcresContract(current, "passed", now, "pass");
+}
+
+/** The open -> terminal write both resolutions share. Guarded on `status =
+ *  'open'`, so it returns the row at most once however many callers race. */
+async function resolveStackAcresContract(
+  current: StoredContract,
+  status: "fulfilled" | "passed",
+  now: Date,
+  verb: "settle" | "pass",
+): Promise<StoredContract | null> {
+  const supabase = adminClient();
+  const resolvedAt = now.toISOString();
+
   if (!supabase) {
     const stored = memoryContracts.get(current.id);
     if (!stored || stored.status !== "open") return null;
-    const updated: StoredContract = { ...stored, status: "fulfilled" };
+    const updated: StoredContract = { ...stored, status, resolvedAt };
     memoryContracts.set(current.id, { ...updated });
     return { ...updated };
   }
 
   const { data, error } = await supabase
     .from("homestead_contracts")
-    .update({ status: "fulfilled" })
+    .update({ status, resolved_at: resolvedAt })
     .eq("id", current.id)
     .eq("status", "open")
     .select(CONTRACT_COLUMNS)
     .maybeSingle();
-  if (error) throw new Error(`Could not settle that contract: ${error.message}`);
+  if (error) throw new Error(`Could not ${verb} that contract: ${error.message}`);
   return data ? contractFromRow(data as ContractDbRow) : null;
+}
+
+/**
+ * The UTC day of this player's most recent PASSED contract, or null if they
+ * have never passed one. What the once-a-day rule is measured against.
+ */
+export async function readStackAcresLastContractPassDay(profileId: string): Promise<string | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const passed = [...memoryContracts.values()]
+      .filter((contract) => contract.profileId === profileId && contract.status === "passed" && contract.resolvedAt)
+      .sort((a, b) => Date.parse(b.resolvedAt!) - Date.parse(a.resolvedAt!));
+    return passed.length > 0 ? stackacresExchangeDay(new Date(passed[0].resolvedAt!)) : null;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_contracts")
+    .select("resolved_at")
+    .eq("profile_id", profileId)
+    .eq("status", "passed")
+    .order("resolved_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read your town board history: ${error.message}`);
+  const resolvedAt = (data as { resolved_at: string | null } | null)?.resolved_at ?? null;
+  return resolvedAt ? stackacresExchangeDay(new Date(resolvedAt)) : null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -2731,7 +2925,7 @@ export async function readStackAcresLifetimeGross(profileId: string): Promise<nu
  * Pulls the valve: wipes the grid and every resource stockpile riding on it,
  * and raises the permanent multiplier by what the profile's gross farm
  * production since the last reset actually earned. See
- * 20260905140000_stackacres_prestige_reset.sql's own header for exactly
+ * 20260905120642_stackacres_prestige_reset.sql's own header for exactly
  * which tables this sweeps and which it deliberately leaves untouched (land
  * cleared, purchased capacity, placed machines, Synergy Tree perks, the
  * donation register and Town Influence all survive -- none of them is a
@@ -2953,20 +3147,27 @@ export async function prayAtStackAcresShrine(
 export interface StoredFriendshipRow {
   points: number;
   lastGiftedDay: string | null;
+  lastGreetedDay: string | null;
   claimedRungs: readonly number[];
 }
 
-const FRESH_FRIENDSHIP: StoredFriendshipRow = { points: 0, lastGiftedDay: null, claimedRungs: [] };
+const FRESH_FRIENDSHIP: StoredFriendshipRow = { points: 0, lastGiftedDay: null, lastGreetedDay: null, claimedRungs: [] };
 
 /** The stored friendship record for a profile/NPC pair, or a fresh one if
- *  no gift has ever landed. Read-only -- `giveStackAcresGift` is the only
- *  writer. */
+ *  no gift has ever landed. Read-only -- `giveStackAcresGift` and
+ *  `greetStackAcresNpc` are the only writers. */
 /** The single reader below filters `npc` server-side and reads one row; the
  *  batch RPC instead hands back every friendship row this profile has, so
  *  this does that same lookup client-side, then the identical "missing
  *  means fresh" parse `readStackAcresFriendship` runs. */
 export function stackAcresFriendshipFromBatchRows(
-  rows: { npc: string; points: number | string; last_gifted_day: string | null; claimed_rungs: number[] | null }[],
+  rows: {
+    npc: string;
+    points: number | string;
+    last_gifted_day: string | null;
+    last_greeted_day: string | null;
+    claimed_rungs: number[] | null;
+  }[],
   npc: NpcId,
 ): StoredFriendshipRow {
   const row = rows.find((entry) => entry.npc === npc);
@@ -2974,6 +3175,7 @@ export function stackAcresFriendshipFromBatchRows(
   return {
     points: Number(row.points),
     lastGiftedDay: row.last_gifted_day,
+    lastGreetedDay: row.last_greeted_day,
     claimedRungs: row.claimed_rungs ?? [],
   };
 }
@@ -2984,7 +3186,7 @@ export async function readStackAcresFriendship(profileId: string, npc: NpcId): P
 
   const { data, error } = await supabase
     .from("homestead_friendship")
-    .select("points, last_gifted_day, claimed_rungs")
+    .select("points, last_gifted_day, last_greeted_day, claimed_rungs")
     .eq("profile_id", profileId)
     .eq("npc", npc)
     .maybeSingle();
@@ -3001,6 +3203,7 @@ export async function readStackAcresFriendship(profileId: string, npc: NpcId): P
             npc,
             points: (data as { points: number | string }).points,
             last_gifted_day: (data as { last_gifted_day: string | null }).last_gifted_day,
+            last_greeted_day: (data as { last_greeted_day: string | null }).last_greeted_day,
             claimed_rungs: (data as { claimed_rungs: number[] | null }).claimed_rungs,
           },
         ]
@@ -3065,7 +3268,7 @@ export async function giveStackAcresGift(
       }
     }
     const claimedRungs = grantedRung === null ? stored.claimedRungs : [...stored.claimedRungs, grantedRung];
-    memoryFriendship.set(key, { points: newPoints, lastGiftedDay: today, claimedRungs });
+    memoryFriendship.set(key, { ...stored, points: newPoints, lastGiftedDay: today, claimedRungs });
     return { points: newPoints, outcome: "gifted", grantedRung };
   }
 
@@ -3084,6 +3287,67 @@ export async function giveStackAcresGift(
   return {
     points: Number(row.points),
     outcome: row.outcome as GiftAttemptResult["outcome"],
+    grantedRung: row.granted_rung === null ? null : Number(row.granted_rung),
+  };
+}
+
+/** What one call to `greet_homestead_npc` reports -- same shape as
+ *  `GiftAttemptResult` but there is no item to fail on, so "greeted" or
+ *  "already-greeted-today" are the only two outcomes. */
+export interface GreetAttemptResult {
+  points: number;
+  outcome: "greeted" | "already-greeted-today";
+  grantedRung: number | null;
+}
+
+/**
+ * Advances the caller's friendship with `npc` by a plain greet, for one UTC
+ * day, atomically. Its own day gate (`last_greeted_day`), separate from
+ * `giveStackAcresGift`'s -- see lib/stackacres/friendship.ts's own header for
+ * why greeting and gifting can never share one gate. No inventory touches
+ * either branch, unlike a gift.
+ */
+export async function greetStackAcresNpc(
+  profileId: string,
+  npc: NpcId,
+  points: number,
+  today: string,
+  rungThresholds: readonly number[],
+): Promise<GreetAttemptResult> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${profileId}:${npc}`;
+    const stored = memoryFriendship.get(key) ?? FRESH_FRIENDSHIP;
+    if (stored.lastGreetedDay === today) {
+      return { points: stored.points, outcome: "already-greeted-today", grantedRung: null };
+    }
+    const newPoints = stored.points + points;
+    let grantedRung: number | null = null;
+    for (let i = 0; i < rungThresholds.length; i++) {
+      if (newPoints >= rungThresholds[i] && !stored.claimedRungs.includes(i)) {
+        grantedRung = i;
+        break;
+      }
+    }
+    const claimedRungs = grantedRung === null ? stored.claimedRungs : [...stored.claimedRungs, grantedRung];
+    memoryFriendship.set(key, { ...stored, points: newPoints, lastGreetedDay: today, claimedRungs });
+    return { points: newPoints, outcome: "greeted", grantedRung };
+  }
+
+  const { data, error } = await supabase
+    .rpc("greet_homestead_npc", {
+      p_profile_id: profileId,
+      p_npc: npc,
+      p_points: points,
+      p_today: today,
+      p_rung_thresholds: rungThresholds,
+    })
+    .maybeSingle();
+  if (error) throw new Error(`Could not say hi to them: ${error.message}`);
+  const row = data as { points: number | string; outcome: string; granted_rung: number | string | null };
+  return {
+    points: Number(row.points),
+    outcome: row.outcome as GreetAttemptResult["outcome"],
     grantedRung: row.granted_rung === null ? null : Number(row.granted_rung),
   };
 }
@@ -3332,7 +3596,7 @@ export interface StoredWoodNode extends WoodNodeState {
 
 const WOOD_NODE_COLUMNS = "profile_id, node_id, hits_remaining, felled_at, version";
 
-interface WoodNodeDbRow {
+export interface WoodNodeDbRow {
   profile_id: string;
   node_id: string;
   hits_remaining: number | string;
@@ -3447,6 +3711,16 @@ export async function writeStackAcresWoodNodeSwing(
  *  standing trees rather than triggering a create -- a read must stay
  *  write-free (see this repo's CLAUDE.md's "Keep game reads write-free"
  *  rule), and a never-tapped tree is standing by definition. */
+/** Same fold-rows-into-a-record logic below, pulled out for the batch RPC path. */
+export function stackAcresWoodNodeStatesFromBatchRows(rows: WoodNodeDbRow[]): Record<WoodNodeId, WoodNodeState> {
+  const result = {} as Record<WoodNodeId, WoodNodeState>;
+  for (const row of rows) {
+    const node = woodNodeFromRow(row);
+    result[node.nodeId] = { hitsRemaining: node.hitsRemaining, felledAt: node.felledAt };
+  }
+  return result;
+}
+
 export async function listStackAcresWoodNodeStates(
   profileId: string,
 ): Promise<Record<WoodNodeId, WoodNodeState>> {
@@ -3465,10 +3739,321 @@ export async function listStackAcresWoodNodeStates(
     .select(WOOD_NODE_COLUMNS)
     .eq("profile_id", profileId);
   if (error) throw new Error(`Could not load your trees: ${error.message}`);
-  const result = {} as Record<WoodNodeId, WoodNodeState>;
-  for (const row of (data ?? []) as WoodNodeDbRow[]) {
-    const node = woodNodeFromRow(row);
-    result[node.nodeId] = { hitsRemaining: node.hitsRemaining, felledAt: node.felledAt };
+  return stackAcresWoodNodeStatesFromBatchRows((data ?? []) as WoodNodeDbRow[]);
+}
+
+/* ------------------------------------------------------------------ */
+/* Land obstacles (lib/stackacres/land-clearing.ts)                    */
+/* ------------------------------------------------------------------ */
+
+export interface StoredLandObstacle extends LandObstacleState {
+  profileId: string;
+  obstacleId: string;
+  version: number;
+}
+
+const LAND_OBSTACLE_COLUMNS = "profile_id, obstacle_id, hits_remaining, cleared_at, version";
+
+export interface LandObstacleDbRow {
+  profile_id: string;
+  obstacle_id: string;
+  hits_remaining: number | string;
+  cleared_at: string | null;
+  version: number | string;
+}
+
+function landObstacleFromRow(row: LandObstacleDbRow): StoredLandObstacle {
+  return {
+    profileId: String(row.profile_id),
+    obstacleId: String(row.obstacle_id),
+    hitsRemaining: Number(row.hits_remaining),
+    clearedAt: row.cleared_at ? String(row.cleared_at) : null,
+    version: Number(row.version),
+  };
+}
+
+/** One obstacle's state, created standing the first time this farm swings at
+ *  it. Same lazy create as `getOrCreateStackAcresWoodNode`. */
+export async function getOrCreateStackAcresLandObstacle(
+  profileId: string,
+  obstacleId: string,
+): Promise<StoredLandObstacle> {
+  const known = landObstacle(obstacleId);
+  if (!known) throw new Error(`No such obstacle: ${obstacleId}`);
+  const supabase = adminClient();
+  const key = `${profileId}:${obstacleId}`;
+
+  if (!supabase) {
+    const existing = memoryLandObstacles.get(key);
+    if (existing) return { ...existing };
+    const fresh: StoredLandObstacle = {
+      profileId,
+      obstacleId,
+      version: 1,
+      ...freshLandObstacleState(known.kind),
+    };
+    memoryLandObstacles.set(key, { ...fresh });
+    return { ...fresh };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_land_obstacles")
+    .select(LAND_OBSTACLE_COLUMNS)
+    .eq("profile_id", profileId)
+    .eq("obstacle_id", obstacleId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not look at that: ${error.message}`);
+  if (data) return landObstacleFromRow(data as LandObstacleDbRow);
+
+  const seed = freshLandObstacleState(known.kind);
+  const { data: inserted, error: insertError } = await supabase
+    .from("homestead_land_obstacles")
+    .insert({
+      profile_id: profileId,
+      obstacle_id: obstacleId,
+      hits_remaining: seed.hitsRemaining,
+      cleared_at: seed.clearedAt,
+      version: 1,
+    })
+    .select(LAND_OBSTACLE_COLUMNS)
+    .maybeSingle();
+  if (insertError) {
+    // Lost the create race with another tab: whoever won is the truth.
+    const { data: raced, error: racedError } = await supabase
+      .from("homestead_land_obstacles")
+      .select(LAND_OBSTACLE_COLUMNS)
+      .eq("profile_id", profileId)
+      .eq("obstacle_id", obstacleId)
+      .maybeSingle();
+    if (racedError || !raced) throw new Error(`Could not reach that: ${insertError.message}`);
+    return landObstacleFromRow(raced as LandObstacleDbRow);
+  }
+  return landObstacleFromRow(inserted as LandObstacleDbRow);
+}
+
+/** One swing, guarded on the row's own version, so two
+ *  rapid taps cannot both land the blow that clears it and both be paid. */
+export async function writeStackAcresLandObstacle(
+  current: StoredLandObstacle,
+  next: LandObstacleState,
+): Promise<StoredLandObstacle | null> {
+  const supabase = adminClient();
+  const version = current.version + 1;
+
+  if (!supabase) {
+    const key = `${current.profileId}:${current.obstacleId}`;
+    const stored = memoryLandObstacles.get(key);
+    if (!stored || stored.version !== current.version) return null;
+    const updated: StoredLandObstacle = { ...stored, ...next, version };
+    memoryLandObstacles.set(key, { ...updated });
+    return { ...updated };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_land_obstacles")
+    .update({ hits_remaining: next.hitsRemaining, cleared_at: next.clearedAt, version })
+    .eq("profile_id", current.profileId)
+    .eq("obstacle_id", current.obstacleId)
+    .eq("version", current.version)
+    .select(LAND_OBSTACLE_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not clear that: ${error.message}`);
+  return data ? landObstacleFromRow(data as LandObstacleDbRow) : null;
+}
+
+/** Every obstacle this farm has touched, for the snapshot. Write-free: an
+ *  obstacle with no row is standing, which the caller fills in. */
+/** Same fold-rows-into-a-record logic below, pulled out for the batch RPC path. */
+export function stackAcresLandObstacleStatesFromBatchRows(rows: LandObstacleDbRow[]): Record<string, LandObstacleState> {
+  const result: Record<string, LandObstacleState> = {};
+  for (const row of rows) {
+    const stored = landObstacleFromRow(row);
+    result[stored.obstacleId] = { hitsRemaining: stored.hitsRemaining, clearedAt: stored.clearedAt };
   }
   return result;
+}
+
+export async function listStackAcresLandObstacleStates(
+  profileId: string,
+): Promise<Record<string, LandObstacleState>> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const result: Record<string, LandObstacleState> = {};
+    for (const [key, row] of memoryLandObstacles) {
+      if (!key.startsWith(`${profileId}:`)) continue;
+      result[row.obstacleId] = { hitsRemaining: row.hitsRemaining, clearedAt: row.clearedAt };
+    }
+    return result;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_land_obstacles")
+    .select(LAND_OBSTACLE_COLUMNS)
+    .eq("profile_id", profileId);
+  if (error) throw new Error(`Could not load your land: ${error.message}`);
+  return stackAcresLandObstacleStatesFromBatchRows((data ?? []) as LandObstacleDbRow[]);
+}
+
+/* ------------------------------------------------------------------ */
+/* Forageable bushes (lib/stackacres/forage.ts)                        */
+/* ------------------------------------------------------------------ */
+
+export interface StoredForageNode extends ForageNodeState {
+  profileId: string;
+  nodeId: ForageNodeId;
+  version: number;
+}
+
+const FORAGE_NODE_COLUMNS = "profile_id, node_id, picks, picked_at, version";
+
+export interface ForageNodeDbRow {
+  profile_id: string;
+  node_id: string;
+  picks: number | string;
+  picked_at: string | null;
+  version: number | string;
+}
+
+function forageNodeFromRow(row: ForageNodeDbRow): StoredForageNode {
+  return {
+    profileId: String(row.profile_id),
+    // Cast rather than refuse: an id this build does not know is a row from
+    // a newer deploy, and dropping it here would silently reset that bush.
+    nodeId: row.node_id as ForageNodeId,
+    picks: Number(row.picks),
+    pickedAt: row.picked_at ? String(row.picked_at) : null,
+    version: Number(row.version),
+  };
+}
+
+/** Reads one bush, creating an untouched row the first time a profile picks
+ *  it -- the same lazy-create `getOrCreateStackAcresWoodNode` does, and for
+ *  the same reason: seeding four rows for every profile that has never
+ *  walked the yard is four rows of nothing. */
+export async function getOrCreateStackAcresForageNode(
+  profileId: string,
+  nodeId: ForageNodeId,
+): Promise<StoredForageNode> {
+  const supabase = adminClient();
+  const key = `${profileId}:${nodeId}`;
+
+  if (!supabase) {
+    const existing = memoryForageNodes.get(key);
+    if (existing) return { ...existing };
+    const fresh: StoredForageNode = { profileId, nodeId, version: 1, ...freshForageNodeState() };
+    memoryForageNodes.set(key, { ...fresh });
+    return { ...fresh };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_forage_nodes")
+    .select(FORAGE_NODE_COLUMNS)
+    .eq("profile_id", profileId)
+    .eq("node_id", nodeId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not load that bush: ${error.message}`);
+  if (data) return forageNodeFromRow(data as ForageNodeDbRow);
+
+  const seed = freshForageNodeState();
+  const { data: inserted, error: insertError } = await supabase
+    .from("homestead_forage_nodes")
+    .insert({
+      profile_id: profileId,
+      node_id: nodeId,
+      picks: seed.picks,
+      picked_at: seed.pickedAt,
+      version: 1,
+    })
+    .select(FORAGE_NODE_COLUMNS)
+    .maybeSingle();
+  if (insertError) {
+    // Lost the race to create the row (two tabs on the same fresh bush):
+    // whoever won is the truth, read it back.
+    const { data: raced, error: racedError } = await supabase
+      .from("homestead_forage_nodes")
+      .select(FORAGE_NODE_COLUMNS)
+      .eq("profile_id", profileId)
+      .eq("node_id", nodeId)
+      .maybeSingle();
+    if (racedError || !raced) throw new Error(`Could not find that bush: ${insertError.message}`);
+    return forageNodeFromRow(raced as ForageNodeDbRow);
+  }
+  return forageNodeFromRow(inserted as ForageNodeDbRow);
+}
+
+/**
+ * Writes one pick, guarded on the row's own version -- the identical
+ * compare-and-swap `writeStackAcresWoodNodeSwing` uses, and load-bearing for
+ * the same reason: a double-tap (or a retried request) must not pay seed
+ * twice off one bush. The second write's `.eq("version", ...)` matches
+ * nothing and comes back null, and the caller pays nothing.
+ */
+export async function writeStackAcresForagePick(
+  current: StoredForageNode,
+  next: ForageNodeState,
+): Promise<StoredForageNode | null> {
+  const supabase = adminClient();
+  const version = current.version + 1;
+
+  if (!supabase) {
+    const key = `${current.profileId}:${current.nodeId}`;
+    const stored = memoryForageNodes.get(key);
+    if (!stored || stored.version !== current.version) return null;
+    const updated: StoredForageNode = { ...stored, ...next, version };
+    memoryForageNodes.set(key, { ...updated });
+    return { ...updated };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_forage_nodes")
+    .update({ picks: next.picks, picked_at: next.pickedAt, version })
+    .eq("profile_id", current.profileId)
+    .eq("node_id", current.nodeId)
+    .eq("version", current.version)
+    .select(FORAGE_NODE_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not pick that bush: ${error.message}`);
+  return data ? forageNodeFromRow(data as ForageNodeDbRow) : null;
+}
+
+/** Every bush's state for one profile, for the view snapshot. A bush with no
+ *  row has never been picked, which is exactly `freshForageNodeState()`, so
+ *  this read stays write-free (see this repo's "keep game reads write-free"
+ *  rule) and leaves the create to the first actual pick. */
+/** Same fold-rows-into-a-record logic below, pulled out for the batch RPC path. */
+export function stackAcresForageNodeStatesFromBatchRows(
+  rows: ForageNodeDbRow[],
+): Partial<Record<ForageNodeId, ForageNodeState>> {
+  const result: Partial<Record<ForageNodeId, ForageNodeState>> = {};
+  for (const row of rows) {
+    // Here a stale id IS dropped, unlike the single-node read above: this
+    // feeds a snapshot keyed by the ids this build knows, and an unknown key
+    // would render nothing anyway.
+    if (!isForageNodeId(String(row.node_id))) continue;
+    const node = forageNodeFromRow(row);
+    result[node.nodeId] = { picks: node.picks, pickedAt: node.pickedAt };
+  }
+  return result;
+}
+
+export async function listStackAcresForageNodeStates(
+  profileId: string,
+): Promise<Partial<Record<ForageNodeId, ForageNodeState>>> {
+  const supabase = adminClient();
+
+  if (!supabase) {
+    const result: Partial<Record<ForageNodeId, ForageNodeState>> = {};
+    for (const [key, node] of memoryForageNodes) {
+      if (!key.startsWith(`${profileId}:`)) continue;
+      result[node.nodeId] = { picks: node.picks, pickedAt: node.pickedAt };
+    }
+    return result;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_forage_nodes")
+    .select(FORAGE_NODE_COLUMNS)
+    .eq("profile_id", profileId);
+  if (error) throw new Error(`Could not load your bushes: ${error.message}`);
+  return stackAcresForageNodeStatesFromBatchRows((data ?? []) as ForageNodeDbRow[]);
 }

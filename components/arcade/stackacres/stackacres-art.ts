@@ -273,7 +273,10 @@ type CorePainterName =
   | "ico-fieldnotes"
   | "ico-trailphoto"
   | "ico-wood"
-  | "ico-stone";
+  | "ico-stone"
+  | "ico-iron-ore"
+  | "ico-metal"
+  | "ico-fence";
 
 // The drawing shorthands (rr, ell, lin, rad, F, poly, stroke, leaf, painter)
 // and the shared light (litMass) live in ./art-kit.ts, so the per-area art
@@ -2233,6 +2236,20 @@ const DRAWN: Record<PainterName, Painter> = {
     F(c, "#8a5c33");
   }),
 
+  // The Fence tool: two posts and two rails, in the Wood icon's browns.
+  "ico-fence": painter(24, 24, (c) => {
+    for (const y of [9, 14]) {
+      rr(c, 3, y, 18, 3, 0.8);
+      F(c, "#b98450");
+      stroke(c, "#5c3c22", 1);
+    }
+    for (const x of [5, 16]) {
+      rr(c, x, 5, 4, 15, 1);
+      F(c, lin(c, x, 5, x + 4, 5, [[0, "#c79560"], [1, "#8a5c33"]]));
+      stroke(c, "#5c3c22", 1);
+    }
+  }),
+
   // A mined boulder chunk, off one of the Mine's tagged nodes
   // (lib/stackacres/stone-nodes.ts). Two overlapping lumps read as a chunk
   // rather than a single rounded pebble, with a lighter facet on each for a
@@ -2250,6 +2267,36 @@ const DRAWN: Record<PainterName, Painter> = {
     ell(c, 10.5, 15, 6.5, 5, -0.08);
     stroke(c, "#5b5f66", 1);
     ell(c, 15, 13.5, 5, 4.2, 0.1);
+  }),
+
+  // A raw lump of iron ore: the Stone chunk's shape with rust-brown veins.
+  "ico-iron-ore": painter(24, 24, (c) => {
+    ell(c, 11, 15, 6.5, 5, -0.08);
+    F(c, "#7a6a5f");
+    ell(c, 15, 13.5, 5, 4.2, 0.1);
+    F(c, "#6a5b52");
+    ell(c, 9.5, 13, 2.2, 1.4, -0.2);
+    F(c, "#b5643c");
+    ell(c, 14.5, 12, 1.8, 1.1, 0.15);
+    F(c, "#c9784a");
+    stroke(c, "#4a3f38", 1);
+    ell(c, 11, 15, 6.5, 5, -0.08);
+    stroke(c, "#4a3f38", 1);
+    ell(c, 15, 13.5, 5, 4.2, 0.1);
+  }),
+
+  // A smelted metal bar: a lit top face over a steel front, the same bar as
+  // the barn-paint `metal` pixel icon.
+  "ico-metal": painter(24, 24, (c) => {
+    poly(c, [[5, 10], [8, 7], [20, 7], [17, 10]]);
+    F(c, "#dfe3e8");
+    stroke(c, "#4b4f57", 1);
+    rr(c, 4, 10, 13.5, 6, 0.6);
+    F(c, lin(c, 4, 10, 4, 16, [[0, "#b5bbc4"], [1, "#7d838d"]]));
+    stroke(c, "#4b4f57", 1);
+    poly(c, [[17.5, 10], [20, 7], [20, 13], [17.5, 16]]);
+    F(c, "#6a707a");
+    stroke(c, "#4b4f57", 1);
   }),
 
   "ico-bushels": painter(24, 24, (c) => {

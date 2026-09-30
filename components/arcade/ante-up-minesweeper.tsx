@@ -1,21 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { Bomb, Coins, Flag, HelpCircle } from "lucide-react";
+import { Bomb, Coins, Flag, HelpCircle, Lock } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
+import { StakePressureNote } from "@/components/arcade/stake-pressure-note";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { useAppShell } from "@/components/shell/app-shell";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
-import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
+import { useActionQueue } from "@/components/shared/use-action-queue";
+import {
+  ANTE_UP_TIER_LADDERS,
+  anteUpStakeProblem,
+  anteUpTierAllowed,
+  maxAnteUpWager,
+} from "@/lib/arcade/ante-up-stakes";
+import { lowestTierFor, stakePressureThreshold } from "@/lib/arcade/stake-pressure";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
-import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { clearSound, comboSound, selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   ANTE_UP_MINESWEEPER_TIERS,
   MIN_ANTE_UP_WAGER,
+  anteUpMinesweeperTimeLimitMs,
   type AnteUpMinesweeperSnapshot,
 } from "@/lib/arcade/ante-up-minesweeper";
 import {
@@ -24,10 +33,13 @@ import {
   CELL_MINE,
   CELL_WRONG_FLAG,
   MINESWEEPER_DIFFICULTIES,
+  isMinesweeperDifficulty,
+  minesweeperConfig,
   type MinesweeperDifficulty,
 } from "@/lib/arcade/puzzles/minesweeper";
 import { formatDuration } from "@/lib/arcade/puzzles/sudoku";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { createRequestSequence } from "@/lib/ui/request-sequence";
 
 /**
  * Ante Up: Minesweeper, the solo half of Ante Up.
@@ -62,8 +74,47 @@ interface AnteUpMinesweeperResponse {
   error?: string;
 }
 
+/** A move the player has made that the server has not answered yet. */
+interface PendingMove {
+  action: "reveal" | "flag" | "chord";
+  index: number;
+}
+
 function difficultyLabel(id: MinesweeperDifficulty): string {
   return id[0].toUpperCase() + id.slice(1);
+}
+
+/** "5 min" for whole minutes, "2:30" otherwise. */
+function clockLabel(ms: number): string {
+  return ms % 60_000 === 0 ? `${ms / 60_000} min` : formatDuration(ms);
+}
+
+function rankedClock(id: MinesweeperDifficulty): string {
+  return clockLabel(ANTE_UP_MINESWEEPER_TIERS[id].rankedTimeLimitMs);
+}
+
+/** What each stake band asks of the board, for the lobby note. */
+const STAKE_RULES = {
+  1: [`Intermediate board or harder. Intermediate runs ${rankedClock("intermediate")}.`],
+  2: [`Expert board or harder. Expert runs ${rankedClock("expert")}.`],
+  3: [`Master board only: ${minesweeperConfig("master").mines} mines in ${rankedClock("master")}.`],
+} as const;
+
+/** The board a stake needs: the current one if it's still allowed, else the easiest that is. */
+function difficultyForStake(current: MinesweeperDifficulty, wager: number): MinesweeperDifficulty {
+  const ladder = ANTE_UP_TIER_LADDERS.minesweeper;
+  if (!ladder || anteUpTierAllowed("minesweeper", current, wager)) return current;
+  const lowest = lowestTierFor(ladder, wager);
+  return isMinesweeperDifficulty(lowest) ? lowest : current;
+}
+
+/** "10k" for a board a stake of 10k or more can't be played on. Null if no stake locks it. */
+function stakeLockedFrom(difficulty: MinesweeperDifficulty): string | null {
+  const ladder = ANTE_UP_TIER_LADDERS.minesweeper;
+  if (!ladder) return null;
+  const index = ladder.tiers.indexOf(difficulty);
+  const band = ([1, 2, 3] as const).find((pressure) => ladder.minTierByPressure[pressure] > index);
+  return band ? stakePressureThreshold(band).replace("+", "") : null;
 }
 
 export function AnteUpMinesweeper() {
@@ -80,6 +131,12 @@ export function AnteUpMinesweeper() {
   const [flagMode, setFlagMode] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [showHelp, setShowHelp] = useState(false);
+  // Cells a reveal just opened, ascending index order (so a cell's position
+  // here is also its pop-in stagger delay), plus whether that reveal was a
+  // multi-cell cascade rather than one number.
+  const [revealed, setRevealed] = useState<readonly number[]>([]);
+  const [cascade, setCascade] = useState(false);
+  const revealTimer = useRef<number | null>(null);
 
   const play = useArcadeSound({ gameSounds: true });
   const active = attempt?.status === "active";
@@ -92,12 +149,12 @@ export function AnteUpMinesweeper() {
     setImmersive(Boolean(attempt));
   }, [attempt, setImmersive]);
 
-  // Same guard duel-shell.tsx keeps: true while the player's own action is in
-  // flight, so a background poll cannot paint the pre-action board back over
-  // what the action's own response is about to paint forward.
+  // Guards start and resign against a double click. Read ordering and board
+  // versions live in `sequence`, which also covers the queued moves.
   const sending = useRef(false);
   const mounted = useRef(true);
   useEffect(() => () => { mounted.current = false; }, []);
+  const [sequence] = useState(() => createRequestSequence<AnteUpMinesweeperSnapshot>());
 
   // Long-press bookkeeping. `handled` marks a press already resolved as a flag,
   // so the click that follows it does not also open the square.
@@ -106,8 +163,8 @@ export function AnteUpMinesweeper() {
 
   const applyResponse = useCallback((data: Partial<AnteUpMinesweeperResponse>) => {
     if (data.profile) setProfile(data.profile);
-    if (data.attempt !== undefined) setAttempt(data.attempt ?? null);
-  }, [setProfile]);
+    if (data.attempt !== undefined && sequence.admit(data.attempt)) setAttempt(data.attempt ?? null);
+  }, [sequence, setProfile]);
 
   /**
    * The background poll: reads the live attempt, sets no busy flag.
@@ -116,7 +173,8 @@ export function AnteUpMinesweeper() {
    * when the server answered 429, or null for the ordinary POLL_MS cadence.
    */
   const refresh = useCallback(async (): Promise<number | null> => {
-    if (sending.current) return null;
+    const ticket = sequence.beginRead();
+    if (!ticket) return null;
     try {
       const response = await fetch("/api/ante-up-minesweeper", { cache: "no-store" });
       if (response.status === 429) {
@@ -125,7 +183,7 @@ export function AnteUpMinesweeper() {
         return seconds * 1000;
       }
       const data = (await response.json()) as Partial<AnteUpMinesweeperResponse>;
-      if (!mounted.current || sending.current) return null;
+      if (!mounted.current || !sequence.acceptRead(ticket)) return null;
       if (response.ok) applyResponse(data);
     } catch {
       // A dropped poll is not worth a banner; the next one is seconds away.
@@ -133,11 +191,12 @@ export function AnteUpMinesweeper() {
       if (mounted.current) setLoaded(true);
     }
     return null;
-  }, [applyResponse]);
+  }, [applyResponse, sequence]);
 
-  /** A player-initiated action: start, move, resign. A 409 still applies its payload. */
+  /** A player-initiated action: start or resign. A 409 still applies its payload. */
   const send = useCallback(async (url: string, body: unknown) => {
     sending.current = true;
+    const done = sequence.beginWrite();
     setBusy(true);
     setError(null);
     try {
@@ -155,7 +214,7 @@ export function AnteUpMinesweeper() {
         // A refused move still carries the true board; paint it, and only
         // raise a banner when the refusal is something the player should see
         // (a real error rather than "that square is already open").
-        if (data.round) setAttempt(data.round);
+        if (data.round) applyResponse({ attempt: data.round });
         else setError(data.error ?? "That did not go through.");
         return;
       }
@@ -164,9 +223,91 @@ export function AnteUpMinesweeper() {
       if (mounted.current) setError("Could not reach the table. Check your connection.");
     } finally {
       sending.current = false;
+      done();
       if (mounted.current) setBusy(false);
     }
-  }, [applyResponse]);
+  }, [applyResponse, sequence]);
+
+  /**
+   * Sends one queued move against the newest board. A refused move on a live
+   * board (a square the last cascade already opened) is skipped, not fatal.
+   */
+  const sendMove = useCallback(async ({ action, index }: PendingMove): Promise<boolean> => {
+    if (!mounted.current) return false;
+    const before = sequence.latest();
+    try {
+      const response = await fetch("/api/ante-up-minesweeper/actions", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, version: sequence.version(), index }),
+      });
+      const data = (await response.json()) as Partial<AnteUpMinesweeperResponse> & {
+        round?: AnteUpMinesweeperSnapshot;
+      };
+      if (!mounted.current) return false;
+      if (response.ok) {
+        applyResponse(data);
+        // A reveal that opened more than one square (a flood-fill cascade) is
+        // the satisfying moment; a mine's own single "exploded" square must
+        // never sound like a payoff, so it's excluded explicitly rather than
+        // relying on the count alone.
+        const next = data.attempt;
+        if (action === "reveal" && before && next) {
+          const opened: number[] = [];
+          let hitMine = false;
+          for (let i = 0; i < next.board.cells.length; i += 1) {
+            const wasHidden = before.board.cells[i] === CELL_HIDDEN;
+            const cell = next.board.cells[i];
+            if (cell === CELL_EXPLODED || cell === CELL_MINE) hitMine = true;
+            else if (wasHidden && cell >= 0) opened.push(i);
+          }
+          if (!hitMine && opened.length > 0) {
+            const isCascade = opened.length > 1;
+            if (isCascade) comboSound(); else clearSound();
+            setRevealed(opened);
+            setCascade(isCascade);
+            if (revealTimer.current !== null) window.clearTimeout(revealTimer.current);
+            revealTimer.current = window.setTimeout(() => {
+              revealTimer.current = null;
+              if (mounted.current) {
+                setRevealed([]);
+                setCascade(false);
+              }
+            }, 420);
+          }
+        }
+        return true;
+      }
+      if (!data.round) {
+        setError(data.error ?? "That did not go through.");
+        return false;
+      }
+      applyResponse({ attempt: data.round });
+      return data.round.status === "active";
+    } catch {
+      if (mounted.current) setError("Could not reach the table. Check your connection.");
+      return false;
+    }
+  }, [applyResponse, sequence]);
+
+  const moves = useActionQueue<PendingMove>(sequence, sendMove);
+
+  // The server's board plus the moves still on the wire. A flag is certain so
+  // it shows at once; an opening only looks pressed, since the server alone
+  // knows what is under it.
+  const view = useMemo(() => {
+    const flags = new Set(attempt?.board.flags ?? []);
+    const pressed = new Set<number>();
+    for (const move of moves.pending) {
+      if (move.action !== "flag") pressed.add(move.index);
+      else if (attempt?.board.cells[move.index] === CELL_HIDDEN) {
+        if (flags.has(move.index)) flags.delete(move.index);
+        else flags.add(move.index);
+      }
+    }
+    return { flags, pressed, minesLeft: (attempt?.board.mineCount ?? 0) - flags.size };
+  }, [attempt, moves.pending]);
 
   // Initial read, deferred a tick: the idiom every arcade table shares.
   useEffect(() => {
@@ -207,6 +348,7 @@ export function AnteUpMinesweeper() {
 
   useEffect(() => () => {
     if (pressTimer.current !== null) window.clearTimeout(pressTimer.current);
+    if (revealTimer.current !== null) window.clearTimeout(revealTimer.current);
   }, []);
 
   const start = () => {
@@ -215,23 +357,22 @@ export function AnteUpMinesweeper() {
     void send("/api/ante-up-minesweeper", { difficulty, wager });
   };
 
-  const move = (action: "reveal" | "flag" | "chord", index: number) => {
-    // sending.current, not just busy: busy is React state and hasn't
-    // committed yet for a second click landing in the same tick as the
-    // first, which let two moves race to the server.
-    if (!attempt || !active || sending.current) return;
-    void send("/api/ante-up-minesweeper/actions", { action, version: attempt.version, index });
+  // Queued rather than refused while an earlier move is on the wire, so fast
+  // taps all land in order.
+  const move = (action: PendingMove["action"], index: number) => {
+    if (!attempt || !active) return;
+    moves.push({ action, index });
   };
 
   const flag = (index: number) => {
-    if (!attempt || !active || sending.current) return;
+    if (!attempt || !active || view.pressed.has(index)) return;
     tapSound();
     move("flag", index);
   };
 
   /** A plain tap: chord an open number, flag if Flag mode is on, otherwise open. */
   const tap = (index: number) => {
-    if (!attempt || !active || sending.current) return;
+    if (!attempt || !active) return;
     const cell = attempt.board.cells[index];
     if (cell >= 0) {
       // Already open. Only a number can be chorded; a blank has nothing around it.
@@ -239,7 +380,7 @@ export function AnteUpMinesweeper() {
       return;
     }
     if (flagMode) { flag(index); return; }
-    if (attempt.board.flags.includes(index)) return; // flagged squares are protected
+    if (view.flags.has(index) || view.pressed.has(index)) return; // flagged squares are protected
     play("ui");
     move("reveal", index);
   };
@@ -262,6 +403,7 @@ export function AnteUpMinesweeper() {
 
   const resign = () => {
     if (sending.current) return;
+    moves.clear();
     void send("/api/ante-up-minesweeper/actions", { action: "resign" });
   };
   const playAgain = () => { setAttempt(null); setFlagMode(false); };
@@ -274,6 +416,7 @@ export function AnteUpMinesweeper() {
   // Narrower than !canAfford; see ante-up-sudoku.tsx's own note on the same check.
   const insufficientGold = wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance < wager;
   const tier = ANTE_UP_MINESWEEPER_TIERS[difficulty];
+  const stakeProblem = anteUpStakeProblem("minesweeper", difficulty, wager);
 
   // Counted down from the absolute deadline against a `now` that ticks once a
   // second. Before the first click there is no deadline yet, so the full
@@ -287,6 +430,9 @@ export function AnteUpMinesweeper() {
     deadline !== null && attempt
       ? Math.min(attempt.timeLimitMs, Math.max(0, deadline - now))
       : attempt?.timeLimitMs ?? 0;
+  // A timeout is stamped when a read settles it, which can be long after the
+  // clock ran out, so the finish time is capped at the limit.
+  const finalMs = attempt ? Math.min(attempt.elapsedMs, attempt.timeLimitMs) : 0;
 
   return (
     <main className="duel-shell ante-shell">
@@ -318,10 +464,12 @@ export function AnteUpMinesweeper() {
             the numbers never has to come down to a coin-flip guess.
           </p>
           <p>
-            Pick beginner, intermediate, or expert, then wager Gold or play free. The clock
+            Pick beginner, intermediate, expert or master, then wager Gold or play free. The clock
             starts on your first click; clear the board before it runs out and you win. Hit a
             mine, let the clock expire, or resign, and the wager is gone. Harder difficulties
-            run a longer clock, pay more on a win, and let you stake more.
+            run a longer clock and pay more on a win. Bigger stakes need bigger boards and
+            run tighter clocks: 10k and up plays Intermediate or harder, 100k Expert or harder,
+            and 1M Master only.
           </p>
         </HowToPlayModal>
       )}
@@ -339,13 +487,14 @@ export function AnteUpMinesweeper() {
             <h1>Minesweeper, against the clock</h1>
             <p>
               Every board can be cleared by logic alone — no board here ever comes down to a guess.
-              Wager on your own reading of it and cash out up to {ANTE_UP_MINESWEEPER_TIERS.expert.multiplier}x.
+              Wager on your own reading of it and cash out up to {ANTE_UP_MINESWEEPER_TIERS.master.multiplier}x.
             </p>
           </div>
 
-          <div className="ante-difficulties" role="group" aria-label="Difficulty">
+          <div className="ante-difficulties ms-difficulties" role="group" aria-label="Difficulty">
             {MINESWEEPER_DIFFICULTIES.map((entry) => {
               const entryTier = ANTE_UP_MINESWEEPER_TIERS[entry.id];
+              const locked = !anteUpTierAllowed("minesweeper", entry.id, wager);
               return (
                 <button
                   key={entry.id}
@@ -355,6 +504,7 @@ export function AnteUpMinesweeper() {
                     entry.id === difficulty && "ante-difficulty-active",
                   )}
                   aria-pressed={entry.id === difficulty}
+                  disabled={locked}
                   onClick={() => {
                     selectSound();
                     setDifficulty(entry.id);
@@ -365,7 +515,13 @@ export function AnteUpMinesweeper() {
                 >
                   <strong>{entry.label}</strong>
                   <span>{entry.cols}×{entry.rows} · {entry.mines} mines</span>
-                  <span>{Math.round(entryTier.timeLimitMs / 60_000)} min · {entryTier.multiplier}x</span>
+                  {locked ? (
+                    <span className="ante-difficulty-lock">
+                      <Lock size={10} aria-hidden="true" /> Under {stakeLockedFrom(entry.id)} stakes
+                    </span>
+                  ) : (
+                    <span>{clockLabel(anteUpMinesweeperTimeLimitMs(entry.id, wager))} · {entryTier.multiplier}x</span>
+                  )}
                 </button>
               );
             })}
@@ -378,46 +534,55 @@ export function AnteUpMinesweeper() {
             min={0}
             max={ceiling}
             leading={{ label: "Free", value: 0 }}
-            onChange={(next) => { selectSound(); setWager(next); }}
+            onChange={(next) => {
+              selectSound();
+              setWager(next);
+              setDifficulty((current) => difficultyForStake(current, next));
+            }}
           />
+          <StakePressureNote wager={wager} rules={STAKE_RULES} />
           <p className="puzzle-verdict">
             {wager === 0
               ? "Free practice — no payout on a clear, but nothing at risk either."
               : wager < MIN_ANTE_UP_WAGER
                 ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
-                : wager > ceiling
-                  ? `${difficulty[0].toUpperCase() + difficulty.slice(1)} caps at ${ceiling.toLocaleString()} Gold a wager. Step up a difficulty to stake more.`
-                  : `Clear ${difficulty} inside ${Math.round(tier.timeLimitMs / 60_000)} minutes and cash out ${Math.round(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Hit a mine, or run out of time, and the wager is gone.`}
+                : stakeProblem
+                  ? stakeProblem
+                  : wager > ceiling
+                    ? `${difficulty[0].toUpperCase() + difficulty.slice(1)} caps at ${ceiling.toLocaleString()} Gold a wager. Step up a difficulty to stake more.`
+                    : `Clear ${difficulty} inside ${clockLabel(anteUpMinesweeperTimeLimitMs(difficulty, wager))} and cash out ${Math.round(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Hit a mine, or run out of time, and the wager is gone.`}
           </p>
 
           <button
             type="button"
             className="puzzle-share-button"
-            disabled={busy || !loaded || !canAfford}
+            disabled={busy || !loaded || !canAfford || stakeProblem !== null}
             onClick={() => { selectSound(); start(); }}
           >
             <Coins size={15} aria-hidden="true" />
             {!loaded
               ? "…"
-              : wager > ceiling
-                ? "Over the cap"
-                : !canAfford
-                  ? "Not enough Gold"
-                  : busy
-                    ? "Dealing…"
-                    : "Ante up"}
+              : stakeProblem
+                ? "Pick a harder board"
+                : wager > ceiling
+                  ? "Over the cap"
+                  : !canAfford
+                    ? "Not enough Gold"
+                    : busy
+                      ? "Dealing…"
+                      : "Ante up"}
           </button>
           {loaded && insufficientGold && <GoldShortfallHint needed={wager} compact />}
         </section>
       ) : (
         <div className="duel-match ante-match ms-match">
           <div className="duel-scoreline ante-scoreline ms-scoreline">
-            <span className="ms-mines" aria-label={`${attempt.board.minesLeft} mines left`}>
+            <span className="ms-mines" aria-label={`${view.minesLeft} mines left`}>
               <Bomb size={13} aria-hidden="true" />
-              <strong>{attempt.board.minesLeft}</strong>
+              <strong>{view.minesLeft}</strong>
             </span>
             <span className="ante-clock" aria-live="polite">
-              {active ? formatDuration(displayedMs) : formatDuration(attempt.elapsedMs)}
+              {active ? formatDuration(displayedMs) : formatDuration(finalMs)}
             </span>
             <span className="duel-pot">
               <Coins size={12} aria-hidden="true" />
@@ -427,7 +592,7 @@ export function AnteUpMinesweeper() {
           </div>
 
           <div
-            className="ms-grid"
+            className={clsx("ms-grid", cascade && "ms-grid-combo")}
             role="grid"
             aria-label="Minesweeper board"
             style={
@@ -440,8 +605,9 @@ export function AnteUpMinesweeper() {
             {attempt.board.cells.map((cell, index) => {
               const row = Math.floor(index / attempt.board.cols) + 1;
               const column = (index % attempt.board.cols) + 1;
-              const flagged = attempt.board.flags.includes(index);
+              const flagged = view.flags.has(index);
               const open = cell >= 0 && cell <= 8;
+              const revealOrder = revealed.indexOf(index);
 
               return (
                 <button
@@ -456,13 +622,24 @@ export function AnteUpMinesweeper() {
                     cell === CELL_MINE && "ms-cell-mine",
                     cell === CELL_WRONG_FLAG && "ms-cell-wrong-flag",
                     flagged && cell === CELL_HIDDEN && "ms-cell-flagged",
+                    !open && view.pressed.has(index) && "ms-cell-pending",
+                    revealOrder !== -1 && "ms-cell-revealing",
                   )}
+                  style={revealOrder !== -1 ? ({ "--ms-reveal-i": revealOrder } as React.CSSProperties) : undefined}
                   disabled={!active}
                   aria-label={
                     `Row ${row}, column ${column}, ` +
                     (open ? (cell === 0 ? "empty" : `${cell}`) : flagged ? "flagged" : "unopened")
                   }
-                  onContextMenu={(event) => { event.preventDefault(); flag(index); }}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    endPress();
+                    // Android fires this on a long-press too, after the timer
+                    // already flagged the square; a second flag would unflag it.
+                    if (handled.current) return;
+                    handled.current = true;
+                    flag(index);
+                  }}
                   onPointerDown={() => beginPress(index)}
                   onPointerUp={endPress}
                   onPointerLeave={endPress}
@@ -499,7 +676,7 @@ export function AnteUpMinesweeper() {
                       ? "Boom"
                       : "Gave up"}
               </strong>
-              <span>{formatDuration(attempt.elapsedMs)} · {difficultyLabel(attempt.difficulty)}</span>
+              <span>{formatDuration(finalMs)} · {difficultyLabel(attempt.difficulty)}</span>
               <span className="duel-result-gold">
                 {result.label}
               </span>

@@ -128,11 +128,10 @@ async function jumpTo(
  * the two are equal precisely when durationMs = 2 * hungerMs, independent of
  * when the feed happens) -- the pig would go hungry again at the exact
  * instant it would otherwise become ready, and the hungry guard is checked
- * first (see isStackAcresUnitReady). A second, early feed clears the
- * collision: feedStackAcres never refuses feeding a not-yet-hungry unit --
- * unlike watering, it is not a top-up (see its own doc comment) -- so
- * feeding again well before that instant resets the hunger clock at zero
- * readyAt cost (starvedMs floors at 0).
+ * first (see isStackAcresUnitReady). A second feed clears the collision, and
+ * it goes in AT the next hunger instant rather than before it: feeding a
+ * unit that is not hungry yet is refused ("Not hungry yet."), so the
+ * minute-early feed this helper used to make no longer lands.
  */
 async function growPigToReady(
   service: Awaited<ReturnType<typeof loadSimulation>>["service"],
@@ -151,9 +150,19 @@ async function growPigToReady(
   const wasHungryBeforeFeeding = hungryView.units.find((u) => u.id === pigId)?.state === "hungry";
 
   const fedView = await service.feedStackAcres(token, pigId, hungryNow);
-  const fed = fedView.units.find((u) => u.id === pigId)!;
+  let fed = fedView.units.find((u) => u.id === pigId)!;
 
-  await service.feedStackAcres(token, pigId, new Date(Date.parse(fed.readyAt) - 60_000));
+  // The second feed, AT the next hunger instant, not a moment either side of
+  // it (see the header). On this pig that instant is exactly readyAt, so a
+  // feed even a second later would be refused as "Feed them first" by the
+  // collect instead. Feeding exactly on time costs no readyAt (starvedMs is
+  // zero), but the unit is re-read anyway rather than trusted.
+  const nextHungry = Date.parse(fed.hungryAt!);
+  if (nextHungry <= Date.parse(fed.readyAt)) {
+    const at = await jumpTo(chrono, token, new Date(nextHungry));
+    const refed = await service.feedStackAcres(token, pigId, at);
+    fed = refed.units.find((u) => u.id === pigId)!;
+  }
 
   const readyNow = await jumpTo(chrono, token, new Date(Date.parse(fed.readyAt) + 1000));
   return { pigId, readyNow, wasHungryBeforeFeeding };
@@ -273,20 +282,19 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     const t0 = await jumpTo(chrono, token, new Date("2026-09-10T12:00:00.000Z"));
     const day0 = exchange.stackacresExchangeDay(t0);
 
-    // The Crop Fields require 2 units already going, unlocked through their
-    // own standalone flag now rather than a sector clear (2026-09-08 merge
-    // into the Farmstead -- see lib/stackacres/crop-fields.ts). Wallow needs
-    // 4 units of its own but no longer needs the Crop Fields cleared first
-    // (see SECTOR_LADDER's own header on why `wallow.requires` is null now).
-    // Two hens satisfy the Crop Fields' own unit gate; two carrots (which
-    // need the Crop Fields unlocked to sow at all) bring the running total to
-    // four for Wallow.
+    // The Crop Fields are not bought any more -- breaking ground out there
+    // is what records the flag (see `placeStackAcresSoilTile`) -- so this
+    // records it directly rather than walking a purchase that no longer
+    // exists. Wallow needs 4 units of its own: two hens and two carrots.
     await service.stockStackAcres(token, { stock: "hen" }, t0);
     await service.stockStackAcres(token, { stock: "hen" }, t0);
-    await service.unlockStackAcresCropFields(token, t0);
+    await store.recordStackAcresCropFieldsUnlocked(profile.id, t0);
     await service.stockStackAcres(token, { stock: "carrot" }, t0);
     await service.stockStackAcres(token, { stock: "carrot" }, t0);
-    const afterWallow = await service.clearStackAcresSector(token, "wallow", t0);
+    // Land is cleared by working it now, not bought. This simulation is
+    // about clocks and fees, so it records the Fold as cleared directly.
+    await store.recordStackAcresSectorCleared(profile.id, "wallow", t0);
+    const afterWallow = await service.readStackAcres(token, t0);
 
     const [clearedSectors, capacity, cropFieldsUnlocked] = await Promise.all([
       store.readStackAcresSectors(profile.id),
@@ -297,10 +305,12 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     const plots = sectors.unlockedPlotCount(unlocked, capacity, cropFieldsUnlocked);
     const expectedFee = upkeep.stackacresUpkeepFee(plots);
     console.log("Chrono-DeLorean simulation: plots after Crop Fields+Wallow ->", plots, "fee ->", expectedFee);
-    // Hen Haven(hen) + the Crop Fields(all 16 Gr8FarmPack crops, inside the
-    // Farmstead) + Wallow(pig) = 18 stock kinds x 3 free slots each = 54
-    // plots, 51 chargeable past the free base.
-    expect(plots).toBe(54);
+    // Hen Haven(hen) + Wallow(pig) + the Farmstead's own cattle slot = 3
+    // livestock kinds x 3 free slots each = 9 plots. It used to be 54: crops
+    // ran through the same per-kind slot count until 2026-09-11, when they
+    // dropped out of the cap entirely (catalogue.ts's STACKACRES_BASE_CAP
+    // header) and took their sixteen kinds with them.
+    expect(plots).toBe(9);
     expect(expectedFee).toBeGreaterThan(0);
     expect(afterWallow.upkeep.fee).toBe(expectedFee);
 

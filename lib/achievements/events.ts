@@ -4,8 +4,8 @@ import type { DomainEvent } from "@/lib/domain-events";
  * The event-to-achievement-counter fan-out.
  *
  * Only five of DomainEvent's seven kinds produce a signal here. poker_hand_played
- * and level_gained achievements are checked by re-reading player_stats / the
- * live progression level directly (see lib/server/achievement-store.ts's
+ * and rank tier achievements are checked by re-reading player_stats / the
+ * live rank tier directly (see lib/server/achievement-store.ts's
  * checkAchievements) rather than by counting events -- those numbers already
  * exist as a stored, monotonic source of truth, so counting them a second
  * time here would just be a second place for the two counts to drift.
@@ -33,7 +33,7 @@ export function achievementCountersForEvent(event: DomainEvent): AchievementCoun
     case "puzzle_completed":
       return [{ metric: "puzzles_completed", delta: 1 }];
     case "poker_hand_played":
-    case "level_gained":
+    case "rank_points_gained":
       return [];
   }
 }

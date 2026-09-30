@@ -133,11 +133,31 @@
 .bk-cell-will-clear.bk-cell-filled { background: var(--bk-gold); }
 .bk-cell-will-clear:not(.bk-cell-filled):not(.bk-cell-ghost) { background: rgba(255, 210, 63, .18); }
 
-.bk-cell-clearing { animation: bk-clear 480ms ease-out; }
+/* A cleared cell pops, flashes gold, then shatters down to nothing rather
+   than just flashing in place. Each cell in a cleared line gets a short
+   stagger (`--bk-clear-i`, set inline: its position in the ascending-order
+   `clearing` array) so a full row wipes left to right instead of every cell
+   popping in lockstep. */
+.bk-cell-clearing {
+  position: relative;
+  z-index: 1;
+  animation: bk-clear 420ms cubic-bezier(.32, 0, .67, 0) both;
+  animation-delay: calc(var(--bk-clear-i, 0) * 16ms);
+}
 @keyframes bk-clear {
-  0% { background: #fff; box-shadow: 0 0 10px var(--bk-gold); transform: scale(1); }
-  40% { background: var(--bk-gold); transform: scale(.85); }
-  100% { transform: scale(1); }
+  0% { background: var(--bk-block); box-shadow: inset 1.5px 1.5px 0 rgba(255,255,255,.28), inset -1.5px -1.5px 0 rgba(0,0,0,.3); transform: scale(1) rotate(0deg); }
+  25% { background: #fff; box-shadow: 0 0 16px 4px var(--bk-gold); transform: scale(1.22) rotate(0deg); }
+  60% { background: var(--bk-gold); box-shadow: 0 0 10px var(--bk-gold); transform: scale(.75) rotate(12deg); opacity: 1; }
+  100% { background: var(--bk-gold); transform: scale(0) rotate(30deg); opacity: 0; }
+}
+
+/* A double (or overlapping) clear on the same drop: the whole board answers,
+   not just the cleared cells, so the bigger moment reads as bigger. */
+.bk-grid-combo { animation: bk-grid-combo-pulse 420ms ease-out; }
+@keyframes bk-grid-combo-pulse {
+  0% { box-shadow: 0 6px 18px rgba(0, 0, 0, .35), 0 0 0 0 rgba(255, 210, 63, .55); }
+  35% { box-shadow: 0 6px 18px rgba(0, 0, 0, .35), 0 0 26px 6px rgba(255, 210, 63, .55); }
+  100% { box-shadow: 0 6px 18px rgba(0, 0, 0, .35), 0 0 0 0 rgba(255, 210, 63, 0); }
 }
 
 .bk-tray {
@@ -168,11 +188,21 @@
 .bk-slot:focus-visible { outline: 2px solid var(--bk-gold); outline-offset: 2px; }
 .bk-slot-selected { box-shadow: inset 0 0 0 2px var(--bk-gold), 0 0 14px rgba(255, 210, 63, .25); }
 .bk-slot-stuck { opacity: .4; }
+/* All three pieces are still on the wire and only the server can deal the next three. */
+.bk-tray-dealing .bk-slot { animation: bk-dealing .9s ease-in-out infinite alternate; }
+@keyframes bk-dealing {
+  from { opacity: 1; }
+  to { opacity: .6; }
+}
 
+/* Blocks shrink for the five-long pieces so every piece fits the same slot
+   height and a deal never makes the tray jump. Declared here, next to the
+   inline --bk-piece-span it reads; see app/styles/CLAUDE.md. */
 .bk-piece {
+  --bk-piece-cell: min(14px, calc((68px - (var(--bk-piece-span, 4) - 1) * 2px) / var(--bk-piece-span, 4)));
   display: grid;
-  grid-template-columns: repeat(var(--bk-piece-cols), 14px);
-  grid-auto-rows: 14px;
+  grid-template-columns: repeat(var(--bk-piece-cols), var(--bk-piece-cell));
+  grid-auto-rows: var(--bk-piece-cell);
   gap: 2px;
   pointer-events: none;
 }
@@ -181,6 +211,9 @@
   background: var(--bk-block);
   box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .28), inset -1px -1px 0 rgba(0, 0, 0, .3);
 }
+
+/* A tier the stake has locked out, and why. */
+.bk-tier-locked { color: var(--text-muted); font-style: italic; }
 
 .bk-hint {
   margin: 0;
@@ -222,6 +255,7 @@
   .bk-progress { grid-area: progress; width: 100%; }
   .bk-tray { grid-area: tray; width: 100%; gap: 8px; }
   .bk-slot { min-height: 72px; padding: 6px; }
+  .bk-piece { --bk-piece-cell: min(12px, calc((56px - (var(--bk-piece-span, 4) - 1) * 2px) / var(--bk-piece-span, 4))); }
   .bk-hint { grid-area: hint; }
   .bk-match > .duel-controls { grid-area: controls; }
   .bk-match > .duel-result { grid-column: 2; grid-row: 3 / 6; align-self: center; }
@@ -229,7 +263,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .bk-cell-clearing,
+  .bk-grid-combo,
   .bk-gain,
-  .bk-clock-low { animation: none; }
+  .bk-clock-low,
+  .bk-tray-dealing .bk-slot { animation: none; }
   .bk-progress span { transition: none; }
 }

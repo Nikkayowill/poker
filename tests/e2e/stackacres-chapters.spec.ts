@@ -1,6 +1,7 @@
 import { expect, test, type BrowserContext, type Page } from "./fixtures";
 
-/** Chapters as a player sees them: the goal chip, the goals sheet and Ray's card when a chapter is done. */
+/** Chapters as a player sees them: the Journal chip and Ray's card when a chapter is done.
+ *  The sheet itself is tests/e2e/stackacres-journal.spec.ts. */
 
 interface Handle {
   scene: {
@@ -9,7 +10,11 @@ interface Handle {
   };
 }
 
-const HOUSE = { x: 120, y: 120 };
+/** The house is a walk-in interior: tap the building to go through the door,
+ *  then tap the kitchen counter inside. See tests/e2e/stackacres-house.spec.ts. */
+const HOUSE_DOOR = { x: 481, y: 280 };
+const HOUSE_COUNTER = { x: 56, y: 60 };
+const WALK_MS = 4_000;
 
 test.use({ viewport: { width: 932, height: 430 } });
 
@@ -29,38 +34,51 @@ async function enterFarm(page: Page) {
   await page.waitForTimeout(1500);
 }
 
-async function openHouse(page: Page) {
-  await page.evaluate((stand) => (window as unknown as { __stackacres: Handle }).__stackacres.scene.placeFarmer("homestead", stand), {
-    x: HOUSE.x,
-    y: HOUSE.y + 55,
-  });
-  await page.waitForTimeout(500);
+async function tapWorld(page: Page, at: { x: number; y: number }) {
   const point = await page.evaluate(
-    (at) => (window as unknown as { __stackacres: Handle }).__stackacres.scene.clientPointFor(at.x, at.y),
-    HOUSE,
+    (target) => (window as unknown as { __stackacres: Handle }).__stackacres.scene.clientPointFor(target.x, target.y),
+    at,
   );
   await page.mouse.click(point.x, point.y);
-  const house = page.getByRole("dialog", { name: "Your house" });
+}
+
+async function openHouse(page: Page) {
+  await tapWorld(page, HOUSE_DOOR);
+  await page.waitForTimeout(WALK_MS);
+  await tapWorld(page, HOUSE_COUNTER);
+  await page.waitForTimeout(WALK_MS);
+  const house = page.getByRole("dialog", { name: "Your House" });
   await expect(house).toBeVisible();
   return house;
 }
 
-test("a new farm shows chapter 1 as the goal, and the goals sheet lists all six", async ({ context, page }) => {
-  await openStackAcres(context, page);
+/** At this viewport height the HUD is in its tight-landscape tier, so the
+ *  Journal chip lives behind the "More" drawer instead of sitting inline. */
+async function openMore(page: Page) {
+  await page.getByRole("button", { name: "More" }).click();
+}
 
-  const chip = page.locator(".sa-goal");
-  await expect(chip).toContainText("Chapter 1");
-  await expect(chip).toContainText("Bread");
-  await expect(chip).toContainText("Mill");
+test("a new farm shows chapter 1 on the chip, with the Mill's own shortfall", async ({ context, page }) => {
+  await openStackAcres(context, page);
+  await openMore(page);
+
+  // The chip is a compact badge now (icon + "1/6"), same standing-badge
+  // posture as the Forge and Crossbreeding Bed -- the chapter/step detail
+  // that used to sit in its own text is in its title and the sheet it opens.
+  const chip = page.getByTitle(/^Chapter 1/);
+  await expect(chip).toContainText("1/6");
+  await expect(chip).toHaveAttribute("title", /Chapter 1/);
+  await expect(chip).toHaveAttribute("title", /Bread/);
 
   await chip.click();
-  const sheet = page.getByRole("dialog", { name: "Farm goals" });
+  const sheet = page.getByRole("dialog", { name: "The Journal" });
   await expect(sheet).toBeVisible();
-  for (const title of ["Bread", "Stew", "Fresh Greens", "Feed the Herd", "Jars and Pickles", "Harvest Feast"]) {
-    await expect(sheet.getByRole("heading", { name: title })).toBeVisible();
-  }
-  await sheet.getByRole("button", { name: "Close" }).click();
-  await expect(sheet).toBeHidden();
+  // The sheet numbers each chapter rather than spelling out "Chapter N" --
+  // the word itself only lives in the chip's title, already checked above.
+  await expect(sheet.getByRole("heading", { name: "Bread" })).toBeVisible();
+  // 20,000 Gold and no Wood, so the line names the thing actually missing.
+  await expect(sheet).toContainText("Mill");
+  await expect(sheet).toContainText("Wood");
 });
 
 test("building the Stew Pot finishes chapter 2 with Ray's card, once", async ({ context, page }) => {
@@ -76,9 +94,11 @@ test("building the Stew Pot finishes chapter 2 with Ray's card, once", async ({ 
   await expect(card).toContainText("Next up, chapter 1: Bread");
   await card.getByRole("button", { name: "Thanks, Ray" }).click();
   await expect(card).toBeHidden();
+  await house.getByRole("button", { name: "Close" }).click();
 
   // Built out of order, so the goal is still the first unfinished chapter.
-  await expect(page.locator(".sa-goal")).toContainText("Chapter 1");
+  await openMore(page);
+  await expect(page.getByTitle(/^Chapter 1/)).toContainText("1/6");
 
   await enterFarm(page);
   await expect(page.getByRole("dialog", { name: "Stew" })).toHaveCount(0);

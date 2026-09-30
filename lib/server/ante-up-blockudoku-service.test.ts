@@ -16,6 +16,7 @@ import {
 } from "./ante-up-store";
 import { adjustGold, ensureProfile } from "./profile-store";
 import {
+  ANTE_UP_BLOCKUDOKU_GRANDMASTER,
   ANTE_UP_BLOCKUDOKU_TIERS,
   MIN_ANTE_UP_WAGER,
   type AnteUpBlockudokuAttempt,
@@ -163,6 +164,34 @@ describe("wagering", () => {
     const { state } = await live(id);
     expect(state.multiplier).toBe(ANTE_UP_BLOCKUDOKU_TIERS.hardcore.multiplier);
     expect(state.targetScore).toBe(ANTE_UP_BLOCKUDOKU_TIERS.hardcore.targetScore);
+  });
+});
+
+describe("stake pressure", () => {
+  it("refuses a board too easy for the stake without touching the wallet", async () => {
+    const { token, id } = await funded(2_000_000);
+    await expect(openAnteUpBlockudoku(token, "casual", 10_000, NOW)).rejects.toThrow(/Standard or harder/);
+    await expect(openAnteUpBlockudoku(token, "standard", 100_000, NOW)).rejects.toThrow(/Hardcore or harder/);
+    await expect(openAnteUpBlockudoku(token, "standard", 1_000_000, NOW)).rejects.toBeInstanceOf(
+      AnteUpBlockudokuRequestError,
+    );
+    expect(await balance(token)).toBe(2_000_000);
+    expect(await getActiveAnteUpAttempt(id, GAME)).toBeNull();
+  });
+
+  it("opens Hardcore as Grandmaster at a top stake, on the master piece set", async () => {
+    const { token, id } = await funded(2_000_000);
+    const { attempt } = await openAnteUpBlockudoku(token, "hardcore", 1_000_000, NOW);
+    expect(attempt.wager).toBe(1_000_000);
+    expect(attempt.targetScore).toBe(ANTE_UP_BLOCKUDOKU_GRANDMASTER.targetScore);
+    const { state } = await live(id);
+    expect(state.board.pieceSet).toBe("master");
+  });
+
+  it("keeps every tier open under the first band", async () => {
+    const { token, id } = await funded(20_000);
+    await openAnteUpBlockudoku(token, "casual", 9_999, NOW);
+    expect((await live(id)).state.board.pieceSet).toBe("classic");
   });
 });
 

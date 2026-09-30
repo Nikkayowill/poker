@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback } from "react";
-import { Volume2, VolumeX } from "lucide-react";
-import { tapSound } from "@/lib/audio/ui-sounds";
+import { toggleSound } from "@/lib/audio/ui-sounds";
 import { setStackAcresMusicMuted } from "@/lib/audio/stackacres-music";
 import { setAmbienceMuted } from "@/lib/audio/stackacres-ambience";
 import { useStoredPreference } from "@/components/use-stored-preference";
+import { StackAcresPixelIcon } from "./stackacres-pixel-icon";
 
 /**
  * Mutes StackAcres' background sound: the music and the ambient farm bed
@@ -41,11 +41,9 @@ export function StackAcresMusicToggle() {
   });
 
   const handleClick = useCallback(() => {
-    tapSound();
+    toggleSound();
     setMuted((current) => !current);
   }, [setMuted]);
-
-  const Icon = muted ? VolumeX : Volume2;
 
   return (
     <button
@@ -56,7 +54,7 @@ export function StackAcresMusicToggle() {
       aria-pressed={muted}
       onClick={handleClick}
     >
-      <Icon size={13} aria-hidden="true" />
+      <StackAcresPixelIcon name={muted ? "mute" : "sound"} />
       <span className="sa-sr">{muted ? "Unmute" : "Mute"} the farm</span>
     </button>
   );

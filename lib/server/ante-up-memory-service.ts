@@ -12,11 +12,10 @@ import {
   type AnteUpMemoryAttempt,
   type AnteUpMemorySnapshot,
 } from "@/lib/arcade/ante-up-memory";
-import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
+import { anteUpStakeProblem } from "@/lib/arcade/ante-up-stakes";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   ActiveAnteUpAttemptExists,
-  advanceAnteUpAttempt,
   countWageredAttemptsSince,
   createAnteUpAttempt,
   getActiveAnteUpAttempt,
@@ -34,6 +33,7 @@ import {
   spendStakeLedgered,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
+import { soloAdvance } from "./solo-settle";
 
 /**
  * Everything between an Ante Up: Memory Match request and the wallet.
@@ -53,6 +53,9 @@ export class AnteUpMemoryRequestError extends ArcadeRequestError<AnteUpMemorySna
 /** This game's id in ante_up_attempts; see lib/server/ante-up-store.ts. */
 const GAME = "memory-match";
 
+/** The version-guarded advance; also records the settled wager in the solo earnings tally. */
+const advance = soloAdvance<AnteUpMemoryAttempt>(anteUpMemoryPayout);
+
 /** How many wagered attempts a player may open in a rolling day, at this game. Free practice is uncapped. */
 export const ANTE_UP_MEMORY_DAILY_WAGERED_LIMIT = 10;
 
@@ -60,17 +63,19 @@ function snapshot(stored: StoredAnteUpAttempt<AnteUpMemoryAttempt>): AnteUpMemor
   return toAnteUpMemorySnapshot(stored.state, { id: stored.id, version: stored.version });
 }
 
-/** Never throws; see ante-up-service.ts's payOutWin for why. */
-async function payOutWin(profileId: string, attempt: Pick<AnteUpMemoryAttempt, "wager" | "board">): Promise<void> {
+/** Never throws; see ante-up-service.ts's payOutWin for why. Returns the credited profile, or null when nothing was paid. */
+async function payOutWin(profileId: string, attempt: Pick<AnteUpMemoryAttempt, "wager" | "board">): Promise<PlayerProfile | null> {
   const payout = anteUpMemoryPayout(attempt);
-  if (payout <= 0) return;
+  if (payout <= 0) return null;
+  let credited: PlayerProfile | null = null;
   try {
-    await creditGoldByProfile(profileId, payout);
+    credited = await creditGoldByProfile(profileId, payout);
   } catch (error) {
     console.error("ante-up-memory.payout_credit_failed", { profileId, payout, error });
   }
   await applyMissionEvent(profileId, { kind: "puzzle_completed" });
   await applyAchievementEvent(profileId, { kind: "puzzle_completed" });
+  return credited;
 }
 
 /** The caller's live attempt, or null. */
@@ -99,10 +104,9 @@ export async function openAnteUpMemory(
       400,
     );
   }
-  // No difficulty rung to climb here, so this is one flat ceiling; see
-  // lib/arcade/ante-up-stakes.ts.
-  const overCeiling = anteUpWagerCeilingProblem(GAME, null, wagerInput);
-  if (overCeiling) throw new AnteUpMemoryRequestError(overCeiling, 400);
+  // No ceiling: a bigger stake deals a bigger board instead (startAnteUpMemory).
+  const stakeProblem = anteUpStakeProblem(GAME, null, wagerInput);
+  if (stakeProblem) throw new AnteUpMemoryRequestError(stakeProblem, 400);
 
   if (wagerInput > 0) {
     const sinceYesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -197,21 +201,19 @@ export async function flipAnteUpMemory(
   }
 
   const next = flipAnteUpMemoryTile(current.state, input.index, now);
-  const stored = await advanceAnteUpAttempt(current, next);
+  const stored = await advance(current, next);
   if (!stored) {
     const live = (await getAnteUpAttemptById<AnteUpMemoryAttempt>(current.id)) ?? current;
     throw new AnteUpMemoryRequestError("That board moved on.", 409, { round: snapshot(live) });
   }
 
-  if (stored.state.status === "won") {
-    // No leaderboard write here: solo Ante Up games don't get a board (see
-    // lib/leaderboard/contract.ts's header for the rule). A clear still feeds
-    // missions, achievements and the payout below; it just isn't ranked
-    // against anyone.
-    await payOutWin(profile.id, stored.state);
-  }
+  // No leaderboard write here: solo Ante Up games don't get a board (see
+  // lib/leaderboard/contract.ts's header for the rule). A clear still feeds
+  // missions, achievements and the payout below; it just isn't ranked
+  // against anyone.
+  const paid = stored.state.status === "won" ? await payOutWin(profile.id, stored.state) : null;
 
-  return { attempt: snapshot(stored), profile };
+  return { attempt: snapshot(stored), profile: paid ?? profile };
 }
 
 /** Gives up early. The wager is already spent; see the ordering rules above. */
@@ -224,7 +226,7 @@ export async function resignAnteUpMemoryAttempt(
 
   const next = resignAnteUpMemory(current.state);
   const stored =
-    (await advanceAnteUpAttempt(current, next)) ??
+    (await advance(current, next)) ??
     (await getAnteUpAttemptById<AnteUpMemoryAttempt>(current.id)) ??
     current;
   return { attempt: snapshot(stored), profile };

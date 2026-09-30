@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ANTE_UP_NONOGRAM_TIERS,
   MIN_ANTE_UP_WAGER,
+  anteUpNonogramAutoCrossAllowed,
   anteUpNonogramDeadline,
   anteUpNonogramMarkProblem,
   anteUpNonogramPayout,
@@ -50,6 +51,30 @@ function burnBudget(current: AnteUpNonogramAttempt, now = NOW): AnteUpNonogramAt
   }
   return state;
 }
+
+describe("auto-cross at big stakes", () => {
+  it("is allowed below 100k and off from 100k up", () => {
+    expect(anteUpNonogramAutoCrossAllowed(0)).toBe(true);
+    expect(anteUpNonogramAutoCrossAllowed(99_999)).toBe(true);
+    expect(anteUpNonogramAutoCrossAllowed(100_000)).toBe(false);
+    expect(anteUpNonogramAutoCrossAllowed(5_000_000)).toBe(false);
+  });
+
+  it("keeps the player's choice on a small stake", () => {
+    const deal = dealNonogram(7, "hard");
+    expect(startAnteUpNonogram("hard", 1_000, 7, deal, NOW).board.autoCross).toBe(true);
+    expect(startAnteUpNonogram("hard", 1_000, 7, deal, NOW, { autoCross: false }).board.autoCross).toBe(false);
+  });
+
+  it("turns it off on a big stake even when asked for, and keeps that on the round", () => {
+    const deal = dealNonogram(7, "hard");
+    const big = startAnteUpNonogram("hard", 100_000, 7, deal, NOW, { autoCross: true });
+    expect(big.board.autoCross).toBe(false);
+    // Settled at open: the stored round carries it, so later moves read the same.
+    const moved = markAnteUpNonogramCell(big, 0, "cross", NOW);
+    expect(moved.board.autoCross).toBe(false);
+  });
+});
 
 describe("the tier ladder", () => {
   it("has a rung for every board size, and no others", () => {

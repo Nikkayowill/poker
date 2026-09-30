@@ -44,8 +44,8 @@ export interface StackAcresUnitRow {
   /**
    * Crops only. Null for livestock, which drink from their own trough.
    *
-   * Null on a CROP means seed nobody has watered: sown onto a bed no pipe or
-   * hydro soil reaches, and not watered since. Its growing clock has not
+   * Null on a CROP means seed nobody has watered: sown onto a bed no water
+   * source reaches, and not watered since. Its growing clock has not
    * started yet (see `seedClockOnFirstWater`).
    */
   lastWateredAt: string | null;
@@ -88,6 +88,14 @@ export interface StackAcresUnitRow {
    * other snapshotted field on this row already follows.
    */
   housedIn: "greenhouse" | null;
+  /**
+   * Sheep and cattle only: the Homestead map square the animal stands on
+   * (./herd.ts). Null or absent means it has not been placed yet, which is how
+   * every animal bought before placement existed loads. Hens and crops never
+   * use it.
+   */
+  mapTx?: number | null;
+  mapTy?: number | null;
 }
 
 /**
@@ -141,6 +149,9 @@ export interface StackAcresUnitSnapshot {
   permanent: boolean;
   /** See `StackAcresUnitRow.housedIn`. */
   housedIn: "greenhouse" | null;
+  /** See `StackAcresUnitRow.mapTx`. */
+  mapTx?: number | null;
+  mapTy?: number | null;
 }
 
 /**
@@ -405,6 +416,8 @@ export function toStackAcresUnitSnapshots(
         permanent: row.permanent,
         housedIn: row.housedIn,
         soilSlot: row.soilSlot,
+        mapTx: row.mapTx ?? null,
+        mapTy: row.mapTy ?? null,
       };
     }
 
@@ -439,8 +452,47 @@ export function toStackAcresUnitSnapshots(
       permanent: row.permanent,
       housedIn: row.housedIn,
       soilSlot: row.soilSlot,
+      mapTx: row.mapTx ?? null,
+      mapTy: row.mapTy ?? null,
     };
   });
+}
+
+/**
+ * A unit as this device's clock sees it at `nowMs`: readiness, hunger and dry
+ * soil re-derived from its timestamps, so a crop ripens on screen without a
+ * network trip. Both freeze conditions are checked before readiness and both
+ * stop the progress bar where it stood, mirroring the server's own reads
+ * above. If the two ever disagree the server wins, because it is the only one
+ * that can pay.
+ *
+ * The farm's optimistic guesses read units through this too. The unit list
+ * only moves when a response lands, so a crop that ripened since then is
+ * still "working" in it, and a harvest guessed off that list removed nothing.
+ */
+export function withLocalClockUnit(unit: StackAcresUnitSnapshot, nowMs: number): StackAcresUnitSnapshot {
+  if (unit.state === "mucked") return unit;
+  const ready = Date.parse(unit.readyAt);
+  const started = Date.parse(unit.startedAt);
+  const progressAt = (atMs: number) =>
+    ready > started ? Math.min(1, Math.max(0, (atMs - started) / (ready - started))) : 1;
+
+  const hungry = unit.hungryAt !== null && Date.parse(unit.hungryAt) <= nowMs;
+  if (hungry) return { ...unit, state: "hungry" };
+  const driedAt = unit.thirstyAt === null ? null : Date.parse(unit.thirstyAt);
+  // `ready > driedAt` mirrors isStackAcresUnitDry's own carve-out: a crop
+  // that finished growing before the ground dried is not dry, it is just
+  // waiting to be picked. Dropping this here would flip a ripe row to dry
+  // between refetches even though the server would still collect it.
+  const dry = driedAt !== null && Number.isFinite(driedAt) && driedAt <= nowMs && ready > driedAt;
+  // `ready > driedAt` is already false for an unparseable readyAt, so this
+  // branch always has real timestamps to read the frozen bar at: the moment
+  // the soil went dry rather than now, so a frozen crop's bar stops where it
+  // stopped instead of creeping on to a full bar it cannot cash.
+  if (dry) return { ...unit, state: "dry", isWatered: false, progress: progressAt(driedAt) };
+  if (!Number.isFinite(ready) || !Number.isFinite(started)) return unit;
+  if (ready <= nowMs) return { ...unit, state: "ready", progress: 1, isWatered: true };
+  return { ...unit, state: "working", progress: progressAt(nowMs), isWatered: true };
 }
 
 /**

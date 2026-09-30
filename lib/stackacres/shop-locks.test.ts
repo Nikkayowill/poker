@@ -8,6 +8,7 @@ import {
   STACKACRES_QUEST_LABELS,
   evaluateStackAcresShopLock,
   isStackAcresQuestFlag,
+  nextReachableStackAcresMilestone,
   nextStackAcresMilestone,
   stackacresMilestone,
   stackacresQuestFlags,
@@ -164,7 +165,7 @@ describe("evaluating a shelf row", () => {
 
   it("names the quest in the hint", () => {
     expect(evaluateStackAcresShopLock({ requiredQuestFlag: "cleared_wallow" }, NEW_FARM).lockHint)
-      .toBe("Requires: Clear the Fold");
+      .toBe("Requires: Clear the Fold (not open yet)");
   });
 
   it("says how far along a milestone row is, and what to do next", () => {
@@ -185,7 +186,7 @@ describe("evaluating a shelf row", () => {
     // Milestone met, quest not: the quest is the more actionable answer.
     const missingQuest = farm({ sectors: ["farmstead", "wallow"], cropFieldsUnlocked: true });
     expect(evaluateStackAcresShopLock(row, missingQuest).lockHint).toBe(
-      "Requires: Raise the Greenhouse",
+      "Requires: Raise the Greenhouse (not open yet)",
     );
     // Quest met, milestone not.
     const missingMilestone = farm({ greenhouseBuilt: true });
@@ -199,6 +200,20 @@ describe("evaluating a shelf row", () => {
     ).toBe(true);
   });
 
+  it("never names a flag nobody can earn as the next thing to do", () => {
+    // The Crop Fields and the town order are the only flags left on the live
+    // world. With both earned, nothing reachable is next, so the hint stops at
+    // the count instead of pointing at the Fold.
+    const state = evaluateStackAcresShopLock(
+      { minimumMilestone: 3 },
+      farm({ cropFieldsUnlocked: true, influence: 1 }),
+    );
+    expect(state.lockHint).toBe("Requires 3 farm milestones (2 done)");
+    expect(
+      nextReachableStackAcresMilestone(farm({ cropFieldsUnlocked: true, influence: 1 })),
+    ).toBeNull();
+  });
+
   it("asks for nothing when the milestone floor is zero or negative", () => {
     expect(evaluateStackAcresShopLock({ minimumMilestone: 0 }, NEW_FARM).isUnlocked).toBe(true);
     expect(evaluateStackAcresShopLock({ minimumMilestone: -3 }, NEW_FARM).isUnlocked).toBe(true);
@@ -207,7 +222,7 @@ describe("evaluating a shelf row", () => {
   it("words the server's refusal off the same hint the shelf shows", () => {
     const state = evaluateStackAcresShopLock({ requiredQuestFlag: "cleared_wallow" }, NEW_FARM);
     expect(stackacresShopLockRefusal("Bulk Shipment", state)).toBe(
-      "Ray won't sell you a Bulk Shipment yet. Requires: Clear the Fold.",
+      "Ray won't sell you a Bulk Shipment yet. Requires: Clear the Fold (not open yet).",
     );
   });
 });

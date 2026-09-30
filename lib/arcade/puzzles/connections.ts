@@ -68,6 +68,17 @@ export interface ConnectionsRound {
   status: ConnectionsStatus;
   /** The most recent guess's verdict. Survives a refresh, which is harmless and saves a special case. */
   lastVerdict: ConnectionsVerdict | null;
+  /**
+   * How many mistakes end the round. A big stake lowers it at open and it
+   * never changes after. Rows stored before this field existed use
+   * CONNECTIONS_MAX_MISTAKES.
+   */
+  maxMistakes?: number;
+}
+
+/** The mistake limit this round was opened with. */
+export function connectionsMistakesAllowed(round: Pick<ConnectionsRound, "maxMistakes">): number {
+  return round.maxMistakes ?? CONNECTIONS_MAX_MISTAKES;
 }
 
 /** Why a selection cannot be played, or null if it can. */
@@ -138,7 +149,11 @@ export function connectionsGuessProblem(
   return null;
 }
 
-export function startConnectionsRound(puzzle: ConnectionsPuzzle, randomInt: RandomInt): ConnectionsRound {
+export function startConnectionsRound(
+  puzzle: ConnectionsPuzzle,
+  randomInt: RandomInt,
+  options: { maxMistakes?: number } = {},
+): ConnectionsRound {
   assertPlayablePuzzle(puzzle);
   const groups = puzzle.groups.map((group) => ({
     ...group,
@@ -153,7 +168,16 @@ export function startConnectionsRound(puzzle: ConnectionsPuzzle, randomInt: Rand
     [order[index], order[swapWith]] = [order[swapWith], order[index]];
   }
 
-  return { groups, order, solvedLevels: [], attempts: [], mistakes: 0, status: "active", lastVerdict: null };
+  return {
+    groups,
+    order,
+    solvedLevels: [],
+    attempts: [],
+    mistakes: 0,
+    status: "active",
+    lastVerdict: null,
+    ...(options.maxMistakes !== undefined ? { maxMistakes: options.maxMistakes } : {}),
+  };
 }
 
 /**
@@ -195,7 +219,7 @@ export function submitConnectionsGuess(round: ConnectionsRound, selection: strin
     ...round,
     attempts,
     mistakes,
-    status: mistakes >= CONNECTIONS_MAX_MISTAKES ? "lost" : "active",
+    status: mistakes >= connectionsMistakesAllowed(round) ? "lost" : "active",
     lastVerdict: oneAway ? "one-away" : "wrong",
   };
 }
@@ -261,7 +285,7 @@ export function toConnectionsSnapshot(
     words: remainingWords(round),
     revealed,
     mistakes: round.mistakes,
-    mistakesAllowed: CONNECTIONS_MAX_MISTAKES,
+    mistakesAllowed: connectionsMistakesAllowed(round),
     guessCount: round.attempts.length,
     lastVerdict: round.lastVerdict,
     status: round.status,

@@ -5,19 +5,20 @@ import { STACKACRES_TOOL_TIERS } from "../equipment";
 import { MACHINE_PROCESSED_ITEMS, MACHINE_RAW_ITEMS } from "../machine-items";
 import { RECIPE_IDS } from "../recipes";
 import { isStackAcresCrop } from "../catalogue";
-import { ZONE_IDS } from "../zones";
 import { STORY_ITEM_IDS, isStoryItemId } from "./items";
-import { ALL_STORY_QUESTS, TRAVELER_QUESTS, objectiveLabel } from "./quests";
-import { TRAVELERS_IN_FINALE, TRAVELER_CATALOGUE, TRAVELER_IDS, TRAVELER_PORTRAIT, isTravelerId } from "./travelers";
+import { ALL_STORY_QUESTS, TRAVELER_QUESTS, objectiveLabel, questFlatObjectives } from "./quests";
+import { TRAVELER_CATALOGUE, TRAVELER_IDS, TRAVELER_PORTRAIT, isTravelerId } from "./travelers";
 
 const MACHINE_ITEM_IDS: readonly string[] = [...STACKACRES_ITEMS, ...MACHINE_RAW_ITEMS, ...MACHINE_PROCESSED_ITEMS];
 
 describe("TRAVELER_IDS", () => {
-  it("is eleven, unique, and Ray comes first", () => {
-    expect(TRAVELER_IDS).toHaveLength(11);
-    expect(new Set(TRAVELER_IDS).size).toBe(11);
+  it("is three, unique, and Ray comes first", () => {
+    // Shrunk 2026-09-28: eight of the eleven stood in the six districts
+    // removed the same day (this module's own header). Ray, Pierre and Ivy
+    // are what remain.
+    expect(TRAVELER_IDS).toHaveLength(3);
+    expect(new Set(TRAVELER_IDS).size).toBe(3);
     expect(TRAVELER_IDS[0]).toBe("ray");
-    expect(TRAVELERS_IN_FINALE).toBe(10);
   });
 
   it("isTravelerId accepts the cast and nothing else", () => {
@@ -25,33 +26,26 @@ describe("TRAVELER_IDS", () => {
     expect(isTravelerId("bleep")).toBe(false);
     expect(isTravelerId("")).toBe(false);
     expect(isTravelerId(3)).toBe(false);
+    expect(isTravelerId("leo")).toBe(false);
   });
 });
 
 describe("TRAVELER_CATALOGUE", () => {
-  it("hands out every story item exactly once", () => {
-    const rewards = TRAVELER_IDS.map((id) => TRAVELER_CATALOGUE[id].reward);
-    expect(new Set(rewards).size).toBe(rewards.length);
-    expect([...rewards].sort()).toEqual([...STORY_ITEM_IDS].sort());
-    for (const reward of rewards) expect(isStoryItemId(reward)).toBe(true);
-  });
-
-  it("stands every traveler in a real district", () => {
-    for (const id of TRAVELER_IDS) expect(ZONE_IDS).toContain(TRAVELER_CATALOGUE[id].zone);
+  it("hands out every traveler keepsake exactly once, plus any per-quest rewards", () => {
+    const keepsakes = TRAVELER_IDS.map((id) => TRAVELER_CATALOGUE[id].reward);
+    expect(new Set(keepsakes).size).toBe(keepsakes.length);
+    for (const reward of keepsakes) expect(isStoryItemId(reward)).toBe(true);
+    // Every story item is either a traveler's line-final keepsake or a
+    // per-quest reward some quest offers (see StoryQuest.rewards) -- there is
+    // no unused item in the catalogue.
+    const questRewards = ALL_STORY_QUESTS.flatMap((quest) => quest.rewards ?? []);
+    expect([...keepsakes, ...questRewards].sort()).toEqual([...STORY_ITEM_IDS].sort());
   });
 
   it("maps the brief's unlock requirements onto derived facts", () => {
     expect(TRAVELER_CATALOGUE.ray.unlock).toEqual({ kind: "always" });
     expect(TRAVELER_CATALOGUE.pierre.unlock).toEqual({ kind: "milestone", count: 1 });
-    expect(TRAVELER_CATALOGUE.miles.unlock).toEqual({ kind: "milestone", count: 1 });
-    expect(TRAVELER_CATALOGUE.skye.unlock).toEqual({ kind: "milestone", count: 2 });
-    expect(TRAVELER_CATALOGUE.barnaby.unlock).toEqual({ kind: "milestone", count: 2 });
-    expect(TRAVELER_CATALOGUE.brayden.unlock).toEqual({ kind: "milestone", count: 3 });
     expect(TRAVELER_CATALOGUE.ivy.unlock).toEqual({ kind: "milestone", count: 3 });
-    expect(TRAVELER_CATALOGUE.bea.unlock).toEqual({ kind: "milestone", count: 4 });
-    expect(TRAVELER_CATALOGUE.arthur.unlock).toEqual({ kind: "flag", flag: "town_trusted" });
-    expect(TRAVELER_CATALOGUE.wes.unlock).toEqual({ kind: "flag", flag: "cleared_oxfields" });
-    expect(TRAVELER_CATALOGUE.leo.unlock).toEqual({ kind: "finale" });
   });
 
   it("names a portrait file per traveler", () => {
@@ -68,7 +62,7 @@ describe("TRAVELER_QUESTS", () => {
         expect(quest.id).toBe(`${id}.q${i + 1}`);
         expect(quest.title.length).toBeGreaterThan(0);
         expect(quest.turnInLabel.length).toBeGreaterThan(0);
-        expect(quest.objectives.length).toBeGreaterThan(0);
+        expect(questFlatObjectives(quest).length).toBeGreaterThan(0);
       });
     }
     expect(new Set(ALL_STORY_QUESTS.map((quest) => quest.id)).size).toBe(ALL_STORY_QUESTS.length);
@@ -76,7 +70,7 @@ describe("TRAVELER_QUESTS", () => {
 
   it("only names catalogue ids and positive whole targets", () => {
     for (const quest of ALL_STORY_QUESTS) {
-      for (const objective of quest.objectives) {
+      for (const objective of questFlatObjectives(quest)) {
         expect(Number.isInteger(objective.target)).toBe(true);
         expect(objective.target).toBeGreaterThan(0);
         expect(objectiveLabel(objective).length).toBeGreaterThan(0);
@@ -107,11 +101,7 @@ describe("TRAVELER_QUESTS", () => {
       { kind: "deliver", item: "potato", target: 5 },
       { kind: "deliver", item: "carrot", target: 5 },
     ]);
-    expect(TRAVELER_QUESTS.brayden[0].objectives).toEqual([{ kind: "hold-tool", tool: "iron-shovel", target: 1 }]);
-    expect(TRAVELER_QUESTS.bea[0].objectives).toEqual([
-      { kind: "harvest", crops: ["bell_pepper", "green_bean"], target: 16 },
-    ]);
-    expect(TRAVELER_QUESTS.leo[1].objectives.map((objective) => objective.kind)).toEqual(["contracts", "forge"]);
+    expect(TRAVELER_QUESTS.ivy[0].objectives).toEqual([{ kind: "crossbreed", target: 1 }]);
   });
 
   it("labels objectives as one imperative line", () => {

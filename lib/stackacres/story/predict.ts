@@ -48,8 +48,6 @@ export function storyEventsForAction(body: Action, ctx: StoryPredictContext): St
     }
     case "process":
       return isInstantRecipe(body.recipe) ? [{ kind: "processed", recipe: body.recipe, count: 1 }] : [];
-    case "clear-sector":
-      return [{ kind: "sector-cleared", sector: body.sector }];
     case "place-soil-tile":
       return [{ kind: "soil-placed", count: 1 }];
     case "fulfill-contract":

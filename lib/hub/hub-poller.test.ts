@@ -193,6 +193,34 @@ describe("hub poller", () => {
     expect(calls).toHaveLength(2);
   });
 
+  it("refreshHub reads again after a poll that was already in flight", async () => {
+    // The poll below starts before the mutation. Joining it is how the unread
+    // badge stayed up after opening the inbox.
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const counts: number[] = [];
+    let served = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      served += 1;
+      const unreadCount = served === 1 ? 3 : 0;
+      if (served === 1) await gate;
+      return { ok: true, json: async () => ({ notifications: { notifications: [], unreadCount } }) };
+    }));
+    const { subscribeHub, refreshHub } = await loadPoller();
+    subscribeHub(["notifications"], (payload) => {
+      const section = payload.notifications as { unreadCount: number } | undefined;
+      if (section) counts.push(section.unreadCount);
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const refreshed = refreshHub(["notifications"]);
+    release();
+    await refreshed;
+
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(2);
+    expect(counts).toEqual([3, 0]);
+  });
+
   it("backs a failing section off to its own cadence instead of every tick", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, json: async () => ({}) })));
     const { subscribeHub } = await loadPoller();

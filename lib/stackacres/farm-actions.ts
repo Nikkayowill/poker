@@ -11,9 +11,9 @@
  * app/api/stackacres/actions/route.ts is the wire authority.
  */
 
+import type { AxePayment } from "./axe";
 import { isLivestock, STACKACRES_CATALOGUE, type StackAcresCrop, type StackAcresStock } from "./catalogue";
 import type { StackAcresBuyableCutter } from "./cutters";
-import type { SectorId } from "./sectors";
 import type { HiddenZoneId, SecretItemId } from "./secrets";
 import type { SynergyArchetype } from "./synergy-perks";
 import type { NpcId } from "./friendship";
@@ -22,15 +22,15 @@ import type { MachineItemId } from "./machine-items";
 import type { MachineKind } from "./machines";
 import type { RecipeId } from "./recipes";
 import type { FoodItem } from "./energy";
-import type { SoilTier } from "./soil-tiers";
 import type { BlueprintId } from "./blueprints";
 import type { ZoneId } from "./zones";
+import type { QuestPlaceId } from "./story/places";
 import type { TravelerId } from "./story/travelers";
+import { EMPIRE_BUILDINGS, type EmpireBuildingKind } from "./empire-buildings";
+import type { GroceryItemKind } from "./grocery-layout";
 
 export type Action =
   | { action: "expand-capacity"; stock: StackAcresStock }
-  | { action: "clear-sector"; sector: SectorId }
-  | { action: "unlock-crop-fields" }
   | { action: "build-greenhouse" }
   // `tx`/`ty` name the bed `onRadialSeed` tapped, when the tap named a real
   // bed -- see `predictStackAcresAction`'s "stock" case in
@@ -66,22 +66,25 @@ export type Action =
   // The dock's cast, completed: which fish it lands is the server's own
   // dice roll, same posture as `collect`'s Gold.
   // `bait` spends one Radish on the hook for better odds.
-  | { action: "catch-fish"; bait: boolean }
+  | { action: "catch-fish"; bait: boolean; cast: number }
   | { action: "eat"; item: FoodItem }
   // A completed stalk at the Oak's treeline: which quarry it was, and so how
   // much meat and how many pelts it gives, is the server's own dice roll --
   // same posture as `catch-fish`.
   | { action: "bag-quarry" }
   // One swing at a tree (lib/stackacres/wood.ts): fills the shelf with Wood,
-  // same posture as `catch-fish`/`bag-quarry`. `sweet` is the chop
-  // minigame's own timing verdict (lib/stackacres/chop.ts) -- it changes how
-  // much Wood the swing pays, never whether it lands.
-  | { action: "chop-tree"; nodeId: string; sweet: boolean }
+  // same posture as `catch-fish`/`bag-quarry`.
+  | { action: "chop-tree"; nodeId: string }
+  // Clearing land: one swing at what is standing on it. Land is never
+  // bought; the sector opens when the last one comes down.
+  | { action: "work-land"; obstacleId: string }
   // One swing at one of the Mine's boulders (lib/stackacres/stone-nodes.ts):
-  // fills the shelf with Stone, same posture as `chop-tree`. `quality` is
-  // the shared swing minigame's own timing verdict (lib/stackacres/chop.ts)
-  // -- it changes how much Stone the swing pays, never whether it lands.
-  | { action: "mine-stone"; nodeId: string; quality: "hit" | "sweet" }
+  // fills the shelf with Stone, same posture as `chop-tree`.
+  | { action: "mine-stone"; nodeId: string }
+  // One pick at one of the Homestead's forage bushes (lib/stackacres/forage.ts):
+  // fills the SEED shelf, not the inventory, and moves no Gold. No crop: the bush's own pick count decides which seed comes
+  // off it, so there is nothing here for a client to name.
+  | { action: "gather-forage"; nodeId: string }
   | { action: "clear"; unitId: string }
   | { action: "buy-feed"; itemId: string; quantity: number }
   // Sells any inventory item -- raw harvest or crafted good -- for Gold, at
@@ -89,6 +92,7 @@ export type Action =
   // harvest always credits inventory instead of Gold.
   | { action: "sell"; item: MachineItemId; quantity: number }
   | { action: "upgrade-tool" }
+  | { action: "upgrade-axe"; pay: AxePayment }
   | { action: "buy-cutter"; cutter: StackAcresBuyableCutter }
   // The processing track, all from the Workshop sheet (WorkshopModal.tsx).
   // `place-machine` spends Gold; the rest move inventory only.
@@ -109,6 +113,7 @@ export type Action =
   // below is the one that pays, and it reserves against the same flat daily
   // ceiling a harvest does. See lib/server/stackacres-service.ts's header.
   | { action: "request-contract" }
+  | { action: "pass-contract" }
   | { action: "fulfill-contract" }
   | { action: "tap-secret-zone"; zoneId: HiddenZoneId }
   | { action: "donate-secret-item"; itemId: SecretItemId }
@@ -119,13 +124,30 @@ export type Action =
   | { action: "unlock-synergy-perk"; archetype: SynergyArchetype }
   | { action: "activate-synergy-perk"; archetype: SynergyArchetype; slot: number }
   // Placeable soil beds (./soil.ts). `tx`/`ty` are SOIL_TILE lattice
-  // coordinates, not world units -- see soilTileAt. Gold moves at the shop
-  // (`buy-soil`, priced from SOIL_TIER_DEFS server-side) and nowhere else:
-  // `place-soil-tile` spends a BAG of the named tier, and `remove-soil-tile`
-  // spends nothing and refunds nothing.
-  | { action: "place-soil-tile"; tx: number; ty: number; tier?: SoilTier }
-  | { action: "buy-soil"; tier: SoilTier; quantity: number }
+  // coordinates, not world units -- see soilTileAt. Breaking ground is free:
+  // neither action spends or refunds anything.
+  | { action: "place-soil-tile"; tx: number; ty: number }
   | { action: "remove-soil-tile"; tx: number; ty: number }
+  | { action: "place-fence"; tx: number; ty: number }
+  | { action: "remove-fence"; tx: number; ty: number }
+  // Sheep and cattle stand where the player sets them (./herd.ts), by Homestead
+  // map square. Neither spends or refunds anything.
+  | { action: "place-animal"; unitId: string; tx: number; ty: number }
+  | { action: "pick-up-animal"; unitId: string }
+  // Far Field buildings (./empire-buildings.ts), by the top-left square of
+  // their plan. Buying spends Gold, Wood and Metal; placing one you own and
+  // picking it up are free.
+  | { action: "buy-building"; kind: EmpireBuildingKind; tx: number; ty: number }
+  | { action: "place-building"; id: string; tx: number; ty: number }
+  | { action: "pick-up-building"; id: string }
+  // The city grocery (./grocery.ts): taking it over, its staff, its till, and arranging its floor.
+  | { action: "grocery-take-over" }
+  | { action: "grocery-hire"; name: string }
+  | { action: "grocery-fire"; name: string }
+  | { action: "grocery-collect" }
+  | { action: "grocery-buy"; kind: GroceryItemKind; tx: number; ty: number }
+  | { action: "grocery-place"; id: string; tx: number; ty: number }
+  | { action: "grocery-store"; id: string }
   // Hold-tap lift, tap-to-drop: slides the contiguous group of beds touching
   // `(tx, ty)` so that tile lands on `(toTx, toTy)`, whatever crop stands on
   // it carried along. Free -- moves no Gold either way. The group itself is
@@ -141,15 +163,25 @@ export type Action =
   // "yes" -- see StackAcresMonkDialogue -- never from the tap that opens
   // it, so declining never reaches this at all.
   | { action: "pray" }
+  // The farmhouse bed: the farm clock jumps to 6 AM (./clock.ts). Only ever
+  // sent from the bed's own "Sleep" button, and by night.
+  | { action: "sleep" }
   // NPC friendship: a gift, from the friendship dialogue's own item picker.
   // See lib/stackacres/friendship.ts's own header.
   | { action: "give-gift"; npc: NpcId; item: MachineItemId }
+  // NPC friendship: a plain "say hi", from the same dialogue's own greet
+  // button. No item -- see lib/stackacres/friendship.ts's own header for
+  // why greeting and gifting are two separate day gates on one record.
+  | { action: "greet-npc"; npc: NpcId }
   // The travelers' story (./story/). Both move no Gold: `story-meet` accepts
   // a traveler's first quest, `story-turn-in` hands the active one in --
   // debiting only the items it asked for, and paying a story keepsake,
   // never a purse. Only ever sent from a bubble's own committing button.
   | { action: "story-meet"; traveler: TravelerId }
   | { action: "story-turn-in"; traveler: TravelerId }
+  // A quest's own "go to this spot" objective. Moves no Gold and no items --
+  // see lib/stackacres/story/places.ts's own header.
+  | { action: "reach-quest-place"; placeId: QuestPlaceId }
   // The Mechanical Forage Drone. `deploy-drone` spends the flat hangar fee,
   // once per drone; `collect-drone-forage` pays whatever the server rolled
   // for that one claim -- there is no fake patch for it in
@@ -178,6 +210,25 @@ export type Action =
   | { action: "contribute-blueprint"; structureId: BlueprintId; itemId: MachineItemId; amount: number };
 
 /**
+ * A harvest is keyed by the crops it names. Keyed on the bare action, a
+ * second crop tapped while the first harvest was still in the air was dropped
+ * as a duplicate after its pull had already played, so it stayed in the
+ * ground. A bare "collect" is still the Harvest-all press.
+ */
+const COLLECT_INTENT_PREFIX = "collect:";
+
+/** Every unit some in-flight harvest already names, read off the in-flight
+ *  intents, so a tap on one of them is not sent a second time. */
+export function unitsBeingCollected(intents: Iterable<string>): Set<string> {
+  const ids = new Set<string>();
+  for (const intent of intents) {
+    if (!intent.startsWith(COLLECT_INTENT_PREFIX)) continue;
+    for (const id of intent.slice(COLLECT_INTENT_PREFIX.length).split(",")) ids.add(id);
+  }
+  return ids;
+}
+
+/**
  * What the player asked for, as one string. Two presses that mean the same
  * thing share it; collecting two different hens does not.
  *
@@ -187,28 +238,47 @@ export type Action =
  */
 export function intentOf(body: Action): string {
   if ("unitId" in body) return `${body.action}:${body.unitId}`;
+  if (body.action === "collect" && body.unitIds && body.unitIds.length > 0) {
+    return `${COLLECT_INTENT_PREFIX}${[...body.unitIds].sort().join(",")}`;
+  }
   // One bed cell, not one stock kind: two presses planting hens in two
   // different cells are two intents, and the generic "stock" branch below
   // would collapse them onto one. Checked before it for that reason.
   if (body.action === "plant-crossbreed") return `${body.action}:${body.row},${body.col}`;
   if ("plotId" in body) return `${body.action}:${body.plotId}`;
-  // Distinguished from an outdoor sow of the same crop: the two are
-  // different intents (different slot cap, different growth clock), and
-  // treating them as one would let a request in flight for one silently
-  // swallow a press aimed at the other.
-  if (body.action === "stock") return `stock:${body.stock}${body.inGreenhouse ? ":greenhouse" : ""}`;
+  // Keyed by where it goes. A greenhouse sow and an outdoor sow of the same
+  // crop are different intents, and so are two beds of the same crop: keyed
+  // on the crop alone, walking a row with seed in hand dropped every sowing
+  // sent while the one before it was still in the air.
+  if (body.action === "stock") {
+    if (body.inGreenhouse) return `stock:${body.stock}:greenhouse`;
+    if (body.tiles && body.tiles.length > 0) {
+      return `stock:${body.stock}:${body.tiles.map((tile) => `${tile.tx},${tile.ty}`).join(";")}`;
+    }
+    if (body.tx !== undefined && body.ty !== undefined) return `stock:${body.stock}:${body.tx},${body.ty}`;
+    return `stock:${body.stock}`;
+  }
   if ("stock" in body) return `${body.action}:${body.stock}`;
   // A seed purchase for one crop must never dedupe against or block a
   // purchase of a different crop -- checked before the generic fallback,
   // which would otherwise collapse every crop's buy onto one shared
-  // "buy-seed" intent the way soil's own tier-blind intent already does
-  // (a gap that is fine at 3 soil tiers and would not be at 22 crops).
+  // "buy-seed" intent.
   if ("crop" in body) return `${body.action}:${body.crop}`;
+  // One building at a time is moved or picked up; two different ones are two intents.
+  if (body.action === "place-building" || body.action === "pick-up-building") return `building:${body.id}`;
+  // Likewise one piece of the grocery's floor, and one person at a time hired or let go. Keyed on kind as
+  // well as the square, checked before the generic `tx` branch below: two different kinds can share a
+  // square (a rug under a fixture), and buying one must never be taken for a retry of the other.
+  if (body.action === "grocery-buy") return `${body.action}:${body.kind}:${body.tx},${body.ty}`;
+  if (body.action === "grocery-place" || body.action === "grocery-store") return `grocery-item:${body.id}`;
+  if (body.action === "grocery-hire" || body.action === "grocery-fire") return `grocery-staff:${body.name}`;
   if ("sector" in body) return `${body.action}:${body.sector}`;
   // Checked before the generic "item" branch below: a gift carries `item`
   // but no `quantity` (it is always exactly one unit), and gifting one NPC
-  // must never be conflated with gifting another over the same item.
-  if ("npc" in body) return `${body.action}:${body.npc}:${body.item}`;
+  // must never be conflated with gifting another over the same item. A
+  // greet carries no item at all, so it is keyed on the npc alone --
+  // there is only ever one greet in flight for a given NPC at a time.
+  if ("npc" in body) return "item" in body ? `${body.action}:${body.npc}:${body.item}` : `${body.action}:${body.npc}`;
   if (body.action === "eat") return `eat:${body.item}`;
   // One cellar, so storing either kind of jar is the same press.
   if (body.action === "seal-cellar") return "seal-cellar";
@@ -239,6 +309,10 @@ export function intentOf(body: Action): string {
   if ("kind" in body) return `${body.action}:${body.kind}`;
   // Chopping one tree must never dedupe against or block chopping another.
   if ("nodeId" in body) return `${body.action}:${body.nodeId}`;
+  // Same for one tree standing on land being cleared and the boulder beside
+  // it: clearing a field is a long run of presses across many obstacles, and
+  // collapsing them onto one intent would drop every second swing.
+  if ("obstacleId" in body) return `${body.action}:${body.obstacleId}`;
   return body.action;
 }
 
@@ -261,42 +335,38 @@ export function intentOf(body: Action): string {
  * same render (both are plain `setState` calls in one synchronous stack).
  * Also excludes anything that moves no Gold or shelf stock (`collect`,
  * `feed`, `water`, `retire`, the Workshop/Town Contract actions, ...) --
- * those already read as answered through their own sound, sprite change, or
- * (for `collect`) the "on its way" toast `act` sets independently.
+ * those already read as answered through their own sound or sprite change.
  */
 export function purchaseCueText(body: Action): string | null {
   switch (body.action) {
     case "stock":
       // A 50 Gold cycle, not the animal: "Bought a Hen Coop!" read as the 2,500 Gold outright buy.
-      return isLivestock(body.stock)
-        ? `Started a ${STACKACRES_CATALOGUE[body.stock].label} cycle!`
-        : `Seeded ${STACKACRES_CATALOGUE[body.stock].label}!`;
+      // A crop going in is answered by the seed on the bed and its sound.
+      return isLivestock(body.stock) ? `Started a ${STACKACRES_CATALOGUE[body.stock].label} cycle!` : null;
     case "buy-stock":
       return `Bought a ${STACKACRES_CATALOGUE[body.stock].label}!`;
     case "expand-capacity":
       return "Capacity expanded!";
     case "buy-feed":
       return "Feed delivered!";
-    case "buy-soil":
-      return "Soil delivered!";
     case "buy-seed":
       return "Seeds delivered!";
     case "upgrade-tool":
       return "Spade upgraded!";
+    case "upgrade-axe":
+      return "New axe in hand!";
     case "buy-cutter":
       return "New tool in hand!";
     case "unlock-synergy-perk":
       return "Perk unlocked!";
-    case "clear-sector":
-      return "Clearing the land…";
-    case "unlock-crop-fields":
-      return "Crop Fields unlocked!";
     case "build-greenhouse":
       return "Greenhouse begun!";
     case "forge-enchantment":
       return "Enchantment forged!";
     case "deploy-drone":
       return "Drone deployed!";
+    case "buy-building":
+      return `${EMPIRE_BUILDINGS[body.kind].label} built!`;
     default:
       return null;
   }

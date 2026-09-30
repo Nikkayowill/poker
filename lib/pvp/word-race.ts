@@ -10,8 +10,7 @@
  * ## Where the secret lives
  *
  * The state holds five solutions from the moment the match is created, because
- * drawing them lazily would mean the seed alone no longer determines the match
- * and a resumed row could not be replayed. Everything below therefore hangs off
+ * drawing them lazily would leave a resumed row nothing to replay from. Everything below therefore hangs off
  * one rule: `snapshot` is the only thing a browser ever sees, and it emits a
  * round's `word` only once that round has ended. Not blanked, not nulled,
  * but absent, so a network tab shows no key to be curious about. Rounds that
@@ -37,7 +36,8 @@
 import { defineDuelGame, otherSeat, type DuelOutcome, type DuelSeat } from "./match-contract";
 import { WORD_RACE_WORDS } from "./word-race-words";
 import { WORD_RACE_REVEAL_MS, WORD_RACE_ROUND_MS } from "./word-race-timing";
-import { mulberry32 } from "@/lib/seeded-random";
+import type { RandomInt } from "@/lib/game/deck";
+import { secureRandomInt } from "./secure-random";
 
 /* ------------------------------------------------------------- constants */
 
@@ -109,7 +109,7 @@ export interface WordRaceRound {
 }
 
 export interface WordRaceState {
-  /** All five rounds, drawn from the seed when the match was created. */
+  /** All five rounds, drawn when the match was created. */
   rounds: WordRaceRound[];
   /** Which round is on screen. Never runs past the last one; see advance(). */
   index: number;
@@ -137,12 +137,11 @@ export interface WordRaceMove {
 /* ------------------------------------------------------------------- rng */
 
 /**
- * Randomness here (imported from lib/seeded-random) is never Math.random().
- * The contract's determinism note applies with full force to this game: the
- * words and their scrambles both come out of the seed, so a match can be
- * replayed from its stored row, a test can pin an exact board, and, the part
- * that matters for money, the client is handed no way to work out what is
- * coming.
+ * Randomness here is never Math.random(). The words and their scrambles are
+ * drawn once, when the match is created, from the CSPRNG (a test passes a
+ * seeded RandomInt instead to pin an exact board). All five are stored on the
+ * row, so a resumed match replays from state, and nothing a player sees says
+ * anything about the words still to come.
  */
 
 /**
@@ -309,47 +308,62 @@ export interface WordRaceSnapshot {
   finished: boolean;
 }
 
+/** How finely a CSPRNG integer is cut into a [0, 1) draw for scrambleWord. */
+const UNIT_STEPS = 2 ** 32;
+
+/**
+ * A fresh match. The words and scrambles come from `randomInt`, which is the
+ * CSPRNG outside tests: with a seeded PRNG, the rounds a match reveals were
+ * enough to recover the seed and read the words still to come.
+ */
+export function createWordRaceState(
+  _seed: number,
+  now: number,
+  randomInt: RandomInt = secureRandomInt,
+): WordRaceState {
+  const random = () => randomInt(UNIT_STEPS) / UNIT_STEPS;
+  const rounds: WordRaceRound[] = [];
+  const drawn = new Set<number>();
+
+  while (rounds.length < WORD_RACE_ROUNDS) {
+    const pick = Math.floor(random() * WORD_RACE_WORDS.length);
+    // Distinct words only: the same scramble twice in one match reads as a
+    // bug even though it is a fair draw, and the bank is large enough that
+    // rejecting a repeat costs nothing.
+    if (drawn.has(pick)) continue;
+    drawn.add(pick);
+    const entry = WORD_RACE_WORDS[pick];
+    rounds.push({
+      word: entry.word,
+      scramble: scrambleWord(entry.word, random),
+      hint: entry.hint,
+      // Only round one is live at the start; the rest are stamped as they
+      // open, from the previous round's end rather than from a wall clock.
+      startedAt: rounds.length === 0 ? now : 0,
+      solvedBy: null,
+      endedAt: null,
+    });
+  }
+
+  return {
+    rounds,
+    index: 0,
+    guesses: [[], []],
+    lockedUntil: [0, 0],
+    wins: [0, 0],
+    resigned: null,
+    resignedAt: null,
+  };
+}
+
 /* ------------------------------------------------------------ the engine */
 
 export const WORD_RACE_DUEL = defineDuelGame<WordRaceState, WordRaceMove, WordRaceSnapshot>({
   id: "word-race",
   label: "Word Race",
 
-  createState(seed, now) {
-    const random = mulberry32(seed);
-    const rounds: WordRaceRound[] = [];
-    const drawn = new Set<number>();
+  createState: (seed, now) => createWordRaceState(seed, now),
 
-    while (rounds.length < WORD_RACE_ROUNDS) {
-      const pick = Math.floor(random() * WORD_RACE_WORDS.length);
-      // Distinct words only: the same scramble twice in one match reads as a
-      // bug even though it is a fair draw, and the bank is large enough that
-      // rejecting a repeat costs nothing.
-      if (drawn.has(pick)) continue;
-      drawn.add(pick);
-      const entry = WORD_RACE_WORDS[pick];
-      rounds.push({
-        word: entry.word,
-        scramble: scrambleWord(entry.word, random),
-        hint: entry.hint,
-        // Only round one is live at the start; the rest are stamped as they
-        // open, from the previous round's end rather than from a wall clock.
-        startedAt: rounds.length === 0 ? now : 0,
-        solvedBy: null,
-        endedAt: null,
-      });
-    }
-
-    return {
-      rounds,
-      index: 0,
-      guesses: [[], []],
-      lockedUntil: [0, 0],
-      wins: [0, 0],
-      resigned: null,
-      resignedAt: null,
-    };
-  },
 
   applyMove(state, seat, move, now) {
     // Deadlines first, on the state as stored: a guess that arrives a

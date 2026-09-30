@@ -1041,28 +1041,12 @@ export async function spendGoldByProfile(
   profileId: string,
   amount: number,
 ): Promise<PlayerProfile | null> {
-  if (!Number.isInteger(amount) || amount <= 0) throw new Error("Invalid Gold amount.");
+  if (!(await debitGoldByProfile(profileId, amount))) return null;
   const supabase = adminClient();
   if (!supabase) {
-    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
-    if (!entry) return null;
-    const [token, current] = entry;
-    if (!current.unlimitedGold && current.goldBalance < amount) return null;
-    const next: StoredProfile = {
-      ...current,
-      goldBalance: current.unlimitedGold ? current.goldBalance : current.goldBalance - amount,
-      updatedAt: new Date().toISOString(),
-    };
-    memoryProfiles.set(token, next);
-    return publicProfile(next);
+    const stored = [...memoryProfiles.values()].find((candidate) => candidate.id === profileId);
+    return stored ? publicProfile(stored) : null;
   }
-
-  const { data, error } = await supabase
-    .rpc("spend_gold_by_profile", { p_profile_id: profileId, p_amount: amount })
-    .single();
-  if (error) throw new Error(`Could not spend Gold: ${error.message}`);
-  const result = data as { success: boolean; gold_balance: number } | null;
-  if (!result?.success) return null;
 
   const { data: row, error: readError } = await supabase
     .from("profiles")
@@ -1071,6 +1055,33 @@ export async function spendGoldByProfile(
     .single();
   if (readError) throw new Error(`Could not load profile: ${readError.message}`);
   return publicProfile(fromRow(row));
+}
+
+/**
+ * The debit half of `spendGoldByProfile` on its own: true once the Gold is gone, false when there wasn't
+ * enough. A caller that must refund exactly when Gold moved uses this, because spendGoldByProfile's
+ * profile read afterwards can fail with the Gold already taken.
+ */
+export async function debitGoldByProfile(profileId: string, amount: number): Promise<boolean> {
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error("Invalid Gold amount.");
+  const supabase = adminClient();
+  if (!supabase) {
+    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
+    if (!entry) return false;
+    const [token, current] = entry;
+    if (!current.unlimitedGold && current.goldBalance < amount) return false;
+    memoryProfiles.set(token, {
+      ...current,
+      goldBalance: current.unlimitedGold ? current.goldBalance : current.goldBalance - amount,
+      updatedAt: new Date().toISOString(),
+    });
+    return true;
+  }
+  const { data, error } = await supabase
+    .rpc("spend_gold_by_profile", { p_profile_id: profileId, p_amount: amount })
+    .single();
+  if (error) throw new Error(`Could not spend Gold: ${error.message}`);
+  return Boolean((data as { success: boolean } | null)?.success);
 }
 
 /**

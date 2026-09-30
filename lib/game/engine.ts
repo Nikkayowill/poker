@@ -1133,6 +1133,7 @@ export function claimSeat(
   > & { adminBadge?: boolean },
   buyIn?: number,
 ): { state: GameState; seatIndex: number } {
+  if (state.status === "archived") throw new Error("This table has closed.");
   const existing = state.seats.findIndex((seat) => seat.ownerToken === token);
   if (existing !== -1) return { state, seatIndex: existing };
 
@@ -1141,9 +1142,6 @@ export function claimSeat(
 
   const seat = state.seats[seatIndex];
   const paidBuyIn = buyIn === undefined ? 1000 : clampBuyIn(state.tier, buyIn);
-  if (seat.committed > paidBuyIn) {
-    throw new Error("Choose a buy-in that covers this seat's committed chips.");
-  }
   // The bot in this seat can be mid-hand (dealt in, maybe already acted or
   // folded) the instant a human claims it. Those hole cards and that
   // position were never this player's to inherit: without this, they'd take
@@ -1175,10 +1173,11 @@ export function claimSeat(
   seat.cardBackCosmetic = profile.equipped.cardBack;
   seat.chipDesigns = profile.equipped.chipDesigns;
   seat.adminBadge = profile.adminBadge ?? false;
-  // A claimed seat owns exactly the buy-in the player paid for, including chips
-  // this seat already committed before the bot was replaced. Resetting the
-  // behind-stack to the full buy-in would mint every posted blind/bet again.
-  seat.stack = paidBuyIn - seat.committed;
+  // The player gets exactly what they paid for. Anything the bot already put
+  // in the pot stays there as dead money (the seat sits out below), and
+  // between hands `committed` is just last hand's leftover, so neither is
+  // something the new player should pay for.
+  seat.stack = paidBuyIn;
   // Never inherited, live hand or not: stale hole cards left over from
   // whoever or whatever sat here before are not this occupant's to see.
   seat.holeCards = [];
@@ -1350,11 +1349,24 @@ function deductRake(state: GameState, winnings: Map<string, number>): number {
   return rake - outstanding;
 }
 
+/**
+ * The part of this seat's commitment nobody else matched. It is handed back
+ * rather than won, so it must never count toward the pot the house rakes.
+ */
+function uncalledExcess(state: GameState, seat: Seat): number {
+  const bestOther = state.seats.reduce(
+    (best, candidate) => (candidate.id === seat.id ? best : Math.max(best, candidate.committed)),
+    0,
+  );
+  return Math.max(0, seat.committed - bestOther);
+}
+
 function awardUncontested(state: GameState, seat: Seat) {
   const potTotal = state.seats.reduce((sum, candidate) => sum + candidate.committed, 0);
-  const winnings = new Map([[seat.id, potTotal]]);
+  const returned = uncalledExcess(state, seat);
+  const winnings = new Map([[seat.id, potTotal - returned]]);
   state.rake = deductRake(state, winnings);
-  const amount = winnings.get(seat.id)!;
+  const amount = winnings.get(seat.id)! + returned;
 
   seat.stack += amount;
   state.pot = potTotal;
@@ -1413,12 +1425,18 @@ function showdown(state: GameState) {
   const levels = [...new Set(state.seats.map((seat) => seat.committed).filter(Boolean))].sort((a, b) => a - b);
   let previous = 0;
   const winnings = new Map<string, number>();
+  // A level only one seat reached is that seat's own uncalled bet coming
+  // back, kept out of the raked winnings and added back after the rake.
+  const returned = new Map<string, number>();
 
   levels.forEach((level) => {
     const contributors = state.seats.filter((seat) => seat.committed >= level);
     const potAmount = (level - previous) * contributors.length;
     const eligible = contributors.filter((seat) => seat.status !== "folded" && seat.status !== "out");
-    if (eligible.length > 0) {
+    if (contributors.length === 1 && eligible.length === 1) {
+      const seat = eligible[0];
+      returned.set(seat.id, (returned.get(seat.id) ?? 0) + potAmount);
+    } else if (eligible.length > 0) {
       const winners = sidePotWinners(eligible, scores);
       const share = Math.floor(potAmount / winners.length);
       let remainder = potAmount - share * winners.length;
@@ -1437,6 +1455,7 @@ function showdown(state: GameState) {
   });
 
   state.rake = deductRake(state, winnings);
+  returned.forEach((amount, seatId) => winnings.set(seatId, (winnings.get(seatId) ?? 0) + amount));
 
   const winners: Winner[] = [...winnings.entries()].map(([seatId, amount]) => {
     const seat = state.seats.find((candidate) => candidate.id === seatId)!;
@@ -2278,8 +2297,101 @@ export function advanceTimedTurn(state: GameState, now = Date.now()): TimedTurnA
   return { state, actorSeatId, action, timedOut };
 }
 
+/**
+ * The most turns archiveTable will play out to finish an abandoned hand. A
+ * six-handed hand is a few dozen decisions at most; this only stops a bug
+ * from looping forever.
+ */
+const ARCHIVE_HAND_STEP_LIMIT = 200;
+
+/**
+ * Plays an abandoned hand to its end under the ordinary clock rules: every
+ * away human times out (check if free, otherwise fold) and bots decide as
+ * usual. That is exactly what would have happened had anyone still been
+ * polling, so nobody gets a refund for walking away from a losing spot and
+ * nobody loses a pot they were winning. Works on a copy and only keeps it if
+ * the hand actually finished.
+ */
+function finishAbandonedHand(state: GameState): boolean {
+  const trial = structuredClone(state);
+  // Past every deadline setCurrentPlayer can write from here on.
+  const horizon = Date.now() + 24 * 60 * 60 * 1000;
+  try {
+    for (let step = 0; step < ARCHIVE_HAND_STEP_LIMIT && trial.status === "playing"; step += 1) {
+      if (!advanceTimedTurn(trial, horizon).action) break;
+    }
+  } catch {
+    return false;
+  }
+  if (trial.status === "playing") return false;
+  Object.assign(state, trial);
+  return true;
+}
+
+/** Calls the hand off: every live seat takes back what it put in. */
+function voidHand(state: GameState) {
+  state.seats.forEach((seat) => {
+    // An "out" seat's chips are a replaced bot's dead money, not the current
+    // occupant's to take home.
+    if (seat.status !== "out") seat.stack += seat.committed;
+    seat.committed = 0;
+    seat.streetBet = 0;
+  });
+  state.pot = 0;
+  state.street = "showdown";
+  state.winners = [];
+}
+
+/**
+ * Closes a table for good and reports what each human seat is owed.
+ *
+ * A hand still running is finished first (see finishAbandonedHand) so chips
+ * already in the pot land with whoever the rules give them to, instead of
+ * vanishing with the table. Every human's stack is then zeroed here, in the
+ * same state the caller persists, so a copy of this table read later can
+ * never pay the same chips out a second time. Tournament seats are never
+ * cashed out: their escrow refunds the entry fee instead.
+ *
+ * Bumps the version by exactly one so the caller's write is version-guarded
+ * against anyone still acting on the table.
+ */
+export function archiveTable(state: GameState, now = Date.now()): ReleasedSeat[] {
+  normalizeGameState(state);
+  if (state.status === "archived") return [];
+  const version = state.version;
+
+  if (state.status === "playing") {
+    const humanMoneyInPot = state.seats.some(
+      (seat) => seat.isHuman && seat.status !== "out" && seat.committed > 0,
+    );
+    const finished = !state.tournament && humanMoneyInPot && finishAbandonedHand(state);
+    if (!finished) voidHand(state);
+  }
+
+  const released: ReleasedSeat[] = [];
+  if (!state.tournament) {
+    state.seats.forEach((seat) => {
+      if (!seat.isHuman || !seat.ownerToken || seat.stack <= 0) return;
+      released.push({ ownerToken: seat.ownerToken, name: seat.name, cashedOut: seat.stack });
+      seat.stack = 0;
+    });
+  }
+
+  state.status = "archived";
+  state.nextHandAt = null;
+  setCurrentPlayer(state, null);
+  state.message = "This table has closed.";
+  addLog(state, "The table closed after everyone left");
+  state.version = version + 1;
+  state.updatedAt = new Date(now).toISOString();
+  return released;
+}
+
 export function applyPlayerAction(state: GameState, action: PlayerAction, callerToken: string): GameState {
   normalizeGameState(state);
+  // An archived table already paid everyone out, so nothing on it can move
+  // chips again, least of all a second cash-out.
+  if (state.status === "archived") throw new Error("This table has closed.");
   const seatIndex = state.seats.findIndex((seat) => seat.ownerToken === callerToken);
   if (seatIndex === -1) throw new Error("You are not seated at this table.");
   if (action.type === "leave-seat") {
@@ -2351,6 +2463,12 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
     }
   } else if (action.type === "next-hand") {
     if (state.status !== "complete") throw new Error("Finish the current hand first.");
+    // The server deals on its own once nextHandAt passes (dealNextHandIfDue,
+    // which also releases away seats first). A client can't jump that queue.
+    const due = Date.parse(state.nextHandAt ?? "");
+    if (Number.isFinite(due) && Date.now() < due) {
+      throw new Error("The next hand deals on its own in a moment.");
+    }
     setupHand(state);
   } else if (action.type === "rebuy") {
     if (state.tournament) {
@@ -2376,10 +2494,16 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
       throw new Error("Wait for this hand to finish deciding your seat.");
     }
     seat.stack = clampBuyIn(state.tier, action.amount);
-    if (state.status === "complete") {
-      // Refill and immediately deal, in one action: refilling first means
-      // setupHand's own per-seat funding check leaves this seat alone
-      // rather than sitting it out again.
+    const nextDeal = Date.parse(state.nextHandAt ?? "");
+    if (state.status === "complete" && Number.isFinite(nextDeal) && Date.now() < nextDeal) {
+      // A deal is already scheduled. The refill waits for it like everyone
+      // else rather than dealing early and skipping the away-seat release.
+      seat.status = "out";
+    } else if (state.status === "complete") {
+      // Nothing is scheduled (the table stalled for want of funded seats),
+      // so refill and deal in one action: refilling first means setupHand's
+      // own per-seat funding check leaves this seat alone rather than
+      // sitting it out again.
       seat.status = "active";
       setupHand(state);
     } else {
@@ -2433,8 +2557,10 @@ export function seatCardsWereShown(state: GameState, seat: Seat): boolean {
 
 export function toSnapshot(state: GameState, callerToken: string): GameSnapshot {
   const mySeatIndex = state.seats.findIndex((seat) => seat.ownerToken === callerToken);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropping the three private fields
-  const { deck, hostToken, seats, ...publicState } = state;
+  // opponentReads is keyed by each human's session token, so it must never
+  // leave the server; the bots read it there.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropping the four private fields
+  const { deck, hostToken, seats, opponentReads, ...publicState } = state;
   const { small, big } = blindPositions(state);
   return {
     ...publicState,

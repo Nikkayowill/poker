@@ -4,11 +4,12 @@ import { dailyGrantFor, streakMultiplier, utcDayKey } from "@/lib/progression/st
 import { getProgression } from "@/lib/server/progression-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
 /**
- * Where the caller stands: rank, XP into the level, lifetime volume, streak.
+ * Where the caller stands: rank, rank points into the level, solo earnings, lifetime volume, streak.
  *
  * Open to guests, unlike /api/friends and /api/invites. Those address a durable
  * profile id that a guest does not have; a rank is just a readout of play this
@@ -48,7 +49,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not load your progress.";
+    const message = publicErrorMessage(error, "Could not load your progress.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -62,6 +62,7 @@
  * response takes -- see stackacres-farm.tsx.
  */
 
+import { AXE_SWING_ENERGY, STARTING_AXE_LEVEL, type AxeLevel } from "./axe";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   STACKACRES_CATALOGUE,
@@ -73,8 +74,7 @@ import {
 } from "./catalogue";
 import { stackacresStockOwnableOutright, stackacresStockPrice } from "./market";
 import type { StackAcresContractRow } from "./contracts";
-import { sectorClearCheck, type SectorId } from "./sectors";
-import { cropFieldsUnlockCheck } from "./crop-fields";
+import type { SectorId } from "./sectors";
 import { decrementHeldSecret, nextUpkeepPaidAfterDiceTrade, type SecretItemId } from "./secrets";
 import {
   SYNERGY_MAX_ACTIVE_SLOTS,
@@ -87,6 +87,7 @@ import { nextToolTier, toolUpgradePrice, type StackAcresToolTier } from "./equip
 import { ownedStackAcresCutters, stackacresCutterDef, type StackAcresCutter } from "./cutters";
 import { applyInfluenceDiscount } from "./influence-tiers";
 import type { StackAcresUpkeepState } from "./upkeep";
+import { FORAGE_SEEDS_PER_PICK, nextForageCrop, type ForageNodeSnapshot } from "./forage";
 import {
   createSoilMap,
   moveSoilTileGroup,
@@ -96,25 +97,44 @@ import {
   soilSlotForTile,
   soilSlotOnTile,
   soilSlotTile,
+  soilTileKey,
   type SoilTile,
 } from "./soil";
 import { enrichesSoil, isSoilTileEnriched } from "./soil-enrich";
-import { SOIL_DEFAULT_TIER, type SoilStock } from "./soil-tiers";
+import { SOIL_DEFAULT_TIER } from "./soil-tiers";
 import {
   optimisticallyFedUnit,
   optimisticallyRestartedUnit,
   optimisticallyStockedUnit,
   optimisticallyWateredUnit,
+  withLocalClockUnit,
   withoutStackAcresUnit,
   type StackAcresUnitSnapshot,
 } from "./units";
 import type { Action } from "./farm-actions";
 import { WATER_CAPACITY } from "./water-can";
-import { soilTileInCropFieldBeds, stockZone } from "./world";
-import { removeFromInventory, type StackAcresInventory } from "./inventory";
+import { stockZone } from "./world";
+import { addToInventory, removeFromInventory, type StackAcresInventory } from "./inventory";
+import { isHoeableSoilTile, isWildSoilTile, mapToSoilTile, soilToMapTile } from "./hoeable";
+import { herdKey, herdPlacementProblem, herdSquares, isHerdStock } from "./herd";
+import { FENCE_CAP, FENCE_WOOD_COST, isFenceableMapTile, type FencePiece } from "./fences";
+import { overgrownSoilTile } from "./crop-field-obstacles";
+import {
+  LAND_SWING_ENERGY,
+  landSwingDamage,
+  landClearingProgress,
+  landObstacle,
+  landObstacleStateOf,
+  swingAtLandObstacle,
+  withLandObstacleState,
+  isClearableSector,
+  type ClearingGround,
+  type LandObstacleSnapshot,
+} from "./land-clearing";
 import {
   ENERGY_MAX,
   FISHING_CAST_ENERGY,
+  HUNTING_STALK_ENERGY,
   FOOD_ENERGY,
   applyEnergyDelta,
   energyAt,
@@ -154,6 +174,8 @@ export interface FarmPredictContext {
   capacity: Partial<Record<StackAcresStock, number>>;
   seedStock: SeedStock;
   toolTier: StackAcresToolTier;
+  /** The axe held. Missing reads as the starting axe. */
+  axe?: AxeLevel;
   cutters: readonly StackAcresCutter[];
   sectors: SectorId[];
   upkeep: StackAcresUpkeepState;
@@ -172,10 +194,17 @@ export interface FarmPredictContext {
   /** This profile's placed soil beds, straight off the component's own state.
    *  What `place-soil-tile`/`remove-soil-tile` add to or remove from. */
   soilTiles: readonly SoilTile[];
-  /** Unplaced bags per tier, straight off the component's own state. What
-   *  `place-soil-tile` spends one of -- see ./soil-tiers.ts's own header on
-   *  why a bag and Gold are never the same debit. */
-  soilStock: SoilStock;
+  /** The forage bushes, straight off the component's own state. What
+   *  `gather-forage` reads to know which seed a bush is carrying -- the crop
+   *  is in the snapshot precisely so this guess is the real answer rather
+   *  than a placeholder (./forage.ts's header). */
+  forageNodes: readonly ForageNodeSnapshot[];
+  /** What is still standing on land being cleared. A swing reads the
+   *  obstacle's own swings-left off here so the popup counts down under the
+   *  finger rather than waiting on the round trip. */
+  landObstacles: readonly LandObstacleSnapshot[];
+  /** The fence pieces this farm has put up, by Homestead map square. */
+  fences: readonly FencePiece[];
   /** The processing track, straight off the component's own `processing`
    *  state. Always patched together with `contract` (see `processingPatch`)
    *  because the component applies the four as one unit. */
@@ -206,7 +235,9 @@ export interface FarmStatePatch {
   greenhouseBuilt?: boolean;
   cropFieldsUnlocked?: boolean;
   soilTiles?: SoilTile[];
-  soilStock?: SoilStock;
+  forageNodes?: ForageNodeSnapshot[];
+  landObstacles?: LandObstacleSnapshot[];
+  fences?: FencePiece[];
   contract?: StackAcresContractRow | null;
   inventory?: StackAcresInventory;
   wheatPlots?: StackAcresWheatPlotSnapshot[];
@@ -231,6 +262,18 @@ function debited(ctx: FarmPredictContext, amount: number): PlayerProfile | null 
     ...ctx.profile,
     goldBalance: ctx.unlimitedGold ? ctx.profile.goldBalance : ctx.profile.goldBalance - amount,
   };
+}
+
+/**
+ * Whether a unit is in `state` right now, by the list's own word or by this
+ * device's clock (the reading the map draws). The list only moves when a
+ * response lands, so a crop that ripened since then still says "working" in
+ * it, and a harvest guessed off that alone removed nothing. Either reading
+ * counts, so a phone clock running a little behind never un-ripens a crop the
+ * server already called ready.
+ */
+function isNow(unit: StackAcresUnitSnapshot, state: StackAcresUnitSnapshot["state"], nowMs: number): boolean {
+  return unit.state === state || withLocalClockUnit(unit, nowMs).state === state;
 }
 
 /** Marks an id this browser invented rather than one the server issued.
@@ -332,6 +375,26 @@ function processingPatch(
   };
 }
 
+/** Every obstacle already down, off the snapshots the client holds. */
+function clearedLandIds(landObstacles: readonly LandObstacleSnapshot[]): Set<string> {
+  return new Set(landObstacles.filter((snapshot) => snapshot.cleared).map((snapshot) => snapshot.id));
+}
+
+/** The sector itself, when the swing that just landed was the last one it
+ *  was waiting on. No Gold moves: the land was taken by the work. The Crop
+ *  Fields are not a sector, so clearing them opens nothing. */
+function openedSectorPatch(
+  ctx: FarmPredictContext,
+  ground: ClearingGround,
+  landObstacles: readonly LandObstacleSnapshot[],
+): Pick<FarmStatePatch, "sectors"> {
+  if (!isClearableSector(ground)) return {};
+  const sector = ground;
+  if (ctx.sectors.includes(sector)) return {};
+  if (!landClearingProgress(sector, landObstacles).done) return {};
+  return { sectors: [...ctx.sectors, sector] };
+}
+
 /** Takes what hens and cattle ate off the shelf for a feeding, through `processingPatch`
  *  for the same reason every other shelf change does. */
 function shelfSpentPatch(ctx: FarmPredictContext, plan: ServingPlan): ReturnType<typeof processingPatch> | null {
@@ -373,7 +436,7 @@ export function predictStackAcresAction(
       // Same order the server feeds in: soonest-hungry first, as far as the
       // feed goes. Hens and cattle eat off the shelf first -- see ./feeding.ts.
       const hungry = ctx.units
-        .filter((u) => u.state === "hungry" && stockZone(u.stock) === body.zone)
+        .filter((u) => isNow(u, "hungry", ctx.nowMs) && stockZone(u.stock) === body.zone)
         .sort((a, b) => (a.hungryAt ?? "").localeCompare(b.hungryAt ?? ""));
       const plan = planServings(
         hungry.map((u) => u.stock),
@@ -420,7 +483,7 @@ export function predictStackAcresAction(
     }
     case "collect": {
       const targets = ctx.units.filter(
-        (u) => u.state === "ready" && (!body.unitIds || body.unitIds.includes(u.id)),
+        (u) => isNow(u, "ready", ctx.nowMs) && (!body.unitIds || body.unitIds.includes(u.id)),
       );
       if (targets.length === 0) return null;
       const targetIds = new Set(targets.map((u) => u.id));
@@ -614,26 +677,6 @@ export function predictStackAcresAction(
       if (!profile) return null;
       return { cutters: ownedStackAcresCutters([...ctx.cutters, body.cutter]), profile };
     }
-    case "clear-sector": {
-      const check = sectorClearCheck(body.sector, {
-        unlocked: ctx.sectors,
-        unitCount: ctx.units.length,
-      });
-      if (check.alreadyOpen || !check.ok) return null;
-      const profile = debited(ctx, check.cost);
-      if (!profile) return null;
-      return { sectors: [...ctx.sectors, body.sector], profile };
-    }
-    case "unlock-crop-fields": {
-      const check = cropFieldsUnlockCheck({
-        unlocked: ctx.cropFieldsUnlocked,
-        unitCount: ctx.units.length,
-      });
-      if (check.alreadyOpen || !check.ok) return null;
-      const profile = debited(ctx, check.cost);
-      if (!profile) return null;
-      return { cropFieldsUnlocked: true, profile };
-    }
     case "unlock-synergy-perk": {
       if (ctx.synergyUnlocked.includes(body.archetype)) return null;
       const profile = debited(ctx, SYNERGY_PERKS[body.archetype].unlockCostGold);
@@ -688,9 +731,10 @@ export function predictStackAcresAction(
       return { greenhouseBuilt: true };
     }
     case "place-soil-tile": {
-      const tier = body.tier ?? SOIL_DEFAULT_TIER;
-      const held = ctx.soilStock[tier] ?? 0;
-      if (held < 1) return null;
+      // The same ground the server allows (lib/stackacres/hoeable.ts), so a tap
+      // on the road never flashes a bed the answer then takes away.
+      if (!isHoeableSoilTile(body.tx, body.ty)) return null;
+      if (overgrownSoilTile(body.tx, body.ty, clearedLandIds(ctx.landObstacles))) return null;
       const soil = createSoilMap(ctx.soilTiles);
       // Every slot a crop currently holds, so the new bed's order clears
       // them all -- see `nextSoilOrder` on why max-plus-one over the beds
@@ -698,18 +742,22 @@ export function predictStackAcresAction(
       const claimed = ctx.units
         .map((unit) => unit.soilSlot)
         .filter((slot): slot is number => slot !== null);
-      const result = plantSoilTile(soil, { tx: body.tx, ty: body.ty }, tier, claimed);
+      const result = plantSoilTile(soil, { tx: body.tx, ty: body.ty }, SOIL_DEFAULT_TIER, claimed);
       if (result.kind !== "created") return null;
       return {
         soilTiles: [...ctx.soilTiles, result.tile],
-        soilStock: { ...ctx.soilStock, [tier]: held - 1 },
+        // Breaking ground out in the wild land IS clearing the Crop Fields, and
+        // the server records the flag off this same placement, so the browser
+        // predicts it rather than waiting a round trip. `isWildSoilTile` is the
+        // same check the server makes, so a bed in the yard never claims it.
+        cropFieldsUnlocked:
+          ctx.cropFieldsUnlocked || isWildSoilTile(body.tx, body.ty),
       };
     }
     case "remove-soil-tile": {
       const existing = ctx.soilTiles.find((t) => t.tx === body.tx && t.ty === body.ty);
       if (!existing) return null;
-      // No bag comes back -- a placed tile is a spent sink, not a refundable
-      // one (see soil.ts's own `SOIL_TILE_PRICE_GOLD` doc comment).
+      // Nothing is refunded; breaking ground was free to begin with.
       const soilTiles = ctx.soilTiles.filter((t) => t.tx !== body.tx || t.ty !== body.ty);
       // A crop standing on the lifted bed goes with it -- the same
       // `soilSlotOnTile` question stackacres-service.ts asks server-side
@@ -736,9 +784,14 @@ export function predictStackAcresAction(
         body.ty,
         body.toTx,
         body.toTy,
-        soilTileInCropFieldBeds,
+        isHoeableSoilTile,
       );
       if (plan.kind !== "ok") return null;
+      const cleared = clearedLandIds(ctx.landObstacles);
+      const holding = new Set(plan.moves.map((move) => soilTileKey(move.from.tx, move.from.ty)));
+      if (plan.moves.some(({ to }) => !holding.has(soilTileKey(to.tx, to.ty)) && overgrownSoilTile(to.tx, to.ty, cleared))) {
+        return null;
+      }
       if (!moveSoilTileGroup(soil, plan.moves)) return null;
       // Crop-free on purpose, same as place/remove-soil-tile above: no unit
       // moves here, only the beds -- a crop's `soilSlot` is its bed's own
@@ -832,6 +885,109 @@ export function predictStackAcresAction(
       if (!body.bait) return { energy };
       const inventory = removeFromInventory(ctx.inventory, FISHING_BAIT_ITEM, 1);
       return inventory ? { energy, ...processingPatch(ctx, { inventory }) } : null;
+    }
+    case "bag-quarry": {
+      // Only the energy is predicted; which animal is the server's own roll.
+      const energy = applyEnergyDelta(ctx.energy, -HUNTING_STALK_ENERGY, new Date(ctx.nowMs));
+      return energy ? { energy } : null;
+    }
+    case "place-fence": {
+      // The same refusals the server makes, so a piece never flashes up and
+      // back down: open grass, no bed, no piece already, the cap, and the Wood.
+      if (!isFenceableMapTile(body.tx, body.ty)) return null;
+      if (ctx.fences.some((piece) => piece.tx === body.tx && piece.ty === body.ty)) return null;
+      if (ctx.fences.length >= FENCE_CAP) return null;
+      const bed = mapToSoilTile(body.tx, body.ty);
+      if (ctx.soilTiles.some((tile) => tile.tx === bed.tx && tile.ty === bed.ty)) return null;
+      const inventory = removeFromInventory(ctx.inventory, "wood", FENCE_WOOD_COST);
+      if (!inventory) return null;
+      return { fences: [...ctx.fences, { tx: body.tx, ty: body.ty }], ...processingPatch(ctx, { inventory }) };
+    }
+    case "remove-fence": {
+      if (!ctx.fences.some((piece) => piece.tx === body.tx && piece.ty === body.ty)) return null;
+      return {
+        fences: ctx.fences.filter((piece) => piece.tx !== body.tx || piece.ty !== body.ty),
+        ...processingPatch(ctx, { inventory: addToInventory(ctx.inventory, "wood", FENCE_WOOD_COST) }),
+      };
+    }
+    case "place-animal": {
+      // The server's own refusals, so an animal never lands and lifts back off.
+      const unit = ctx.units.find((u) => u.id === body.unitId);
+      if (!unit || !isHerdStock(unit.stock)) return null;
+      const problem = herdPlacementProblem(body.tx, body.ty, {
+        beds: new Set(ctx.soilTiles.map((tile) => {
+          const { mx, my } = soilToMapTile(tile.tx, tile.ty);
+          return herdKey(mx, my);
+        })),
+        fences: new Set(ctx.fences.map((piece) => herdKey(piece.tx, piece.ty))),
+        animals: herdSquares(ctx.units, unit.id),
+      });
+      if (problem) return null;
+      return { units: ctx.units.map((u) => (u.id === unit.id ? { ...u, mapTx: body.tx, mapTy: body.ty } : u)) };
+    }
+    case "pick-up-animal": {
+      const unit = ctx.units.find((u) => u.id === body.unitId);
+      if (!unit || !isHerdStock(unit.stock)) return null;
+      return { units: ctx.units.map((u) => (u.id === unit.id ? { ...u, mapTx: null, mapTy: null } : u)) };
+    }
+    case "work-land": {
+      // One swing at something standing on land being cleared. Fully
+      // predicted, and it has to be: this is the action a player repeats
+      // dozens of times in a row, so a swing that waited on the server would
+      // make clearing a field feel like filling in a form.
+      const obstacle = landObstacle(body.obstacleId);
+      if (!obstacle) return null;
+      const now = new Date(ctx.nowMs);
+      const damage = landSwingDamage(obstacle.kind, ctx.axe ?? STARTING_AXE_LEVEL);
+      const swing = swingAtLandObstacle(obstacle.kind, landObstacleStateOf(ctx.landObstacles, obstacle), now, damage);
+      if (!swing) return null;
+      // Energy first, same order the server keeps -- a swing nobody has the
+      // energy for never happened, so nothing else here is guessed either.
+      const energy = applyEnergyDelta(ctx.energy, -LAND_SWING_ENERGY, now);
+      if (!energy) return null;
+      const landObstacles = withLandObstacleState(ctx.landObstacles, obstacle, swing.nextState);
+      const inventory =
+        swing.item && swing.quantity > 0 ? addToInventory(ctx.inventory, swing.item, swing.quantity) : ctx.inventory;
+      return {
+        energy,
+        landObstacles,
+        ...processingPatch(ctx, { inventory }),
+        ...openedSectorPatch(ctx, obstacle.ground, landObstacles),
+      };
+    }
+    case "chop-tree": {
+      // Only the energy is guessed, so the bar moves on the swing. Whether it
+      // fells the tree is the server's answer, and the scene holds the tree up
+      // until the blade lands either way.
+      const energy = applyEnergyDelta(ctx.energy, -AXE_SWING_ENERGY, new Date(ctx.nowMs));
+      return energy ? { energy } : null;
+    }
+    case "gather-forage": {
+      // Fully predicted, which almost nothing that yields something else is.
+      // It earns that because nothing is rolled: the bush's snapshot already
+      // names the seed it is carrying, so the count this puts on the shelf
+      // is the count the server will write, not a placeholder that corrects
+      // itself a moment later.
+      const bush = ctx.forageNodes.find((node) => node.nodeId === body.nodeId);
+      if (!bush || !bush.ready) return null;
+      const held = ctx.seedStock[bush.crop] ?? 0;
+      return {
+        seedStock: { ...ctx.seedStock, [bush.crop]: held + FORAGE_SEEDS_PER_PICK },
+        // Picked over right away, so the bush changes under the finger. The
+        // crop advances with it, the same walk `forageCrop` takes on the
+        // server, so a rolled-back guess and a real answer agree on what the
+        // bush will be carrying when it comes back.
+        forageNodes: ctx.forageNodes.map((node) =>
+          node.nodeId === body.nodeId
+            ? {
+                ...node,
+                ready: false,
+                crop: nextForageCrop(node.crop),
+                respawnProgress: 0,
+              }
+            : node,
+        ),
+      };
     }
     case "sell": {
       // Known-insufficient is a real refusal, not a guess -- refuse locally

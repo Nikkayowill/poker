@@ -1,14 +1,14 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { ANTE_UP_GAMES, anteUpWagerCeilingProblem, maxAnteUpWager } from "./ante-up-stakes";
+import { ANTE_UP_GAMES, ANTE_UP_TIER_LADDERS, anteUpStakeProblem, maxAnteUpWager } from "./ante-up-stakes";
 
 /**
  * The per-difficulty wager ceiling this file used to enforce was removed: a
  * solo wager is now bounded only by the player's own balance, same as any
- * other stake in the app. What has to hold now is just that the removal is
- * total -- no game/tier combination has a finite ceiling left, in either the
- * TypeScript check or its DB-side mirror.
+ * other stake in the app. A big stake decides which boards may be played,
+ * never how much may be staked, in either the TypeScript check or its DB-side
+ * mirror.
  */
 
 describe("maxAnteUpWager", () => {
@@ -20,11 +20,15 @@ describe("maxAnteUpWager", () => {
   });
 });
 
-describe("anteUpWagerCeilingProblem", () => {
-  it("never objects to a wager, at any size", () => {
+describe("anteUpStakeProblem", () => {
+  // A big stake picks the board, never the amount: the hardest tier (or a
+  // game with no tiers) takes any stake at all.
+  it("never objects to a stake on the hardest board, at any size", () => {
     for (const game of ANTE_UP_GAMES) {
-      expect(anteUpWagerCeilingProblem(game, null, 0)).toBeNull();
-      expect(anteUpWagerCeilingProblem(game, "expert", 1_000_000_000)).toBeNull();
+      const tiers = ANTE_UP_TIER_LADDERS[game]?.tiers;
+      const hardest = tiers ? tiers[tiers.length - 1] : null;
+      expect(anteUpStakeProblem(game, null, 0)).toBeNull();
+      expect(anteUpStakeProblem(game, hardest, 1_000_000_000)).toBeNull();
     }
   });
 });

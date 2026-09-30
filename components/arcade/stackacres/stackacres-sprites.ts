@@ -60,8 +60,8 @@
  * a different colour is a painter, not another PNG.
  *
  * HOW THEY REACH A CANVAS. Every surface in StackAcres draws a painter into a
- * 2D context -- the Phaser world through `bakeTexture`, the toolbelt and seed
- * strip through `paintIcon`, the lobby card through stackacres-cover-art.tsx.
+ * 2D context -- the Phaser world through `bakeTexture`, the seed strip through
+ * `paintIcon`.
  * So these are exposed the same way: stackacres-art.ts wraps each of these
  * painters so it draws the image once the image is here and its own shapes
  * until then. Nothing at a draw site had to change.

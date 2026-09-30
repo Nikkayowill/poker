@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireRegisteredProfile } from "@/lib/server/api-auth";
 import { sendFriendRequest } from "@/lib/server/friends-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not send that friend request.";
+    const message = publicErrorMessage(error, "Could not send that friend request.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -41,11 +41,10 @@ import { RandomWalk, noiseSource, playVoice, type SynthVoice } from "./synth-voi
 import { respectSilentSwitch } from "./audio-session";
 
 /**
- * The two cues that are recordings rather than synthesis, and the animals.
+ * Every recording the farm plays: two ambience cues, the animals, and the
+ * action sounds that replaced some of the synth voices.
  *
- * Kept small on purpose. Every one of these is a file a phone has to fetch,
- * and each was generated because it is a sound that synthesis does badly: a
- * throat, or resonant timber under load.
+ * Kept small on purpose. Every one of these is a file a phone has to fetch.
  */
 const SAMPLE_FILES = {
   "windmill-creak": "/audio/stackacres/sfx/windmill-creak.mp3",
@@ -54,9 +53,63 @@ const SAMPLE_FILES = {
   "hen-fuss": "/audio/stackacres/sfx/hen-fuss.mp3",
   pig: "/audio/stackacres/sfx/sheep-bleat.mp3",
   cattle: "/audio/stackacres/sfx/cow-moo-near.mp3",
+  // Action recordings from the 400 Sounds Pack, picked by ear against the
+  // synth voices they replace. Trimmed and levelled to about -15dBFS peak,
+  // the same reference the synth action voices are trimmed to.
+  "hoe-crunch": "/audio/stackacres/sfx/hoe-crunch.mp3",
+  "axe-chop": "/audio/stackacres/sfx/axe-chop.mp3",
+  "pick-crack": "/audio/stackacres/sfx/pick-crack.mp3",
+  "pieces-gather": "/audio/stackacres/sfx/pieces-gather.mp3",
+  "seed-pat": "/audio/stackacres/sfx/seed-pat.mp3",
+  "water-splash": "/audio/stackacres/sfx/water-splash.mp3",
+  whoosh: "/audio/stackacres/sfx/whoosh.mp3",
+  "crate-drop": "/audio/stackacres/sfx/crate-drop.mp3",
+  "coins-small": "/audio/stackacres/sfx/coins-small.mp3",
+  "refuse-blip": "/audio/stackacres/sfx/refuse-blip.mp3",
+  "glass-ping": "/audio/stackacres/sfx/glass-ping.mp3",
+  "prestige-music-box": "/audio/stackacres/sfx/prestige-music-box.mp3",
+  "step-floor-1": "/audio/stackacres/sfx/step-floor-1.mp3",
+  "step-floor-2": "/audio/stackacres/sfx/step-floor-2.mp3",
+  "step-floor-3": "/audio/stackacres/sfx/step-floor-3.mp3",
+  "step-floor-4": "/audio/stackacres/sfx/step-floor-4.mp3",
+  // Real grass footfalls (right/left) from Yo Frankie!, CC-BY 3.0, credit
+  // Blender Foundation / Yo Frankie! team. Replaced the "digital_footstep_grass"
+  // take from the 400 Sounds Pack, which still read as a designed game SFX
+  // rather than a foot actually landing in grass.
+  "step-grass-l": "/audio/stackacres/sfx/step-grass-l.mp3",
+  "step-grass-r": "/audio/stackacres/sfx/step-grass-r.mp3",
+  "door-open": "/audio/stackacres/sfx/door-open.mp3",
+  "page-turn": "/audio/stackacres/sfx/page-turn.mp3",
+  "map-rustle": "/audio/stackacres/sfx/map-rustle.mp3",
+  "leaf-rustle": "/audio/stackacres/sfx/leaf-rustle.mp3",
+  "berry-pop": "/audio/stackacres/sfx/berry-pop.mp3",
+  "quest-chime": "/audio/stackacres/sfx/quest-chime.mp3",
+  // The fishing reel and line, cut from CC0 recordings by art/stackacres-td/audio/reel.py. The
+  // loops are WAV so they come round without the click an MP3's padding makes.
+  "reel-slow": "/audio/stackacres/sfx/reel-slow.wav",
+  "reel-fast": "/audio/stackacres/sfx/reel-fast.wav",
+  "line-out": "/audio/stackacres/sfx/line-out.wav",
+  "rod-swish": "/audio/stackacres/sfx/rod-swish.mp3",
 } as const;
 
 type SampleName = keyof typeof SAMPLE_FILES;
+
+const CUE_AND_ANIMAL_SAMPLES = ["windmill-creak", "gate-creak", "hen", "hen-fuss", "pig", "cattle"] as const;
+
+/** A recording that answers a press, as opposed to an ambience cue or an animal. */
+export type FarmSample = Exclude<SampleName, (typeof CUE_AND_ANIMAL_SAMPLES)[number]>;
+
+const FARM_SAMPLES = (Object.keys(SAMPLE_FILES) as SampleName[]).filter(
+  (name): name is FarmSample => !(CUE_AND_ANIMAL_SAMPLES as readonly string[]).includes(name),
+);
+
+/**
+ * How long after start the action recordings are fetched (about 230KB in
+ * all). Late enough to stay out of the boot burst, early enough to be in hand
+ * before most first taps. A press before then asks for its own file and is
+ * silent that once.
+ */
+const FARM_SAMPLE_PREFETCH_MS = 2500;
 
 function isSample(cue: AmbienceCueName): cue is AmbienceCueName & SampleName {
   return cue === "windmill-creak" || cue === "gate-creak";
@@ -64,6 +117,9 @@ function isSample(cue: AmbienceCueName): cue is AmbienceCueName & SampleName {
 
 /** How often the scheduler wakes to look ahead, and how far ahead it looks. */
 const TICK_MS = 250;
+
+/** Gestures a browser lets resume a suspended AudioContext. */
+const UNLOCK_EVENTS = ["pointerdown", "touchend", "keydown"] as const;
 const LOOKAHEAD_S = 0.6;
 
 /**
@@ -142,6 +198,24 @@ class Ambience {
   private muted = false;
   private running = false;
 
+  /**
+   * Wakes the context on the next touch, click or key. The context is built
+   * in an effect after the splash tap, and iOS also parks it whenever the app
+   * goes to the background, and neither can be resumed outside a gesture.
+   * Every sound checks for a running context and skips otherwise, so without
+   * this the whole farm went quiet and stayed quiet.
+   */
+  private readonly unlock = (): void => {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state === "running") return;
+    void ctx.resume().catch(() => {});
+    // iOS only counts the context as unlocked once something plays inside the gesture.
+    const blip = ctx.createBufferSource();
+    blip.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+    blip.connect(ctx.destination);
+    blip.start();
+  };
+
   // -- lifecycle ------------------------------------------------------------
 
   async start(): Promise<void> {
@@ -182,6 +256,11 @@ class Ambience {
     this.applyPlan();
 
     this.timer = setInterval(() => this.tick(), TICK_MS);
+    for (const type of UNLOCK_EVENTS) window.addEventListener(type, this.unlock, { capture: true, passive: true });
+    window.setTimeout(() => {
+      if (this.ctx !== ctx) return;
+      for (const name of FARM_SAMPLES) this.ensureSample(name);
+    }, FARM_SAMPLE_PREFETCH_MS);
     // A context created inside a gesture usually starts running, but Safari
     // can still hand one back suspended; resuming an already-running context
     // is a no-op, so this is unconditional rather than guarded.
@@ -190,6 +269,7 @@ class Ambience {
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
+    for (const type of UNLOCK_EVENTS) window.removeEventListener(type, this.unlock, { capture: true });
     this.timer = null;
     for (const bed of this.beds.values()) this.teardownBed(bed);
     if (this.rainBed) this.teardownBed(this.rainBed);
@@ -257,6 +337,110 @@ class Ambience {
     source.connect(level);
     source.start(ctx.currentTime + 0.005);
     source.onended = () => level.disconnect();
+  }
+
+  /**
+   * Plays one action recording as a foreground answer to a press, through the
+   * same bus as the synth voices. A small pitch spread keeps a repeated tap
+   * (a footstep, a hoe stroke) from sounding like one sample on a loop.
+   */
+  playFarmSample(name: FarmSample, gain = 1, spread = 0.06): void {
+    const ctx = this.ctx;
+    const bus = this.sfxBus;
+    if (!ctx || !bus || this.sfxMuted || ctx.state !== "running") return;
+    const buffer = this.buffers.get(name);
+    if (!buffer) {
+      this.ensureSample(name);
+      return;
+    }
+    const level = ctx.createGain();
+    level.gain.value = gain;
+    level.connect(bus);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = 1 - spread / 2 + Math.random() * spread;
+    source.connect(level);
+    source.start(ctx.currentTime + 0.005);
+    source.onended = () => level.disconnect();
+  }
+
+  /**
+   * A recording held on a loop for as long as an action lasts (the reel), with
+   * its level and speed steerable while it plays. Null when the context is not
+   * running or the file has not arrived yet; the caller just stays quiet that
+   * once, the same as a one-shot with no buffer.
+   */
+  startLoop(name: FarmSample, gain: number, rate: number): FarmLoop | null {
+    const ctx = this.ctx;
+    const bus = this.sfxBus;
+    if (!ctx || !bus || this.sfxMuted || ctx.state !== "running") return null;
+    const buffer = this.buffers.get(name);
+    if (!buffer) {
+      this.ensureSample(name);
+      return null;
+    }
+    const level = ctx.createGain();
+    level.gain.value = 0;
+    level.gain.linearRampToValueAtTime(gain, ctx.currentTime + 0.04);
+    level.connect(bus);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    source.playbackRate.value = rate;
+    source.connect(level);
+    // Started at a random point so two reels in a row never begin on the same click.
+    source.start(ctx.currentTime + 0.005, Math.random() * buffer.duration);
+    let stopped = false;
+    return {
+      set(nextGain: number, nextRate: number) {
+        if (stopped) return;
+        const at = ctx.currentTime;
+        level.gain.setTargetAtTime(nextGain, at, 0.03);
+        source.playbackRate.setTargetAtTime(nextRate, at, 0.05);
+      },
+      stop(fadeS = 0.06) {
+        if (stopped) return;
+        stopped = true;
+        const at = ctx.currentTime;
+        level.gain.cancelScheduledValues(at);
+        level.gain.setValueAtTime(level.gain.value, at);
+        level.gain.linearRampToValueAtTime(0, at + fadeS);
+        source.stop(at + fadeS + 0.02);
+        source.onended = () => level.disconnect();
+      },
+    };
+  }
+
+  /** A soft sine held while something charges, its pitch steered as it fills (the cast's power bar). */
+  startTone(gain: number, hz: number): FarmTone | null {
+    const ctx = this.ctx;
+    const bus = this.sfxBus;
+    if (!ctx || !bus || this.sfxMuted || ctx.state !== "running") return null;
+    const level = ctx.createGain();
+    level.gain.value = 0;
+    level.gain.linearRampToValueAtTime(gain, ctx.currentTime + 0.05);
+    level.connect(bus);
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = hz;
+    osc.connect(level);
+    osc.start();
+    let stopped = false;
+    return {
+      pitch(next: number) {
+        if (!stopped) osc.frequency.setTargetAtTime(next, ctx.currentTime, 0.015);
+      },
+      stop() {
+        if (stopped) return;
+        stopped = true;
+        const at = ctx.currentTime;
+        level.gain.cancelScheduledValues(at);
+        level.gain.setValueAtTime(level.gain.value, at);
+        level.gain.linearRampToValueAtTime(0, at + 0.05);
+        osc.stop(at + 0.07);
+        osc.onended = () => level.disconnect();
+      },
+    };
   }
 
   /** Suspends the whole graph while the tab is in the background. */
@@ -694,7 +878,34 @@ export function playFarmVoice(voice: SynthVoice, gain?: number): void {
   ambience.playAction(voice, gain);
 }
 
+/** Fires one action recording. See ./stackacres-sfx.ts for the intent-named callers. */
+export function playFarmSample(name: FarmSample, gain?: number, spread?: number): void {
+  ambience.playFarmSample(name, gain, spread);
+}
+
 /** Fires one animal recording in the foreground, as an answer to a press. */
 export function playFarmAnimal(kind: "hen" | "pig" | "cattle", gain?: number): void {
   ambience.playAnimal(kind, gain);
+}
+
+/** A running loop from `startFarmLoop`: steer it, then stop it. */
+export interface FarmLoop {
+  set(gain: number, rate: number): void;
+  stop(fadeS?: number): void;
+}
+
+/** A running tone from `startFarmTone`. */
+export interface FarmTone {
+  pitch(hz: number): void;
+  stop(): void;
+}
+
+/** Starts an action recording on a loop. See ./stackacres-sfx.ts for the intent-named callers. */
+export function startFarmLoop(name: FarmSample, gain: number, rate: number): FarmLoop | null {
+  return ambience.startLoop(name, gain, rate);
+}
+
+/** Starts a held tone. See ./stackacres-sfx.ts for the intent-named callers. */
+export function startFarmTone(gain: number, hz: number): FarmTone | null {
+  return ambience.startTone(gain, hz);
 }

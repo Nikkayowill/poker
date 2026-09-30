@@ -15,7 +15,6 @@
  */
 
 import {
-  GRID_SIZE,
   clearWordFillInSlot,
   guessWordFillInCell,
   placeWordFillInWord,
@@ -25,13 +24,16 @@ import {
   wordFillInElapsedMs,
   wordFillInGuessProblem,
   wordFillInPlaceProblem,
+  wordFillInTemplateSize,
   wordFillInView,
   type WordFillInClearProblem,
+  type WordFillInGridKind,
   type WordFillInGuessProblem,
   type WordFillInPlaceProblem,
   type WordFillInRound,
   type WordFillInView,
 } from "./puzzles/word-fill-in";
+import { stakePressure } from "./stake-pressure";
 
 /** The floor for a wager. Restated per game; see ante-up-memory.ts's MIN_ANTE_UP_WAGER for why. */
 export const MIN_ANTE_UP_WAGER = 500;
@@ -41,13 +43,50 @@ export type AnteUpWordFillInTier = "quick" | "marathon";
 export interface AnteUpWordFillInTierConfig {
   readonly timeLimitMs: number;
   readonly multiplier: number;
+  /** Which grids the tier deals: regular 9x9, or the large 11x11 ones. */
+  readonly grid: WordFillInGridKind;
 }
 
-/** Starting numbers, not tuned against real solve rates; retune here. */
+/**
+ * Quick is a regular 9x9 grid of eight to twelve words. Marathon is an 11x11
+ * grid of sixteen words, each long down word crossing five across words.
+ * Marathon's clock here is the Hard one; bigger stakes shorten it, see
+ * MARATHON_CLOCK_BY_PRESSURE.
+ */
 export const ANTE_UP_WORD_FILL_IN_TIERS: Readonly<Record<AnteUpWordFillInTier, AnteUpWordFillInTierConfig>> = {
-  quick: { timeLimitMs: 6 * 60 * 1000, multiplier: 1.4 },
-  marathon: { timeLimitMs: 15 * 60 * 1000, multiplier: 2.2 },
+  quick: { timeLimitMs: 6 * 60 * 1000, multiplier: 1.4, grid: "regular" },
+  marathon: { timeLimitMs: 390 * 1000, multiplier: 2.2, grid: "large" },
 };
+
+/**
+ * Marathon's clock by stake band (under 10k, 10k+, 100k+, 1M+).
+ *
+ * There is no wrong move in this game, so the clock is the only way to lose,
+ * and the bands are set from a solve-time model, not measured play. A median
+ * player places a word every 25s on a 9x9 grid, and each SD of skill is 0.75x
+ * that (18.8s, 14.1s, 10.5s), the usual spread in timed puzzle speed. The 11x11
+ * grid costs 1.25x a word for its extra same-length words. One run varies
+ * around a player's own pace by a lognormal sigma of 0.25.
+ *
+ *   board          clock   median  +1SD  +2SD  +3SD
+ *   Quick 9x9      6:00     90%    99%  100%  100%
+ *   Marathon, 10k+ 6:30     16%    56%   90%   99%
+ *   Marathon, 100k+ 5:00     2%    19%   60%   92%
+ *   Marathon, 1M+  3:50      0%     3%   21%   64%
+ */
+const MARATHON_CLOCK_BY_PRESSURE: readonly [number, number, number, number] = [
+  390 * 1000,
+  390 * 1000,
+  300 * 1000,
+  230 * 1000,
+];
+
+/** The terms a stake actually plays on this tier. Stored on the attempt at open. */
+export function anteUpWordFillInTerms(tier: AnteUpWordFillInTier, wager: number): AnteUpWordFillInTierConfig {
+  const config = ANTE_UP_WORD_FILL_IN_TIERS[tier];
+  if (tier !== "marathon") return config;
+  return { ...config, timeLimitMs: MARATHON_CLOCK_BY_PRESSURE[stakePressure(wager)] };
+}
 
 export function isAnteUpWordFillInTier(value: unknown): value is AnteUpWordFillInTier {
   return value === "quick" || value === "marathon";
@@ -73,13 +112,13 @@ export function startAnteUpWordFillIn(
   seed: number,
   now: Date,
 ): AnteUpWordFillInAttempt {
-  const config = ANTE_UP_WORD_FILL_IN_TIERS[tier];
+  const config = anteUpWordFillInTerms(tier, wager);
   return {
     tier,
     wager,
     multiplier: config.multiplier,
     timeLimitMs: config.timeLimitMs,
-    round: startWordFillInRound(seed),
+    round: startWordFillInRound(seed, config.grid),
     status: "active",
     startedAt: now.toISOString(),
   };
@@ -242,7 +281,7 @@ export function toAnteUpWordFillInSnapshot(
     wager: attempt.wager,
     multiplier: attempt.multiplier,
     status: attempt.status,
-    gridSize: GRID_SIZE,
+    gridSize: wordFillInTemplateSize(attempt.round.templateIndex),
     board: wordFillInView(attempt.round),
     expiresAt: deadline === null ? null : new Date(deadline).toISOString(),
     msRemaining:

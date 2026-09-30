@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ANTE_UP_MAX_MISTAKES,
   ANTE_UP_TIERS,
   anteUpFillProblem,
   anteUpPayout,
@@ -78,6 +79,18 @@ describe("fillAnteUpCell", () => {
     const { attempt: afterRight } = fillAnteUpCell(afterWrong, emptyIndex, right, START);
     expect(afterRight.sudoku.entries[emptyIndex]).toBe(right);
     expect(afterRight.status).toBe("active");
+  });
+
+  it("ends the attempt as a loss on the third wrong digit", () => {
+    let attempt = startAnteUpAttempt("easy", 1000, "seed", START);
+    const empties = attempt.sudoku.puzzle.flatMap((value, index) => (value === 0 ? [index] : []));
+    for (let i = 0; i < ANTE_UP_MAX_MISTAKES; i++) {
+      const index = empties[i];
+      const wrong = (attempt.sudoku.solution[index] % 9) + 1;
+      attempt = fillAnteUpCell(attempt, index, wrong, START).attempt;
+      expect(attempt.status).toBe(i < ANTE_UP_MAX_MISTAKES - 1 ? "active" : "lost");
+    }
+    expect(toAnteUpSnapshot(attempt, { id: "x", version: 1 }, START).maxMistakes).toBe(ANTE_UP_MAX_MISTAKES);
   });
 
   it("wins the moment the last cell is filled correctly", () => {

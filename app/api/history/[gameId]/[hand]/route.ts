@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireRegisteredProfile } from "@/lib/server/api-auth";
 import { getArchivedHand } from "@/lib/server/hand-archive-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -44,7 +45,7 @@ export async function GET(
 
     return NextResponse.json({ hand });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not load that hand.";
+    const message = publicErrorMessage(error, "Could not load that hand.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

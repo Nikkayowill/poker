@@ -1,6 +1,6 @@
 import { defineDuelGame, otherSeat, type DuelOutcome, type DuelSeat } from "./match-contract";
+import { secureRandomInt, shuffleWith, type RandomInt } from "./secure-random";
 import { TRIVIA_QUESTIONS, type TriviaQuestion } from "./trivia-questions";
-import { mulberry32 } from "@/lib/seeded-random";
 
 /**
  * Trivia Showdown: seven questions, both players, one clock.
@@ -21,10 +21,16 @@ import { mulberry32 } from "@/lib/seeded-random";
  * same argument, since hiding the index buys nothing if the client is also
  * holding the table it indexes into.
  *
- * The opponent's chosen answer is redacted on the same schedule. That they
- * have answered is published on purpose: it leaks no information about what
- * they answered, and watching the other lamp light while you are still
- * reading is most of what makes this tense.
+ * The opponent's chosen answer is redacted on the same schedule, and so are
+ * the points it earned: their score only moves on your screen at the reveal,
+ * or a jump in it would say they got it right. That they have answered is
+ * published on purpose: it leaks no information about what they answered,
+ * and watching the other lamp light while you are still reading is most of
+ * what makes this tense.
+ *
+ * The choices are shown in a per-match order drawn from the CSPRNG, so the
+ * bank's own answer positions are not something a player can learn, and the
+ * seed (which is only 31 bits) predicts neither the questions nor the order.
  *
  * The state is timestamps rather than timers because nothing here runs on a
  * clock of its own. A question opens at an instant and closes at a computed
@@ -86,7 +92,7 @@ export const TRIVIA_SPEED_BONUS = 140;
  * choice would silently rescore itself if a question were ever corrected.
  */
 export interface TriviaAnswerRecord {
-  /** Index into the question's choices, 0-3. */
+  /** Which choice as shown on screen, 0-3. */
   choice: number;
   /** When it was locked in, epoch ms. */
   at: number;
@@ -116,6 +122,12 @@ export interface TriviaState {
   scores: number[];
   /** The seat that quit, or null. */
   resignedBy: DuelSeat | null;
+  /**
+   * choiceOrders[question][shown position] is the bank's choice index shown
+   * there. Absent on matches stored before choices were shuffled, which show
+   * them in bank order.
+   */
+  choiceOrders?: number[][];
 }
 
 export type TriviaPhase = "question" | "reveal" | "done";
@@ -125,7 +137,7 @@ export interface TriviaMove {
   type: "answer";
   /** Which question this answers, 0-based. */
   question: number;
-  /** Which choice, 0-3. */
+  /** Which choice as shown on screen, 0-3. */
   choice: number;
 }
 
@@ -178,31 +190,6 @@ export interface TriviaSnapshot {
   history: boolean[][];
 }
 
-/* ------------------------------------------------------------------- rng */
-
-// mulberry32 (imported from lib/seeded-random) is the whole reason
-// `createState` takes a seed. Math.random() would make a match impossible to
-// reproduce in a test and, worse, would put the question order outside
-// anything the server can vouch for. Not cryptographic and does not need to
-// be: the server draws the seed from node:crypto and never sends it, so a
-// client has nothing to run this on.
-
-/** Fisher-Yates over a copy, drawing from `random`. */
-function shuffled<T>(items: readonly T[], random: () => number): T[] {
-  const copy = [...items];
-  for (let i = copy.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(random() * (i + 1));
-    const a = copy[i];
-    const b = copy[j];
-    // Indices are in range by construction; the guard is for tsc, not for us.
-    if (a !== undefined && b !== undefined) {
-      copy[i] = b;
-      copy[j] = a;
-    }
-  }
-  return copy;
-}
-
 /* ----------------------------------------------------------------- lookup */
 
 const BY_ID = new Map(TRIVIA_QUESTIONS.map((question) => [question.id, question]));
@@ -219,6 +206,19 @@ const BY_ID = new Map(TRIVIA_QUESTIONS.map((question) => [question.id, question]
 function questionAt(state: TriviaState, index: number): TriviaQuestion | null {
   const id = state.questionIds[index];
   return id === undefined ? null : BY_ID.get(id) ?? null;
+}
+
+/**
+ * The shown order of a question's choices, as bank indices. Falls back to
+ * bank order for a legacy match, or if the bank entry has since changed
+ * shape and the stored order no longer fits it.
+ */
+function choiceOrder(state: TriviaState, index: number, question: TriviaQuestion): number[] {
+  const identity = question.choices.map((_choice, position) => position);
+  const stored = state.choiceOrders?.[index];
+  if (!stored || stored.length !== identity.length) return identity;
+  const sorted = [...stored].sort((a, b) => a - b);
+  return sorted.every((value, position) => value === position) ? stored : identity;
 }
 
 /* ---------------------------------------------------------------- scoring */
@@ -307,11 +307,16 @@ export const TRIVIA_DUEL = defineDuelGame<TriviaState, unknown, TriviaSnapshot>(
   id: "trivia",
   label: "Trivia",
 
-  createState(seed, now) {
-    const random = mulberry32(seed);
-    const picked = shuffled(TRIVIA_QUESTIONS, random).slice(0, TRIVIA_QUESTION_COUNT);
+  // `seed` is not used: a 31-bit seed can be brute-forced from the first few
+  // questions, which would then give away the rest and their choice order.
+  // `randomInt` is only passed by tests that want a fixed deal.
+  createState(_seed, now, randomInt: RandomInt = secureRandomInt) {
+    const picked = shuffleWith(TRIVIA_QUESTIONS, randomInt).slice(0, TRIVIA_QUESTION_COUNT);
     return {
       questionIds: picked.map((question) => question.id),
+      choiceOrders: picked.map((question) =>
+        shuffleWith(question.choices.map((_choice, position) => position), randomInt),
+      ),
       index: 0,
       openedAt: now,
       revealAt: null,
@@ -345,7 +350,9 @@ export const TRIVIA_DUEL = defineDuelGame<TriviaState, unknown, TriviaSnapshot>(
     if (row[seat]) return { reject: "You have already answered this one." };
 
     const question = questionAt(current, current.index);
-    const correct = question !== null && claim.choice === question.answerIndex;
+    // The claim is a shown position; the answer key is in bank order.
+    const correct =
+      question !== null && choiceOrder(current, current.index, question)[claim.choice] === question.answerIndex;
     const points = correct ? triviaAnswerPoints(current.openedAt, now) : 0;
 
     const nextRow: (TriviaAnswerRecord | null)[] = row.map((existing, entrySeat) =>
@@ -410,8 +417,11 @@ export const TRIVIA_DUEL = defineDuelGame<TriviaState, unknown, TriviaSnapshot>(
 
     const seats: TriviaSeatView[] = [0, 1].map((index) => {
       const answer = row[index] ?? null;
+      const hidden = answer !== null && !revealing && index !== seat;
       const view: TriviaSeatView = {
-        score: current.scores[index] ?? 0,
+        // The other seat's points for the open question wait for the reveal,
+        // the same as their choice: a score that jumps says they were right.
+        score: (current.scores[index] ?? 0) - (hidden ? answer.points : 0),
         // Public for both seats: it says that they answered, never what, and
         // the lamp lighting up across the table is the tension.
         answered: answer !== null,
@@ -428,17 +438,18 @@ export const TRIVIA_DUEL = defineDuelGame<TriviaState, unknown, TriviaSnapshot>(
       return view;
     });
 
+    const order = question ? choiceOrder(current, current.index, question) : [];
     const view: TriviaQuestionView | null = question
       ? {
           category: question.category,
           prompt: question.prompt,
-          choices: [...question.choices],
+          choices: order.map((bankIndex) => question.choices[bankIndex] ?? ""),
         }
       : null;
     // Assigned rather than spread in conditionally, so there is exactly one
     // line to read when asking "when can the answer escape". While the
     // question is live the key is not on the object at all.
-    if (view && revealing) view.answerIndex = question?.answerIndex ?? -1;
+    if (view && revealing) view.answerIndex = question ? order.indexOf(question.answerIndex) : -1;
 
     const remainingMs =
       phase === "done"

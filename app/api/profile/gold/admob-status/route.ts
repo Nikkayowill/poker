@@ -3,6 +3,7 @@ import { admobDailyLimitStatus, admobRewardStatus } from "@/lib/server/admob-ssv
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
     const status = await admobRewardStatus(profile.id, nonce);
     return NextResponse.json(status);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not check your reward status.";
+    const message = publicErrorMessage(error, "Could not check your reward status.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

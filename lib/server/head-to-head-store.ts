@@ -8,7 +8,7 @@ import { adminClient } from "./supabase-admin";
  * The rest of the leaderboard answers "how do I rank against everyone"; this
  * answers "how do I do against her", which is a different question and the
  * only one a friends board can be built from. See
- * supabase/migrations/20260820140000_head_to_head_records.sql for the row
+ * supabase/migrations/20260820184900_head_to_head_records.sql for the row
  * shape and why the rows are stored mirrored (both directions), rather than
  * derived from the match history on every read.
  *

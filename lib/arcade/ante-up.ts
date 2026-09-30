@@ -28,6 +28,7 @@ import {
   type SudokuFillProblem,
   type SudokuRound,
 } from "./puzzles/sudoku";
+import { stakePressure } from "./stake-pressure";
 
 /**
  * The floor for a wager. Zero is always allowed too, for practice with no
@@ -35,15 +36,16 @@ import {
  * floor at all: without one, a multiple farmed from a stream of 1-Gold wagers
  * is indistinguishable from a real one.
  *
- * The ceiling is the other end of the same rule and lives in
- * lib/arcade/ante-up-stakes.ts, since it varies with the board's difficulty
- * rather than being one number per game.
+ * There is no ceiling. A bigger stake has to be played on a harder grid
+ * instead; see lib/arcade/ante-up-stakes.ts.
  */
 export const MIN_ANTE_UP_WAGER = 500;
 
 export interface AnteUpTier {
-  /** How long the clock runs. */
+  /** How long the clock runs for free play and stakes under 10k. */
   timeLimitMs: number;
+  /** How long it runs from 10k up, where each band is set for a stronger player. */
+  rankedTimeLimitMs: number;
   /** What a win pays: wager * multiplier. */
   multiplier: number;
 }
@@ -60,21 +62,52 @@ export interface AnteUpTier {
  *
  * Payouts sit deliberately close to 1x on easy. A guaranteed-solvable easy
  * grid is very nearly a certain win, and anything much above 1x on a certain
- * win prints money at whatever size the player can stake. The ceiling half of
- * that same fix lives in lib/arcade/ante-up-stakes.ts.
+ * win prints money at whatever size the player can stake. The other half of
+ * that fix is that a big stake can't be played on easy at all
+ * (lib/arcade/ante-up-stakes.ts).
  *
- * Starting numbers, not tuned against real solve rates; retune here.
+ * Clocks come from a skill model, not from solve-rate data we don't have yet
+ * (lib/arcade/ante-up-calibration.test.ts holds it and checks the targets).
+ * Solve times are log-normal (sigma 0.3) around a median player's time on our
+ * grids: easy 5, medium 9, hard 16, expert 30 minutes, drawn from published
+ * "average solver" benchmarks scaled to our clue counts and grades. Each
+ * standard deviation of skill is 1.5x faster. Three wrong digits end a grid.
+ *
+ * Win rate on the easiest grid each stake band allows, by player:
+ *
+ *   band (floor grid, clock)   median   +1SD   +2SD   +3SD
+ *   <10k   (easy, 8 min)         91%     98%     99%    100%
+ *   10k+   (medium, 7 min)       19%     68%     96%    99%
+ *   100k+  (hard, 8 min)          1%     16%     64%    95%
+ *   1M+    (expert, 10 min)       0%      1%     16%    64%
+ *
+ * Retune here once real attempts give solve rates.
  */
 export const ANTE_UP_TIERS: Record<SudokuDifficulty, AnteUpTier> = {
-  easy: { timeLimitMs: 6 * 60_000, multiplier: 1.1 },
-  medium: { timeLimitMs: 8 * 60_000, multiplier: 1.6 },
-  hard: { timeLimitMs: 9 * 60_000, multiplier: 2.5 },
-  expert: { timeLimitMs: 10 * 60_000, multiplier: 4 },
+  easy: { timeLimitMs: 8 * 60_000, rankedTimeLimitMs: 8 * 60_000, multiplier: 1.1 },
+  medium: { timeLimitMs: 8 * 60_000, rankedTimeLimitMs: 7 * 60_000, multiplier: 1.6 },
+  hard: { timeLimitMs: 9 * 60_000, rankedTimeLimitMs: 8 * 60_000, multiplier: 2.5 },
+  expert: { timeLimitMs: 10 * 60_000, rankedTimeLimitMs: 10 * 60_000, multiplier: 4 },
 };
+
+/** The clock a grid runs at this stake. Fixed on the attempt when it opens. */
+export function anteUpTimeLimitMs(difficulty: SudokuDifficulty, wager: number): number {
+  const tier = ANTE_UP_TIERS[difficulty];
+  return stakePressure(wager) >= 1 ? tier.rankedTimeLimitMs : tier.timeLimitMs;
+}
+
+/**
+ * Wrong digits a wagered grid survives. The server refuses a wrong digit and
+ * says so, so without a limit a player could try every digit in every empty
+ * cell and win any board. The third wrong digit ends the attempt as a loss,
+ * same idea as Nonogram's mistake budget.
+ */
+export const ANTE_UP_MAX_MISTAKES = 3;
 
 /**
  * `active` is still playing. `won` solved it in time. `lost` is an early
- * resignation, a player who gives up rather than let the clock run out.
+ * resignation, a player who gives up rather than let the clock run out, or
+ * the mistake limit running out.
  * `timed-out` is the clock itself ending it. Lost and timed-out are kept
  * distinct rather than collapsed into one "did not win" because they're
  * different player actions, the same reason a duel's outcome names "Resigned"
@@ -119,7 +152,7 @@ export function startAnteUpAttempt(
     sudoku: startSudokuRound(board, difficulty, now),
     status: "active",
     startedAt: now.toISOString(),
-    expiresAt: new Date(now.getTime() + tier.timeLimitMs).toISOString(),
+    expiresAt: new Date(now.getTime() + anteUpTimeLimitMs(difficulty, wager)).toISOString(),
     finishedAt: null,
   };
 }
@@ -163,12 +196,13 @@ export function fillAnteUpCell(
 
   const { round, correct } = fillSudokuCell(attempt.sudoku, index, value, now);
   const won = round.status === "solved";
+  const outOfMistakes = !correct && round.mistakes >= ANTE_UP_MAX_MISTAKES;
   return {
     attempt: {
       ...attempt,
       sudoku: round,
-      status: won ? "won" : attempt.status,
-      finishedAt: won ? now.toISOString() : attempt.finishedAt,
+      status: won ? "won" : outOfMistakes ? "lost" : attempt.status,
+      finishedAt: won || outOfMistakes ? now.toISOString() : attempt.finishedAt,
     },
     correct,
   };
@@ -204,10 +238,13 @@ export interface AnteUpSnapshot {
   puzzle: number[];
   entries: number[];
   mistakes: number;
+  maxMistakes: number;
   startedAt: string;
   expiresAt: string;
   /** Milliseconds left on the clock, floored at 0. What the countdown reads. */
   msRemaining: number;
+  /** The whole clock this attempt opened with. Read off its own deadline, so old attempts have it too. */
+  timeLimitMs: number;
   /**
    * Milliseconds since the attempt started: live and growing while active,
    * frozen at `finishedAt` once it isn't. Same shape as Minesweeper's and
@@ -233,9 +270,11 @@ export function toAnteUpSnapshot(
     puzzle: [...attempt.sudoku.puzzle],
     entries: [...attempt.sudoku.entries],
     mistakes: attempt.sudoku.mistakes,
+    maxMistakes: ANTE_UP_MAX_MISTAKES,
     startedAt: attempt.startedAt,
     expiresAt: attempt.expiresAt,
     msRemaining: Math.max(0, Date.parse(attempt.expiresAt) - now.getTime()),
+    timeLimitMs: Math.max(0, Date.parse(attempt.expiresAt) - Date.parse(attempt.startedAt)),
     elapsedMs: Math.max(
       0,
       (attempt.finishedAt ? Date.parse(attempt.finishedAt) : now.getTime()) - Date.parse(attempt.startedAt),

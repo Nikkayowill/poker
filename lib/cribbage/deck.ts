@@ -1,17 +1,13 @@
 /**
- * The deck and the one seeded RNG that deals every hand of a match.
+ * The deck, and the shuffle every cribbage deal goes through.
  *
- * A cribbage match runs an unbounded number of deals (however many it takes
- * to reach 121), unlike Word Race's fixed five rounds, so the state can't
- * pre-generate every deal up front the way createState(seed, now) does
- * there. Instead the mulberry32 accumulator itself (`rngState` on
- * CribbageState) is carried in the state and advanced one step at a time,
- * keeping the same promise the contract makes: nothing here ever calls
- * Math.random(), a match can be replayed from its stored row, and the
- * client is handed no way to predict what is coming.
+ * The shuffle takes a RandomInt rather than a seed: the engine hands it the
+ * CSPRNG at the moment of each deal, and tests hand it a seeded one. Deals
+ * used to come from a mulberry32 accumulator carried on the state, which a
+ * player could reconstruct from the hands a count reveals.
  */
 
-import { mulberry32Step } from "@/lib/seeded-random";
+import type { RandomInt } from "@/lib/game/deck";
 import type { Card, Rank, Suit } from "./types";
 
 const SUITS: Suit[] = ["S", "H", "D", "C"];
@@ -25,15 +21,12 @@ export function standardDeck(): Card[] {
   return deck;
 }
 
-/** Fisher-Yates over a fresh copy, returning the shuffled deck and the RNG's next state. */
-export function shuffle(deck: Card[], rngState: number): [Card[], number] {
+/** Fisher-Yates over a fresh copy. */
+export function shuffleDeck(deck: readonly Card[], randomInt: RandomInt): Card[] {
   const cards = [...deck];
-  let a = rngState;
   for (let i = cards.length - 1; i > 0; i -= 1) {
-    const [next, value] = mulberry32Step(a);
-    a = next;
-    const j = Math.floor(value * (i + 1));
+    const j = randomInt(i + 1);
     [cards[i], cards[j]] = [cards[j], cards[i]];
   }
-  return [cards, a];
+  return cards;
 }

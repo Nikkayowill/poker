@@ -9,7 +9,7 @@ import {
 } from "./achievement-store";
 import { awardCosmetic, listOwnedCosmetics } from "./cosmetics-store";
 import { ensureProfile } from "./profile-store";
-import { awardWager } from "./progression-store";
+import { recordSoloResult } from "./solo-earnings-store";
 import { recordHandStats } from "./stats-store";
 
 /** Same shortcut as avatar-unlocks.test.ts: a real createGame() table with
@@ -168,23 +168,34 @@ describe("checkAchievements against stat-sourced metrics", () => {
 });
 
 describe("checkAchievements against the live-sourced rank metric", () => {
-  it("unlocks a level achievement the moment awardWager crosses it", async () => {
+  it("unlocks a tier achievement the moment a solo result reaches it", async () => {
     const { profileId } = await newPlayer("Climber");
 
-    // xpToReachLevel(10) = 250 * 9 * 10 / 2 = 11,250 XP; GOLD_PER_XP is 10,
-    // so 112,500 Gold staked in one wager crosses level 10 outright.
-    // progression-store.ts's awardWager already wires checkAchievements on
-    // any level-up, so this exercises the real call site, not a mock of it.
-    await awardWager(profileId, null, 112_500);
+    // Silver starts at 2,500 points, and a point is 20 Gold of weighted net
+    // earnings at band 0, so a 9,000 stake that pays 240,000 (231,000 net,
+    // 11,550 points) reaches Silver outright. solo-earnings-store.ts's
+    // recordSoloResult wires checkAchievements on any tier-up, so this
+    // exercises the real call site, not a mock of it.
+    await recordSoloResult(profileId, null, {
+      game: "sudoku",
+      correlationId: `test:${profileId}:big-win`,
+      wager: 9_000,
+      payout: 240_000,
+    });
 
     const achievement = findAchievement(await getAchievementsView(profileId), "level_10");
     expect(achievement.unlocked).toBe(true);
     expect(achievement.unlockedAt).not.toBeNull();
   });
 
-  it("leaves a level achievement locked below its threshold", async () => {
+  it("leaves a tier achievement locked below its threshold", async () => {
     const { profileId } = await newPlayer("Newcomer");
-    await awardWager(profileId, null, 1_000);
+    await recordSoloResult(profileId, null, {
+      game: "sudoku",
+      correlationId: `test:${profileId}:small-win`,
+      wager: 1_000,
+      payout: 1_500,
+    });
 
     expect(findAchievement(await getAchievementsView(profileId), "level_10").unlocked).toBe(false);
   });

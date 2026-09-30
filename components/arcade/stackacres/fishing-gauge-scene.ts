@@ -41,6 +41,7 @@ import {
   type FishingGaugeState,
 } from "@/lib/stackacres/fishing-gauge";
 import type { FishSpecies } from "@/lib/stackacres/fishing";
+import { reelSpeed } from "@/lib/audio/stackacres-sfx";
 import { RAMPS, hex } from "./art-palette";
 
 export const FISHING_GAUGE_SCENE_KEY = "stackacres-fishing";
@@ -349,6 +350,9 @@ export class FishingGaugeScene extends Phaser.Scene {
   override update(_time: number, delta: number): void {
     if (!this.resolved) {
       this.state = stepFishingGauge(this.state, delta, this.holding, this.options.random ?? Math.random);
+      // The reel the world started on the bite: cranked hard while the player
+      // holds to lift the net, back to a slow click when they let go.
+      reelSpeed(this.holding ? 1 : 0.2);
       if (this.state.phase !== "playing") this.resolve(this.state.phase);
     }
     this.draw();

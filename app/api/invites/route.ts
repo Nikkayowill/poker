@@ -5,6 +5,7 @@ import { getStoredGame } from "@/lib/server/game-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
 import { createTableInvite } from "@/lib/server/table-invite-store";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not send that invite.";
+    const message = publicErrorMessage(error, "Could not send that invite.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -30,7 +30,12 @@
  * processed goods make it the common case rather than the odd one.
  */
 
+import { STACKACRES_STOCK, isLivestock, type StackAcresStock } from "./catalogue";
+import { STACKACRES_YIELDS } from "./items";
+import type { StackAcresInventory } from "./inventory";
 import type { MachineProcessedItem } from "./machine-items";
+import type { MachineKind } from "./machines";
+import { RECIPE_CATALOGUE, recipesForMachine } from "./recipes";
 
 export interface ContractDef {
   item: MachineProcessedItem;
@@ -42,11 +47,10 @@ export interface ContractDef {
 /**
  * The rungs a contract is drawn from.
  *
- * FLOUR is priced off seed: a Mill turns 3 Wheat (a few Gold of seed, at
- * WHEAT_SEED_COST) into 1 Flour, so a contract asking for a handful of Flour
- * has to clear what growing and milling it actually cost -- the same "never
- * pay less than a tier's net" sanity check ./items.ts's `netPerCycle` runs
- * for stock.
+ * FLOUR pays 1.3x its Sell price, not a multiple of seed. It used to pay up
+ * to 35x the seed cost, and with no cooldown between orders that was a money
+ * printer. A Mill turns 3 Wheat into 1 Flour, so the rungs still clear what
+ * growing and milling it cost.
  *
  * CHEESE AND CLOTH are priced off something stricter, because their raw
  * materials are not seed but FORGONE HARVEST GOLD. Milk and wool have a price
@@ -63,9 +67,9 @@ export interface ContractDef {
  * would just be a bad draw the player is stuck with.
  */
 export const CONTRACT_RUNGS: readonly ContractDef[] = [
-  { item: "flour", quantity: 2, goldReward: 140, influenceReward: 10 },
-  { item: "flour", quantity: 4, goldReward: 300, influenceReward: 25 },
-  { item: "flour", quantity: 8, goldReward: 640, influenceReward: 60 },
+  { item: "flour", quantity: 2, goldReward: 42, influenceReward: 10 },
+  { item: "flour", quantity: 4, goldReward: 84, influenceReward: 25 },
+  { item: "flour", quantity: 8, goldReward: 168, influenceReward: 60 },
   { item: "cheese", quantity: 2, goldReward: 1_720, influenceReward: 60 },
   { item: "cheese", quantity: 4, goldReward: 3_430, influenceReward: 130 },
   { item: "cloth", quantity: 3, goldReward: 1_190, influenceReward: 40 },
@@ -90,8 +94,76 @@ export interface StackAcresContractRow {
   quantity: number;
   goldReward: number;
   influenceReward: number;
-  status: "open" | "fulfilled";
+  status: StackAcresContractStatus;
   createdAt: string;
+}
+
+/**
+ * Three terminal states, not two.
+ *
+ * `passed` is the release valve on a board that is one slot wide and has no
+ * cancel: a rung the farm can make but the player does not want would
+ * otherwise sit there until it was filled. It is capped at one per UTC day
+ * (`contractPassSpent` below), because an uncapped pass is a reroll button
+ * and the single slot exists precisely to stop the board becoming an
+ * arbitrage puzzle.
+ */
+export type StackAcresContractStatus = "open" | "fulfilled" | "passed";
+
+export function isStackAcresContractStatus(value: string): value is StackAcresContractStatus {
+  return value === "open" || value === "fulfilled" || value === "passed";
+}
+
+/** One a day. Named rather than inlined so the rule reads the same in the
+ *  service, the sheet and the tests. */
+export const CONTRACT_PASSES_PER_DAY = 1;
+
+/**
+ * Whether today's pass is already gone.
+ *
+ * Takes the day strings rather than dates so the caller owns the clock, the
+ * same posture every other timed rule in StackAcres takes. `lastPassDay` is
+ * null for a player who has never passed one.
+ */
+export function contractPassSpent(lastPassDay: string | null, today: string): boolean {
+  return lastPassDay !== null && lastPassDay === today;
+}
+
+/**
+ * The goods this farm can really turn out right now: a machine for the recipe AND
+ * every input within reach. A machine alone is not enough. A Dairy on a farm with no
+ * cattle would be handed a Cheese order it can never fill, and with one open contract
+ * and one pass a day that is a stuck board (see the header).
+ *
+ * An input is within reach when the farm already holds some, when it is a crop's
+ * produce (seed can always be had), when a kind of livestock the farm owns yields it,
+ * or when another recipe the farm can run makes it. That last one is why this runs
+ * to a fixed point: Cake needs Flour, and Flour needs a Mill.
+ */
+export function contractableItems(farm: {
+  machineKinds: readonly MachineKind[];
+  ownedStocks: readonly StackAcresStock[];
+  inventory: StackAcresInventory;
+}): MachineProcessedItem[] {
+  const reachable = new Set<string>();
+  for (const stock of STACKACRES_STOCK) if (!isLivestock(stock)) reachable.add(STACKACRES_YIELDS[stock].item);
+  for (const stock of farm.ownedStocks) if (isLivestock(stock)) reachable.add(STACKACRES_YIELDS[stock].item);
+  for (const [item, quantity] of Object.entries(farm.inventory)) if ((quantity ?? 0) > 0) reachable.add(item);
+
+  const recipes = [...new Set(farm.machineKinds)].flatMap((kind) => recipesForMachine(kind));
+  const made = new Set<MachineProcessedItem>();
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const id of recipes) {
+      const recipe = RECIPE_CATALOGUE[id];
+      if (made.has(recipe.output.item)) continue;
+      if (!recipe.inputs.every((input) => reachable.has(input.item))) continue;
+      made.add(recipe.output.item);
+      reachable.add(recipe.output.item);
+      grew = true;
+    }
+  }
+  return [...made];
 }
 
 /** A source of numbers in [0, 1). Injected so a test can make it boring --

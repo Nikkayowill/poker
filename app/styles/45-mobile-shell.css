@@ -36,53 +36,11 @@
    file only stopped ADDING its own float on top of the inset (see
    .mshell-nav's `bottom` below) -- that was the other half.
 
-   AND THE BAND UNDER THE PILL IS A SEPARATE BUG, OUTSIDE THIS DOCUMENT
-   (2026-09-07). Read this before writing any CSS for it, because it cannot
-   be fixed in CSS.
-
-   The report: on an installed iOS PWA's cold launch a flat violet band sits
-   across the bottom of the screen, under the tab pill on the lobby and under
-   the legal row on the sign-in page. Rotating to landscape clears it for the
-   rest of the session. It survived the --safe-bottom cap, the canvas repaint
-   in 02-app-shell.css and the fixed-wash overshoot below.
-
-   It survived them because none of them can reach it. Measured off a screen
-   recording (2026-09-07, iPhone at 390x844, sampled per row):
-
-     - The band is dead flat and full width, and IDENTICAL on the lobby and
-       the sign-in page even though those two screens paint completely
-       different room gradients. Nothing in the document is that indifferent
-       to which screen it is on.
-     - It reads #150a2b -- the manifest's own background_color -- and NOT the
-       #241530 the document paints its own canvas (02-app-shell.css). So the
-       canvas is not what is showing.
-     - It cuts in at exactly y=797 of 844 on both screens.
-     - The tab pill is CLIPPED mid-body at that same line, flat-bottomed with
-       its rounded corner gone. That is the tell. The pill is laid out where
-       a full 844px viewport puts it; something is cutting the last 47px off
-       afterwards.
-
-   So the web view's FRAME is about 47px shorter than the viewport the
-   document is given, and iOS fills the difference with the manifest colour.
-   The page is laid out correctly and the bottom of it is simply not on
-   screen. `--vp-short` (components/shell/viewport-fit.tsx) reads 0 here and
-   is right to: innerHeight already is 844. There is no API that reports
-   "my frame is smaller than my viewport", so there is nothing to measure and
-   nothing to correct.
-
-   What was done instead: app/manifest.ts's background_color now matches
-   --brand-room-floor, so the band is the same colour as the room's own
-   bottom edge and stops being visible. The 47px is still lost until a
-   rotation makes WebKit re-frame the view, and the pill's bottom edge is
-   still clipped during that window. If that clipping ever needs fixing it is
-   a native/manifest problem, not a stylesheet one -- do not spend a ninth
-   pass on `bottom`, `svh`, reflows or safe-area insets here.
-
-   `app/debug/viewport-launch` and components/debug/viewport-probe.tsx were
-   built for the short-viewport theory. They have now served their purpose --
-   the recording answered the question they were built to answer -- so delete
-   both along with the probe's mount in app/layout.tsx on the next pass
-   through this area.
+   THE BAND UNDER THE PILL (fixed 2026-09-22). The flat violet strip across
+   the bottom of the installed iOS app was WebKit bug 301108: with a
+   black-translucent status bar and viewportFit "cover", iOS 26 sizes the app
+   47px short of the screen until a rotation. No CSS reaches that strip, so
+   app/layout.tsx asks for the "default" status bar style instead.
    =========================================================================
    Turns on at max-width 600px, the same width every other mobile rule in this
    app already uses (`--lobby-header-h` drops to 68px there, `.hub-grid` goes
@@ -310,92 +268,162 @@
     gap: 10px;
   }
 
-  /* ---- the poker hero -------------------------------------------------- */
+  /* ---- the rails ------------------------------------------------------- */
 
-  /* Dark card, gold rim, real chips. The felt plate was tried here first and
-     does not work at this size: `table-mobile.webp` is a 1:2 portrait oval, so
-     anything wide enough to sit behind the type crops down to an unreadable
-     arc of rail. The fanned chip cluster reads as poker instantly, carries the
-     gold the rest of the card is already using, and brings no green with it. */
-  .mshell-hero {
-    position: relative;
-    isolation: isolate;
-    overflow: hidden;
+  /* Sideways rows that bleed to the pane edge, so the next card peeks in and
+     reads as scrollable. The shell's pager ignores drags that start in one
+     (HORIZONTAL_SCROLLER in mobile-shell.tsx). */
+  .mshell-rail {
+    display: flex;
+    gap: 10px;
+    margin-inline: -16px;
+    padding: 2px 16px 6px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 16px;
+    scrollbar-width: none;
+  }
+  .mshell-rail::-webkit-scrollbar { display: none; }
+  .mshell-rail > * { flex: none; scroll-snap-align: start; }
+
+  .mshell-section-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     border: 0;
-    border-radius: var(--radius-2xl);
-    padding: 0;
-    text-align: left;
-    background-color: var(--brand-ink-lift);
-    background-image: linear-gradient(158deg, #262f42 0%, #171c27 58%, #150a2b 100%);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, .08),
-      inset 0 0 0 1px rgba(255, 210, 63, .26),
-      0 16px 38px rgba(0, 0, 0, .5);
+    background: transparent;
+    color: var(--neon-muted);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    touch-action: manipulation;
   }
 
-  .mshell-hero-art {
-    position: absolute;
-    z-index: -1;
-    top: -14px;
-    right: -22px;
-    width: 122px;
-    height: 122px;
-    background-image: url("/chips/cluster-fanned.webp");
-    background-repeat: no-repeat;
-    background-position: center;
-    background-size: contain;
-    /* Tipped off-axis so it reads as chips dropped on the card rather than an
-       icon centred in a box. */
-    transform: rotate(-14deg);
-    filter: drop-shadow(0 12px 26px rgba(0, 0, 0, .6));
+  /* One height for every card in the Play row. */
+  .mshell-play-card {
+    width: 132px;
+    height: 152px;
+    color: inherit;
+    text-decoration: none;
   }
 
-  /* A warm rake of light off the top-right corner, so the chips have a source
-     and the gold rim has a reason. */
-  .mshell-hero::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -2;
-    pointer-events: none;
-    background-image: radial-gradient(110% 86% at 92% -10%, rgba(255, 210, 63, .22), transparent 60%);
+  /* Hold'em is the widest card. A faint felt glow sits behind the figure so
+     the green is a light on the violet, not a panel. */
+  .mshell-play-holdem {
+    display: flex;
+    width: 268px;
+    background:
+      radial-gradient(150px 130px at 84% 78%, rgba(22, 79, 58, .9), rgba(22, 79, 58, 0) 72%),
+      linear-gradient(180deg, var(--neon-ground-lift-2), var(--neon-ground) 82%);
   }
-
-  .mshell-hero-body {
+  .mshell-play-body {
     position: relative;
+    z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 6px;
-    padding: 18px 18px 16px;
+    gap: 3px;
+    width: 64%;
+    padding: 14px 0 14px 14px;
   }
-
-  .mshell-hero-kicker { color: rgba(246, 201, 74, .82); }
-
-  .mshell-hero-name,
-  .mshell-hero-kicker,
-  .mshell-hero-meta {
-    /* Clear of the chips in the top-right corner. */
-    padding-right: 88px;
-  }
-
-  .mshell-hero-name {
-    display: block;
+  .mshell-play-name {
     color: #f7f2e4;
     font-family: Georgia, "Times New Roman", serif;
-    font-size: 30px;
+    font-size: 20px;
     font-weight: 600;
     letter-spacing: -.02em;
-    line-height: 1.02;
+    line-height: 1.1;
+  }
+  .mshell-play-meta {
+    color: #93a1bb;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .mshell-play-figure {
+    position: absolute;
+    right: -4px;
+    bottom: 0;
+    height: 138px;
+    width: auto;
+    pointer-events: none;
+    filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .55));
+  }
+  /* Shape and gold come from 55-ante-up-neon.css; this only sizes it for the
+     card. The label can wrap while a session is starting. */
+  .mshell-play-cta {
+    width: auto;
+    height: auto;
+    min-height: 40px;
+    margin-top: auto;
+    padding: 8px 14px;
+    font-size: 14px;
+    text-align: left;
   }
 
-  .mshell-hero-meta {
-    display: block;
-    margin-bottom: 12px;
-    color: #9aa8c0;
-    font-size: 12.5px;
-    line-height: 1.45;
+  .mshell-play-mid {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 2px;
+    padding: 12px;
   }
+  button.mshell-play-mid { font: inherit; text-align: left; cursor: pointer; touch-action: manipulation; }
+  .mshell-play-mid .mshell-premium-badge { align-self: flex-start; }
+  .mshell-play-art {
+    width: 64px;
+    height: 64px;
+    margin-bottom: auto;
+    image-rendering: pixelated;
+  }
+  .mshell-play-mid strong,
+  .mshell-game-card strong {
+    color: #eef2f8;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.15;
+  }
+  .mshell-play-mid small {
+    color: #93a1bb;
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  /* An arcade game: its board on a dark screen, then name and kind. */
+  .mshell-game-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 118px;
+    padding: 8px 8px 10px;
+    color: inherit;
+    text-decoration: none;
+    touch-action: manipulation;
+  }
+  .mshell-play-row .mshell-game-card { width: 132px; height: 152px; }
+  .mshell-play-row .mshell-game-screen { flex: 1; min-height: 0; aspect-ratio: auto; }
+  .mshell-game-screen {
+    position: relative;
+    display: grid;
+    place-items: center;
+    aspect-ratio: 1;
+    overflow: hidden;
+    border-radius: var(--radius-sm);
+    background: var(--neon-ground);
+    box-shadow: inset 0 0 0 1px rgba(155, 63, 240, .3);
+  }
+  /* The previews are drawn for a 34px slot, so they are scaled up to fill a
+     screen this size. */
+  .mshell-game-screen .game-preview { transform: scale(1.3); }
+  .mshell-game-kind {
+    color: var(--neon-muted-2);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  .mshell-game-kind-duel { color: var(--neon-yellow); }
 
   /* ---- the one saturated action --------------------------------------- */
 
@@ -462,11 +490,9 @@
     line-height: 1.35;
   }
 
-  /* Stands in for a lucide icon in the row's leading slot -- the StackAcres
-     wordmark itself (components/brand/stackacres-logo.tsx), decorative at
-     this size rather than legible; the bold "StackAcres" beside it carries
-     the name. */
-  .mshell-stackacres-logo { flex-shrink: 0; width: 58px; height: auto; }
+  /* The StackAcres badge in the row's leading slot; the bold "StackAcres"
+     beside it carries the name. Shown under its drawn size, so it's smoothed. */
+  .mshell-stackacres-logo { flex-shrink: 0; width: 54px; height: auto; }
   .mshell-stackacres-soon {
     color: #93a1bb;
     font-size: 10px;
@@ -539,11 +565,30 @@
 
   .mshell-tile svg { color: var(--brand-gold-light); }
 
+  /* Icon beside the text instead of stacked above it, so the Play tab's
+     utility tiles take one line of height each. */
+  .mshell-tile-compact {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    min-height: 0;
+    padding: 12px;
+  }
+  .mshell-tile-compact svg { flex: none; }
+  .mshell-tile-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+  .mshell-code-form { padding: 10px; }
+
   /* Chrome is borderless, so the pressed/hover state is the accent ring plus
      its glow rather than a border appearing out of nowhere. */
   .mshell-tile:active,
   .mshell-row:active,
-  .mshell-hero:active {
+  .mshell-play-mid:active,
+  .mshell-game-card:active {
     transform: scale(.985);
   }
 
@@ -654,9 +699,6 @@
        reporting no inset, which is what keeps it reading as floating on
        Android and on a narrow desktop window. */
     bottom: max(var(--safe-bottom), 20px);
-    /* Same correction and the same reasoning as .entry-footer's in
-       04-lobby.css -- a transform, not a negative offset. */
-    transform: translateY(var(--vp-short));
     z-index: var(--z-status-overlay);
     padding: 0 4px;
     border-radius: var(--radius-pill);
@@ -768,13 +810,41 @@
       0 2px 8px rgba(255, 210, 63, .45);
   }
 
+  /* Rank card: the rank strip's look as a full-width button. */
+  .rankup-card {
+    width: 100%;
+    margin-bottom: 10px;
+    border: 0;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .rankup-card:active { transform: scale(.985); }
+  .rankup-chevron { flex: 0 0 auto; color: var(--brand-gold); }
+  .skeleton-rankup { display: block; height: 82px; margin-bottom: 10px; border-radius: var(--radius-card); }
+
+  /* Compact tag on the StackAcres row. */
+  .mshell-premium-badge {
+    flex: 0 0 auto;
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: rgba(255, 210, 63, .14);
+    color: var(--brand-gold);
+    font-size: 9px;
+    font-weight: 650;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  button.mshell-row { width: 100%; border: 0; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+
   /* ---- motion opt-out --------------------------------------------------- */
 
   @media (prefers-reduced-motion: reduce) {
     .mshell-track-settling { transition: none; }
     .mshell-tile:active,
     .mshell-row:active,
-    .mshell-hero:active,
+    .mshell-play-mid:active,
+    .mshell-game-card:active,
     .mshell-primary:not(:disabled):active,
     .mshell-nav-item:active .mshell-nav-icon { transform: none; }
   }

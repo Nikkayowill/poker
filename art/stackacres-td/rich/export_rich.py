@@ -17,6 +17,7 @@ Differences from the DB16 export:
   drop leaves.
 """
 
+import itertools
 import json
 import os
 import shutil
@@ -39,48 +40,252 @@ import decor  # noqa: E402
 import export as rig_export  # noqa: E402
 import extras  # noqa: E402
 import interiors  # noqa: E402
-import fold  # noqa: E402
 import homestead  # noqa: E402
-import mine  # noqa: E402
-import oak  # noqa: E402
-import coast  # noqa: E402
-import townsquare  # noqa: E402
 import kit  # noqa: E402
-import oldfields  # noqa: E402
-import pasture  # noqa: E402
+import fence_pieces  # noqa: E402
+import lpc_ground  # noqa: E402
+import lpc_decor  # noqa: E402
+import lpc_props  # noqa: E402
+import lpc_trees  # noqa: E402
 import portraits  # noqa: E402
 import props  # noqa: E402
+import ripe_crops  # noqa: E402
 import scene  # noqa: E402
 import sprites  # noqa: E402
 import terrain  # noqa: E402
+import water_film  # noqa: E402
+import area as area_mod  # noqa: E402
 from area import T  # noqa: E402
 from pal import Canvas, hash2  # noqa: E402
 
-PLAYABLE = [homestead, oldfields, fold, pasture, coast, oak, mine, townsquare]
+PLAYABLE = [homestead]
 # Rooms walked into through a Homestead door; drawn only by rich/, so they skip the DB16 sprite patching.
 INTERIORS = [SimpleNamespace(__name__="barn", build=interiors.barn),
              SimpleNamespace(__name__="workshop", build=interiors.workshop),
-             SimpleNamespace(__name__="farmhouse", build=interiors.house)]
+             SimpleNamespace(__name__="farmhouse", build=interiors.house),
+             SimpleNamespace(__name__="grocery", build=interiors.grocery)]
 TAP_CLEARANCE = 24   # map px of open space critters keep around anything a player taps
 # Light points in a tagged prop's own sprite pixels: where its windows and lamps are. The barn and the workshop
 # carry theirs on their sprites (buildings.py), since their tags are also on the counter and the bench inside.
 LIGHTS = {}
 
 
-# A straw mat outside each door on the Homestead: (door centre x, mat top y, width). Laid into the ground picture
-# after it is drawn, and the same step is what patched the committed ground-*.png.
-DOORMATS = {"homestead": [(360, 151, 32), (488, 151, 24)]}
+# A straw mat outside each door: (door centre x, mat top y, width), laid into the ground picture after it is drawn.
+# The Homestead's buildings stand on porches and ramps of their own now, so it has none.
+DOORMATS = {}
 
 
-def lay_doormats(img, area_name):
+def lay_doormats(img, area_name, scale=1):
     for cx, top, w in DOORMATS.get(area_name, ()):
         mat = interiors.doormat(w).convert("RGBA")
-        img.paste(mat, (cx - w // 2, top), mat)
+        if scale != 1:
+            mat = mat.resize((mat.width * scale, mat.height * scale), Image.NEAREST)
+        img.paste(mat, ((cx - w // 2) * scale, top * scale), mat)
     return img
+
+
+HOEABLE_TS = os.path.join(rig_export.REPO, "lib", "stackacres", "homestead-ground.ts")
+
+
+def write_hoeable(area, ground, data):
+    """Which Homestead squares the hoe can break, as a TypeScript module the SERVER imports.
+
+    "Hoe the grass anywhere" is a fact only the map knows: the game logic has no
+    idea where the pond is or what the barn stands on. Rather than let the server
+    take the tapped square on trust, the map writes the answer down here, once,
+    from the same picture the player sees -- a square is hoeable when it is
+    grass and nothing stands on it. The server and the scene both read this, so
+    they can never disagree about where a bed may go.
+
+    Grass is the same per-tile call the ground itself is painted from
+    (`lpc_ground.tile_materials`), so a square that LOOKS like road is road here
+    too. What stands on it is the map's own blocked list plus every prop's
+    footprint, the same two sets the engine walks the farmer against.
+    """
+    names = ["grass"] + terrain.ORDER
+    tiles = lpc_ground.tile_materials(ground.owner, names, area.w, area.h)
+    blocked = {tuple(b) for b in data["blocked"]}
+    for prop in data["props"]:
+        blocked.update(tuple(b) for b in prop.get("blocks", ()))
+    # Where the farmer can walk, before anything a tap opens is fenced off: what the overgrowth is dealt against,
+    # so it never walls a stretch of road or yard off from the rest.
+    walk_rows = ["".join("0" if (tx, ty) in blocked else "1" for tx in range(area.w)) for ty in range(area.h)]
+    # Squares that walk but are not ground to dig: the terrace's stair.
+    blocked.update(getattr(area, "no_hoe", ()))
+    # Ground that already answers a tap keeps its own job. Grass inside the hen
+    # pen feeds the hens, and the greenhouse's footing opens the greenhouse; if
+    # the hoe could break a bed there, the same tap would start digging instead.
+    for tag, zx, zy, zw, zh in area.zones:
+        for ty in range(zy // T, (zy + zh - 1) // T + 1):
+            for tx in range(zx // T, (zx + zw - 1) // T + 1):
+                blocked.add((tx, ty))
+    # The outermost ring is the treeline on every side of the map: grass under a
+    # canopy, at the very edge of the world. A bed there would sit half under the
+    # trees, so the ring is left alone.
+    edge = lambda tx, ty: tx == 0 or ty == 0 or tx == area.w - 1 or ty == area.h - 1
+    rows = [
+        "".join(
+            "1" if tiles[ty][tx] == "grass" and (tx, ty) not in blocked and not edge(tx, ty) else "0"
+            for tx in range(area.w)
+        )
+        for ty in range(area.h)
+    ]
+    # The wild land round the yard, where the Crop Fields' overgrowth is dealt: hoeable squares the layout
+    # names in `area.wild`. A bed dug there is the Crop Fields milestone.
+    wild = getattr(area, "wild", set())
+    wild_rows = ["".join("1" if row[tx] == "1" and (tx, ty) in wild else "0" for tx in range(area.w))
+                 for ty, row in enumerate(rows)]
+    body = "\n".join(f'  "{row}",' for row in rows)
+    wild_body = "\n".join(f'  "{row}",' for row in wild_rows)
+    walk_body = "\n".join(f'  "{row}",' for row in walk_rows)
+    with open(HOEABLE_TS, "w") as fh:
+        fh.write(f"""/**
+ * GENERATED by art/stackacres-td/rich/export_rich.py (`write_hoeable`). Do not edit by hand:
+ * re-export the Homestead instead, and this is rewritten from the same map the player sees.
+ *
+ * One string per map row, one character per map tile: "1" where the hoe may break a bed
+ * (grass with nothing standing on it), "0" everywhere else. Read it through
+ * lib/stackacres/hoeable.ts, never directly.
+ */
+
+export const HOMESTEAD_MAP_WIDTH = {area.w};
+export const HOMESTEAD_MAP_HEIGHT = {area.h};
+
+export const HOMESTEAD_HOEABLE_ROWS: readonly string[] = [
+{body}
+];
+
+/** The same grid, "1" only on hoeable squares out in the wild land round the yard: where the
+ *  Crop Fields' overgrowth stands, and where the first bed counts as clearing the Crop Fields. */
+export const HOMESTEAD_WILD_ROWS: readonly string[] = [
+{wild_body}
+];
+
+/** "1" where the farmer can walk: no water, no treeline, nothing standing there. */
+export const HOMESTEAD_WALKABLE_ROWS: readonly string[] = [
+{walk_body}
+];
+""")
+    print("hoeable ->", HOEABLE_TS, "|", sum(r.count("1") for r in rows), "of", area.w * area.h, "tiles,",
+          sum(r.count("1") for r in wild_rows), "wild")
+
+
+def lpc_ground_image(area, sc, ground):
+    """The ground picture, with the terrain painted from the LPC atlas, and the water layer's mask.
+
+    Everything that is not terrain is unchanged and simply drawn twice the
+    size, so it lands back at its own scale on screen once the engine halves
+    the picture. The terrain is the only thing that actually gains detail --
+    which is the point, and why no coordinate anywhere had to move.
+
+    Pond reflections are the one thing left behind for now: they are computed
+    against the procedural water's own pixels. Shadows are not -- they are a
+    mask over the whole map and scale up cleanly.
+
+    Anything lying flat on the water (the dock, the lily pads) throws a shadow
+    down onto the bottom, a little below it, the way Stardew's lily pads do: it
+    is what shows the water has depth under it. The film of light goes under
+    them, so they are cut out of the mask.
+
+    Returns the picture, and `water_mask(...)`'s layers for export_area to write.
+    """
+    names = ["grass"] + terrain.ORDER
+    tiles = lpc_ground.tile_materials(ground.owner, names, area.w, area.h)
+    water = np.isin(ground.owner, [terrain.CODE["water"], terrain.CODE["stream"]])
+    img = lpc_ground.paint(tiles, area.w, area.h, water)
+    d = np.clip(sc.dark, 0, 1.4)
+    strength = np.where(d > 1, 0.82 + (d - 1) * 0.4, d * 0.82)
+    strength = strength.repeat(lpc_ground.SCALE, axis=0).repeat(lpc_ground.SCALE, axis=1)[..., None]
+    img = img * (1 - strength) + img * scene.SHADOW_TINT * strength
+    inside, film, foam = lpc_ground.water_layers(water)
+    flat = []
+    covered = np.zeros(inside.shape, bool)
+    for it in sc.items:
+        if not it["ground"]:
+            continue
+        hires = area.items[it["i"]][0][0].info.get("hires")
+        if hires:
+            big = np.array(hires["img"].convert("RGBA"))
+        else:
+            arr = it["arrs"][0]
+            big = arr.repeat(lpc_ground.SCALE, axis=0).repeat(lpc_ground.SCALE, axis=1)
+        x, y = it["x"] * lpc_ground.SCALE, it["y"] * lpc_ground.SCALE
+        flat.append((big, x, y))
+        _stamp(covered, big[..., 3] > 0, x, y)
+    floating = np.zeros(inside.shape, bool)
+    for big, x, y in flat:
+        _stamp(floating, big[..., 3] > 0, x + FLOAT_SHADOW[0], y + FLOAT_SHADOW[1])
+    floating &= inside & ~covered
+    img = np.where(floating[..., None], img * FLOAT_SHADOW_TINT, img)
+    for big, x, y in flat:
+        scene._blit(img, big, x, y)
+    return img, (film & ~covered, np.where(covered, 0, foam))
+
+
+# How far below and to the right a thing lying on the water throws its shadow onto the bottom, in picture
+# px, and how dark that shadow is.
+FLOAT_SHADOW = (4, 8)
+FLOAT_SHADOW_TINT = np.array([0.62, 0.72, 0.8])
+
+
+def _stamp(mask, shape, x, y):
+    """OR boolean `shape` into `mask` with its top-left corner at (x, y), clipped to the mask."""
+    h, w = shape.shape
+    H, W = mask.shape
+    x0, y0, x1, y1 = max(x, 0), max(y, 0), min(x + w, W), min(y + h, H)
+    if x0 < x1 and y0 < y1:
+        mask[y0:y1, x0:x1] |= shape[y0 - y:y1 - y, x0 - x:x1 - x]
+
+
+def water_mask(film, foam):
+    """The engine's water layer mask (components/arcade/stackacres-td/water-film.ts), cut to the water's
+    own box: red is where the film of light lies, green which set of foam dashes (half or full) a pixel
+    is in. Opaque, so nothing in the browser premultiplies the channels away.
+
+    Returns the picture and its box in map units, or None for an area with no water. The box is kept to
+    whole map units, so the engine can lay it on the map without a half-pixel shift.
+    """
+    ys, xs = np.nonzero(film | (foam > 0))
+    if not len(xs):
+        return None
+    s = lpc_ground.SCALE
+    x0, y0 = int(xs.min()) // s * s, int(ys.min()) // s * s
+    x1, y1 = -(-(int(xs.max()) + 1) // s) * s, -(-(int(ys.max()) + 1) // s) * s
+    out = np.zeros((y1 - y0, x1 - x0, 4), np.uint8)
+    out[..., 0] = film[y0:y1, x0:x1] * 255
+    out[..., 1] = np.choose(foam[y0:y1, x0:x1], [0, 128, 255])
+    out[..., 3] = 255
+    return Image.fromarray(out, "RGBA"), {"x": x0 // s, "y": y0 // s, "w": (x1 - x0) // s, "h": (y1 - y0) // s}
+
+
+def game_character_frame(name):
+    """An empty frame where a character stands, for the GAME export only.
+
+    The game never uses the picture. A character reaches it as a name and a
+    position (`area.npcs`), the engine loads the art itself from
+    public/stackacres-td/characters/, the export skips characters when it
+    writes props, and their shadows are not baked because people move. Asking
+    characters.py to draw one here would build the whole Aseprite chain to
+    produce an image that is then thrown away.
+
+    The review render is the opposite case: it exists to show the people, so it
+    keeps `build.rich_character_frame`, which reads the real sheet and fails if
+    it is not there.
+    """
+    return Image.new("RGBA", (48, 48)), (24, 44)
 
 
 def patch():
     build_area.patch("".join(open(m.__file__).read() for m in PLAYABLE))
+    area_mod.character_frame = game_character_frame
+    # Trees are the pack's now (lpc_trees.py): the rig still asks for a spruce or a round tree by name,
+    # and gets the LPC pine, oak or broadleaf. The small scattered things follow (lpc_props.py): each call
+    # takes the next of a steady count, so the same rock is the same rock on every export.
+    kit.spruce, kit.round_tree = lpc_trees.spruce, lpc_trees.round_tree
+    seeds = itertools.count(1)
+    kit.rock = lambda big=False: lpc_props.rock(big, next(seeds))
+    kit.bush = lambda seed=0, berries=False: lpc_props.bush(next(seeds), berries)
+    kit.stump, kit.lily_pad = lpc_props.stump, lpc_props.lily_pad
     smoke = props.smoke
 
     def smoke_emitter():
@@ -90,6 +295,7 @@ def patch():
         return frames
 
     props.smoke = smoke_emitter
+    props.waterfall, props.ledge, props.rockfall = lpc_props.waterfall, lpc_props.ledge, lpc_props.rockfall
 
 
 def to_image(arr):
@@ -106,15 +312,25 @@ def export_area(module, out_root):
         decor.decorate(area)
     build.assert_redrawn(area)
     ground = terrain.Ground(area)
+    if area.name == "homestead":
+        lpc_decor.decorate(area, ground)
     sc = scene.Scene(area, ground, static_only=True)
     out = os.path.join(out_root, "areas", area.name)
     os.makedirs(out, exist_ok=True)
-    frames = kit.FRAMES if ground.wet.any() else 1
-    for f in range(kit.FRAMES):
+    # One ground frame, not four. The four were water shimmer, and the LPC
+    # picture is twice the size in each direction -- four of them would be the
+    # kind of texture budget that crashed a phone before. The pond will get its
+    # movement back from the engine rather than from four baked copies.
+    picture, (film, foam) = lpc_ground_image(area, sc, ground)
+    lay_doormats(to_image(picture), area.name, lpc_ground.SCALE).save(os.path.join(out, "ground-0.png"))
+    water = water_mask(film, foam)
+    if water:
+        water[0].save(os.path.join(out, "water.png"))
+    elif os.path.exists(os.path.join(out, "water.png")):
+        os.remove(os.path.join(out, "water.png"))
+    for f in range(1, kit.FRAMES):
         path = os.path.join(out, f"ground-{f}.png")
-        if f < frames:
-            lay_doormats(to_image(sc.ground_image(f)), area.name).save(path)
-        elif os.path.exists(path):
+        if os.path.exists(path):
             os.remove(path)
 
     names = ["grass"] + terrain.ORDER
@@ -128,26 +344,42 @@ def export_area(module, out_root):
         if it["name"] or (it["i"] >= before_decor and it["animated"]):
             continue
         sway = source[0].info.get("sway") if len(source) == 1 else None
-        shade = lambda img: Image.fromarray(sc.prop_frame({**it, "arrs": [np.array(img.convert("RGBA"))]}, 0))
+        # A pack tree (lpc_trees.py) arrives as a map-scale stand-in with its full-detail original attached.
+        # Everything measured -- size, footprint, shading -- comes off the stand-in; what goes into the atlas
+        # is the original, and `scale` tells the engine to draw it back down to map size.
+        hires = source[0].info.get("hires") if len(source) == 1 else None
+        scale = hires["scale"] if hires else 1
+        undimmed = bool(source[0].info.get("undimmed"))
+        shade = lambda img: img.convert("RGBA") if undimmed else Image.fromarray(
+            sc.prop_frame({**it, "arrs": [np.array(img.convert("RGBA"))]}, 0))
         if sway:
-            imgs = [shade(sway["lower"])]
+            geo = [shade(sway["lower"])]
+            art = [shade(hires["lower"])] if hires else geo
         else:
-            imgs = [Image.fromarray(sc.prop_frame(it, f)) for f in range(len(it["arrs"]))]
+            geo = [Image.fromarray(sc.prop_frame(it, f)) for f in range(len(it["arrs"]))]
+            art = [shade(hires["img"])] if hires else geo
         frame_names = []
-        for f, img in enumerate(imgs):
+        for f, img in enumerate(art):
             frame_names.append(f"p{it['i']}_{f}")
             named.append((frame_names[-1], img))
         entry = {"frame": frame_names[0], "frames": frame_names, "x": it["bx"], "y": it["by"], "ax": it["ax"],
-                 "ay": it["ay"], "w": imgs[0].width, "h": imgs[0].height,
-                 "blocks": [b for b in rig_export.prop_blocks(imgs, (it["ax"], it["ay"]), it["bx"], it["by"], area)
+                 "ay": it["ay"], "w": geo[0].width, "h": geo[0].height, "scale": scale,
+                 "blocks": [b for b in rig_export.prop_blocks(geo, (it["ax"], it["ay"]), it["bx"], it["by"], area)
                             if tuple(b) not in area.doorways]}
+        solid_h = source[0].info.get("solid_h")
+        if solid_h:                                       # a building: solid over its whole plan, not just its base
+            x0, x1 = it["bx"] - it["ax"] + 2, it["bx"] - it["ax"] + geo[0].width - 2
+            entry["blocks"] = [[tx, ty] for ty in range(max(0, (it["by"] - solid_h) // T), (it["by"] - 1) // T + 1)
+                               for tx in range(max(0, x0 // T), (x1 - 1) // T + 1) if (tx, ty) not in area.doorways]
         if source[0].info.get("passable"):
             entry["passable"] = True
             entry["blocks"] = []
+        if source[0].info.get("falls"):
+            entry["falls"] = source[0].info["falls"]
         if sway and sway.get("kind") == "broadleaf":
             canopies.append({"x": it["bx"], "y": it["by"] - 26})
         if sway:
-            named.append((f"s{it['i']}", shade(sway["upper"])))
+            named.append((f"s{it['i']}", shade(hires["upper"] if hires else sway["upper"])))
             entry["sway"] = {"frame": f"s{it['i']}", "amp": sway["amp"], "rustle": sway["rustle"]}
         for lx, ly, kind in source[0].info.get("lights", ()):
             lights.append({"kind": kind, "x": it["x"] + lx, "y": it["y"] + ly})
@@ -162,11 +394,15 @@ def export_area(module, out_root):
             name = f"t{it['i']}"
             named.append((name, Image.fromarray(arr, "RGBA")))
             entries.append({"frame": name, "frames": [name], "x": it["bx"], "y": it["by"] + 1, "ax": it["bx"] - x0,
-                            "ay": it["by"] + 1 - y0, "w": arr.shape[1], "h": arr.shape[0], "blocks": []})
+                            "ay": it["by"] + 1 - y0, "w": arr.shape[1], "h": arr.shape[0], "scale": 1, "blocks": []})
     for imgs, (ax, ay), bx, by, _, is_ground, _ in area.items:  # lamps painted into a ground picture (a room's walls)
         if is_ground:
             for lx, ly, kind in imgs[0].info.get("lights", ()):
                 lights.append({"kind": kind, "x": bx - ax + lx, "y": by - ay + ly})
+    # A room's window sun (lpc_rooms.window_light): a picture in the atlas the engine lays on the floor by day.
+    for k, (img, x, y) in enumerate(getattr(area, "sunbeams", ())):
+        named.append((f"sun{k}", img))
+        lights.append({"kind": "sun", "x": x, "y": y, "frame": f"sun{k}", "scale": 0.5})
     sheet, atlas_json = rig_export.atlas(named, "props.png")
     sheet.save(os.path.join(out, "props.png"))
     with open(os.path.join(out, "props.json"), "w") as fh:
@@ -174,7 +410,7 @@ def export_area(module, out_root):
 
     spawn = area.spawn or (area.w * T // 2, area.h * T // 2)
     data = {
-        "name": area.name, "width": area.w, "height": area.h, "tile": T, "frames": frames,
+        "name": area.name, "width": area.w, "height": area.h, "tile": T, "frames": 1,
         "spawn": {"x": spawn[0], "y": spawn[1]},
         "props": entries,
         "npcs": [{"name": n, "x": x, "y": y} for n, x, y in area.npcs if n != "farmer"],
@@ -186,12 +422,15 @@ def export_area(module, out_root):
         "lights": lights,
         "emitters": emitters,
         "ambient": {**ambient_tiles(area, ground, entries), "canopies": canopies},
+        "water": water[1] if water else None,
     }
     with open(os.path.join(out, "area.json"), "w") as fh:
         json.dump(data, fh, separators=(",", ":"))
+    if area.name == "homestead":
+        write_hoeable(area, ground, data)
     print(area.name, "->", out, "|", len(entries), "props,", len(data["npcs"]), "npcs,", len(data["blocked"]), "blocked tiles,",
           len(lights), "lights,", len(emitters), "emitters,", len(data["ambient"]["meadow"]), "meadow and",
-          len(data["ambient"]["pond"]), "pond tiles,", len(canopies), "canopies,", sum(1 for e in entries if "sway" in e), "swaying,", frames, "ground frames")
+          len(data["ambient"]["pond"]), "pond tiles,", len(canopies), "canopies,", sum(1 for e in entries if "sway" in e), "swaying,", 1, "ground frame")
 
 
 def ambient_tiles(area, ground, entries):
@@ -228,44 +467,35 @@ def ambient_tiles(area, ground, entries):
 
 # ------------------------------------------------------------------ shared sprites
 
-def soil_tile(tier, mask):
-    """One bed tile, matching the rich terrain's tilled soil. mask bits: 1 N, 2 E, 4 S, 8 W neighbour is soil."""
-    c = Canvas(T, T)
-    for y in range(T):
-        for x in range(T):
-            furrow = y % 4 == 2 and 1 <= x <= 14
-            ridge = y % 4 == 1 and 1 <= x <= 14
-            if tier == "dirt":
-                level = 1.0 if furrow else 3.6 if ridge else 2.5 + (hash2(x, y, 1) - 0.5) * 0.8
-                c.put(x, y, "soil", level)
-            elif tier == "enriched":
-                level = 0.3 if furrow else 2.6 if ridge else 1.6 + (hash2(x, y, 2) - 0.5) * 0.8
-                c.put(x, y, "soil", level)
-                if not furrow and hash2(x, y, 3) < 0.07:
-                    c.put(x, y, "straw", 2.6)
-                elif not furrow and hash2(x, y, 4) < 0.05:
-                    c.put(x, y, "moss", 2.2)
-            else:
-                if furrow:
-                    c.put(x, y, "water", 3.2 if x % 5 != 1 else 6.2)
-                else:
-                    c.put(x, y, "soil", 3.8 if ridge else 2.2 + (hash2(x, y, 5) - 0.5) * 0.6)
-    if not mask & 1:
-        for x in range(T):
-            c.put(x, 0, "grass", 1.4)
-            c.put(x, 1, "soil", 0.5)
-    if not mask & 8:
-        for y in range(T):
-            c.put(0, y, "grass", 1.4)
-            if y:
-                c.put(1, y, "soil", 0.7)
-    if not mask & 4:
-        for x in range(T):
-            c.put(x, T - 1, "soil", 4.3)
-    if not mask & 2:
-        for y in range(T):
-            c.put(T - 1, y, "soil", 3.9)
-    return c.image()
+SEED = [
+    ".OO.",
+    "OhbO",
+    "ObsO",
+    ".OO.",
+]
+SEED_COLOURS = {"O": (74, 44, 23, 255), "h": (255, 242, 210, 255), "b": (232, 205, 148, 255), "s": (185, 140, 85, 255)}
+
+
+def seeds():
+    """Three seeds pressed into a freshly planted square.
+
+    What a crop looks like between the moment it is sown and the moment it
+    first shows green: the player hoed a square, dropped seed in it, and should
+    be able to see that they did, including after the can has darkened the
+    earth under them. Three, in a shallow arc with the middle one set back, so
+    they read as sown by hand rather than as one blob. Drawn at the crops' own
+    one-pixel-per-unit scale, in the same browns as the dirt they sit on.
+    """
+    spots = ((0, 2), (5, 0), (10, 2))
+    w = max(x for x, _ in spots) + len(SEED[0])
+    h = max(y for _, y in spots) + len(SEED)
+    img = Image.new("RGBA", (w, h))
+    for ox, oy in spots:
+        for y, row in enumerate(SEED):
+            for x, ch in enumerate(row):
+                if ch != ".":
+                    img.putpixel((ox + x, oy + y), SEED_COLOURS[ch])
+    return img
 
 
 def generic_crop(stage):
@@ -364,15 +594,22 @@ def export_common(out_root):
     out = os.path.join(out_root, "common")
     os.makedirs(out, exist_ok=True)
     named = []
+    # A hoed square is the road's own dirt (lpc_ground.bed_tile). Every tier
+    # draws the same ground; an enriched bed still reads greener through the
+    # engine's tint, not through different art.
     for tier in rig_export.SOIL_TIERS:
         for mask in range(16):
-            named.append((f"soil_{tier}_{mask}", soil_tile(tier, mask)))
+            named.append((f"soil_{tier}_{mask}", lpc_ground.bed_tile(mask)))
     for stock, art in {"carrot": "carrot", "potato": "potato", "radish": "radish", "wheatsheaf": "wheat"}.items():
         for stage in (0, 1, 2):
             named.append((f"crop_{stock}_{stage}", extras.crop(art, stage)[0]))
     for stage in (0, 1, 2):
         named.append((f"crop_generic_{stage}", generic_crop(stage)))
+    # Every other crop grows as the generic plant and ripens into its own drawing.
+    for name in ripe_crops.RIPE:
+        named.append((f"crop_{name}_2", ripe_crops.ripe_crop(name)[0]))
     named.append(("crop_withered", withered()))
+    named.append(("crop_seeds", seeds()))
     for side, left in (("left", True), ("right", False)):
         named.append((f"sheep_{side}", area_farm.sheep(left)[0]))
         named.append((f"cattle_{side}", area_farm.cattle(left, patches=True)[0]))
@@ -400,6 +637,12 @@ def export_common(out_root):
         named.append((f"cloud_{seed}", critters.cloud_shadow(seed)))
     sheet, atlas_json = rig_export.atlas(named, "sprites.png")
     sheet.save(os.path.join(out, "sprites.png"))
+    # The forest beyond the map's edges, as its own picture rather than an atlas frame: the engine repeats it
+    # across a whole backdrop, and a texture that is repeated has to be one of its own.
+    lpc_trees.forest_tile().save(os.path.join(out, "forest.png"))
+    lpc_props.waterfall_sheet().save(os.path.join(out, "waterfall.png"))
+    water_film.sheet().save(os.path.join(out, "water-film.png"))
+    fence_pieces.fence_sheet(kit).save(os.path.join(out, "fence.png"))
     with open(os.path.join(out, "sprites.json"), "w") as fh:
         json.dump(atlas_json, fh, separators=(",", ":"))
     print("common ->", out, "|", len(named), "frames")

@@ -43,3 +43,17 @@ export const stackAcresDisplay = localFont({
     "sans-serif",
   ],
 });
+
+/**
+ * The pixel voice for titles, names and numbers, drawn on the same grid as the
+ * map. Sentences stay in Baloo 2 so they read at a glance. Pixelify Sans, OFL
+ * (./app/fonts/PixelifySans-OFL.txt).
+ */
+export const stackAcresPixel = localFont({
+  src: "../../../app/fonts/pixelify-sans-latin-variable.woff2",
+  weight: "400 700",
+  style: "normal",
+  display: "swap",
+  variable: "--font-sa-pixel",
+  fallback: ["ui-monospace", "monospace"],
+});

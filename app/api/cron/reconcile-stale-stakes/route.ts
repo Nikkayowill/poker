@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/server/admin-auth";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { reconcileOrphanedGoldDebits } from "@/lib/server/profile-store";
+import { sweepDuelEscrow } from "@/lib/server/pvp-match-service";
 
 export const runtime = "nodejs";
 
@@ -35,8 +36,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Not authorized." }, { status: 401 });
   }
   try {
+    // Duels first: a claim whose match was written but never linked gets its
+    // acceptor debit confirmed here, which keeps the pass below from
+    // refunding an ante that is sitting in a live pot.
+    const duels = await sweepDuelEscrow().catch((error: unknown) => {
+      console.error("cron.reconcile.duel_sweep_failed", { error });
+      return null;
+    });
+    // Without the duel sweep, the orphan pass could refund an acceptor's ante
+    // that is in a live pot. Skip it this run; the next run does both, so a
+    // refund is only ever late, never wrong.
+    if (!duels) return NextResponse.json({ error: "Duel sweep failed; orphan pass skipped." }, { status: 500 });
     const result = await reconcileOrphanedGoldDebits(15);
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, duels });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not run the stake reconciliation sweep.";
     return NextResponse.json({ error: message }, { status: 500 });

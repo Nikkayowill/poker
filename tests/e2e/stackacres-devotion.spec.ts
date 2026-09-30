@@ -14,6 +14,7 @@ interface TopdownHandle {
     clientPointFor: (x: number, y: number) => { x: number; y: number };
     npcPoint: (name: string) => { x: number; y: number } | null;
     placeFarmer: (area: string, at: { x: number; y: number }) => void;
+    setClock: (hour: number | null) => void;
   };
 }
 
@@ -48,6 +49,12 @@ async function grantAndOpenStackAcres(
   await page.goto("/games/stackacres");
   await page.getByRole("button", { name: "Play", exact: true }).click();
   await page.waitForFunction(() => Boolean((window as unknown as { __stackacres?: unknown }).__stackacres));
+  await page.evaluate(() => {
+    // The Pilgrim keeps a routine (lib/stackacres-td/npc-schedules.ts): at 10 he is in the grove by the workshop.
+    (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.setClock(10);
+  });
+  // A frame or two for him to be put where his day has got to.
+  await page.waitForTimeout(500);
   // Stand a few steps below him so he's on screen; the tap still walks the farmer up before the dialogue opens.
   await page.evaluate(() => {
     const { scene } = (window as unknown as { __stackacres: TopdownHandle }).__stackacres;

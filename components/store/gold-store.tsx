@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Coins, ShieldCheck } from "lucide-react";
-import type { PlayerProfile } from "@/lib/profile/types";
+import { useAppShell } from "@/components/shell/app-shell";
 import { legalDocumentPath, type LegalDocument, type LegalDocumentSlug } from "@/lib/legal/documents";
 import { selectSound } from "@/lib/audio/ui-sounds";
 
@@ -34,7 +34,9 @@ export function GoldStore({ gameId }: { gameId?: string }) {
   const [checked, setChecked] = useState<Record<LegalDocumentSlug, boolean>>(
     {} as Record<LegalDocumentSlug, boolean>,
   );
-  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  // The shared profile, not a local copy, so a purchase shows up in the
+  // header too instead of only on this page.
+  const { profile, setProfile } = useAppShell();
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +65,7 @@ export function GoldStore({ gameId }: { gameId?: string }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setProfile]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -96,7 +98,7 @@ export function GoldStore({ gameId }: { gameId?: string }) {
         });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [setProfile]);
 
   const allChecked = pendingDocuments.length > 0 && pendingDocuments.every((doc) => checked[doc.slug]);
 

@@ -1,16 +1,36 @@
 "use client";
 
 import { ArrowRight, Eye, EyeOff, LoaderCircle, LogOut, Mail } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import type { PlayerProfile } from "@/lib/profile/types";
-import { StackChipsLogo } from "@/components/brand/stackchips-logo";
+import { ArcadeMarquee } from "@/components/brand/arcade-marquee";
 import { InstallLine } from "@/components/pwa/install-line";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { TurnstileWidget } from "@/components/auth/turnstile-widget";
 import { TURNSTILE_SITE_KEY } from "@/lib/auth/turnstile";
 import { requestPushPermissionAndSubscribe } from "@/lib/push/client";
 import { MIN_PASSWORD_LENGTH } from "@/lib/auth/password";
+
+const AGE_CONFIRMED_KEY = "stackchips:age-confirmed";
+const ageListeners = new Set<() => void>();
+// Holds the answer when storage is blocked, so the box still stays ticked.
+let ageInMemory = false;
+
+function readAgeConfirmed() {
+  try {
+    return window.localStorage.getItem(AGE_CONFIRMED_KEY) === "1";
+  } catch {
+    return ageInMemory;
+  }
+}
+
+function subscribeAge(listener: () => void) {
+  ageListeners.add(listener);
+  return () => { ageListeners.delete(listener); };
+}
+
+const AGE_REQUIRED_MESSAGE = "Confirm you are 18 or older to make an account.";
 
 /**
  * Google's mark, inline.
@@ -108,6 +128,22 @@ export function AccountEntryCard({
   const [captchaLoadFailed, setCaptchaLoadFailed] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [resetRequested, setResetRequested] = useState(false);
+  // Remembered per device so a returning Google player is not asked again.
+  const ageConfirmed = useSyncExternalStore(subscribeAge, readAgeConfirmed, () => false);
+  const [ageError, setAgeError] = useState(false);
+
+  const changeAgeConfirmed = (confirmed: boolean) => {
+    setAgeError(false);
+    setFormError(null);
+    ageInMemory = confirmed;
+    try {
+      if (confirmed) window.localStorage.setItem(AGE_CONFIRMED_KEY, "1");
+      else window.localStorage.removeItem(AGE_CONFIRMED_KEY);
+    } catch {
+      // Storage blocked: the in-memory flag carries it for this visit.
+    }
+    ageListeners.forEach((listener) => listener());
+  };
 
   const handleForgotPassword = () => {
     const trimmed = email.trim();
@@ -145,6 +181,11 @@ export function AccountEntryCard({
       setFormError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
+    if (emailMode === "sign-up" && !ageConfirmed) {
+      setAgeError(true);
+      setFormError(AGE_REQUIRED_MESSAGE);
+      return;
+    }
     if (TURNSTILE_SITE_KEY && !captchaToken) {
       setFormError(
         captchaLoadFailed
@@ -176,7 +217,7 @@ export function AccountEntryCard({
     <>
     <section className="account-entry-card" aria-labelledby="account-entry-title">
       <header className="entry-head">
-        <StackChipsLogo className="entry-logo" />
+        <ArcadeMarquee />
         <h1 id="account-entry-title">Play free. Stack chips.</h1>
 
         {!ready ? (
@@ -235,6 +276,31 @@ export function AccountEntryCard({
           <>
             {accountsAvailable && (
               <>
+                {/* Google cannot say sign-in from create-account before the
+                    redirect, so this gates both it and email create-account.
+                    Email sign-in and guest play are not gated. */}
+                <label className="account-remember">
+                  <input
+                    type="checkbox"
+                    checked={ageConfirmed}
+                    disabled={busy}
+                    aria-describedby={ageError ? "age-confirm-error" : undefined}
+                    onChange={(event) => { selectSound(); changeAgeConfirmed(event.target.checked); }}
+                  />
+                  <span className="entry-switch" aria-hidden="true" />
+                  <span className="entry-remember-copy">
+                    <strong>I am 18 or older</strong>
+                    <small>
+                      Needed to make an account. See the <Link href="/legal/terms">Terms</Link>.
+                    </small>
+                  </span>
+                </label>
+                {ageError && (
+                  <p id="age-confirm-error" className="account-entry-error" role="alert">
+                    {AGE_REQUIRED_MESSAGE}
+                  </p>
+                )}
+
                 <button
                   type="button"
                   // Gold (the one saturated fill DESIGN.md's Single Fill Rule
@@ -245,6 +311,10 @@ export function AccountEntryCard({
                   className={emailFormOpen ? "account-oauth-action" : "account-primary-action"}
                   disabled={busy}
                   onClick={() => {
+                    if (!ageConfirmed) {
+                      setAgeError(true);
+                      return;
+                    }
                     selectSound();
                     // This button serves both "sign in" and "create account"
                     // (Google gives no way to tell which before the redirect

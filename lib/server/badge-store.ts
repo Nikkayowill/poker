@@ -7,7 +7,7 @@ import { adminClient } from "./supabase-admin";
  * Badges: read-only access to profile_badges, the public flair table season
  * rollover and achievement grants already write to (see
  * 20260728195100_leaderboards_and_seasons.sql and
- * 20260817120000_achievements.sql). This module never writes it: both
+ * 20260820184604_achievements.sql). This module never writes it: both
  * writers already exist, and adding a third path to the same table is how
  * that kind of thing drifts.
  */

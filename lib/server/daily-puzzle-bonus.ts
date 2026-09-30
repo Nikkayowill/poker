@@ -7,7 +7,7 @@ import { creditGoldByProfile } from "./profile-store";
  *
  * Replaces the flat "Complete one brain game" mission (300 Gold, once/day,
  * any one of the four games; see supabase/migrations/
- * 20260821130000_ante_up_unify_brain_games.sql, which disables it). This pays
+ * 20260821183845_ante_up_unify_brain_games.sql, which disables it). This pays
  * per game, per day, on top of a base amount matching what the retired
  * mission paid for an average result.
  *

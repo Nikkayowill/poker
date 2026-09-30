@@ -18,7 +18,7 @@ import {
   type AnteUpNonogramAttempt,
   type AnteUpNonogramSnapshot,
 } from "@/lib/arcade/ante-up-nonogram";
-import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
+import { anteUpStakeProblem } from "@/lib/arcade/ante-up-stakes";
 import { dealNonogram } from "@/lib/arcade/puzzles/nonogram-deal";
 import {
   isNonogramDifficulty,
@@ -31,7 +31,6 @@ import {
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   ActiveAnteUpAttemptExists,
-  advanceAnteUpAttempt,
   countWageredAttemptsSince,
   createAnteUpAttempt,
   getActiveAnteUpAttempt,
@@ -49,6 +48,7 @@ import {
   spendStakeLedgered,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
+import { soloAdvance } from "./solo-settle";
 
 /**
  * Everything between an Ante Up: Nonogram request and the wallet.
@@ -75,6 +75,9 @@ export class AnteUpNonogramRequestError extends ArcadeRequestError<AnteUpNonogra
 
 /** This game's id in ante_up_attempts; see lib/server/ante-up-store.ts. */
 const GAME = "nonogram";
+
+/** The version-guarded advance; also records the settled wager in the solo earnings tally. */
+const advance = soloAdvance<AnteUpNonogramAttempt>(anteUpNonogramPayout);
 
 /** How many wagered attempts a player may open in a rolling day, at this game. Free practice is uncapped. */
 export const ANTE_UP_NONOGRAM_DAILY_WAGERED_LIMIT = 10;
@@ -104,17 +107,23 @@ function snapshot(
  * attempt is already settled, and throwing here would show the player a loss
  * on a board they won. Logged loudly instead, same reasoning as payOutMatch.
  */
-async function payOutWin(profileId: string, attempt: AnteUpNonogramAttempt): Promise<void> {
+async function payOutWin(profileId: string, attempt: AnteUpNonogramAttempt): Promise<PlayerProfile | null> {
   const payout = anteUpNonogramPayout(attempt);
+  let credited: PlayerProfile | null = null;
   if (payout > 0) {
     try {
-      await creditGoldByProfile(profileId, payout);
+      credited = await creditGoldByProfile(profileId, payout);
     } catch (error) {
       console.error("ante-up-nonogram.payout_credit_failed", { profileId, payout, error });
     }
   }
-  await applyMissionEvent(profileId, { kind: "puzzle_completed" });
-  await applyAchievementEvent(profileId, { kind: "puzzle_completed" });
+  // Free runs don't count: puzzles_completed pays Gold through achievements,
+  // and a free board costs nothing to farm.
+  if (attempt.wager > 0) {
+    await applyMissionEvent(profileId, { kind: "puzzle_completed" });
+    await applyAchievementEvent(profileId, { kind: "puzzle_completed" });
+  }
+  return credited;
 }
 
 /** Settles an attempt whose clock has run out, and reads back the truth either way. */
@@ -125,7 +134,7 @@ async function settleIfExpired(
   const ticked = tickAnteUpNonogram(stored.state, now);
   if (ticked === null) return stored;
 
-  const advanced = await advanceAnteUpAttempt(stored, ticked);
+  const advanced = await advance(stored, ticked);
   // Rule 2: a lost race did not happen; another read already settled this.
   return advanced ?? (await getAnteUpAttemptById<AnteUpNonogramAttempt>(stored.id)) ?? stored;
 }
@@ -162,8 +171,8 @@ export async function openAnteUpNonogram(
     );
   }
   // A bigger stake has to buy a harder board; see lib/arcade/ante-up-stakes.ts.
-  const overCeiling = anteUpWagerCeilingProblem(GAME, difficulty, wagerInput);
-  if (overCeiling) throw new AnteUpNonogramRequestError(overCeiling, 400);
+  const stakeProblem = anteUpStakeProblem(GAME, difficulty, wagerInput);
+  if (stakeProblem) throw new AnteUpNonogramRequestError(stakeProblem, 400);
 
   if (wagerInput > 0) {
     const sinceYesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -287,7 +296,7 @@ async function requireLiveAttempt(
     // carries the true (timed-out) state rather than a stale "active" one the
     // player could mistake for still-playable.
     const settled =
-      (await advanceAnteUpAttempt(current, ticked)) ??
+      (await advance(current, ticked)) ??
       (await getAnteUpAttemptById<AnteUpNonogramAttempt>(current.id)) ??
       current;
     throw new AnteUpNonogramRequestError("Time's up.", 409, { round: snapshot(settled, now) });
@@ -314,8 +323,8 @@ async function settle(
   current: StoredAnteUpAttempt<AnteUpNonogramAttempt>,
   next: AnteUpNonogramAttempt,
   now: Date,
-): Promise<AnteUpNonogramSnapshot> {
-  const stored = await advanceAnteUpAttempt(current, next);
+): Promise<{ attempt: AnteUpNonogramSnapshot; paid: PlayerProfile | null }> {
+  const stored = await advance(current, next);
   if (!stored) {
     const live = (await getAnteUpAttemptById<AnteUpNonogramAttempt>(current.id)) ?? current;
     throw new AnteUpNonogramRequestError("That board moved on.", 409, {
@@ -323,8 +332,8 @@ async function settle(
     });
   }
 
-  if (stored.state.status === "won") await payOutWin(profileId, stored.state);
-  return snapshot(stored, now);
+  const paid = stored.state.status === "won" ? await payOutWin(profileId, stored.state) : null;
+  return { attempt: snapshot(stored, now), paid };
 }
 
 /**
@@ -349,7 +358,8 @@ export async function playAnteUpNonogram(
   }
 
   const next = markAnteUpNonogramCell(current.state, input.index, input.mark, now);
-  return { attempt: await settle(profile.id, current, next, now), profile };
+  const { attempt, paid } = await settle(profile.id, current, next, now);
+  return { attempt, profile: paid ?? profile };
 }
 
 /**
@@ -375,7 +385,8 @@ export async function strokeAnteUpNonogramCells(
   const next = strokeAnteUpNonogram(current.state, input.indexes, input.mark, now);
   if (next === current.state) return { attempt: snapshot(current, now), profile };
 
-  return { attempt: await settle(profile.id, current, next, now), profile };
+  const { attempt, paid } = await settle(profile.id, current, next, now);
+  return { attempt, profile: paid ?? profile };
 }
 
 function undoRefusal(problem: NonogramUndoProblem): string {
@@ -399,7 +410,8 @@ export async function undoAnteUpNonogramStroke(
   }
 
   const next = undoAnteUpNonogram(current.state, now);
-  return { attempt: await settle(profile.id, current, next, now), profile };
+  const { attempt, paid } = await settle(profile.id, current, next, now);
+  return { attempt, profile: paid ?? profile };
 }
 
 function hintRefusal(problem: NonogramHintProblem): string {
@@ -436,7 +448,8 @@ export async function hintAnteUpNonogramAttempt(
   }
 
   const next = hintAnteUpNonogram(current.state, now);
-  return { attempt: await settle(profile.id, current, next, now), profile };
+  const { attempt, paid } = await settle(profile.id, current, next, now);
+  return { attempt, profile: paid ?? profile };
 }
 
 /** Gives up early. The wager is already spent; see the ordering rules above. */
@@ -450,7 +463,7 @@ export async function resignAnteUpNonogramAttempt(
 
   const next = resignAnteUpNonogram(current.state, now);
   const stored =
-    (await advanceAnteUpAttempt(current, next)) ??
+    (await advance(current, next)) ??
     (await getAnteUpAttemptById<AnteUpNonogramAttempt>(current.id)) ??
     current;
   return { attempt: snapshot(stored, now), profile };

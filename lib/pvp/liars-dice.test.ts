@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
+import { seededRandomInt } from "./secure-random";
 import {
+  LIARS_DICE_CLOCK_MS,
+  LIARS_DICE_INCREMENT_MS,
   LIARS_DICE_STARTING_DICE,
   applyLiarsDiceMove,
   createLiarsDiceState,
   isLegalEscalation,
+  LIARS_DICE_DUEL,
+  liarsDiceRemainingMs,
   liarsDiceResult,
   liarsDiceSnapshot,
   resignLiarsDice,
+  tickLiarsDice,
   type LiarsDiceState,
 } from "./liars-dice";
 
@@ -17,10 +23,17 @@ function bid(count: number, faceValue: number) {
 const challenge = { type: "challenge" as const };
 
 describe("createLiarsDiceState", () => {
-  it("is deterministic from its seed", () => {
+  it("is repeatable only through an injected RandomInt", () => {
+    const a = createLiarsDiceState(0, 0, seededRandomInt(42));
+    const b = createLiarsDiceState(0, 0, seededRandomInt(42));
+    expect(a).toEqual(b);
+  });
+
+  it("does not derive the dice from the match seed", () => {
+    // Ten dice matching by chance is about 1 in 60 million.
     const a = createLiarsDiceState(42, 0);
     const b = createLiarsDiceState(42, 0);
-    expect(a).toEqual(b);
+    expect(a.seats).not.toEqual(b.seats);
   });
 
   it("deals five dice to each seat, faces 1-6", () => {
@@ -41,10 +54,10 @@ describe("createLiarsDiceState", () => {
     expect(state.outcome).toBeNull();
   });
 
-  it("different seeds produce different hands", () => {
-    const a = createLiarsDiceState(1, 0);
-    const b = createLiarsDiceState(2, 0);
-    expect(a.seats).not.toEqual(b.seats);
+  it("starts both clocks full", () => {
+    const state = createLiarsDiceState(1, 500);
+    expect(state.clocks).toEqual([LIARS_DICE_CLOCK_MS, LIARS_DICE_CLOCK_MS]);
+    expect(state.turnStartedAt).toBe(500);
   });
 });
 
@@ -142,7 +155,8 @@ describe("applyLiarsDiceMove: challenging", () => {
       bid: { count: 9, faceValue: 6 },
       bidder: 0,
       turn: 1,
-      rngState: 123,
+      turnStartedAt: 0,
+      clocks: [LIARS_DICE_CLOCK_MS, LIARS_DICE_CLOCK_MS],
       lastReveal: null,
       outcome: null,
     };
@@ -164,7 +178,8 @@ describe("applyLiarsDiceMove: challenging", () => {
       bid: { count: 9, faceValue: 6 },
       bidder: 0,
       turn: 1,
-      rngState: 456,
+      turnStartedAt: 0,
+      clocks: [LIARS_DICE_CLOCK_MS, LIARS_DICE_CLOCK_MS],
       lastReveal: null,
       outcome: null,
     };
@@ -184,7 +199,8 @@ describe("applyLiarsDiceMove: challenging", () => {
       bid: { count: 6, faceValue: 1 },
       bidder: 0,
       turn: 1,
-      rngState: 789,
+      turnStartedAt: 0,
+      clocks: [LIARS_DICE_CLOCK_MS, LIARS_DICE_CLOCK_MS],
       lastReveal: null,
       outcome: null,
     };
@@ -201,7 +217,8 @@ describe("applyLiarsDiceMove: challenging", () => {
       bid: { count: 1, faceValue: 6 },
       bidder: 1,
       turn: 0,
-      rngState: 321,
+      turnStartedAt: 0,
+      clocks: [LIARS_DICE_CLOCK_MS, LIARS_DICE_CLOCK_MS],
       lastReveal: null,
       outcome: null,
     };
@@ -266,7 +283,8 @@ describe("liarsDiceSnapshot", () => {
       bid: { count: 9, faceValue: 6 },
       bidder: 0,
       turn: 1,
-      rngState: 123,
+      turnStartedAt: 0,
+      clocks: [LIARS_DICE_CLOCK_MS, LIARS_DICE_CLOCK_MS],
       lastReveal: null,
       outcome: null,
     };
@@ -286,7 +304,8 @@ describe("liarsDiceSnapshot", () => {
       bid: null,
       bidder: null,
       turn: 1,
-      rngState: 999,
+      turnStartedAt: 0,
+      clocks: [LIARS_DICE_CLOCK_MS, LIARS_DICE_CLOCK_MS],
       lastReveal: {
         dice: [[1, 2, 3, 4], [1, 2, 3, 4]],
         bid: { count: 1, faceValue: 5 },
@@ -299,5 +318,115 @@ describe("liarsDiceSnapshot", () => {
     const result = applyLiarsDiceMove(state, 1, bid(2, 2), 0);
     if (!("next" in result)) throw new Error("expected next");
     expect(result.next.lastReveal?.loser).toBe(1);
+  });
+});
+
+describe("rerolls", () => {
+  it("draws the next round's dice from the RandomInt at the moment of the challenge", () => {
+    const state: LiarsDiceState = {
+      seats: [[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]],
+      bid: { count: 9, faceValue: 6 },
+      bidder: 0,
+      turn: 1,
+      turnStartedAt: 0,
+      clocks: [LIARS_DICE_CLOCK_MS, LIARS_DICE_CLOCK_MS],
+      lastReveal: null,
+      outcome: null,
+    };
+    const draws: number[] = [];
+    const counter = (max: number) => {
+      draws.push(max);
+      return 2;
+    };
+    const result = applyLiarsDiceMove(state, 1, challenge, 0, counter);
+    if (!("next" in result)) throw new Error("expected next");
+    expect(draws).toEqual([6, 6, 6, 6, 6, 6, 6, 6, 6]);
+    expect(result.next.seats).toEqual([[3, 3, 3, 3], [3, 3, 3, 3, 3]]);
+  });
+
+  it("rolls the same stored state differently each time without an injected RandomInt", () => {
+    const state: LiarsDiceState = {
+      seats: [[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]],
+      bid: { count: 9, faceValue: 6 },
+      bidder: 0,
+      turn: 1,
+      turnStartedAt: 0,
+      clocks: [LIARS_DICE_CLOCK_MS, LIARS_DICE_CLOCK_MS],
+      rngState: 7,
+      lastReveal: null,
+      outcome: null,
+    };
+    const a = applyLiarsDiceMove(state, 1, challenge, 0);
+    const b = applyLiarsDiceMove(state, 1, challenge, 0);
+    if (!("next" in a) || !("next" in b)) throw new Error("expected next");
+    expect(a.next.seats).not.toEqual(b.next.seats);
+  });
+});
+
+describe("the clock", () => {
+  it("only runs for the seat to move", () => {
+    const state = createLiarsDiceState(1, 0);
+    expect(liarsDiceRemainingMs(state, 0, 10_000)).toBe(LIARS_DICE_CLOCK_MS - 10_000);
+    expect(liarsDiceRemainingMs(state, 1, 10_000)).toBe(LIARS_DICE_CLOCK_MS);
+  });
+
+  it("banks the mover's time plus the increment and starts the other clock", () => {
+    const state = createLiarsDiceState(1, 0);
+    const result = applyLiarsDiceMove(state, 0, bid(1, 3), 20_000);
+    if (!("next" in result)) throw new Error("expected next");
+    expect(result.next.clocks[0]).toBe(LIARS_DICE_CLOCK_MS - 20_000 + LIARS_DICE_INCREMENT_MS);
+    expect(result.next.turnStartedAt).toBe(20_000);
+  });
+
+  it("does nothing on a tick while time remains", () => {
+    const state = createLiarsDiceState(1, 0);
+    expect(tickLiarsDice(state, 60_000)).toBeNull();
+  });
+
+  it("forfeits the seat to move when their flag falls", () => {
+    const state = createLiarsDiceState(1, 0);
+    const ticked = tickLiarsDice(state, LIARS_DICE_CLOCK_MS);
+    expect(ticked?.outcome).toEqual({ winner: 1, reason: "Timeout" });
+    expect(ticked?.clocks[0]).toBe(0);
+    expect(LIARS_DICE_DUEL.tick?.(state, LIARS_DICE_CLOCK_MS)).toEqual(ticked);
+  });
+
+  it("forfeits a staller who has the turn after a bid", () => {
+    const state = createLiarsDiceState(1, 0);
+    const result = applyLiarsDiceMove(state, 0, bid(1, 3), 1_000);
+    if (!("next" in result)) throw new Error("expected next");
+    const ticked = tickLiarsDice(result.next, 1_000 + LIARS_DICE_CLOCK_MS);
+    expect(ticked?.outcome).toEqual({ winner: 0, reason: "Timeout" });
+  });
+
+  it("ends the match when a flagged player tries to move", () => {
+    const state = createLiarsDiceState(1, 0);
+    const result = applyLiarsDiceMove(state, 0, bid(1, 3), LIARS_DICE_CLOCK_MS + 1);
+    if (!("next" in result)) throw new Error("expected next");
+    expect(result.next.outcome).toEqual({ winner: 1, reason: "Timeout" });
+  });
+
+  it("gives a match stored before the clock a full clock once, then leaves it alone", () => {
+    const legacy = {
+      seats: [[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]],
+      bid: null,
+      bidder: null,
+      turn: 1,
+      rngState: 99,
+      lastReveal: null,
+      outcome: null,
+    } as unknown as LiarsDiceState;
+    const first = tickLiarsDice(legacy, 5_000);
+    expect(first?.clocks).toEqual([LIARS_DICE_CLOCK_MS, LIARS_DICE_CLOCK_MS]);
+    expect(first?.turnStartedAt).toBe(5_000);
+    expect(first && tickLiarsDice(first, 6_000)).toBeNull();
+    expect(liarsDiceSnapshot(legacy, 0, 5_000).clocks).toEqual([LIARS_DICE_CLOCK_MS, LIARS_DICE_CLOCK_MS]);
+  });
+
+  it("shows live clocks in the snapshot and freezes them once over", () => {
+    const state = createLiarsDiceState(1, 0);
+    expect(liarsDiceSnapshot(state, 0, 30_000).clocks).toEqual([LIARS_DICE_CLOCK_MS - 30_000, LIARS_DICE_CLOCK_MS]);
+    const resigned = resignLiarsDice(state, 0, 30_000);
+    expect(liarsDiceSnapshot(resigned, 0, 90_000).clocks).toEqual([LIARS_DICE_CLOCK_MS - 30_000, LIARS_DICE_CLOCK_MS]);
   });
 });

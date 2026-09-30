@@ -761,13 +761,12 @@
   }
   .scene-room-racetrack .player-hud-portrait-fallback { font-size: 14px; }
   .scene-room-racetrack .player-hud-level {
-    right: -2px;
-    bottom: -2px;
-    min-width: 15px;
-    height: 15px;
-    padding: 0 3px;
-    font-size: 8px;
+    right: -4px;
+    bottom: -4px;
+    width: 18px;
+    height: 18px;
   }
+  .scene-room-racetrack .player-hud-level .rank-jewel { width: 18px; height: 18px; }
   .scene-room-racetrack .player-hud-body { gap: 3px; }
   .scene-room-racetrack .player-hud-name { max-width: 100px; font-size: 10.5px; }
   .scene-room-racetrack .player-hud-xp-track { width: 70px; height: 4px; }

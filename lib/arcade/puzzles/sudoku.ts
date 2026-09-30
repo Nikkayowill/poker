@@ -108,6 +108,12 @@ export function isPlacementLegal(grid: readonly number[], index: number, value: 
   return true;
 }
 
+function bitCount(mask: number): number {
+  let count = 0;
+  for (let bits = mask; bits !== 0; bits &= bits - 1) count += 1;
+  return count;
+}
+
 /**
  * How many solutions a grid has, counted up to `limit`.
  *
@@ -130,43 +136,316 @@ export function countSolutions(grid: readonly number[], limit = 2): number {
     if (value !== 0 && !isPlacementLegal(working, index, value)) return 0;
   }
 
-  const search = (): number => {
-    let bestIndex = -1;
-    let bestOptions: number[] = [];
+  // Bitmasks of the digits already used in each row, column and box, so a
+  // cell's options are three ORs rather than a scan of its 20 peers.
+  const rows = new Array<number>(SUDOKU_SIZE).fill(0);
+  const columns = new Array<number>(SUDOKU_SIZE).fill(0);
+  const boxes = new Array<number>(SUDOKU_SIZE).fill(0);
+  const empty: number[] = [];
+  for (let index = 0; index < SUDOKU_CELLS; index += 1) {
+    const value = working[index];
+    if (value === 0) {
+      empty.push(index);
+      continue;
+    }
+    rows[rowOf(index)] |= 1 << value;
+    columns[columnOf(index)] |= 1 << value;
+    boxes[boxOf(index)] |= 1 << value;
+  }
 
-    for (let index = 0; index < SUDOKU_CELLS; index += 1) {
-      if (working[index] !== 0) continue;
-      const options: number[] = [];
-      for (let value = 1; value <= SUDOKU_SIZE; value += 1) {
-        if (isPlacementLegal(working, index, value)) options.push(value);
-      }
+  const search = (depth: number): number => {
+    // No empty cell left: this is a complete, legal grid.
+    if (depth === empty.length) return 1;
+
+    let bestAt = -1;
+    let bestOptions = 0;
+    let bestCount = 10;
+    for (let at = depth; at < empty.length; at += 1) {
+      const index = empty[at];
+      const options = ~(rows[rowOf(index)] | columns[columnOf(index)] | boxes[boxOf(index)]) & 0b1111111110;
+      const count = bitCount(options);
       // A cell with nothing legal in it kills the branch immediately.
-      if (options.length === 0) return 0;
-      if (bestIndex === -1 || options.length < bestOptions.length) {
-        bestIndex = index;
+      if (count === 0) return 0;
+      if (count < bestCount) {
+        bestAt = at;
         bestOptions = options;
-        if (options.length === 1) break;
+        bestCount = count;
+        if (count === 1) break;
       }
     }
 
-    // No empty cell left: this is a complete, legal grid.
-    if (bestIndex === -1) return 1;
+    // Move the chosen cell to the front of the unfilled part of the list.
+    [empty[depth], empty[bestAt]] = [empty[bestAt], empty[depth]];
+    const index = empty[depth];
+    const row = rowOf(index);
+    const column = columnOf(index);
+    const box = boxOf(index);
 
     let found = 0;
-    for (const value of bestOptions) {
-      working[bestIndex] = value;
-      found += search();
-      working[bestIndex] = 0;
-      if (found >= limit) break;
+    for (let value = 1; value <= SUDOKU_SIZE && found < limit; value += 1) {
+      const bit = 1 << value;
+      if ((bestOptions & bit) === 0) continue;
+      rows[row] |= bit;
+      columns[column] |= bit;
+      boxes[box] |= bit;
+      found += search(depth + 1);
+      rows[row] &= ~bit;
+      columns[column] &= ~bit;
+      boxes[box] &= ~bit;
     }
+    [empty[depth], empty[bestAt]] = [empty[bestAt], empty[depth]];
     return found;
   };
 
-  return search();
+  return search(0);
 }
 
 export function hasUniqueSolution(grid: readonly number[]): boolean {
   return countSolutions(grid, 2) === 1;
+}
+
+/* ----------------------------------------------------------------- grading */
+
+/**
+ * The hardest kind of step a person needs to finish a grid.
+ *
+ * 1: naked singles only (a cell with one digit left).
+ * 2: hidden singles too (a digit with one place left in a row, column or box).
+ * 3: beyond singles, but the standard expert kit is enough: locked
+ *    candidates, naked and hidden pairs and triples, X-Wing and XY-Wing.
+ * null: none of the above finishes it; it needs chains or trial and error.
+ */
+export type SudokuLogicLevel = 1 | 2 | 3;
+
+const UNITS: readonly (readonly number[])[] = (() => {
+  const units: number[][] = [];
+  for (let n = 0; n < SUDOKU_SIZE; n += 1) {
+    const row: number[] = [];
+    const column: number[] = [];
+    const box: number[] = [];
+    for (let step = 0; step < SUDOKU_SIZE; step += 1) {
+      row.push(n * SUDOKU_SIZE + step);
+      column.push(step * SUDOKU_SIZE + n);
+      box.push((Math.floor(n / 3) * 3 + Math.floor(step / 3)) * SUDOKU_SIZE + (n % 3) * 3 + (step % 3));
+    }
+    units.push(row, column, box);
+  }
+  return units;
+})();
+const ROWS = UNITS.filter((_, at) => at % 3 === 0);
+const COLUMNS = UNITS.filter((_, at) => at % 3 === 1);
+
+const PEERS: readonly (readonly number[])[] = Array.from({ length: SUDOKU_CELLS }, (_, index) => {
+  const peers = new Set<number>();
+  for (const unit of UNITS) {
+    if (unit.includes(index)) for (const cell of unit) if (cell !== index) peers.add(cell);
+  }
+  return [...peers];
+});
+
+const ALL_DIGITS = 0b1111111110;
+
+/** Every k-sized subset of `items`. k is 2 or 3 here, so the count stays small. */
+function subsets<T>(items: readonly T[], k: number): T[][] {
+  const out: T[][] = [];
+  const pick = (start: number, chosen: T[]) => {
+    if (chosen.length === k) {
+      out.push([...chosen]);
+      return;
+    }
+    for (let at = start; at < items.length; at += 1) {
+      chosen.push(items[at]);
+      pick(at + 1, chosen);
+      chosen.pop();
+    }
+  };
+  pick(0, []);
+  return out;
+}
+
+/**
+ * Solves the way a person does, always reaching for the easiest step first,
+ * and reports the hardest step it needed. Null when it gets stuck.
+ */
+export function sudokuLogicLevel(puzzle: readonly number[]): SudokuLogicLevel | null {
+  return gradeSudoku(puzzle).level;
+}
+
+/** `sudokuLogicLevel` plus the grid as far as the logic got, for the tests to check it. */
+export function gradeSudoku(puzzle: readonly number[]): { level: SudokuLogicLevel | null; grid: number[] } {
+  const grid = [...puzzle];
+  const candidates = new Array<number>(SUDOKU_CELLS).fill(0);
+  for (let index = 0; index < SUDOKU_CELLS; index += 1) {
+    if (grid[index] !== 0) continue;
+    let mask = ALL_DIGITS;
+    for (const peer of PEERS[index]) if (grid[peer] !== 0) mask &= ~(1 << grid[peer]);
+    candidates[index] = mask;
+  }
+
+  const place = (index: number, value: number) => {
+    grid[index] = value;
+    candidates[index] = 0;
+    for (const peer of PEERS[index]) candidates[peer] &= ~(1 << value);
+  };
+
+  const nakedSingle = (): boolean => {
+    for (let index = 0; index < SUDOKU_CELLS; index += 1) {
+      if (grid[index] === 0 && bitCount(candidates[index]) === 1) {
+        place(index, Math.log2(candidates[index]));
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const hiddenSingle = (): boolean => {
+    for (const unit of UNITS) {
+      for (let value = 1; value <= SUDOKU_SIZE; value += 1) {
+        let only = -1;
+        let count = 0;
+        for (const cell of unit) {
+          if (candidates[cell] & (1 << value)) {
+            only = cell;
+            count += 1;
+          }
+        }
+        if (count === 1) {
+          place(only, value);
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  // Removes `mask` from every cell of `unit` not in `keep`. True if anything went.
+  const eliminate = (unit: readonly number[], keep: readonly number[], mask: number): boolean => {
+    let changed = false;
+    for (const cell of unit) {
+      if (keep.includes(cell) || (candidates[cell] & mask) === 0) continue;
+      candidates[cell] &= ~mask;
+      changed = true;
+    }
+    return changed;
+  };
+
+  const lockedCandidates = (): boolean => {
+    for (const unit of UNITS) {
+      for (let value = 1; value <= SUDOKU_SIZE; value += 1) {
+        const cells = unit.filter((cell) => candidates[cell] & (1 << value));
+        if (cells.length < 2) continue;
+        // All of this digit's places in one unit also sit inside another unit,
+        // so it can't go anywhere else in that other unit.
+        for (const other of UNITS) {
+          if (other === unit || !cells.every((cell) => other.includes(cell))) continue;
+          if (eliminate(other, cells, 1 << value)) return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const subsetsInUnits = (size: number): boolean => {
+    for (const unit of UNITS) {
+      const open = unit.filter((cell) => grid[cell] === 0);
+      if (open.length <= size) continue;
+      for (const group of subsets(open, size)) {
+        let mask = 0;
+        for (const cell of group) mask |= candidates[cell];
+        if (bitCount(mask) === size && eliminate(unit, group, mask)) return true;
+      }
+      const digits = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter((value) =>
+        open.some((cell) => candidates[cell] & (1 << value)),
+      );
+      for (const group of subsets(digits, size)) {
+        let mask = 0;
+        for (const value of group) mask |= 1 << value;
+        const places = open.filter((cell) => candidates[cell] & mask);
+        if (places.length !== size) continue;
+        let changed = false;
+        for (const cell of places) {
+          if (candidates[cell] & ~mask) {
+            candidates[cell] &= mask;
+            changed = true;
+          }
+        }
+        if (changed) return true;
+      }
+    }
+    return false;
+  };
+
+  // A digit with exactly two places in each of two rows, in the same two
+  // columns, can't go anywhere else in those columns. Same with rows and
+  // columns swapped.
+  const xWing = (): boolean => {
+    for (const lines of [ROWS, COLUMNS]) {
+      const crossing = lines === ROWS ? COLUMNS : ROWS;
+      for (let value = 1; value <= SUDOKU_SIZE; value += 1) {
+        const bit = 1 << value;
+        const spots = lines.map((line) =>
+          line.map((cell, at) => (candidates[cell] & bit ? at : -1)).filter((at) => at >= 0),
+        );
+        for (let a = 0; a < SUDOKU_SIZE; a += 1) {
+          if (spots[a].length !== 2) continue;
+          for (let b = a + 1; b < SUDOKU_SIZE; b += 1) {
+            if (spots[b].length !== 2 || spots[b][0] !== spots[a][0] || spots[b][1] !== spots[a][1]) continue;
+            const keep = [lines[a][spots[a][0]], lines[a][spots[a][1]], lines[b][spots[b][0]], lines[b][spots[b][1]]];
+            let changed = false;
+            for (const at of spots[a]) changed = eliminate(crossing[at], keep, bit) || changed;
+            if (changed) return true;
+          }
+        }
+      }
+    }
+    return false;
+  };
+
+  // A two-digit pivot {x,y} sees {x,z} and {y,z}: whichever the pivot is,
+  // one of those two holds z, so nothing that sees both can.
+  const xyWing = (): boolean => {
+    for (let pivot = 0; pivot < SUDOKU_CELLS; pivot += 1) {
+      if (bitCount(candidates[pivot]) !== 2) continue;
+      const pincers = PEERS[pivot].filter((cell) => {
+        const mask = candidates[cell];
+        return bitCount(mask) === 2 && bitCount(mask & candidates[pivot]) === 1;
+      });
+      for (let a = 0; a < pincers.length; a += 1) {
+        for (let b = a + 1; b < pincers.length; b += 1) {
+          const first = candidates[pincers[a]];
+          const second = candidates[pincers[b]];
+          const shared = first & second;
+          if (bitCount(shared) !== 1 || shared & candidates[pivot]) continue;
+          if (((first | second) & ~shared) !== candidates[pivot]) continue;
+          let changed = false;
+          for (const cell of PEERS[pincers[a]]) {
+            if (cell === pincers[b] || !PEERS[pincers[b]].includes(cell)) continue;
+            if (candidates[cell] & shared) {
+              candidates[cell] &= ~shared;
+              changed = true;
+            }
+          }
+          if (changed) return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  let level: SudokuLogicLevel = 1;
+  while (grid.includes(0)) {
+    if (nakedSingle()) continue;
+    if (hiddenSingle()) {
+      level = Math.max(level, 2) as SudokuLogicLevel;
+      continue;
+    }
+    if (lockedCandidates() || subsetsInUnits(2) || subsetsInUnits(3) || xWing() || xyWing()) {
+      level = 3;
+      continue;
+    }
+    return { level: null, grid };
+  }
+  return { level, grid };
 }
 
 /* -------------------------------------------------------------- generation */
@@ -229,18 +508,101 @@ export interface SudokuBoard {
 }
 
 /**
+ * The kind of reasoning each difficulty asks for, on top of its clue count.
+ *
+ * Clue count alone is a poor guide: plenty of 25-clue grids fall to singles
+ * alone, which is a fast fill rather than an expert test. Hard must need at
+ * least one hidden single. Expert must get stuck on singles and need the
+ * standard expert kit (see `sudokuLogicLevel`), and never more than that, so
+ * it stays a test of skill rather than of guessing.
+ */
+export const DIFFICULTY_LOGIC: Record<SudokuDifficulty, readonly (SudokuLogicLevel | null)[]> = {
+  easy: [1, 2, 3, null],
+  medium: [1, 2, 3, null],
+  hard: [2, 3],
+  expert: [3],
+};
+
+/** New grids tried before settling. Each costs a few ms; see `generateSudoku`. */
+const GRADED_ATTEMPTS = 14;
+/** How far below its clue target a grid may be carved to reach its grade. */
+const DEEPEN_SLACK = 3;
+
+/**
+ * Carves past the target, one unique-preserving removal at a time, until the
+ * grid reaches an accepted grade. A removal that overshoots into a grade
+ * harder than any accepted one is put back. Null if the grid never gets there.
+ */
+function deepenToGrade(
+  puzzle: readonly number[],
+  floor: number,
+  accepted: readonly (SudokuLogicLevel | null)[],
+  random: () => number,
+  onTooHard: (puzzle: number[]) => void,
+): number[] | null {
+  const working = [...puzzle];
+  let clues = working.filter((cell) => cell !== 0).length;
+  const hardest = Math.max(...accepted.map((level) => level ?? 4));
+
+  for (const index of shuffled(Array.from({ length: SUDOKU_CELLS }, (_, i) => i), random)) {
+    if (clues <= floor) break;
+    if (working[index] === 0) continue;
+    const removed = working[index];
+    working[index] = 0;
+    if (!hasUniqueSolution(working)) {
+      working[index] = removed;
+      continue;
+    }
+    const level = sudokuLogicLevel(working);
+    if (accepted.includes(level)) return working;
+    if ((level ?? 4) > hardest) {
+      onTooHard([...working]);
+      working[index] = removed;
+      continue;
+    }
+    clues -= 1;
+  }
+  return null;
+}
+
+/**
  * The board for one day and difficulty.
  *
  * Deterministic: the same arguments always produce the same grid, which is
  * the whole basis of a shared daily. The salt keeps the four difficulties
  * from being permutations of one another: solving the easy grid must not
  * hand anybody the expert one.
+ *
+ * Hard and expert are carved, graded, and carved a little further or started
+ * again until the grade is right. That usually takes one or two grids and a
+ * few tens of ms at most. If GRADED_ATTEMPTS all miss, expert settles for a
+ * grid that is harder than asked (still unique, still past singles) before
+ * one that is easier.
  */
 export function generateSudoku(day: string, difficulty: SudokuDifficulty): SudokuBoard {
   const random = mulberry32(hashString(`sudoku:${day}:${difficulty}`));
-  const solution = solvedGrid(random);
-  const puzzle = carvePuzzle(solution, DIFFICULTY_CLUES[difficulty], random);
-  return { puzzle, solution };
+  const target = DIFFICULTY_CLUES[difficulty];
+  const accepted = DIFFICULTY_LOGIC[difficulty];
+
+  let tooHard: SudokuBoard | null = null;
+  let last: SudokuBoard | null = null;
+  for (let attempt = 0; attempt < GRADED_ATTEMPTS; attempt += 1) {
+    const solution = solvedGrid(random);
+    const puzzle = carvePuzzle(solution, target, random);
+    const level = sudokuLogicLevel(puzzle);
+    if (accepted.includes(level)) return { puzzle, solution };
+
+    last = { puzzle, solution };
+    if (level === null || level > Math.max(...accepted.map((entry) => entry ?? 4))) {
+      tooHard ??= { puzzle, solution };
+      continue;
+    }
+    const deeper = deepenToGrade(puzzle, target - DEEPEN_SLACK, accepted, random, (harder) => {
+      tooHard ??= { puzzle: harder, solution };
+    });
+    if (deeper) return { puzzle: deeper, solution };
+  }
+  return tooHard ?? last!;
 }
 
 /* ------------------------------------------------------------------- round */

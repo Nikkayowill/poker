@@ -73,6 +73,16 @@
   -webkit-tap-highlight-color: transparent;
   transition: background .1s ease;
 }
+/* Marathon's 11x11 grid takes the whole width on a phone and a taller floor,
+   so a square stays about 28px wide on a 375px screen. The word list below
+   scrolls with the page. */
+.wf-grid-large {
+  width: min(100%, 480px, max(300px, calc(100dvh - 330px)));
+}
+
+/* A tier the stake has locked out, and why. */
+.wf-tier-locked { color: var(--text-muted); font-style: italic; }
+
 /* The shared button:disabled rule fades a settled grid; the answers must stay crisp. */
 .wf-cell:disabled { cursor: default; opacity: 1; }
 
@@ -108,9 +118,35 @@
   box-shadow: inset 0 0 0 2px rgba(28, 19, 5, .35);
 }
 
+/* Letters from a move still on the wire: drawn at once, a touch lighter until the server answers.
+   Sits above the clash rule so a clash still shows red. */
+.wf-cell-pending { color: rgba(26, 16, 48, .55); }
+
 /* A full slot that spells no list word, usually one a crossing word wrote over. */
 .wf-cell-clash { color: #b3261e; }
 .wf-cell-clash.wf-cell-selected { color: #8c1d16; }
+
+/* A slot a placement just completed with a real list word. `--wf-complete-i`
+   (set inline: the cell's position in the completed slot(s)' ascending-order
+   list) staggers the pop across a word's letters. */
+.wf-cell-complete {
+  animation: wf-complete 420ms ease-out both;
+  animation-delay: calc(var(--wf-complete-i, 0) * 14ms);
+}
+@keyframes wf-complete {
+  0% { transform: scale(1); box-shadow: none; }
+  35% { transform: scale(1.12); box-shadow: 0 0 10px rgba(255, 210, 63, .7); }
+  100% { transform: scale(1); box-shadow: none; }
+}
+
+/* A placement that completes more than one word at once (a crossing word
+   also fell into place). */
+.wf-grid-combo { animation: wf-grid-combo-pulse 420ms ease-out; }
+@keyframes wf-grid-combo-pulse {
+  0% { box-shadow: 0 6px 18px rgba(0, 0, 0, .35), 0 0 0 0 rgba(255, 210, 63, .55); }
+  35% { box-shadow: 0 6px 18px rgba(0, 0, 0, .35), 0 0 26px 6px rgba(255, 210, 63, .55); }
+  100% { box-shadow: 0 6px 18px rgba(0, 0, 0, .35), 0 0 0 0 rgba(255, 210, 63, 0); }
+}
 
 /* A settled loss shows the answer in the squares the player had empty or wrong. */
 .wf-cell-revealed { color: #b3261e; background: #fbd9d6; }
@@ -236,10 +272,15 @@
     /* Height is what binds on a rotated phone. */
     width: min(440px, max(220px, calc(100dvh - 140px)), 55vw);
   }
+  .wf-grid-large { width: min(480px, max(240px, calc(100dvh - 120px)), 58vw); }
   .wf-side { flex: 1 1 0; max-width: 440px; }
 }
 
 /* A desktop has the height to give each length its own line. */
 @media (min-width: 860px) and (min-height: 600px) {
   .wf-group { flex-basis: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-cell-complete, .wf-grid-combo { animation: none; }
 }

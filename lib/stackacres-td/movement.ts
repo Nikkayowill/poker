@@ -53,13 +53,11 @@ export function lineClear(grid: Grid, a: Point, b: Point): boolean {
   return true;
 }
 
-/** Waypoints from `from` to `to` (the last one is the destination), or [] when nothing is reachable. */
-export function findPath(grid: Grid, from: Point, to: Point): Point[] {
-  const { tile } = grid;
-  const [sx, sy] = tileOf(from, tile);
-  const [gx, gy] = tileOf(to, tile);
-  const centre = (tx: number, ty: number): Point => ({ x: tx * tile + tile / 2, y: ty * tile + tile / 2 });
-
+/**
+ * Breadth-first over the tiles from (sx, sy) toward (gx, gy): the tiles walked, start first, to the goal
+ * or, when it can't be reached, to the open tile nearest it.
+ */
+function searchTiles(grid: Grid, sx: number, sy: number, gx: number, gy: number): { tiles: [number, number][]; reachedGoal: boolean } {
   const cameFrom = new Map<string, string | null>([[tileKey(sx, sy), null]]);
   const queue: [number, number][] = [[sx, sy]];
   let best: [number, number] = [sx, sy];
@@ -81,13 +79,30 @@ export function findPath(grid: Grid, from: Point, to: Point): Point[] {
       queue.push([nx, ny]);
     }
   }
-
-  const reachedGoal = best[0] === gx && best[1] === gy;
-  const tiles: Point[] = [];
+  const tiles: [number, number][] = [];
   for (let key: string | null = tileKey(best[0], best[1]); key; key = cameFrom.get(key) ?? null) {
     const [tx, ty] = key.split(",").map(Number);
-    tiles.unshift(centre(tx, ty));
+    tiles.unshift([tx, ty]);
   }
+  return { tiles, reachedGoal: best[0] === gx && best[1] === gy };
+}
+
+/** The tiles, one step at a time, from `from` to `to` (the start left out), or null when `to` can't be reached. */
+export function tilePath(grid: Grid, from: [number, number], to: [number, number]): [number, number][] | null {
+  if (!open(grid, to[0], to[1])) return null;
+  const { tiles, reachedGoal } = searchTiles(grid, from[0], from[1], to[0], to[1]);
+  return reachedGoal ? tiles.slice(1) : null;
+}
+
+/** Waypoints from `from` to `to` (the last one is the destination), or [] when nothing is reachable. */
+export function findPath(grid: Grid, from: Point, to: Point): Point[] {
+  const { tile } = grid;
+  const [sx, sy] = tileOf(from, tile);
+  const [gx, gy] = tileOf(to, tile);
+  const centre = (tx: number, ty: number): Point => ({ x: tx * tile + tile / 2, y: ty * tile + tile / 2 });
+
+  const { tiles: walked, reachedGoal } = searchTiles(grid, sx, sy, gx, gy);
+  const tiles: Point[] = walked.map(([tx, ty]) => centre(tx, ty));
   tiles.shift();
   if (reachedGoal) {
     tiles.pop();
@@ -140,26 +155,36 @@ export const FOOT = { halfWidth: 5, halfHeight: 3 };
 
 /** Under this share of the stick's reach, a resting thumb doesn't walk him. */
 export const STICK_DEAD_ZONE = 0.2;
-/** Past this share he walks at full speed; between the two he speeds up, and never starts slower than `STICK_MIN_SPEED`. */
-export const STICK_FULL = 0.75;
-export const STICK_MIN_SPEED = 0.45;
 
-/** How far sideways he is nudged round a corner he is a few pixels off, so a gateway doesn't catch him on its post. */
-const CORNER_ASSIST = 7;
+/**
+ * How far sideways he is nudged round a corner he is a few pixels off, so a gateway doesn't catch
+ * him on its post -- a full tile plus his own half-width, so the search always reaches past a
+ * single blocked tile beside him no matter where in it his feet happen to have landed. The old
+ * value (7px, under half a tile) could leave him permanently boxed against a one-tile obstacle:
+ * decorative props beside a building routinely sat him a few px into a blocked tile's neighbour,
+ * and 7px was never enough to slide him clear of it, while tap-to-move's tile-level pathfinding
+ * routed around the same obstacle with no trouble (Kayo, 2026-09-24: "hard to walk behind
+ * buildings" -- reproduced with the joystick specifically, not with tap-to-move).
+ */
+const CORNER_ASSIST = (grid: Grid) => grid.tile + FOOT.halfWidth;
 /** The longest single move before collision is checked again, well under a tile. */
 const SUBSTEP = 4;
 
 /**
  * A thumb `dx, dy` css px from the stick's centre, with `radius` the knob's full reach,
- * as a direction whose length is his share of full walking speed; null inside the dead zone.
+ * as a direction at full walking speed; null inside the dead zone.
+ *
+ * Digital, not analog: a real walk cycle has one cadence, so a stick that throttled speed
+ * continuously between "just past the dead zone" and "full push" left his legs moving at
+ * whatever fraction the thumb happened to land on, with no stride ever actually landing --
+ * he read as gliding rather than walking (Kayo, 2026-09-24). Past the dead zone he always
+ * walks at full speed; the stick only ever picks a direction.
  */
 export function stickVector(dx: number, dy: number, radius: number): Point | null {
   const reach = Math.hypot(dx, dy) / radius;
   if (reach < STICK_DEAD_ZONE) return null;
-  const ramp = Math.min(1, (reach - STICK_DEAD_ZONE) / (STICK_FULL - STICK_DEAD_ZONE));
-  const speed = STICK_MIN_SPEED + (1 - STICK_MIN_SPEED) * ramp;
   const length = Math.hypot(dx, dy);
-  return { x: (dx / length) * speed, y: (dy / length) * speed };
+  return { x: dx / length, y: dy / length };
 }
 
 /** Every tile under his feet at `p` is open. */
@@ -199,7 +224,8 @@ function stepOnce(grid: Grid, from: Point, dir: Point, distance: number): Point 
   // Pushing mostly one way into a corner: find the nearest sideways offset that would let him through.
   const horizontal = Math.abs(dir.x) > Math.abs(dir.y);
   const forward = horizontal ? { x: Math.sign(dir.x) * distance, y: 0 } : { x: 0, y: Math.sign(dir.y) * distance };
-  for (let offset = 1; offset <= CORNER_ASSIST; offset++) {
+  const assist = CORNER_ASSIST(grid);
+  for (let offset = 1; offset <= assist; offset++) {
     for (const side of [-1, 1]) {
       const shifted = horizontal ? { x: from.x, y: from.y + side * offset } : { x: from.x + side * offset, y: from.y };
       if (!fits(shifted) || !fits({ x: shifted.x + forward.x, y: shifted.y + forward.y })) continue;
@@ -218,4 +244,34 @@ export function steer(grid: Grid, from: Point, dir: Point, distance: number): Po
   let at = from;
   for (let left = distance; left > 0; left -= SUBSTEP) at = stepOnce(grid, at, unit, Math.min(SUBSTEP, left));
   return at;
+}
+
+/**
+ * Where to stand to work a prop at `at` (a tree, a stone, a signpost): one of its four sides, picked
+ * as whichever is open ground and nearest wherever he already is (`from`), so he approaches -- and so
+ * faces it -- from whatever side he is already on, rather than always being walked round to the same
+ * fixed side. Falls back to the first candidate when his feet wouldn't fit on any of them (an object
+ * boxed in on three sides still gets stood next to on the one side that is open).
+ */
+export function approachSpot(grid: Grid, from: Point, at: Point, w: number, h: number): { anchor: Point; face: Point } {
+  const dx = w / 2 + 8;
+  const dy = Math.min(h / 4, 20) + 8;
+  const candidates: Point[] = [
+    { x: at.x, y: at.y + dy },
+    { x: at.x, y: at.y - dy },
+    { x: at.x - dx, y: at.y },
+    { x: at.x + dx, y: at.y },
+  ];
+  const open = candidates.filter((p) => footClear(grid, p));
+  const pool = open.length ? open : candidates;
+  let anchor = pool[0];
+  let nearest = Infinity;
+  for (const p of pool) {
+    const d = Math.hypot(p.x - from.x, p.y - from.y);
+    if (d < nearest) {
+      nearest = d;
+      anchor = p;
+    }
+  }
+  return { anchor, face: at };
 }

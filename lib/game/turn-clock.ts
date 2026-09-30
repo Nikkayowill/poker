@@ -29,6 +29,17 @@
 /** How long each backup waits behind the browser in front of it. */
 export const BACKUP_STAGGER_MS = 900;
 
+/**
+ * A small wait past the deadline before asking. The deadline comes from the
+ * server's clock but the timer runs on this device's, so a phone running a
+ * little fast would otherwise ask early and be told nothing is due yet.
+ */
+export const DEADLINE_GRACE_MS = 200;
+
+/** Backoff for an advance that failed or changed nothing. */
+export const ADVANCE_RETRY_BASE_MS = 500;
+export const ADVANCE_RETRY_MAX_MS = 8_000;
+
 /** The subset of a snapshot this decision needs. Deliberately primitives. */
 export interface TurnClockInput {
   isSeated: boolean;
@@ -91,7 +102,63 @@ export function planTurnClock(input: TurnClockInput, now: number): TurnClockPlan
   if (!Number.isFinite(deadline)) return { kind: "idle", reason: "no deadline" };
 
   // Overdue: go now, once. A minimum delay here is what produced the retry
-  // storm, because the deadline stayed overdue between attempts.
-  const delayMs = Math.max(0, deadline - now) + rank * BACKUP_STAGGER_MS;
+  // storm, because the deadline stayed overdue between attempts. Anything
+  // after that first ask goes through planAdvanceRetry below.
+  const delayMs = Math.max(0, deadline + DEADLINE_GRACE_MS - now) + rank * BACKUP_STAGGER_MS;
   return { kind: "advance-at", delayMs, rank };
+}
+
+/** The two deadlines an advance is waiting on, as the snapshot carries them. */
+export interface ClockDeadlines {
+  turnDeadlineAt: string | null;
+  nextHandAt: string | null;
+}
+
+export type AdvanceOutcome =
+  /** The table moved on. The new snapshot plans the next deadline. */
+  | { kind: "moved" }
+  /** The server answered but nothing was due yet, or nothing changed. */
+  | { kind: "not-due"; retryAfterMs: number | null }
+  /** No answer, or an error status. `status` is null for a network failure. */
+  | { kind: "failed"; status: number | null };
+
+/**
+ * Reads an /advance response against the deadlines it was sent for. A
+ * resolved turn or a dealt hand always writes a new deadline, so the same
+ * deadlines coming back means the table did not move.
+ */
+export function classifyAdvance(
+  planned: ClockDeadlines,
+  returned: ClockDeadlines,
+  retryAfterMs: number | null,
+): AdvanceOutcome {
+  const unchanged = planned.turnDeadlineAt === returned.turnDeadlineAt
+    && planned.nextHandAt === returned.nextHandAt;
+  return unchanged ? { kind: "not-due", retryAfterMs } : { kind: "moved" };
+}
+
+export type AdvanceRetryPlan =
+  | { kind: "stop" }
+  | { kind: "retry"; delayMs: number };
+
+/**
+ * What to do after an advance that did not move the table.
+ *
+ * Without this a solo table froze on "thinking 0s" whenever the one request
+ * failed or landed a moment before the server's deadline, because nothing
+ * else re-plans until the deadline changes. The server's own retryAfterMs is
+ * used when it gives one, since it is measured on the server's clock.
+ * Otherwise it backs off to a ceiling, so a stuck table costs one request
+ * every few seconds and never a storm. Statuses a retry can't fix stop it.
+ */
+export function planAdvanceRetry(outcome: AdvanceOutcome, attempt: number): AdvanceRetryPlan {
+  if (outcome.kind === "moved") return { kind: "stop" };
+  if (outcome.kind === "failed" && (outcome.status === 401 || outcome.status === 403 || outcome.status === 404)) {
+    return { kind: "stop" };
+  }
+  if (outcome.kind === "not-due" && outcome.retryAfterMs !== null && outcome.retryAfterMs > 0) {
+    return { kind: "retry", delayMs: outcome.retryAfterMs + DEADLINE_GRACE_MS };
+  }
+  const delayMs = Math.min(ADVANCE_RETRY_BASE_MS * 2 ** Math.max(0, attempt), ADVANCE_RETRY_MAX_MS);
+  return { kind: "retry", delayMs };
 }

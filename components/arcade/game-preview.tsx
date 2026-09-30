@@ -275,6 +275,71 @@ function renderPreview(id: ArcadeGameId) {
         </div>
       );
 
+    case "sequence-recall":
+      // Four flash pads, one lit -- the Simon-style watch-and-repeat cue.
+      return (
+        <Board
+          cols={2}
+          cells={[
+            { tone: "gold-bright" }, { tone: "empty" },
+            { tone: "empty" }, { tone: "purple" },
+          ]}
+        />
+      );
+
+    case "quick-math":
+      return (
+        <div className="pv-tiles">
+          <Cell tone="chalk" glyph="7" />
+          <Cell tone="empty" glyph="+" />
+          <Cell tone="chalk" glyph="5" />
+          <Cell tone="empty" glyph="=" />
+          <Cell tone="gold" glyph="?" />
+        </div>
+      );
+
+    case "pattern-predictor":
+      return (
+        <div className="pv-tiles">
+          <Cell tone="chalk" glyph="2" />
+          <Cell tone="chalk" glyph="4" />
+          <Cell tone="chalk" glyph="6" />
+          <Cell tone="gold" glyph="?" />
+        </div>
+      );
+
+    case "trivia-blitz":
+      return (
+        <div className="pv-tiles">
+          <Cell tone="gold" glyph="T" />
+          <Cell tone="empty" glyph="F" />
+        </div>
+      );
+
+    case "lights-out":
+      // A 4x4 corner, half lit -- the board mid-solve, not the win state.
+      return (
+        <Board
+          cols={4}
+          cells={[
+            { tone: "gold-bright" }, { tone: "empty" }, { tone: "gold-bright" }, { tone: "empty" },
+            { tone: "empty" }, { tone: "gold-bright" }, { tone: "empty" }, { tone: "gold-bright" },
+            { tone: "gold-bright" }, { tone: "empty" }, { tone: "empty" }, { tone: "empty" },
+            { tone: "empty" }, { tone: "gold-bright" }, { tone: "empty" }, { tone: "gold-bright" },
+          ]}
+        />
+      );
+
+    case "word-guess":
+      return (
+        <div className="pv-tiles">
+          <Cell tone="chalk" glyph="_" />
+          <Cell tone="gold" glyph="A" />
+          <Cell tone="chalk" glyph="_" />
+          <Cell tone="chalk" glyph="_" />
+        </div>
+      );
+
     default:
       return null;
   }

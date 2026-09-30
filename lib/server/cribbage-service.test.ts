@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CRIBBAGE_TURN_MS } from "@/lib/cribbage/engine";
 import {
   CribbageRequestError,
   joinCribbageTable,
@@ -161,7 +162,9 @@ describe("leaving before the deal", () => {
     const before = await balance(joiner.token);
     await joinCribbageTable(joiner.token, table.id);
 
-    await leaveCribbageTable(joiner.token, table.id);
+    const left = await leaveCribbageTable(joiner.token, table.id);
+    // `table: null` is what takes the client out of the waiting room.
+    expect(left.table).toBeNull();
     expect(await balance(joiner.token)).toBe(before);
 
     await expect(leaveCribbageTable(joiner.token, table.id)).rejects.toBeInstanceOf(CribbageRequestError);
@@ -190,48 +193,62 @@ describe("leaving before the deal", () => {
   });
 });
 
+/** Every seated player discards their first card, in seat order -- legal, order-independent. */
+async function discardAll(tokens: string[], tableId: string) {
+  for (const token of tokens) {
+    const { table } = await readCribbageTableById(token, tableId);
+    const card = table.state?.yourHand[0];
+    if (!card) continue;
+    await playCribbageMove(token, { tableId, version: table.version, move: { type: "discard", card } });
+  }
+}
+
+/** Plays out pegging: whoever's turn it is plays the lowest legal card, or goes. */
+async function playOutPegging(tokens: string[], tableId: string) {
+  let guard = 0;
+  for (;;) {
+    guard += 1;
+    if (guard > 500) throw new Error("Pegging did not conclude.");
+    const { table } = await readCribbageTableById(tokens[0], tableId);
+    if (table.status !== "active" || table.state?.phase !== "pegging") return;
+    const turnSeat = table.state.pegging?.turn;
+    const mover = tokens[turnSeat as number];
+    const { table: view } = await readCribbageTableById(mover, tableId);
+    const hand = [...(view.state?.yourHand ?? [])].sort((a, b) => a.rank - b.rank);
+    const count = view.state?.pegging?.count ?? 0;
+    const playable = hand.find((card) => Math.min(card.rank, 10) + count <= 31);
+    const move = playable ? { type: "peg", card: playable } : { type: "go" };
+    await playCribbageMove(mover, { tableId, version: view.version, move });
+  }
+}
+
+async function playFullTable(tokens: string[], tableId: string) {
+  let hands = 0;
+  for (;;) {
+    hands += 1;
+    if (hands > 300) throw new Error("Match did not conclude.");
+    const { table } = await readCribbageTableById(tokens[0], tableId);
+    if (table.status !== "active") return;
+    await discardAll(tokens, tableId);
+    await playOutPegging(tokens, tableId);
+  }
+}
+
+
+/** Opens a 3-seat table and deals it. */
+async function startedTable(tokens: string[]) {
+  const { table: opened } = await openCribbageTable(tokens[0], STAKE);
+  await joinCribbageTable(tokens[1], opened.id);
+  await joinCribbageTable(tokens[2], opened.id);
+  const { table } = await startCribbageTableAsHost(tokens[0], opened.id);
+  return table;
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("playing a table to completion", () => {
-  /** Every seated player discards their first card, in seat order -- legal, order-independent. */
-  async function discardAll(tokens: string[], tableId: string) {
-    for (const token of tokens) {
-      const { table } = await readCribbageTableById(token, tableId);
-      const card = table.state?.yourHand[0];
-      if (!card) continue;
-      await playCribbageMove(token, { tableId, version: table.version, move: { type: "discard", card } });
-    }
-  }
-
-  /** Plays out pegging: whoever's turn it is plays the lowest legal card, or goes. */
-  async function playOutPegging(tokens: string[], tableId: string) {
-    let guard = 0;
-    for (;;) {
-      guard += 1;
-      if (guard > 500) throw new Error("Pegging did not conclude.");
-      const { table } = await readCribbageTableById(tokens[0], tableId);
-      if (table.status !== "active" || table.state?.phase !== "pegging") return;
-      const turnSeat = table.state.pegging?.turn;
-      const mover = tokens[turnSeat as number];
-      const { table: view } = await readCribbageTableById(mover, tableId);
-      const hand = [...(view.state?.yourHand ?? [])].sort((a, b) => a.rank - b.rank);
-      const count = view.state?.pegging?.count ?? 0;
-      const playable = hand.find((card) => Math.min(card.rank, 10) + count <= 31);
-      const move = playable ? { type: "peg", card: playable } : { type: "go" };
-      await playCribbageMove(mover, { tableId, version: view.version, move });
-    }
-  }
-
-  async function playFullTable(tokens: string[], tableId: string) {
-    let hands = 0;
-    for (;;) {
-      hands += 1;
-      if (hands > 300) throw new Error("Match did not conclude.");
-      const { table } = await readCribbageTableById(tokens[0], tableId);
-      if (table.status !== "active") return;
-      await discardAll(tokens, tableId);
-      await playOutPegging(tokens, tableId);
-    }
-  }
-
   it("conserves Gold across a full 3-player game -- the group's total never moves", async () => {
     const { players, total } = await group(3);
     const before = await total();
@@ -269,43 +286,113 @@ describe("playing a table to completion", () => {
 });
 
 describe("resigning", () => {
-  it("ends the whole table and pays the highest remaining score exactly once", async () => {
+  it("forfeits only the resigner's stake: the others are refunded and split it, exactly once", async () => {
     const { players, total } = await group(3);
     const before = await total();
-    const { table: opened } = await openCribbageTable(players[0].token, STAKE);
-    await joinCribbageTable(players[1].token, opened.id);
-    await joinCribbageTable(players[2].token, opened.id);
-    await startCribbageTableAsHost(players[0].token, opened.id);
+    const balances = await Promise.all(players.map((p) => balance(p.token)));
+    const table = await startedTable(players.map((p) => p.token));
 
-    const { table: resigned } = await resignCribbageTable(players[0].token, opened.id);
+    const { table: resigned } = await resignCribbageTable(players[0].token, table.id);
     expect(resigned.status).toBe("completed");
-    expect(resigned.winnerId).not.toBeNull();
-    expect(resigned.winnerId).not.toBe((await ensureProfile(players[0].token)).id);
+    expect(resigned.winnerId).toBeNull();
+    expect(resigned.forfeitedIds).toEqual([players[0].id]);
+    expect(resigned.yourPayout).toBe(0);
+    expect(await balance(players[0].token)).toBe(balances[0] - STAKE);
+    expect(await balance(players[1].token)).toBe(balances[1] + STAKE / 2);
+    expect(await balance(players[2].token)).toBe(balances[2] + STAKE / 2);
     expect(await total()).toBe(before);
 
     // A second resign call on an already-settled table is a harmless no-op --
-    // it must not pay the pot again.
-    const { table: again } = await resignCribbageTable(players[1].token, opened.id);
+    // it must not pay anything again.
+    const { table: again } = await resignCribbageTable(players[1].token, table.id);
     expect(again.status).toBe("completed");
     expect(await total()).toBe(before);
   });
 
+  it("gives two colluders no way to take a stranger's stake", async () => {
+    const { players } = await group(3);
+    const [friendA, friendB, stranger] = players;
+    const pairBefore = (await balance(friendA.token)) + (await balance(friendB.token));
+    const strangerBefore = await balance(stranger.token);
+    const table = await startedTable(players.map((p) => p.token));
+
+    await resignCribbageTable(friendA.token, table.id);
+    expect(await balance(stranger.token)).toBeGreaterThanOrEqual(strangerBefore);
+    expect((await balance(friendA.token)) + (await balance(friendB.token))).toBeLessThan(pairBefore);
+  });
+
   it("surfaces the result to a seated player whose own poll never triggered the settlement", async () => {
     const { players } = await group(3);
-    const { table: opened } = await openCribbageTable(players[0].token, STAKE);
-    await joinCribbageTable(players[1].token, opened.id);
-    await joinCribbageTable(players[2].token, opened.id);
-    await startCribbageTableAsHost(players[0].token, opened.id);
+    const table = await startedTable(players.map((p) => p.token));
 
-    await resignCribbageTable(players[0].token, opened.id);
+    await resignCribbageTable(players[0].token, table.id);
 
-    // players[1] and players[2] never called resignCribbageTable or any other
-    // move -- a plain readMyCribbageTable poll, as the shell sends every 2s,
-    // is the only way they find out the table ended.
+    // players[1] never called resignCribbageTable or any other move -- a
+    // plain readMyCribbageTable poll is the only way they find out.
     const { table: seenByOther } = await readMyCribbageTable(players[1].token);
     expect(seenByOther?.status).toBe("completed");
-    expect(seenByOther?.winnerId).not.toBeNull();
-    expect(seenByOther?.winnerId).not.toBe(players[0].id);
+    expect(seenByOther?.winnerId).toBeNull();
+    expect(seenByOther?.forfeitedIds).toEqual([players[0].id]);
+    expect(seenByOther?.yourPayout).toBe(STAKE + STAKE / 2);
+  });
+});
+
+describe("the turn clock", () => {
+  it("forfeits a seat that never discards, settled by another player's poll", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-25T12:00:00Z"));
+    const { players, total } = await group(3);
+    const before = await total();
+    const balances = await Promise.all(players.map((p) => balance(p.token)));
+    const tokens = players.map((p) => p.token);
+    const table = await startedTable(tokens);
+
+    // Seats 1 and 2 discard; seat 0 walks away.
+    for (const token of tokens.slice(1)) {
+      const { table: view } = await readCribbageTableById(token, table.id);
+      const card = view.state?.yourHand[0];
+      if (!card) throw new Error("No hand dealt.");
+      await playCribbageMove(token, { tableId: table.id, version: view.version, move: { type: "discard", card } });
+    }
+
+    vi.setSystemTime(Date.now() + CRIBBAGE_TURN_MS - 1_000);
+    expect((await readMyCribbageTable(tokens[1])).table?.status).toBe("active");
+
+    vi.setSystemTime(Date.now() + 2_000);
+    const { table: seen } = await readMyCribbageTable(tokens[1]);
+    expect(seen?.status).toBe("completed");
+    expect(seen?.state?.winReason).toBe("Timeout");
+    expect(seen?.forfeitedIds).toEqual([players[0].id]);
+    expect(await balance(tokens[0])).toBe(balances[0] - STAKE);
+    expect(await balance(tokens[1])).toBe(balances[1] + STAKE / 2);
+    expect(await total()).toBe(before);
+
+    // Polling again pays nothing more.
+    await readMyCribbageTable(tokens[2]);
+    expect(await total()).toBe(before);
+  });
+
+  it("settles the forfeit when the staller finally sends a move", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-25T12:00:00Z"));
+    const { players, total } = await group(3);
+    const before = await total();
+    const table = await startedTable(players.map((p) => p.token));
+    const { table: view } = await readCribbageTableById(players[0].token, table.id);
+    const card = view.state?.yourHand[0];
+    if (!card) throw new Error("No hand dealt.");
+
+    vi.setSystemTime(Date.now() + CRIBBAGE_TURN_MS + 1);
+    const { table: late } = await playCribbageMove(players[0].token, {
+      tableId: table.id,
+      version: view.version,
+      move: { type: "discard", card },
+    });
+    expect(late.status).toBe("completed");
+    // Nobody had discarded, so the whole table forfeited and everyone is refunded.
+    expect(late.forfeitedIds).toHaveLength(3);
+    expect(late.yourPayout).toBe(STAKE);
+    expect(await total()).toBe(before);
   });
 });
 
@@ -314,16 +401,11 @@ describe("per-game leaderboard stats", () => {
     const { players } = await group(3);
     const tokens = players.map((p) => p.token);
 
-    // Three tables, same three seats each time -- resigned immediately after
-    // dealing, same minimal shape the "resigning" describe block above
-    // already exercises, just repeated past cribbage's minSample (3) so a
-    // ranked board exists to check.
+    // Three played-out tables, past cribbage's minSample (3), so a ranked
+    // board exists to check.
     for (let round = 0; round < 3; round += 1) {
-      const { table: opened } = await openCribbageTable(tokens[0], STAKE);
-      await joinCribbageTable(tokens[1], opened.id);
-      await joinCribbageTable(tokens[2], opened.id);
-      await startCribbageTableAsHost(tokens[0], opened.id);
-      await resignCribbageTable(tokens[0], opened.id);
+      const table = await startedTable(tokens);
+      await playFullTable(tokens, table.id);
     }
 
     const board = await getGameLeaderboard("cribbage", 10);
@@ -332,6 +414,16 @@ describe("per-game leaderboard stats", () => {
     // Every one of the 3 tables produced exactly one win and two losses.
     expect(total).toBe(3 * 3);
     expect(board.reduce((sum, row) => sum + row.stats.wins, 0)).toBe(3);
+  });
+
+  it("records nothing for a table that ended on a forfeit, since nobody won it", async () => {
+    const { players } = await group(3);
+    const tokens = players.map((p) => p.token);
+    for (let round = 0; round < 3; round += 1) {
+      const table = await startedTable(tokens);
+      await resignCribbageTable(tokens[0], table.id);
+    }
+    expect(await getGameLeaderboard("cribbage", 10)).toHaveLength(0);
   });
 });
 

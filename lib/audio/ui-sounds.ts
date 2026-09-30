@@ -1,5 +1,5 @@
 /**
- * The three chrome cues, named by what the press meant.
+ * The chrome cues, named by what the press meant.
  *
  * `SoundEffect` is the vocabulary; this is the intent. A call site reading
  * `selectSound()` says why it makes a noise, where `playSound("select")` only
@@ -9,6 +9,7 @@
  *
  *   tapSound()     you moved: a menu opened, a link was followed, a panel closed
  *   selectSound()  you chose: a mode, a tier, a toggle, a tab, state changed
+ *   toggleSound()  you flipped a sound or music switch
  *   gameOnSound()  you are in: a table or a game actually took you
  *
  * Something on the route has to have applied the mute first. `setSoundEnabled`
@@ -42,6 +43,11 @@ export function selectSound() {
   playSound("select");
 }
 
+/** A sound or music switch flipping, either way. */
+export function toggleSound() {
+  playSound("toggle");
+}
+
 /**
  * You are in.
  *
@@ -52,4 +58,19 @@ export function selectSound() {
  */
 export function gameOnSound() {
   playSound("game-on");
+}
+
+/**
+ * A puzzle paid off: a Blockudoku line, a Connections group, a correct Brain
+ * Streak answer. Distinct from `selectSound` on purpose -- a choice landing
+ * and a puzzle rewarding you are different presses, and folding both into one
+ * cue was the "every game sounds like a menu" complaint this pair fixes.
+ */
+export function clearSound() {
+  playSound("clear");
+}
+
+/** A bigger payoff than one `clearSound` -- several lines/groups at once, or a run milestone. */
+export function comboSound() {
+  playSound("combo");
 }

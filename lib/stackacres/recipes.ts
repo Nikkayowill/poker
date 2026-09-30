@@ -64,6 +64,7 @@ export const RECIPE_IDS = [
   "sauerkraut",
   "bean_casserole",
   "harvest_feast",
+  "metal",
 ] as const;
 export type RecipeId = (typeof RECIPE_IDS)[number];
 
@@ -247,6 +248,15 @@ export const RECIPE_CATALOGUE: Readonly<Record<RecipeId, RecipeDef>> = {
     output: { item: "harvest_feast", quantity: 1 },
     processingMs: 0,
   },
+  // The Smelter. Two ore to a bar, and one broken boulder pays two ore, so a
+  // broken boulder is a bar. Instant like every recipe added since Cake.
+  metal: {
+    label: "Metal",
+    machine: "smelter",
+    inputs: [{ item: "iron_ore", quantity: 2 }],
+    output: { item: "metal", quantity: 1 },
+    processingMs: 0,
+  },
 };
 
 /** What the button says while making one batch of `recipe`. */
@@ -266,6 +276,7 @@ export const RECIPE_VERB: Readonly<Record<RecipeId, string>> = {
   sauerkraut: "Jar",
   bean_casserole: "Bake",
   harvest_feast: "Cook",
+  metal: "Smelt",
 };
 
 /** Whether this recipe settles in one transaction rather than through a

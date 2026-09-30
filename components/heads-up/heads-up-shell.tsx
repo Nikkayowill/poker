@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { navigateWithOrb } from "@/lib/loading/orb-transition";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
@@ -10,6 +11,10 @@ import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { CHEAPEST_TIER, isStakesTier, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { createRequestSequence } from "@/lib/ui/request-sequence";
+import { HEADS_UP_STATE_CHANGED, headsUpChannelName } from "@/lib/heads-up/heads-up-channel";
+import { watchInvalidations } from "@/lib/realtime/watch-invalidations";
+import { browserSupabase } from "@/lib/supabase/browser-client";
 
 /**
  * The client half of heads-up poker: the lobby (quick play, invites), the
@@ -21,8 +26,6 @@ import type { PlayerProfile } from "@/lib/profile/types";
  * simplified for exactly two seats and no browsable open-table list --
  * heads-up is quick-play-or-invite, never pick-a-table-off-a-list.
  */
-
-const POLL_MS = 2000;
 
 interface HeadsUpPlayer {
   profileId: string;
@@ -69,29 +72,31 @@ export function HeadsUpShell() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const sending = useRef(false);
+  // Keeps a poll that left before a join or leave from flipping the lobby back.
+  const [sequence] = useState(() => createRequestSequence<HeadsUpTable>());
   const mounted = useRef(true);
 
   const refresh = useCallback(async () => {
-    if (sending.current) return;
+    const ticket = sequence.beginRead();
+    if (!ticket) return;
     try {
       const response = await fetch("/api/heads-up", { cache: "no-store" });
       const data = (await response.json()) as Partial<LobbyResponse>;
-      if (!mounted.current || sending.current) return;
+      if (!mounted.current || !sequence.acceptRead(ticket)) return;
       if (response.ok) {
         if (data.profile) setProfile(data.profile);
-        if (data.table !== undefined) setTable(data.table ?? null);
+        if (data.table !== undefined && sequence.admit(data.table)) setTable(data.table ?? null);
         if (data.invites) setInvites(data.invites);
       }
     } catch {
-      // A dropped poll is not worth a banner; the next one is two seconds away.
+      // A dropped read is not worth a banner; the next ping or reconnect reads again.
     } finally {
       if (mounted.current) setLoaded(true);
     }
-  }, [setProfile]);
+  }, [sequence, setProfile]);
 
   const send = useCallback(async (url: string, body: unknown) => {
-    sending.current = true;
+    const done = sequence.beginWrite();
     setBusy(true);
     setError(null);
     try {
@@ -108,15 +113,15 @@ export function HeadsUpShell() {
         setError(data.error ?? "That did not go through.");
         return;
       }
-      if (data.table !== undefined) setTable(data.table ?? null);
+      if (data.table !== undefined && sequence.admit(data.table)) setTable(data.table ?? null);
       if (data.invites) setInvites(data.invites);
     } catch {
       if (mounted.current) setError("Could not reach the match. Check your connection.");
     } finally {
-      sending.current = false;
+      done();
       if (mounted.current) setBusy(false);
     }
-  }, [setProfile]);
+  }, [sequence, setProfile]);
 
   // The friend this lobby was opened to invite, from the friends drawer's
   // own picker (`?invite=<profileId>&name=<displayName>`) -- a prefill only,
@@ -142,22 +147,33 @@ export function HeadsUpShell() {
 
   useEffect(() => {
     mounted.current = true;
-    const poll = () => {
-      if (!document.hidden) void refresh();
-    };
-    const first = window.setTimeout(poll, 0);
-    const timer = window.setInterval(poll, POLL_MS);
+    const first = window.setTimeout(() => void refresh(), 0);
     return () => {
       mounted.current = false;
       window.clearTimeout(first);
-      window.clearInterval(timer);
     };
   }, [refresh]);
+
+  // Cross-browser sync: an opponent joining, an invite arriving, the match
+  // dealing. A trigger pings hu:<profileId> on every write to the heads-up
+  // tables and this re-reads, so nothing polls. The channel needs the profile
+  // id, which is only known after the first read above lands.
+  const profileId = profile?.id;
+  useEffect(() => {
+    const supabase = browserSupabase();
+    if (!supabase || !profileId) return;
+    return watchInvalidations({
+      supabase,
+      channelName: headsUpChannelName(profileId),
+      event: HEADS_UP_STATE_CHANGED,
+      refresh,
+    });
+  }, [profileId, refresh]);
 
   // The whole reason this shell exists: the instant the match deals, hand
   // off to the real table. No in-shell match frame at all.
   useEffect(() => {
-    if (table?.gameId) router.push(`/?table=${table.gameId}`);
+    if (table?.gameId) navigateWithOrb(() => router.push(`/?table=${table.gameId}`));
   }, [table?.gameId, router]);
 
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;

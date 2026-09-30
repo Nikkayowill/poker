@@ -1,7 +1,8 @@
 import { randomUUID } from "crypto";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { applyPlayerAction } from "@/lib/game/engine";
 import { TIER_CONFIG } from "@/lib/game/tiers";
+import * as gameStore from "./game-store";
 import { getStoredGame, updateStoredGame } from "./game-store";
 import {
   HeadsUpRequestError,
@@ -13,10 +14,11 @@ import {
   readPendingHeadsUpInviteFor,
   settleHeadsUpIfFinished,
 } from "./heads-up-service";
-import { __resetHeadsUpTablesForTest } from "./heads-up-store";
+import { __resetHeadsUpTablesForTest, claimHeadsUpSeat } from "./heads-up-store";
 import { __resetHeadToHeadMemory, getHeadToHeadRecords } from "./head-to-head-store";
 import { __resetLeaderboardMemory, getGameLeaderboard } from "./leaderboard-store";
-import { adjustGold, ensureProfile } from "./profile-store";
+import * as profileStore from "./profile-store";
+import { adjustGold, creditGoldByProfileLedgered, ensureProfile } from "./profile-store";
 
 /**
  * The heads-up money contract, in memory mode. Same conservation argument
@@ -50,10 +52,21 @@ async function pair(gold = 10_000) {
   };
 }
 
+/** This profile's memory-mode gold_ledger rows, keyed `${correlationId}:${kind}` like the real unique index. */
+function ledgerRows(profileId: string) {
+  return [...(globalThis.__riverGoldLedger ?? new Map()).entries()]
+    .filter(([, row]) => row.profileId === profileId)
+    .map(([key, row]) => ({ key, amount: row.amount, kind: row.kind }));
+}
+
 beforeEach(() => {
   __resetHeadsUpTablesForTest();
   __resetLeaderboardMemory();
   __resetHeadToHeadMemory();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("quick play", () => {
@@ -163,6 +176,91 @@ describe("leaving before the deal", () => {
   });
 });
 
+describe("refunds against the stake's own ledger entry", () => {
+  it("credits a leave refund under the stake's correlation id, so the reconcile cron can't refund it again", async () => {
+    const { a } = await pair();
+    const before = await balance(a.token);
+    const { table } = await openHeadsUpQuickPlay(a.token, "1k");
+    await leaveHeadsUpTable(a.token, table.id);
+    expect(await balance(a.token)).toBe(before);
+
+    const rows = ledgerRows(a.id);
+    expect(rows.map((row) => row.kind).sort()).toEqual(["credit", "debit"]);
+    const [stakeId, refundId] = rows.map((row) => row.key.replace(/:(debit|credit)$/, ""));
+    expect(refundId).toBe(stakeId);
+
+    // What reconcileOrphanedGoldDebits would do if the stake's confirm had failed.
+    const cron = await creditGoldByProfileLedgered(a.id, STAKE, stakeId, "reconciliation_refund:test");
+    expect(cron).toMatchObject({ success: true, alreadyApplied: true });
+    expect(await balance(a.token)).toBe(before);
+  });
+});
+
+describe("dealing", () => {
+  it("archives a game built from a stale seat list and deals the players actually seated", async () => {
+    const { a, b } = await pair();
+    const c = await funded();
+    const { table: opened } = await openHeadsUpQuickPlay(a.token, "1k");
+    const aBefore = await balance(a.token);
+
+    const realCreate = gameStore.createStoredGame;
+    const written: string[] = [];
+    vi.spyOn(gameStore, "createStoredGame").mockImplementation(async (state) => {
+      written.push(state.id);
+      if (written.length === 1) {
+        // Between the deal's seat read and its guard: a leaves (refunded)
+        // and c takes the free chair.
+        await leaveHeadsUpTable(a.token, opened.id);
+        await claimHeadsUpSeat(opened.id, c.id, c.token, `test_stake:${c.id}`);
+      }
+      return realCreate(state);
+    });
+
+    const { table: dealt } = await openHeadsUpQuickPlay(b.token, "1k");
+    expect(dealt.id).toBe(opened.id);
+    expect(dealt.status).toBe("active");
+    expect(written).toHaveLength(2);
+    expect(dealt.gameId).toBe(written[1]);
+
+    const game = await getStoredGame(written[1]);
+    expect(game?.seats.map((seat) => seat.profileId).sort()).toEqual([b.id, c.id].sort());
+    // The refunded player is in neither the table nor the live game.
+    expect(await balance(a.token)).toBe(aBefore + STAKE);
+    // The stale game can never be swept as a cash table.
+    expect((await getStoredGame(written[0]))?.status).toBe("archived");
+  });
+
+  it("leaves both players seated and refundable when the game write fails", async () => {
+    const { a, b } = await pair();
+    const { table: opened } = await openHeadsUpInvite(a.token, "1k", b.id);
+    const bBefore = await balance(b.token);
+    vi.spyOn(gameStore, "createStoredGame").mockRejectedValueOnce(new Error("db down"));
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const { table } = await joinHeadsUpTable(b.token, opened.id);
+    expect(table.status).toBe("waiting");
+    expect(table.players).toHaveLength(2);
+    expect(await balance(b.token)).toBe(bBefore - STAKE);
+
+    await leaveHeadsUpTable(b.token, opened.id);
+    expect(await balance(b.token)).toBe(bBefore);
+  });
+
+  it("never refunds a quick-play joiner whose seat was claimed, even if the request fails after it", async () => {
+    const { a, b } = await pair();
+    await openHeadsUpQuickPlay(a.token, "1k");
+    const bBefore = await balance(b.token);
+    // tableView's profile read is the last step of the request.
+    vi.spyOn(profileStore, "getPublicProfilesByIds").mockRejectedValueOnce(new Error("read failed"));
+
+    await expect(openHeadsUpQuickPlay(b.token, "1k")).rejects.toThrow("read failed");
+    expect(await balance(b.token)).toBe(bBefore - STAKE);
+    const { table } = await readMyHeadsUpTable(b.token);
+    expect(table?.status).toBe("active");
+    expect(table?.yourSeat).toBe(1);
+  });
+});
+
 describe("playing a match to completion", () => {
   /**
    * Forces the dealt game straight to a bust: seat 0 checks down a river
@@ -264,6 +362,25 @@ describe("playing a match to completion", () => {
     await settleHeadsUpIfFinished(finished);
     expect(await balance(b.token)).toBeGreaterThan(await balance(a.token));
     expect(await total()).toBe(before);
+  });
+
+  it("pays a finished match once, under the table's ledger key, however often it is settled", async () => {
+    const { a, b, total } = await pair();
+    const before = await total();
+    const aBefore = await balance(a.token);
+    await openHeadsUpQuickPlay(a.token, "1k");
+    const { table: matched } = await openHeadsUpQuickPlay(b.token, "1k");
+    const finished = await forceLoserBust(matched.gameId!, a.token);
+
+    const paid = await settleHeadsUpIfFinished(finished);
+    expect(paid?.goldBalance).toBe(aBefore + STAKE);
+    // Every later action or reaction on the decided game settles again.
+    // A completed table must not pay a second pot, ledger row or not.
+    expect(await settleHeadsUpIfFinished(finished)).toBeNull();
+    expect(await settleHeadsUpIfFinished(finished)).toBeNull();
+    expect(await balance(a.token)).toBe(aBefore + STAKE);
+    expect(await total()).toBe(before);
+    expect(ledgerRows(a.id).some((row) => row.key === `heads_up_payout:${matched.id}:credit`)).toBe(true);
   });
 
   describe("per-game leaderboard stats", () => {

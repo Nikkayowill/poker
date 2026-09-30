@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { anteUpConnectionsPayout, connectionsDailyBonusMultiplier } from "./ante-up-connections";
+import {
+  CONNECTIONS_LADDER_BY_PRESSURE,
+  anteUpConnectionsPayout,
+  connectionsDailyBonusMultiplier,
+  connectionsStakeRules,
+} from "./ante-up-connections";
 import type { ConnectionsRound } from "./puzzles/connections";
 
 function puzzle(status: ConnectionsRound["status"], mistakes: number): Pick<ConnectionsRound, "status" | "mistakes"> {
@@ -43,5 +48,48 @@ describe("connectionsDailyBonusMultiplier", () => {
     expect(connectionsDailyBonusMultiplier(puzzle("won", 1))).toBe(2.0);
     expect(connectionsDailyBonusMultiplier(puzzle("won", 2))).toBe(1.5);
     expect(connectionsDailyBonusMultiplier(puzzle("won", 3))).toBe(1.1);
+  });
+});
+
+describe("connectionsStakeRules", () => {
+  it.each([
+    [0, 4, 0],
+    [9_999, 4, 0],
+    [10_000, 3, 1],
+    [100_000, 2, 2],
+    [1_000_000, 1, 3],
+  ] as const)("a %i wager allows %i mistakes, band %i ladder", (wager, maxMistakes, band) => {
+    expect(connectionsStakeRules(wager)).toEqual({ maxMistakes, ladder: CONNECTIONS_LADDER_BY_PRESSURE[band] });
+  });
+
+  it("names a rung for every win the mistake limit allows", () => {
+    for (const wager of [500, 10_000, 100_000, 1_000_000]) {
+      const { ladder, maxMistakes } = connectionsStakeRules(wager);
+      expect(Object.keys(ladder)).toHaveLength(maxMistakes);
+    }
+  });
+
+  it("profits only on a clean solve from 10k up, and the clean multiple shrinks by band", () => {
+    const cleans = ([1, 2, 3] as const).map((band) => {
+      const ladder = CONNECTIONS_LADDER_BY_PRESSURE[band];
+      expect(ladder[0]).toBeGreaterThan(1);
+      for (const [mistakes, multiplier] of Object.entries(ladder)) {
+        if (mistakes !== "0") expect(multiplier).toBeLessThan(1);
+      }
+      return ladder[0];
+    });
+    expect(cleans).toEqual([...cleans].sort((a, b) => b - a));
+  });
+
+  it("pays a small-stake win on the last life a little over the stake", () => {
+    const ladder = CONNECTIONS_LADDER_BY_PRESSURE[0];
+    expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 3), ladder })).toBe(1050);
+  });
+
+  it("pays a 1M clean solve 1.6x", () => {
+    const ladder = CONNECTIONS_LADDER_BY_PRESSURE[3];
+    expect(anteUpConnectionsPayout({ wager: 1_000_000, puzzle: puzzle("won", 0), ladder })).toBe(1_600_000);
+    // A rung the ladder does not name falls to the usual floor, never higher.
+    expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 2), ladder })).toBe(600);
   });
 });

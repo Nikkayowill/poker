@@ -39,6 +39,12 @@ const PIPS: Record<number, readonly number[]> = {
   6: [0, 2, 3, 5, 6, 8],
 };
 
+/** mm:ss, rounded up so "0:00" only ever means the flag fell. */
+function clockLabel(ms: number): string {
+  const seconds = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 function bidWords(bid: LiarsDiceBid): string {
   return `${bid.count} ${bid.count === 1 ? FACE_WORD_SINGLE[bid.faceValue] : FACE_WORDS[bid.faceValue]}`;
 }
@@ -76,11 +82,13 @@ function Hand({
   label,
   dice,
   count,
+  clockMs,
   matchFace,
 }: {
   label: string;
   dice: number[] | null;
   count: number;
+  clockMs: number;
   matchFace?: number;
 }) {
   const faces: (number | null)[] = dice ?? Array.from({ length: count }, () => null);
@@ -89,7 +97,7 @@ function Hand({
       <div className="ld-hand-head">
         <span className="ld-side">{label}</span>
         <span className="ld-count">
-          {count} {count === 1 ? "die" : "dice"}
+          {count} {count === 1 ? "die" : "dice"} · {clockLabel(clockMs)}
         </span>
       </div>
       <div
@@ -286,6 +294,7 @@ const REASON_WORDS: Record<string, [string, string]> = {
   // [what you see when you won, what you see when you lost]
   "Out of dice": ["They ran out of dice.", "You ran out of dice."],
   Resigned: ["They resigned.", "You resigned."],
+  Timeout: ["They ran out of time.", "You ran out of time."],
 };
 
 export function LiarsDiceBoard({ state, yourSeat, busy, onMove }: DuelBoardProps<LiarsDiceSnapshot>) {
@@ -339,7 +348,13 @@ export function LiarsDiceBoard({ state, yourSeat, busy, onMove }: DuelBoardProps
   return (
     <div className="ld">
       <div className="ld-table">
-        <Hand label="Opponent" dice={theirs.dice} count={theirs.diceCount} matchFace={bid?.faceValue} />
+        <Hand
+          label="Opponent"
+          dice={theirs.dice}
+          count={theirs.diceCount}
+          clockMs={state.clocks[them]}
+          matchFace={bid?.faceValue}
+        />
 
         <div className={clsx("ld-bid-panel", yourTurn && "ld-bid-panel-yours")}>
           {over ? (
@@ -359,7 +374,13 @@ export function LiarsDiceBoard({ state, yourSeat, busy, onMove }: DuelBoardProps
           <p className="ld-status" aria-live="polite">{statusLine}</p>
         </div>
 
-        <Hand label="You" dice={mine.dice} count={mine.diceCount} matchFace={ownMatch} />
+        <Hand
+          label="You"
+          dice={mine.dice}
+          count={mine.diceCount}
+          clockMs={state.clocks[yourSeat]}
+          matchFace={ownMatch}
+        />
       </div>
 
       {/* Beside the table in landscape, under it on a phone held upright. */}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MEMORY_COLUMNS,
+  MEMORY_MAX_PAIRS,
   MEMORY_PAIRS,
   MEMORY_RANKS,
   MEMORY_TILES,
@@ -9,7 +10,9 @@ import {
   dealMemoryTiles,
   flipMemoryTile,
   memoryElapsedMs,
+  memoryColumnsFor,
   memoryFlipProblem,
+  memoryTilesMatch,
   startMemoryRound,
   toMemorySnapshot,
   type MemoryRound,
@@ -21,7 +24,7 @@ const LATER = new Date("2026-08-06T12:03:44Z");
 
 /** A board laid out in a known order: pairs sit side by side, 0-1, 2-3, and so on. */
 function orderedTiles(): Card[] {
-  return MEMORY_RANKS.flatMap((rank) => [
+  return MEMORY_RANKS.slice(0, MEMORY_PAIRS).flatMap((rank) => [
     { rank, suit: "spades" as const },
     { rank, suit: "hearts" as const },
   ]);
@@ -42,8 +45,11 @@ describe("the board", () => {
     expect(MEMORY_TILES).toBe(16);
     expect(MEMORY_PAIRS).toBe(8);
     expect(MEMORY_COLUMNS).toBe(4);
-    expect(MEMORY_RANKS).toHaveLength(MEMORY_PAIRS);
-    expect(new Set(MEMORY_RANKS).size).toBe(MEMORY_PAIRS);
+    expect(MEMORY_RANKS).toHaveLength(13);
+    expect(new Set(MEMORY_RANKS).size).toBe(13);
+    expect(new Set(dealMemoryTiles(() => 0).map((tile) => tile.rank))).toEqual(
+      new Set(MEMORY_RANKS.slice(0, MEMORY_PAIRS)),
+    );
   });
 
   it("deals exactly two of every rank", () => {
@@ -57,7 +63,7 @@ describe("the board", () => {
 
   it("gives the two copies of a rank different suits, so the grid is not a spot-the-difference", () => {
     const tiles = dealMemoryTiles((max) => max - 1);
-    for (const rank of MEMORY_RANKS) {
+    for (const rank of MEMORY_RANKS.slice(0, MEMORY_PAIRS)) {
       const suits = tiles.filter((tile) => tile.rank === rank).map((tile) => tile.suit);
       expect(new Set(suits).size).toBe(2);
     }
@@ -70,7 +76,8 @@ describe("the board", () => {
   });
 
   it("refuses a board that is not the right size", () => {
-    expect(() => startMemoryRound([], START)).toThrow(/exactly 16 tiles/);
+    expect(() => startMemoryRound([], START)).toThrow(/even number of tiles/);
+    expect(() => startMemoryRound(orderedTiles().slice(1), START)).toThrow(/even number of tiles/);
   });
 });
 
@@ -217,5 +224,62 @@ describe("dealMemoryRound", () => {
     expect(round.status).toBe("playing");
     expect(round.startedAt).toBe(START.toISOString());
     expect(round.finishedAt).toBeNull();
+  });
+});
+
+describe("bigger boards", () => {
+  it.each([
+    [10, 5],
+    [12, 6],
+    [15, 6],
+  ])("deals %i pairs, each exactly twice, %i columns wide", (pairs, columns) => {
+    const round = dealMemoryRound((max) => max - 1, START, pairs);
+    expect(round.tiles).toHaveLength(pairs * 2);
+    const counts = new Map<string, number>();
+    for (const tile of round.tiles) {
+      const key = pairs > 13 ? `${tile.rank}:${tile.suit === "hearts" || tile.suit === "diamonds"}` : tile.rank;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    expect(counts.size).toBe(pairs);
+    for (const count of counts.values()) expect(count).toBe(2);
+    expect(memoryColumnsFor(pairs)).toBe(columns);
+    const snapshot = toMemorySnapshot(round, { day: "2026-09-25", puzzleNumber: 1, version: 1 });
+    expect(snapshot.pairs).toBe(pairs);
+    expect(snapshot.columns).toBe(columns);
+    expect(snapshot.board).toHaveLength(pairs * 2);
+  });
+
+  it("keeps a 16-tile board at four columns", () => {
+    expect(memoryColumnsFor(MEMORY_PAIRS)).toBe(MEMORY_COLUMNS);
+  });
+
+  it("matches colour as well as rank once ranks repeat", () => {
+    const blackAce: Card = { rank: "A", suit: "spades" };
+    expect(memoryTilesMatch(blackAce, { rank: "A", suit: "clubs" }, MEMORY_MAX_PAIRS)).toBe(true);
+    expect(memoryTilesMatch(blackAce, { rank: "A", suit: "hearts" }, MEMORY_MAX_PAIRS)).toBe(false);
+    // Standard boards still match by rank alone.
+    expect(memoryTilesMatch(blackAce, { rank: "A", suit: "hearts" }, MEMORY_PAIRS)).toBe(true);
+  });
+
+  it("clears a 30-tile board and refuses an index past it", () => {
+    let round = dealMemoryRound(() => 0, START, MEMORY_MAX_PAIRS);
+    expect(memoryFlipProblem(round, 29)).toBeNull();
+    expect(memoryFlipProblem(round, 30)).toBe("out-of-range");
+    const pairs = MEMORY_MAX_PAIRS;
+    const byKey = new Map<string, number[]>();
+    round.tiles.forEach((tile, index) => {
+      const key = `${tile.rank}:${tile.suit === "hearts" || tile.suit === "diamonds"}`;
+      byKey.set(key, [...(byKey.get(key) ?? []), index]);
+    });
+    for (const [a, b] of byKey.values()) {
+      round = flipMemoryTile(flipMemoryTile(round, a, START), b, LATER);
+    }
+    expect(round.status).toBe("solved");
+    expect(round.turns).toBe(pairs);
+  });
+
+  it("refuses a board size it cannot deal", () => {
+    expect(() => dealMemoryTiles(() => 0, 16)).toThrow();
+    expect(() => dealMemoryTiles(() => 0, 1)).toThrow();
   });
 });

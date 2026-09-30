@@ -6,16 +6,9 @@ import kit
 import sheet
 from area import AREAS
 
-import coast
-import fold
 import homestead
-import mine
-import oak
-import oldfields
-import pasture
-import townsquare
 
-AREA_MODULES = [homestead, oldfields, fold, pasture, coast, oak, mine, townsquare]
+AREA_MODULES = [homestead]
 
 
 def main():

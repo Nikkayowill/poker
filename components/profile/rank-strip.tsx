@@ -1,13 +1,16 @@
 "use client";
 
-import { Flame, TrendingUp } from "lucide-react";
+import { Flame } from "lucide-react";
 import type { ProgressionPayload } from "@/lib/progression/types";
 import { FadeSwap } from "@/components/loading/fade-swap";
 import { Skeleton } from "@/components/loading/skeleton";
+import { RankJewel } from "./rank-jewel";
+import { SoloEarningsPanel } from "./solo-earnings-panel";
 import { useProgression } from "./use-progression";
 
 /**
- * The lobby's rank readout: level, title, progress into the level, streak.
+ * The lobby's rank readout: the tier's jewel and name, rank points, how far
+ * the next tier is, streak. There are no levels; the tier is the rank.
  *
  * Placed between the hub head and the hub grid rather than inside the grid, and
  * that is deliberate rather than aesthetic. `.hub-grid`'s four-column layout is
@@ -16,7 +19,7 @@ import { useProgression } from "./use-progression";
  * close. A full-width strip above the grid cannot disturb any of it.
  *
  * Fetch lives in `useProgression`, shared with the 3D table's corner HUD --
- * both are a level/XP/streak readout beside a screen full of working
+ * both are a rank/streak readout beside a screen full of working
  * controls, and both fail the same way (silently).
  *
  * Used to `return null` until data existed, on the reasoning that a skeleton
@@ -29,12 +32,16 @@ import { useProgression } from "./use-progression";
 
 function RankStripSkeleton() {
   return (
-    <div className="rank-strip" aria-hidden="true">
-      <Skeleton className="skeleton-rank-badge" />
-      <div className="rank-body">
-        <Skeleton className="skeleton-rank-line" />
-        <Skeleton className="skeleton-rank-track" />
-        <Skeleton className="skeleton-rank-next" />
+    <div className="rank-stack" aria-hidden="true">
+      <div className="rank-strip">
+        <Skeleton className="skeleton-rank-badge" />
+        <div className="rank-body">
+          <Skeleton className="skeleton-rank-line" />
+          <Skeleton className="skeleton-rank-next" />
+        </div>
+      </div>
+      <div className="earnings-strip">
+        <Skeleton className="skeleton-earnings" />
       </div>
     </div>
   );
@@ -52,48 +59,41 @@ export function RankStrip() {
 
 function RankStripContent({ data }: { data: ProgressionPayload }) {
   const { progression, daily } = data;
-  const atCap = progression.levelSpan === 0;
+  const { tier, nextTier, toNext } = progression;
 
   return (
-    <section className="rank-strip" aria-label="Your rank">
-      <div className="rank-badge" aria-hidden="true">{progression.level}</div>
+    <div className="rank-stack">
+      <section className="rank-strip" aria-label={`Your rank: ${tier.name}`}>
+        <RankJewel tier={tier.id} size={56} />
 
-      <div className="rank-body">
-        <div className="rank-line">
-          <strong>{progression.title}</strong>
-          <span className="rank-level">Level {progression.level}</span>
+        <div className="rank-body">
+          <strong className="rank-name">{tier.name}</strong>
+          <span className="rank-points">{progression.points.toLocaleString()} RP</span>
         </div>
 
-        {/* aria-hidden on the bar because the same numbers are stated in words
-            immediately below it; a screen reader should hear one of them. */}
-        <div className="rank-track" aria-hidden="true">
-          <div className="rank-fill" style={{ width: `${Math.round(progression.ratio * 100)}%` }} />
-        </div>
+        {nextTier && toNext !== null ? (
+          <div className="rank-next-chip" title={`${toNext.toLocaleString()} rank points to ${nextTier.name}`}>
+            <RankJewel tier={nextTier.id} size={22} shine={false} />
+            <span>
+              <strong>{toNext.toLocaleString()}</strong> to {nextTier.name}
+            </span>
+          </div>
+        ) : (
+          <div className="rank-next-chip rank-next-top">Top of the ladder</div>
+        )}
 
-        <small className="rank-next">
-          {atCap
-            ? "Top rank reached."
-            : (
-              <>
-                {progression.intoLevel.toLocaleString()} / {progression.levelSpan.toLocaleString()} XP
-                {progression.nextTitle && (
-                  <> · <TrendingUp size={11} aria-hidden="true" /> {progression.nextTitle} at {progression.nextTitleLevel}</>
-                )}
-              </>
-            )}
-        </small>
-      </div>
-
-      {/* Only once there is a streak to show. A "0 day streak" is a scolding,
-          not a reward, and the daily claim in the player menu is already where
-          a player who has not claimed is told to. */}
-      {daily.streak > 0 && (
-        <div className="rank-streak" title={`Daily grant x${daily.multiplier}`}>
-          <Flame size={14} aria-hidden="true" />
-          <strong>{daily.streak}</strong>
-          <small>day{daily.streak === 1 ? "" : "s"}</small>
-        </div>
-      )}
-    </section>
+        {/* Only once there is a streak to show. A "0 day streak" is a scolding,
+            not a reward, and the daily claim in the player menu is already where
+            a player who has not claimed is told to. */}
+        {daily.streak > 0 && (
+          <div className="rank-streak" title={`Daily grant x${daily.multiplier}`}>
+            <Flame size={14} aria-hidden="true" />
+            <strong>{daily.streak}</strong>
+            <small>day{daily.streak === 1 ? "" : "s"}</small>
+          </div>
+        )}
+      </section>
+      <SoloEarningsPanel summary={progression.soloEarnings} rank={progression} />
+    </div>
   );
 }

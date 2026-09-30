@@ -17,10 +17,16 @@
 
 import type { CribbageSeat } from "./types";
 
-/** Cribbage is always decisive, first to 121, so there is no draw case. */
+/**
+ * How a table ended. There is no draw: either somebody reached 121, or one
+ * or more seats forfeited (resigned or timed out) and nobody won.
+ */
 export interface CribbageOutcome {
-  winner: CribbageSeat;
+  /** Null exactly when the table ended on a forfeit. */
+  winner: CribbageSeat | null;
   reason: string;
+  /** The seats that forfeited their stake. Empty on a win. */
+  forfeited: CribbageSeat[];
 }
 
 export type CribbageMoveResult<TState> =
@@ -33,7 +39,7 @@ export interface CribbageGame<TState, TMove, TSnapshot> {
   /** `playerCount` is fixed for the whole match, 3 or 4, decided when the table starts. */
   createState(seed: number, now: number, playerCount: number): TState;
   applyMove(state: TState, seat: CribbageSeat, move: TMove, now: number): CribbageMoveResult<TState>;
-  /** No real-time clock in cribbage; see engine.ts's tick for why this stays a documented no-op. */
+  /** The turn clock: a seat that runs out of time forfeits. Null when nothing changed. */
   tick?(state: TState, now: number): TState | null;
   result(state: TState): CribbageOutcome | null;
   snapshot(state: TState, seat: CribbageSeat | null, now: number): TSnapshot;

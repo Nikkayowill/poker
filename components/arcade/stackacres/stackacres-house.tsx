@@ -24,12 +24,10 @@ const HOUSE_TABS: { id: KitchenTab; label: string; icon: LucideIcon }[] = [
 ];
 
 export interface StackAcresHouseProps extends Omit<StackAcresKitchenProps, "tab"> {
-  /** A refusal from a button in here; the page's own banner sits behind the scrim. */
-  error: string | null;
   onClose: () => void;
 }
 
-export function StackAcresHouse({ error, onClose, ...kitchen }: StackAcresHouseProps) {
+export function StackAcresHouse({ onClose, ...kitchen }: StackAcresHouseProps) {
   const [tab, setTab] = useState<KitchenTab>("cook");
 
   useEffect(() => {
@@ -54,15 +52,13 @@ export function StackAcresHouse({ error, onClose, ...kitchen }: StackAcresHouseP
         <header className="sa-store-head">
           <House size={20} aria-hidden="true" className="sa-house-mark" />
           <h2>Your House</h2>
-          <span className="sa-house-energy" title="Energy. Fishing uses it. Eat to fill it up.">
+          <span className="sa-house-energy" title="Energy. Fishing, chopping and clearing land use it. Eat to fill it up.">
             Energy <strong>{kitchen.energy}</strong>/{ENERGY_MAX}
           </span>
           <button type="button" className="sa-store-close" aria-label="Close" onClick={onClose}>
             <X size={16} aria-hidden="true" />
           </button>
         </header>
-
-        {error && <p className="duel-error" role="alert">{error}</p>}
 
         <div className="sa-store-tabs" role="tablist" aria-label="House room">
           {HOUSE_TABS.map(({ id, label, icon: Icon }) => (

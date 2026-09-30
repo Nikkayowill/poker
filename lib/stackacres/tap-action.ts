@@ -21,7 +21,6 @@
  */
 
 import { unitRowAction } from "./district-panel";
-import { STACKACRES_ITEM_CATALOGUE, itemLabel, type StackAcresItem } from "./items";
 import type { StackAcresUnitSnapshot } from "./units";
 import type { StackAcresInventory } from "./inventory";
 
@@ -96,15 +95,4 @@ export function tapActionFor(
         why: "waiting",
       };
   }
-}
-
-/** What floats up out of a unit that just paid out: "+4 Eggs", and the name of
- *  the painter to draw beside it (a `PainterName`, kept a plain string for the
- *  same reason StackAcresItemDef.icon is -- this file stays free of a
- *  components/ import). */
-export function collectFloat(
-  item: StackAcresItem,
-  quantity: number,
-): { text: string; icon: string } {
-  return { text: `+${itemLabel(item, quantity)}`, icon: STACKACRES_ITEM_CATALOGUE[item].icon };
 }

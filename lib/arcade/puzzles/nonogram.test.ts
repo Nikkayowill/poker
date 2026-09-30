@@ -30,7 +30,7 @@ import {
   type NonogramRound,
   type NonogramRoundOptions,
 } from "./nonogram";
-import { dealNonogram } from "./nonogram-deal";
+import { NONOGRAM_TRANSFORMS, dealNonogram, transformNonogramCells } from "./nonogram-deal";
 
 const NOW = new Date("2026-08-31T12:00:00.000Z");
 
@@ -171,8 +171,62 @@ describe("dealing", () => {
     }
   });
 
+  it("turns and mirrors the drawings, so one picture comes in many orientations", () => {
+    const seen = new Map<string, Set<string>>();
+    for (let seed = 0; seed < 400; seed += 1) {
+      const dealt = dealNonogram(seed, "hard");
+      const title = dealt.title ?? "";
+      if (!seen.has(title)) seen.set(title, new Set());
+      seen.get(title)!.add(dealt.solution);
+    }
+    // 400 deals over about twenty drawings is about twenty each, so an
+    // asymmetric drawing should show up in several orientations.
+    const most = Math.max(...[...seen.values()].map((variants) => variants.size));
+    expect(most).toBeGreaterThanOrEqual(5);
+  });
+
+  it("keeps the clues read off the turned grid, not the drawing as authored", () => {
+    for (let seed = 0; seed < 20; seed += 1) {
+      const dealt = dealNonogram(seed, "medium");
+      const round = startNonogramRound("medium", seed, dealt);
+      expect(nonogramView(round).clues).toEqual(nonogramClues(dealt.solution, 10));
+    }
+  });
+
   it("bounds the largest board a request may name a cell within", () => {
     expect(NONOGRAM_MAX_CELLS).toBe(25 * 25);
+  });
+});
+
+describe("transformNonogramCells", () => {
+  // An L with no symmetry of its own, so all eight orientations differ.
+  const L = ["#..", "#..", "##."].join("");
+
+  it("leaves the grid alone for transform 0", () => {
+    expect(transformNonogramCells(L, 3, 0).join("")).toBe(L);
+  });
+
+  it("gives eight different orientations of an asymmetric shape", () => {
+    const all = new Set<string>();
+    for (let transform = 0; transform < NONOGRAM_TRANSFORMS; transform += 1) {
+      all.add(transformNonogramCells(L, 3, transform).join(""));
+    }
+    expect(all.size).toBe(8);
+  });
+
+  it("only moves squares, never adds or drops one", () => {
+    for (let transform = 0; transform < NONOGRAM_TRANSFORMS; transform += 1) {
+      const out = transformNonogramCells(L, 3, transform);
+      expect(out.filter((cell) => cell === "#")).toHaveLength(4);
+      expect(out).toHaveLength(9);
+    }
+  });
+
+  it("turns a quarter at a time: four quarter turns come back to the start", () => {
+    let cells: string[] = [...L];
+    for (let turn = 0; turn < 4; turn += 1) cells = transformNonogramCells(cells, 3, 1);
+    expect(cells.join("")).toBe(L);
+    expect(transformNonogramCells(L, 3, 1).join("")).toBe(["###", "#..", "..."].join(""));
   });
 });
 

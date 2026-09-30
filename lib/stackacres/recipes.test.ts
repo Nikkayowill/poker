@@ -87,8 +87,8 @@ describe("recipeRawGoldValue", () => {
     expect(recipeRawGoldValue("cheese")).toBe(660);
     // 4 Fleeces at 76.
     expect(recipeRawGoldValue("cloth")).toBe(304);
-    // 2 Eggs at 18, 1 Milk at 220, 1 Flour at 40.
-    expect(recipeRawGoldValue("cake")).toBe(2 * 18 + 220 + 40);
+    // 2 Eggs at 18, 1 Milk at 220, 1 Flour at 16.
+    expect(recipeRawGoldValue("cake")).toBe(2 * 18 + 220 + 16);
   });
 
   it("sits under every processed good's own sell price, so crafting never loses to selling raw", () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DIFFICULTY_CLUES,
+  DIFFICULTY_LOGIC,
   SUDOKU_CELLS,
   SUDOKU_DIFFICULTIES,
   SUDOKU_SIZE,
@@ -11,6 +12,7 @@ import {
   fillSudokuCell,
   formatDuration,
   generateSudoku,
+  gradeSudoku,
   hasUniqueSolution,
   isEditable,
   isPlacementLegal,
@@ -20,6 +22,7 @@ import {
   startSudokuRound,
   sudokuElapsedMs,
   sudokuFillProblem,
+  sudokuLogicLevel,
   toSudokuSnapshot,
   type SudokuDifficulty,
 } from "./sudoku";
@@ -171,11 +174,123 @@ describe("generateSudoku", () => {
   it("hits close to each difficulty's clue target", () => {
     for (const difficulty of SUDOKU_DIFFICULTIES) {
       const clues = generateSudoku("2026-08-06", difficulty).puzzle.filter((cell) => cell !== 0).length;
-      // Carving stops early when nothing more can come out uniquely, so this
-      // is a floor plus slack rather than an equality.
-      expect(clues).toBeGreaterThanOrEqual(DIFFICULTY_CLUES[difficulty]);
+      // Carving stops early when nothing more can come out uniquely, and hard
+      // and expert may carve up to three past the target to reach their
+      // grade, so this is a band rather than an equality.
+      expect(clues).toBeGreaterThanOrEqual(DIFFICULTY_CLUES[difficulty] - 3);
       expect(clues).toBeLessThan(DIFFICULTY_CLUES[difficulty] + 12);
     }
+  });
+});
+
+/**
+ * A deliberately plain singles solver, written separately from the one under
+ * test: fill any cell with one legal digit, and (with `hidden`) any digit with
+ * one legal cell in a row, column or box, until nothing moves.
+ */
+function singlesFinish(puzzle: readonly number[], hidden: boolean): boolean {
+  const grid = [...puzzle];
+  const legal = (index: number) =>
+    [1, 2, 3, 4, 5, 6, 7, 8, 9].filter((value) => isPlacementLegal(grid, index, value));
+  for (let moved = true; moved; ) {
+    moved = false;
+    for (let index = 0; index < SUDOKU_CELLS; index += 1) {
+      if (grid[index] !== 0) continue;
+      const options = legal(index);
+      if (options.length === 1) {
+        grid[index] = options[0];
+        moved = true;
+      }
+    }
+    if (moved || !hidden) continue;
+    for (const of of [rowOf, columnOf, boxOf]) {
+      for (let unit = 0; unit < SUDOKU_SIZE; unit += 1) {
+        const cells = Array.from({ length: SUDOKU_CELLS }, (_, index) => index).filter(
+          (index) => of(index) === unit && grid[index] === 0,
+        );
+        for (let value = 1; value <= SUDOKU_SIZE; value += 1) {
+          const spots = cells.filter((index) => grid[index] === 0 && isPlacementLegal(grid, index, value));
+          if (spots.length === 1) {
+            grid[spots[0]] = value;
+            moved = true;
+          }
+        }
+      }
+    }
+  }
+  return !grid.includes(0);
+}
+
+describe("sudokuLogicLevel", () => {
+  it("rates a grid one cell short of done as naked singles only", () => {
+    const { solution } = generateSudoku("2026-08-06", "easy");
+    const puzzle = [...solution];
+    puzzle[40] = 0;
+    expect(sudokuLogicLevel(puzzle)).toBe(1);
+  });
+
+  it("gets stuck on an empty grid rather than guessing", () => {
+    expect(sudokuLogicLevel(new Array<number>(SUDOKU_CELLS).fill(0))).toBeNull();
+  });
+
+  it("agrees with a plain singles solver about what singles can finish", () => {
+    for (let seed = 0; seed < 40; seed += 1) {
+      for (const difficulty of SUDOKU_DIFFICULTIES) {
+        const { puzzle } = generateSudoku(`agree-${seed}`, difficulty);
+        const level = sudokuLogicLevel(puzzle);
+        expect(singlesFinish(puzzle, false)).toBe(level === 1);
+        expect(singlesFinish(puzzle, true)).toBe(level === 1 || level === 2);
+      }
+    }
+  });
+
+  it("only ever makes sound steps: whatever it finishes matches the real solution", () => {
+    for (let seed = 0; seed < 20; seed += 1) {
+      const { puzzle, solution } = generateSudoku(`sound-${seed}`, "expert");
+      const { level, grid } = gradeSudoku(puzzle);
+      grid.forEach((cell, index) => {
+        if (cell !== 0) expect(cell).toBe(solution[index]);
+      });
+      if (level !== null) expect(grid).toEqual(solution);
+    }
+  });
+});
+
+describe("graded generation", () => {
+  const SEEDS = Array.from({ length: 30 }, (_, index) => `grade-${index}`);
+
+  it("never deals a hard grid that naked singles alone finish, nor one past the expert kit", () => {
+    for (const seed of SEEDS) {
+      const level = sudokuLogicLevel(generateSudoku(seed, "hard").puzzle);
+      expect(DIFFICULTY_LOGIC.hard).toContain(level);
+    }
+  });
+
+  it("deals expert grids that singles alone cannot finish", () => {
+    const levels = SEEDS.map((seed) => sudokuLogicLevel(generateSudoku(seed, "expert").puzzle));
+    for (const level of levels) expect(level === 1 || level === 2).toBe(false);
+    // The fallback to a grid past the expert kit is rare; nearly all land on it.
+    expect(levels.filter((level) => level === 3).length).toBeGreaterThanOrEqual(27);
+  });
+
+  it("keeps every graded grid uniquely solvable and true to its solution", () => {
+    for (const seed of SEEDS.slice(0, 10)) {
+      for (const difficulty of ["hard", "expert"] as const) {
+        const { puzzle, solution } = generateSudoku(seed, difficulty);
+        expect(isCompleteAndValid(solution)).toBe(true);
+        expect(hasUniqueSolution(puzzle)).toBe(true);
+        puzzle.forEach((cell, index) => {
+          if (cell !== 0) expect(cell).toBe(solution[index]);
+        });
+      }
+    }
+  });
+
+  it("stays quick enough to deal on request", () => {
+    const started = performance.now();
+    for (const seed of SEEDS) generateSudoku(seed, "expert");
+    // About 15ms a grid on a laptop; the bound is loose for slow CI.
+    expect((performance.now() - started) / SEEDS.length).toBeLessThan(150);
   });
 });
 

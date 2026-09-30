@@ -13,6 +13,8 @@ import {
 } from "@/lib/server/stripe";
 import { fulfillStripePayment, syncSubscriptionState } from "@/lib/server/stripe-store";
 import { readSessionToken } from "@/lib/server/session";
+import { settleStackAcresSession } from "@/lib/server/stripe-stackacres";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -67,6 +69,8 @@ export async function GET(request: NextRequest) {
         membership = await syncSubscriptionState(stripe, peek.subscription, mode === "live", new Date());
         paid = peek.payment_status === "paid";
       }
+    } else if (peek.metadata?.kind === "stackacres_purchase") {
+      paid = await settleStackAcresSession(sessionId.data, mode, profile.id);
     } else if (peek.metadata?.kind === "gold_purchase") {
       const { session, tier, profileId } = await verifiedGoldSession(sessionId.data, profile.id, mode);
       paid = session.payment_status === "paid";
@@ -98,7 +102,7 @@ export async function GET(request: NextRequest) {
     if (!paid) return NextResponse.json({ paid: false, profile, membership });
     return NextResponse.json({ paid: true, profile: await ensureProfile(ownerToken), membership });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not verify Stripe payment.";
+    const message = publicErrorMessage(error, "Could not verify Stripe payment.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

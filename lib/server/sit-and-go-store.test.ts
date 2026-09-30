@@ -19,15 +19,15 @@ beforeEach(() => {
 describe("claimSitAndGoSeat", () => {
   it("assigns the lowest OPEN seat, not the seated count -- a vacated seat is a real gap, not a collision", async () => {
     const table = await createSitAndGoTableRow(randomUUID(), "1k", 1000);
-    const a = await claimSitAndGoSeat(table.id, randomUUID(), randomUUID()); // seat 0
-    const b = await claimSitAndGoSeat(table.id, randomUUID(), randomUUID()); // seat 1
-    const c = await claimSitAndGoSeat(table.id, randomUUID(), randomUUID()); // seat 2
+    const a = await claimSitAndGoSeat(table.id, randomUUID(), randomUUID(), randomUUID()); // seat 0
+    const b = await claimSitAndGoSeat(table.id, randomUUID(), randomUUID(), randomUUID()); // seat 1
+    const c = await claimSitAndGoSeat(table.id, randomUUID(), randomUUID(), randomUUID()); // seat 2
     expect([a.seat, b.seat, c.seat]).toEqual([0, 1, 2]);
 
     const bPlayerId = (await getSitAndGoSeats(table.id)).find((s) => s.seat === 1)!.playerId;
     await leaveSitAndGoTable(table.id, bPlayerId);
 
-    const d = await claimSitAndGoSeat(table.id, randomUUID(), randomUUID());
+    const d = await claimSitAndGoSeat(table.id, randomUUID(), randomUUID(), randomUUID());
     expect(d.seat).toBe(1);
 
     const seats = await getSitAndGoSeats(table.id);
@@ -38,27 +38,27 @@ describe("claimSitAndGoSeat", () => {
   it("refuses a 7th registration -- the table caps at SIT_AND_GO_SEATS (6)", async () => {
     const table = await createSitAndGoTableRow(randomUUID(), "1k", 1000);
     for (let i = 0; i < 6; i += 1) {
-      await claimSitAndGoSeat(table.id, randomUUID(), randomUUID());
+      await claimSitAndGoSeat(table.id, randomUUID(), randomUUID(), randomUUID());
     }
-    await expect(claimSitAndGoSeat(table.id, randomUUID(), randomUUID())).rejects.toThrow(/full/);
+    await expect(claimSitAndGoSeat(table.id, randomUUID(), randomUUID(), randomUUID())).rejects.toThrow(/full/);
   });
 });
 
 describe("dealSitAndGoTable", () => {
   async function seatSix(table: { id: string }) {
     for (let i = 0; i < 6; i += 1) {
-      await claimSitAndGoSeat(table.id, randomUUID(), randomUUID());
+      await claimSitAndGoSeat(table.id, randomUUID(), randomUUID(), randomUUID());
     }
   }
 
   it("refuses to deal when the actual seated count no longer matches expectedSeats", async () => {
     const table = await createSitAndGoTableRow(randomUUID(), "1k", 1000);
     for (let i = 0; i < 5; i += 1) {
-      await claimSitAndGoSeat(table.id, randomUUID(), randomUUID());
+      await claimSitAndGoSeat(table.id, randomUUID(), randomUUID(), randomUUID());
     }
     // A 6th registration lands in the gap before the deal call arrives --
     // exactly the race an exact-match guard, not a >=, is built to catch.
-    await claimSitAndGoSeat(table.id, randomUUID(), randomUUID());
+    await claimSitAndGoSeat(table.id, randomUUID(), randomUUID(), randomUUID());
 
     const dealt = await dealSitAndGoTable(table.id, 5); // stale -- 6 are actually seated
     expect(dealt).toBeNull();
@@ -96,26 +96,35 @@ describe("dealSitAndGoTable", () => {
 describe("settleSitAndGoTable", () => {
   it("pays out exactly once under a simulated lost race", async () => {
     const table = await createSitAndGoTableRow(randomUUID(), "1k", 1000);
-    for (let i = 0; i < 6; i += 1) await claimSitAndGoSeat(table.id, randomUUID(), randomUUID());
+    for (let i = 0; i < 6; i += 1) await claimSitAndGoSeat(table.id, randomUUID(), randomUUID(), randomUUID());
     const dealt = (await dealSitAndGoTable(table.id, 6))!;
-    await setSitAndGoGameId(dealt.id, randomUUID());
+    const linked = (await setSitAndGoGameId(dealt.id, randomUUID()))!;
 
     const winnerId = randomUUID();
-    const first = await settleSitAndGoTable(dealt, winnerId);
+    const first = await settleSitAndGoTable(linked, winnerId);
     expect(first?.status).toBe("completed");
     expect(first?.winnerId).toBe(winnerId);
 
-    // A second settlement attempt against the SAME stale `dealt` snapshot
+    // A second settlement attempt against the SAME stale `linked` snapshot
     // (as if two requests both noticed the win at once) must lose the race.
-    const second = await settleSitAndGoTable(dealt, winnerId);
+    const second = await settleSitAndGoTable(linked, winnerId);
     expect(second).toBeNull();
   });
 });
 
 describe("cancelStaleSitAndGoTable", () => {
+  it("cannot cancel a table whose game was linked after the sweep read it", async () => {
+    const table = await createSitAndGoTableRow(randomUUID(), "1k", 1000);
+    for (let i = 0; i < 6; i += 1) await claimSitAndGoSeat(table.id, randomUUID(), randomUUID(), randomUUID());
+    const readBySweep = (await dealSitAndGoTable(table.id, 6))!;
+    await setSitAndGoGameId(readBySweep.id, randomUUID());
+
+    expect(await cancelStaleSitAndGoTable(readBySweep.id, readBySweep.version)).toBeNull();
+  });
+
   it("cancels an abandoned active table with no winner", async () => {
     const table = await createSitAndGoTableRow(randomUUID(), "1k", 1000);
-    for (let i = 0; i < 6; i += 1) await claimSitAndGoSeat(table.id, randomUUID(), randomUUID());
+    for (let i = 0; i < 6; i += 1) await claimSitAndGoSeat(table.id, randomUUID(), randomUUID(), randomUUID());
     const dealt = (await dealSitAndGoTable(table.id, 6))!;
 
     const cancelled = await cancelStaleSitAndGoTable(dealt.id, dealt.version);
@@ -125,7 +134,7 @@ describe("cancelStaleSitAndGoTable", () => {
 
   it("loses the race against a real settlement -- whichever lands first wins", async () => {
     const table = await createSitAndGoTableRow(randomUUID(), "1k", 1000);
-    for (let i = 0; i < 6; i += 1) await claimSitAndGoSeat(table.id, randomUUID(), randomUUID());
+    for (let i = 0; i < 6; i += 1) await claimSitAndGoSeat(table.id, randomUUID(), randomUUID(), randomUUID());
     const dealt = (await dealSitAndGoTable(table.id, 6))!;
 
     await settleSitAndGoTable(dealt, randomUUID());

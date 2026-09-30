@@ -44,7 +44,7 @@ import { FISH_SPECIES } from "./fishing";
  *  crafted, and each is a required material on its own blueprints
  *  (./machines.ts's `woodCost`/`stoneCost`) rather than something a recipe
  *  consumes. */
-export const MACHINE_RAW_ITEMS = [...FISH_SPECIES, "meat", "pelt", "wood", "stone"] as const;
+export const MACHINE_RAW_ITEMS = [...FISH_SPECIES, "meat", "pelt", "wood", "stone", "iron_ore"] as const;
 export const MACHINE_PROCESSED_ITEMS = [
   "flour",
   "cheese",
@@ -61,9 +61,25 @@ export const MACHINE_PROCESSED_ITEMS = [
   "sauerkraut",
   "bean_casserole",
   "harvest_feast",
+  "metal",
 ] as const;
 
 export type MachineRawItem = (typeof MACHINE_RAW_ITEMS)[number];
+
+/**
+ * A gathered material a purchase spends alongside its Gold.
+ *
+ * One shape for every buyer, and it lives here because this file owns the
+ * item ids and imports nothing: a machine (./machines.ts) and a pen slot
+ * (./catalogue.ts) cost the same kind of thing, and the service spends both
+ * through one helper so they cannot drift.
+ */
+export interface MaterialCost {
+  /** Metal is smelted rather than gathered, but it is still a material a
+   *  building is paid for in. */
+  readonly item: MachineRawItem | "metal";
+  readonly quantity: number;
+}
 export type MachineProcessedItem = (typeof MACHINE_PROCESSED_ITEMS)[number];
 
 /** Every item that can sit in the shared inventory: what a unit yields, plus
@@ -164,13 +180,23 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   // Silo (./machines.ts), and a cheap sell keeps building always the better
   // trade than cashing it in raw.
   stone: { label: "Stone", plural: "Stone", icon: "ico-stone", sellPrice: 6 },
-  flour: { label: "Flour", plural: "Flour", icon: "ico-flour", sellPrice: 40 },
+  // Mined off the same boulders as Stone (./stone-nodes.ts) and smelted into
+  // Metal at the Smelter. Priced under half a bar so smelting always beats
+  // selling the ore.
+  iron_ore: { label: "Iron Ore", plural: "Iron Ore", icon: "ico-iron-ore", sellPrice: 5 },
+  // Smelted from Iron Ore. Its job is paying for the Far Field's buildings
+  // (./empire-buildings.ts), so like Wood and Stone it sells for little.
+  metal: { label: "Metal", plural: "Metal", icon: "ico-metal", sellPrice: 20 },
+  // Set to 16 on 2026-09-30. At 40 a Flour sold for about 18x its seed and the
+  // biggest order paid 35x, which made a wheat field a money printer. 16 still
+  // beats the 12 Gold its three Wheat sell for, so milling is worth doing.
+  flour: { label: "Flour", plural: "Flour", icon: "ico-flour", sellPrice: 16 },
   cheese: { label: "Cheese", plural: "Cheese", icon: "ico-cheese", sellPrice: 700 },
   cloth: { label: "Cloth", plural: "Cloth", icon: "ico-cloth", sellPrice: 320 },
-  cake: { label: "Cake", plural: "Cakes", icon: "ico-cake", sellPrice: 400 },
-  // Above Flour's 40, so baking a Flour always beats selling it. There is no
+  cake: { label: "Cake", plural: "Cakes", icon: "ico-cake", sellPrice: 365 },
+  // Above Flour's 16, so baking a Flour always beats selling it. There is no
   // bread art yet, so it borrows the wheat icon.
-  bread: { label: "Bread", plural: "Bread", icon: "ico-wheat", sellPrice: 55 },
+  bread: { label: "Bread", plural: "Bread", icon: "ico-wheat", sellPrice: 22 },
   // Above the 10 Gold its five crops sell for raw. No stew art yet, so it
   // borrows the potato icon.
   stew: { label: "Hearty Stew", plural: "Hearty Stew", icon: "ico-potato", sellPrice: 30 },
@@ -193,7 +219,7 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   // what the order pays per dish. The Feast has none; it is the meal to eat
   // or give, priced like the other order-free meals.
   bean_casserole: { label: "Bean Casserole", plural: "Bean Casseroles", icon: "ico-green_bean", sellPrice: 135 },
-  harvest_feast: { label: "Harvest Feast", plural: "Harvest Feasts", icon: "ico-eggplant", sellPrice: 260 },
+  harvest_feast: { label: "Harvest Feast", plural: "Harvest Feasts", icon: "ico-eggplant", sellPrice: 215 },
 };
 
 /** What one of `item` sells for, whatever space it started in. */

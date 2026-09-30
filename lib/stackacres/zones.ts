@@ -55,12 +55,12 @@
  * alongside it (see ./sectors.ts's `HOME_SECTORS`) -- a new farm has to have
  * somewhere to keep the only animal it can afford.
  *
- * Four of the nine are WILD: townsquare, mine, coast and oak. They have
- * ground, a road and a name, and nothing else, because none of their systems
- * exist yet. They are deliberately not rungs on the sector ladder -- see
- * ./sectors.ts's `SectorState` -- so tapping one says what is coming rather
- * than offering to sell land that buys nothing. Reserving their rects now is
- * the point of the pass: inserting a place later would shift everything else.
+ * REMOVED 2026-09-28: the four WILD districts (Town Square, the Mine, the
+ * Coastal Market, the Ancestral Oak) never grew a system of their own, and
+ * the eight travelers who stood in them and the six of these nine districts
+ * they and Sheep/Cattle Pens lived in went the same day (../story/travelers.ts's
+ * own header). Farmstead, Hen Haven, the Fold and Cattle Pasture are what
+ * remain: the two home districts and the two the sector ladder still sells.
  *
  * Everything here is pure and in world units -- ./world.ts's true Cartesian
  * plane, NOT the sheared screen space the scene draws into. The camera's
@@ -115,16 +115,7 @@ import { CROP_FIELD } from "./yard";
 // a clover tuft on a worked dirt lane reads as a weed nobody pulled.
 import { CROP_FIELD_LANES } from "./terrain";
 
-export const ZONE_IDS = [
-  "farmstead",
-  "henhaven",
-  "oxfields",
-  "wallow",
-  "townsquare",
-  "mine",
-  "coast",
-  "oak",
-] as const;
+export const ZONE_IDS = ["farmstead", "henhaven", "oxfields", "wallow"] as const;
 
 export type ZoneId = (typeof ZONE_IDS)[number];
 
@@ -207,7 +198,7 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     // Matches --sa-grass: the farmstead's swatch defers to the grass
     // painter's own fill rather than naming a colour of its own, since it
     // paints no ground wash to have a colour for any more.
-    swatchColor: 0x86c96e,
+    swatchColor: 0x6dbf50,
     approach: { x: -320, y: 0 },
   },
 
@@ -258,60 +249,6 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     bounds: { x: 272, y: -272, width: 160, height: 160 },
     swatchColor: 0x54402c,
     approach: { x: 292, y: -192 },
-  },
-
-  /* ---------------------------------------------------------------- */
-  /* Wild ground: reserved, named, and nothing else yet                */
-  /* ---------------------------------------------------------------- */
-  //
-  // The four below have bounds, a road and a name. They hold no stock, sit on
-  // no rung of the sector ladder, and grow `sectorOvergrowth`'s wild growth
-  // until the pass that builds each one. Their rects are here now precisely
-  // so that pass does not have to move anything else.
-
-  // Town Square. On the south road, under the beds' west third, beside
-  // Cattle Pasture. The town the Contracts board and Ray's store are all
-  // posted from today without being anywhere.
-  townsquare: {
-    id: "townsquare",
-    label: "Town Square",
-    blurb: "The town past the east lane, where Knight Arthur keeps watch.",
-    bounds: { x: -208, y: 272, width: 128, height: 128 },
-    swatchColor: 0xa3a199,
-    approach: { x: -144, y: 292 },
-  },
-
-  // Mine Entrance. On the north road's west leg, above the yard, with Hen
-  // Haven to its east across a strip of commons.
-  mine: {
-    id: "mine",
-    label: "Mine Entrance",
-    blurb: "A mine cut into the hill, where Miner Brayden digs.",
-    bounds: { x: -416, y: -400, width: 128, height: 128 },
-    swatchColor: 0x5c5851,
-    approach: { x: -352, y: -292 },
-  },
-
-  // Coastal Market. The north-east corner: on the north road, straight above
-  // the Fold, meeting it on the road's centreline.
-  coast: {
-    id: "coast",
-    label: "Coastal Market",
-    blurb: "The shore past the south gate, where Detective Miles and Diver Barnaby washed up.",
-    bounds: { x: 272, y: -400, width: 128, height: 128 },
-    swatchColor: 0x3fa6cc,
-    approach: { x: 336, y: -292 },
-  },
-
-  // The Ancestral Oak. On the east road under the Fold, the two split by the
-  // one-cell fold road (y -128..-96).
-  oak: {
-    id: "oak",
-    label: "The Ancestral Oak",
-    blurb: "An old oak wood past the west gate, where Artist Skye and Beekeeper Bea ended up.",
-    bounds: { x: 272, y: -112, width: 128, height: 128 },
-    swatchColor: 0x439f57,
-    approach: { x: 292, y: -48 },
   },
 };
 
@@ -502,15 +439,6 @@ const ZONE_SCATTER: Readonly<Record<ZoneId, readonly ZoneSceneryKind[]>> = {
   // and the posts and gear are what break it up.
   oxfields: ["furrow", "furrow", "furrow", "furrow", "hitchPost", "hayBale", "plough", "oxTrough"],
   wallow: ["mudPool", "mudPool", "wallowPost", "hogTrough", "shadeCanopy"],
-  // The four wild districts scatter nothing at all, and this is the whole
-  // reason they can ship with no art. Everything in `ZoneSceneryKind` is FARM
-  // GEAR, and a plough or an ox trough standing on ground nobody has cleared
-  // tells exactly the story `sectorOvergrowth`'s own header forbids: a farm
-  // that is already there. What grows on them instead is that overgrowth.
-  townsquare: [],
-  mine: [],
-  coast: [],
-  oak: [],
 };
 
 /** Scatter density per chunk, by district. */
@@ -522,10 +450,6 @@ const ZONE_SCATTER_COUNT: Readonly<Record<ZoneId, number>> = {
   henhaven: 3,
   oxfields: 9,
   wallow: 6,
-  townsquare: 0,
-  mine: 0,
-  coast: 0,
-  oak: 0,
 };
 
 /**

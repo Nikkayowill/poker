@@ -4,6 +4,7 @@ import { createPortalSession, stripeClient } from "@/lib/server/stripe";
 import { latestStripeSubscription } from "@/lib/server/stripe-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -32,7 +33,7 @@ export async function POST(request: NextRequest) {
     const url = await createPortalSession(membership.stripeCustomerId, `${request.nextUrl.origin}/store`, "live");
     return NextResponse.json({ url });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not open the membership portal.";
+    const message = publicErrorMessage(error, "Could not open the membership portal.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

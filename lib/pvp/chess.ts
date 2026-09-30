@@ -45,10 +45,10 @@ export interface ChessMove {
   from: number;
   to: number;
   /**
-   * Only meaningful on a pawn reaching the last rank, and only ever a
-   * suggestion: an absent or nonsense value promotes to a queen rather than
-   * refusing the move, since a promotion the client forgot to name is still a
-   * move the player unambiguously made.
+   * Only meaningful on a pawn reaching the last rank. Leaving it out
+   * promotes to a queen, since a promotion the client forgot to name is still
+   * a move the player unambiguously made. A value that is not one of q, r, b
+   * or n is refused as a malformed move rather than guessed at.
    */
   promotion?: PromotionPiece;
 }

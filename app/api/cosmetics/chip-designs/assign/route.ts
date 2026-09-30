@@ -5,6 +5,7 @@ import { CHIP_DESIGN_DENOMINATIONS } from "@/lib/cosmetics/catalog";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -32,7 +33,7 @@ export async function POST(request: NextRequest) {
     );
     return withRequestSessionCookie(request, NextResponse.json({ equipped }), token);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not assign that chip design.";
+    const message = publicErrorMessage(error, "Could not assign that chip design.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

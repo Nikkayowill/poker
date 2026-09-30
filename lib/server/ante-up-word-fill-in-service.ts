@@ -25,7 +25,6 @@ import type {
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   ActiveAnteUpAttemptExists,
-  advanceAnteUpAttempt,
   countWageredAttemptsSince,
   createAnteUpAttempt,
   getActiveAnteUpAttempt,
@@ -43,6 +42,7 @@ import {
   spendStakeLedgered,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
+import { soloAdvance } from "./solo-settle";
 
 /**
  * Everything between an Ante Up: Word Fill-In request and the wallet.
@@ -66,6 +66,9 @@ export class AnteUpWordFillInRequestError extends ArcadeRequestError<AnteUpWordF
 
 /** This game's id in ante_up_attempts; see lib/server/ante-up-store.ts. */
 const GAME = "word-fill-in";
+
+/** The version-guarded advance; also records the settled wager in the solo earnings tally. */
+const advance = soloAdvance<AnteUpWordFillInAttempt>(anteUpWordFillInPayout);
 
 /** How many wagered attempts a player may open in a rolling day, at this game. Free practice is uncapped. */
 export const ANTE_UP_WORD_FILL_IN_DAILY_WAGERED_LIMIT = 10;
@@ -119,7 +122,7 @@ async function settleIfExpired(
   const ticked = tickAnteUpWordFillIn(stored.state, now);
   if (ticked === null) return stored;
 
-  const advanced = await advanceAnteUpAttempt(stored, ticked);
+  const advanced = await advance(stored, ticked);
   return advanced ?? (await getAnteUpAttemptById<AnteUpWordFillInAttempt>(stored.id)) ?? stored;
 }
 
@@ -246,7 +249,7 @@ async function requireLiveAttempt(
   const ticked = tickAnteUpWordFillIn(current.state, now);
   if (ticked !== null) {
     const settled =
-      (await advanceAnteUpAttempt(current, ticked)) ??
+      (await advance(current, ticked)) ??
       (await getAnteUpAttemptById<AnteUpWordFillInAttempt>(current.id)) ??
       current;
     throw new AnteUpWordFillInRequestError("Time's up.", 409, { round: snapshot(settled, now) });
@@ -268,7 +271,7 @@ async function settle(
   next: AnteUpWordFillInAttempt,
   now: Date,
 ): Promise<{ attempt: AnteUpWordFillInSnapshot; paid: PlayerProfile | null }> {
-  const stored = await advanceAnteUpAttempt(current, next);
+  const stored = await advance(current, next);
   if (!stored) {
     const live = (await getAnteUpAttemptById<AnteUpWordFillInAttempt>(current.id)) ?? current;
     throw new AnteUpWordFillInRequestError("That grid moved on.", 409, {
@@ -359,7 +362,7 @@ export async function resignAnteUpWordFillInAttempt(
 
   const next = resignAnteUpWordFillIn(current.state, now);
   const stored =
-    (await advanceAnteUpAttempt(current, next)) ??
+    (await advance(current, next)) ??
     (await getAnteUpAttemptById<AnteUpWordFillInAttempt>(current.id)) ??
     current;
   return { attempt: snapshot(stored, now), profile };

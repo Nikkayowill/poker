@@ -1585,6 +1585,100 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 
 /*
+ * Solo earnings: the tracker under the rank strip. Rank is the difficulty-
+ * weighted net of exactly these wagers, so it sits directly beneath the level
+ * it explains. `.rank-stack` owns the gap to the hub grid so the strip and the
+ * tracker read as one block; the strip's own bottom margin steps down inside it.
+ *
+ * Borderless like the strip: a raised fill and space. The gauge's five bars
+ * carry the share of earned Gold per stake band and the needle marks the
+ * average, both in the brand's purple-to-gold so a hard-band player sees gold.
+ */
+.rank-stack { margin-bottom: clamp(18px, 2.5vw, 26px); }
+.rank-stack .rank-strip { margin-bottom: 8px; }
+
+.earnings-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 18px;
+  padding: 12px 18px;
+  border-radius: var(--radius-card);
+  background: var(--brand-surface);
+}
+.earnings-stats { flex: 1 1 auto; display: flex; gap: 22px; min-width: 0; }
+.earnings-stat { display: flex; flex-direction: column; min-width: 0; }
+.earnings-stat small {
+  color: #7f8ba4;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+}
+.earnings-stat strong {
+  color: #e2e8f2;
+  font: 500 18px Georgia, serif;
+  font-variant-numeric: tabular-nums;
+}
+.earnings-stat span { color: #7f8ba4; font-size: 10.5px; }
+.earnings-up { color: #8fd9a8 !important; }
+.earnings-down { color: #f0a3a1 !important; }
+
+.earnings-gauge { flex: 0 0 auto; width: 230px; display: flex; flex-direction: column; gap: 6px; }
+.earnings-gauge-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.earnings-gauge-head small {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #7f8ba4;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+}
+.earnings-gauge-head strong { color: var(--brand-gold); font: 500 13px Georgia, serif; }
+
+.earnings-bands { position: relative; display: flex; gap: 6px; height: 40px; }
+.earnings-band { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.earnings-band-bar {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  border-radius: 3px;
+  background: rgba(182, 166, 219, .09);
+  overflow: hidden;
+}
+.earnings-band-fill {
+  width: 100%;
+  border-radius: 3px;
+  background: linear-gradient(0deg, var(--brand-purple), var(--brand-gold));
+  transition: height var(--duration-base) ease;
+}
+.earnings-band span {
+  color: #7f8ba4;
+  font-size: 8.5px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.earnings-needle {
+  position: absolute;
+  top: -3px;
+  bottom: 12px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--brand-gold-light);
+  box-shadow: 0 0 6px rgba(255, 210, 63, .6);
+  pointer-events: none;
+}
+
+@media (max-width: 560px) {
+  .earnings-strip { flex-direction: column; gap: 12px; padding: 12px 14px; }
+  .earnings-gauge { width: auto; }
+}
+
+/*
  * Challenges: a compact door into /challenges, in the same full-width-strip
  * slot below the rank strip -- same "renders nothing until it has something
  * to say" contract, same reasoning about `.hub-grid`'s arithmetic column

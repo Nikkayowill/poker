@@ -22,10 +22,12 @@
 /**
  * Gold wagered per point of XP.
  *
- * Wagered, not won or lost: rewarding *volume* is what makes a losing session
- * still count for something, and it's the only measure a player can't game by
- * choosing when to stop. Ten is the whole conversion: a 250 Gold arcade round
- * is 25 XP, a 5,000 Gold one is 500.
+ * This no longer drives the rank. The level curve, titles and milestone Gold
+ * below are unchanged, but the number fed to them is now rank points: the
+ * difficulty-weighted net of solo wagers (see lib/progression/solo-earnings.ts),
+ * which falls on a loss. Staking used to be the input, and a rank that climbed
+ * just by playing over time is what that change removed. XP from staking is
+ * still counted for lifetime volume, so the conversion stays.
  */
 export const GOLD_PER_XP = 10;
 

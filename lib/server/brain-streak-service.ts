@@ -18,7 +18,6 @@ import { anteUpStakeProblem } from "@/lib/arcade/ante-up-stakes";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   ActiveAnteUpAttemptExists,
-  advanceAnteUpAttempt,
   countWageredAttemptsSince,
   createAnteUpAttempt,
   getActiveAnteUpAttempt,
@@ -36,6 +35,7 @@ import {
   spendStakeLedgered,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
+import { soloAdvance } from "./solo-settle";
 
 /**
  * Everything between a Brain Games "streak" request and the wallet, shared by
@@ -79,6 +79,9 @@ export interface BrainStreakService {
 }
 
 export function createBrainStreakService(game: BrainStreakGame, config: BrainStreakConfig): BrainStreakService {
+  /** The version-guarded advance; also records the settled wager in the solo earnings tally. */
+  const advance = soloAdvance<BrainStreakAttempt>(brainStreakPayout);
+
   function snapshot(stored: StoredAnteUpAttempt<BrainStreakAttempt>, now: Date): BrainStreakSnapshot {
     return toBrainStreakSnapshot(stored.state, { id: stored.id, version: stored.version }, now);
   }
@@ -112,7 +115,7 @@ export function createBrainStreakService(game: BrainStreakGame, config: BrainStr
   ): Promise<{ settled: StoredAnteUpAttempt<BrainStreakAttempt>; paid: PlayerProfile | null }> {
     const ticked = tickBrainStreakAttempt(stored.state, now);
     if (ticked === null) return { settled: stored, paid: null };
-    const advanced = await advanceAnteUpAttempt(stored, ticked);
+    const advanced = await advance(stored, ticked);
     const settled = advanced ?? (await getAnteUpAttemptById<BrainStreakAttempt>(stored.id)) ?? stored;
     const paid = advanced && settled.state.status !== "active" ? await payOutWin(settled.profileId, settled.state) : null;
     return { settled, paid };
@@ -233,7 +236,7 @@ export function createBrainStreakService(game: BrainStreakGame, config: BrainStr
     }
 
     const { attempt: next } = answerBrainStreakRound(current.state, config, input.given, randomInt, now);
-    const stored = await advanceAnteUpAttempt(current, next);
+    const stored = await advance(current, next);
     if (!stored) {
       const live = (await getAnteUpAttemptById<BrainStreakAttempt>(current.id)) ?? current;
       throw new BrainStreakRequestError("That run moved on.", 409, { round: snapshot(live, now) });
@@ -254,7 +257,7 @@ export function createBrainStreakService(game: BrainStreakGame, config: BrainStr
     if (!current) return { attempt: null, profile };
 
     const next = resignBrainStreakAttempt(current.state, now);
-    const advanced = await advanceAnteUpAttempt(current, next);
+    const advanced = await advance(current, next);
     const stored = advanced ?? (await getAnteUpAttemptById<BrainStreakAttempt>(current.id)) ?? current;
     // Unlike a board game's forfeit, stopping here still pays: score is
     // progress already banked, not a stake that only a win releases (see

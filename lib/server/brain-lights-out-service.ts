@@ -15,7 +15,6 @@ import { anteUpStakeProblem } from "@/lib/arcade/ante-up-stakes";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   ActiveAnteUpAttemptExists,
-  advanceAnteUpAttempt,
   countWageredAttemptsSince,
   createAnteUpAttempt,
   getActiveAnteUpAttempt,
@@ -33,6 +32,7 @@ import {
   spendStakeLedgered,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
+import { soloAdvance } from "./solo-settle";
 
 /**
  * Everything between a Lights Out request and the wallet. Same shape, same
@@ -44,6 +44,9 @@ export class BrainLightsOutRequestError extends ArcadeRequestError<BrainLightsOu
 }
 
 const GAME = "lights-out";
+
+/** The version-guarded advance; also records the settled wager in the solo earnings tally. */
+const advance = soloAdvance<BrainLightsOutAttempt>(brainLightsOutPayout);
 export const BRAIN_LIGHTS_OUT_DAILY_WAGERED_LIMIT = 10;
 
 function snapshot(stored: StoredAnteUpAttempt<BrainLightsOutAttempt>): BrainLightsOutSnapshot {
@@ -162,7 +165,7 @@ export async function tapBrainLightsOutAttempt(
   }
 
   const next = tapBrainLightsOut(current.state, input.index, now);
-  const stored = await advanceAnteUpAttempt(current, next);
+  const stored = await advance(current, next);
   if (!stored) {
     const live = (await getAnteUpAttemptById<BrainLightsOutAttempt>(current.id)) ?? current;
     throw new BrainLightsOutRequestError("That board moved on.", 409, { round: snapshot(live) });
@@ -183,7 +186,7 @@ export async function resignBrainLightsOutAttempt(
 
   const next = resignBrainLightsOut(current.state, now);
   const stored =
-    (await advanceAnteUpAttempt(current, next)) ?? (await getAnteUpAttemptById<BrainLightsOutAttempt>(current.id)) ?? current;
+    (await advance(current, next)) ?? (await getAnteUpAttemptById<BrainLightsOutAttempt>(current.id)) ?? current;
   return { attempt: snapshot(stored), profile };
 }
 

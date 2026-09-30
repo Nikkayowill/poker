@@ -81,12 +81,13 @@ import {
 } from "@/lib/ui/swipe-pager";
 import { ArcadeFloor } from "@/components/arcade/arcade-floor";
 import { StackAcresLogo } from "@/components/brand/stackacres-logo";
-import { STACKACRES_TILE_ADVERTISED } from "@/lib/stackacres/tile-advertised";
 import { Leaderboard } from "@/components/leaderboard/leaderboard";
 import { LOBBY_PANE_STORAGE_KEY, TAB_COUNT, TAB_LABELS, TabBar } from "@/components/shell/tab-bar";
 import { SiteFooter } from "@/components/nav/site-footer";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
-import { RankStrip } from "@/components/profile/rank-strip";
+import { RankUpCard } from "@/components/profile/rank-up-card";
+import { PremiumExpansionModal } from "@/components/arcade/stackacres/premium-expansion-modal";
+import { jumpToSoloWagers } from "@/components/arcade/arcade-floor";
 import { InstallPrompt } from "@/components/install-prompt";
 import { LobbyNotices } from "./lobby-notices";
 import { FirstRunStrip } from "./first-run-strip";
@@ -375,6 +376,7 @@ export function MobileShell({
               onHostPrivate={onHostPrivate}
               onJoinCode={onJoinCode}
               onOpenFriends={onOpenFriends}
+              onRankUp={() => { goTo(1); jumpToSoloWagers(); }}
             />
           </section>
 
@@ -441,6 +443,7 @@ function PlayPane({
   onHostPrivate,
   onJoinCode,
   onOpenFriends,
+  onRankUp,
 }: {
   profile: PlayerProfile;
   loading: boolean;
@@ -459,8 +462,10 @@ function PlayPane({
   onHostPrivate: () => void;
   onJoinCode: (code: string) => void;
   onOpenFriends: () => void;
+  onRankUp: () => void;
 }) {
   const [joinCode, setJoinCode] = useState("");
+  const [showExpansion, setShowExpansion] = useState(false);
 
   const submitJoin = (event: FormEvent) => {
     event.preventDefault();
@@ -471,6 +476,7 @@ function PlayPane({
 
   return (
     <>
+      <RankUpCard onRankUp={onRankUp} />
       <LobbyNotices
         loading={loading}
         cashOutNotice={cashOutNotice}
@@ -524,19 +530,10 @@ function PlayPane({
         </div>
       </div>
 
-      {/* Right under Texas Hold'em -- see the desktop hub tile's own comment
-          for why this moved off the Ante Up floor. Named StackAcres now, not
-          "StackAcres" (Kayo's call; see components/brand/stackacres-logo.tsx)
-          -- the row's own logo is decorative at this size rather than
-          spelling the name (the bold text next to it does that), same as
-          the old StackChips mark it replaces here. Locked by default:
-          stackacresAccess is granted per player from the admin dashboard
-          while the game is still being tried out, so a card nobody can open
-          renders as an inert row instead of a disabled link pretending to
-          be a live door. Unadvertised by default beyond that: a player
-          without access sees no row here at all unless
-          STACKACRES_TILE_ADVERTISED is on -- see that constant's own
-          header.
+      {/* Right under Texas Hold'em. Everyone sees the row, badged as a premium
+          expansion. A player with stackacresAccess (granted from the admin
+          dashboard) gets the link; everyone else gets an info modal, since
+          there is no checkout yet.
 
           prefetch={false} for the same reason as the desktop tile in
           lobby.tsx: this row is on screen from the moment the shell mounts,
@@ -548,21 +545,25 @@ function PlayPane({
             <strong>StackAcres</strong>
             <small>Raise crops and livestock, sell what they make</small>
           </span>
+          <span className="mshell-premium-badge">Premium Expansion</span>
           <ChevronRight size={18} aria-hidden="true" />
         </Link>
       ) : (
-        STACKACRES_TILE_ADVERTISED && (
-          <div className="mshell-card mshell-row mshell-stackacres-row mshell-row-locked" aria-disabled="true">
-            <StackAcresLogo variant="badge" className="mshell-stackacres-logo" alt="" />
-            <span className="mshell-row-body">
-              <strong>StackAcres</strong>
-              <small className="mshell-stackacres-soon">Coming soon</small>
-            </span>
-          </div>
-        )
+        <button
+          type="button"
+          className="mshell-card mshell-row mshell-stackacres-row"
+          onClick={() => { tapSound(); setShowExpansion(true); }}
+        >
+          <StackAcresLogo variant="badge" className="mshell-stackacres-logo" alt="" />
+          <span className="mshell-row-body">
+            <strong>StackAcres</strong>
+            <small>Raise crops and livestock, sell what they make</small>
+          </span>
+          <span className="mshell-premium-badge">Premium Expansion</span>
+          <ChevronRight size={18} aria-hidden="true" />
+        </button>
       )}
-
-      <RankStrip />
+      {showExpansion && <PremiumExpansionModal onClose={() => setShowExpansion(false)} />}
 
       <div className="mshell-grid">
         <button type="button" className="mshell-card mshell-tile" onClick={() => { tapSound(); onHostPrivate(); }}>

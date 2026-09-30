@@ -1,62 +1,38 @@
 import { expect, test } from "./fixtures";
 
 /**
- * The leaderboard's Friends tab: your own record against each friend.
+ * The leaderboard's Friends tab: you and your friends ranked by Rank Points.
  *
  * The board is fulfilled from a stubbed /api/leaderboard response rather than
  * played out for real. Building the state honestly would mean two registered
- * accounts (friend requests are registered-only, so a guest cookie cannot
- * make one), a friendship, and five settled duels between them -- and none of
- * that would test anything this spec is for. The server half is covered in
- * lib/server/head-to-head-store.test.ts and leaderboard-store.test.ts; what
- * only a browser can answer is whether the row renders, whether it expands,
- * and whether the per-game split lines up under it.
+ * accounts, a friendship and settled solo wagers, and none of that tests what
+ * this spec is for. The server half is covered in
+ * lib/server/rank-board-store.test.ts and app/api/leaderboard/route.test.ts;
+ * what only a browser can answer is whether the rows render, carry no
+ * win/loss counters, and stay inside the page on a phone.
  */
+
+const entry = (rank: number, name: string, points: number, title: string, level: number, difficulty: string | null) => ({
+  profileId: `${rank}`.repeat(8) + "-1111-1111-1111-111111111111",
+  rank,
+  displayName: name,
+  initials: name.slice(0, 2).toUpperCase(),
+  avatarUrl: null,
+  avatarPreset: "ace",
+  avatarCosmetic: "default",
+  accent: "#e7c66a",
+  points,
+  level,
+  title,
+  difficulty,
+});
 
 const BOARD = {
   game: "friends",
   entries: [
-    {
-      profileId: "11111111-1111-1111-1111-111111111111",
-      displayName: "Jasmine",
-      avatarUrl: null,
-      accent: "#e7c66a",
-      wins: 3,
-      losses: 8,
-      draws: 0,
-      currentStreak: 0,
-      bestStreak: 2,
-      games: [
-        { gameId: "chess", label: "Chess", wins: 1, losses: 4, draws: 0, currentStreak: -3 },
-        { gameId: "cribbage", label: "Cribbage", wins: 2, losses: 4, draws: 0, currentStreak: 1 },
-      ],
-    },
-    {
-      profileId: "22222222-2222-2222-2222-222222222222",
-      displayName: "Mike",
-      avatarUrl: null,
-      accent: "#8f7bd6",
-      wins: 0,
-      losses: 5,
-      draws: 0,
-      currentStreak: -5,
-      bestStreak: 0,
-      games: [
-        { gameId: "checkers", label: "Checkers", wins: 0, losses: 5, draws: 0, currentStreak: -5 },
-      ],
-    },
-    {
-      profileId: "33333333-3333-3333-3333-333333333333",
-      displayName: "Newcomer",
-      avatarUrl: null,
-      accent: "#7fd9a8",
-      wins: 0,
-      losses: 0,
-      draws: 0,
-      currentStreak: 0,
-      bestStreak: 0,
-      games: [],
-    },
+    entry(1, "Jasmine", 4200, "Grinder", 6, "Top stakes"),
+    entry(2, "Mike", 900, "Rail Bird", 3, "Standard rules"),
+    entry(3, "Newcomer", 0, "Rail Bird", 1, null),
   ],
 };
 
@@ -81,43 +57,27 @@ test.beforeEach(async ({ page }) => {
 async function openFriendsTab(page: import("@playwright/test").Page) {
   await expect(async () => {
     await page.getByRole("button", { name: "Friends", exact: true }).click();
-    await expect(page.locator(".leaderboard-header p")).toContainText("Your record against each friend");
+    await expect(page.locator(".leaderboard-header p")).toContainText("You and your friends");
   }).toPass({ timeout: 30_000 });
 }
 
-test("the Friends tab shows a record against each friend, and expands into the per-game split", async ({ page }) => {
+test("the Friends tab ranks friends by Rank Points, with no win-loss record", async ({ page }) => {
   await page.goto("/leaderboard");
   await openFriendsTab(page);
 
-  // Scoped through the wrapper: the head row reuses .leaderboard-row-friend
-  // for its own grid, and only a friend's row is wrapped.
-  const rows = page.locator(".leaderboard-friend .leaderboard-row-friend");
-  await expect(page.getByText("Jasmine")).toBeVisible();
+  const rows = page.locator(".leaderboard-table .leaderboard-row:not(.leaderboard-row-head)");
+  await expect(rows).toHaveCount(3);
 
-  // A single-game record reports its streak; a mixed one leaves it to the
-  // per-game rows, because the order across games isn't recoverable.
-  const mike = page.locator(".leaderboard-friend").filter({ hasText: "Mike" });
-  await expect(mike).toContainText("0-5");
-  await expect(mike).toContainText("L5");
+  await expect(rows.nth(0)).toContainText("Jasmine");
+  await expect(rows.nth(0)).toContainText("4,200 RP");
+  await expect(rows.nth(0)).toContainText("Grinder");
+  await expect(rows.nth(0)).toContainText("Top stakes");
+  await expect(rows.nth(2)).toContainText("0 RP");
 
-  const jasmine = page.locator(".leaderboard-friend").filter({ hasText: "Jasmine" });
-  await expect(jasmine).toContainText("3-8");
-  await expect(jasmine).toContainText("27%");
-
-  // Collapsed until asked for.
-  await expect(jasmine.locator(".leaderboard-friend-games")).toHaveCount(0);
-  await jasmine.locator(".leaderboard-row-friend").click();
-  const split = jasmine.locator(".leaderboard-friend-game");
-  await expect(split).toHaveCount(2);
-  await expect(split.first()).toContainText("Chess");
-  await expect(split.first()).toContainText("1-4");
-  await expect(split.first()).toContainText("L3");
-
-  // A friend with no shared history is a row, not a hole -- and nothing to open.
-  const newcomer = page.locator(".leaderboard-friend").filter({ hasText: "Newcomer" });
-  await expect(newcomer).toContainText("No games yet");
-  await expect(newcomer.locator(".leaderboard-row-friend")).toBeDisabled();
-  expect(await rows.count()).toBe(3);
+  // The old board's counters must not come back.
+  await expect(page.locator(".leaderboard-table")).not.toContainText("W-L");
+  await expect(page.locator(".leaderboard-table")).not.toContainText("Win %");
+  await expect(page.locator(".leaderboard-table")).not.toContainText("Streak");
 });
 
 test("the friends board keeps its columns inside the page on a phone", async ({ page }) => {
@@ -125,15 +85,12 @@ test("the friends board keeps its columns inside the page on a phone", async ({ 
   await page.goto("/leaderboard");
   await openFriendsTab(page);
 
-  const jasmine = page.locator(".leaderboard-friend").filter({ hasText: "Jasmine" });
-  await jasmine.locator(".leaderboard-row-friend").click();
-  await expect(jasmine.locator(".leaderboard-friend-game")).toHaveCount(2);
+  const first = page.locator(".leaderboard-table .leaderboard-row:not(.leaderboard-row-head)").first();
+  await expect(first).toContainText("Jasmine");
 
-  // The whole point of the narrow grid: no horizontal scroll, and the record
-  // column still on screen.
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);
-  const box = await jasmine.locator(".leaderboard-stat").first().boundingBox();
+  const box = await first.locator(".leaderboard-points").boundingBox();
   expect(box).not.toBeNull();
   expect(box!.x + box!.width).toBeLessThanOrEqual(390);
 });

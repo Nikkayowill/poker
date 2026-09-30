@@ -1488,8 +1488,7 @@ button:disabled { cursor: wait; opacity: .62; }
  * reopens the empty cell the arcade panel exists to close.
  *
  * Borderless like the rest of the chrome -- a raised fill and space, no
- * hairline. The one ring here is on the level badge, which is the "part of an
- * avatar or swatch" exception the borderless pass kept.
+ * hairline. The jewel is the one drawn outline here, since it is artwork and not chrome.
  */
 .rank-strip {
   display: flex;
@@ -1501,65 +1500,131 @@ button:disabled { cursor: wait; opacity: .62; }
   background: var(--brand-surface);
 }
 
-.rank-badge {
-  flex: 0 0 auto;
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-round);
-  background: radial-gradient(circle at 34% 28%, #f0bc3a, var(--brand-gold) 58%, #a86f04);
-  box-shadow: 0 0 0 2px rgba(255, 210, 63,.22);
-  color: #1a1208;
-  font: 650 16px Georgia, serif;
-  font-variant-numeric: tabular-nums;
+.rank-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-/* min-width:0 so a long rank title ellipsizes instead of shoving the streak
-   pill off the edge -- a flex item's default min-width is auto. */
-.rank-body { flex: 1; min-width: 0; }
-
-.rank-line { display: flex; align-items: baseline; gap: 8px; }
-.rank-line strong {
+/* min-width:0 on the body so a long tier name ellipsizes instead of shoving the
+   streak pill off the edge -- a flex item's default min-width is auto. */
+.rank-name {
   overflow: hidden;
-  color: #e2e8f2;
-  font: 500 15px Georgia, serif;
+  color: #f4f1ea;
+  font: 700 22px Georgia, serif;
+  letter-spacing: .01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The chrome's one micro-label size, as used by .lobby-kicker and
-   .hub-tile-kicker. */
-.rank-level {
+.rank-points {
+  color: var(--brand-gold);
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .12em;
+}
+
+/* The next tier as a small jewel and a distance, not a bar: the number is what
+   a player reads, and a long line said nothing the number did not. */
+.rank-next-chip {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px 6px 8px;
+  border-radius: var(--radius-control);
+  background: rgba(182, 166, 219,.09);
+  color: #9aa6bd;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.rank-next-chip strong { color: #e2e8f2; font-variant-numeric: tabular-nums; }
+.rank-next-top { padding-left: 11px; color: var(--brand-gold); font-weight: 650; letter-spacing: .06em; }
+
+/*
+ * Rank jewels (components/profile/rank-jewel.tsx). `--jewel-glow` is set inline
+ * per tier. The glow is a drop-shadow so it follows the cut, not the box. The
+ * twinkle is one star whose opacity and scale cycle; GOAT twinkles faster and
+ * glows harder. Stopped under prefers-reduced-motion.
+ */
+.rank-jewel { flex: 0 0 auto; display: block; overflow: visible; }
+.rank-jewel-shine { filter: drop-shadow(0 0 7px color-mix(in srgb, var(--jewel-glow) 70%, transparent)); }
+.rank-jewel[data-tier="goat"].rank-jewel-shine { filter: drop-shadow(0 0 11px var(--jewel-glow)); }
+.rank-jewel-spark {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: rank-jewel-twinkle 3.2s ease-in-out infinite;
+}
+.rank-jewel[data-tier="goat"] .rank-jewel-spark { animation-duration: 1.9s; }
+.rank-jewel[data-tier="diamond"] .rank-jewel-spark { animation-duration: 2.4s; }
+
+@keyframes rank-jewel-twinkle {
+  0%, 62%, 100% { opacity: 0; transform: scale(.3) rotate(0deg); }
+  72% { opacity: 1; transform: scale(1) rotate(45deg); }
+  84% { opacity: 0; transform: scale(.4) rotate(90deg); }
+}
+
+/* Tier-up popup (components/profile/tier-up-popup.tsx). Above the table and the
+   toasts, dismissed by the button, a tap outside, Escape or Enter. */
+.tier-up-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-modal) + 5);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(10, 5, 22, .72);
+  animation: tier-up-fade var(--duration-base) ease;
+}
+.tier-up {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: min(320px, 100%);
+  padding: 26px 24px 22px;
+  border-radius: var(--radius-card);
+  background: #1d1238;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .55);
+  text-align: center;
+  animation: tier-up-pop .5s cubic-bezier(.2, 1.4, .4, 1);
+}
+.tier-up-kicker {
   color: #7f8ba4;
   font-size: 10px;
   font-weight: 650;
   letter-spacing: .25em;
   text-transform: uppercase;
 }
+.tier-up-jewel { margin: 6px 0 4px; animation: tier-up-bob 2.6s ease-in-out infinite; }
+.tier-up-name { color: #f4f1ea; font: 700 30px Georgia, serif; }
+.tier-up-gold { color: var(--brand-gold); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tier-up-close {
+  margin-top: 14px;
+  padding: 10px 34px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--brand-gold);
+  color: #1a1208;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
 
-.rank-track {
-  height: 5px;
-  margin: 8px 0 6px;
-  border-radius: 3px;
-  background: rgba(182, 166, 219,.09);
-  overflow: hidden;
-}
-.rank-fill {
-  height: 100%;
-  border-radius: 3px;
-  background: linear-gradient(90deg, var(--brand-purple), var(--brand-gold));
-  transition: width var(--duration-base) ease;
+@keyframes tier-up-fade { from { opacity: 0; } }
+@keyframes tier-up-pop { from { opacity: 0; transform: scale(.7) translateY(14px); } }
+@keyframes tier-up-bob { 50% { transform: translateY(-5px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .tier-up-backdrop, .tier-up, .tier-up-jewel { animation: none; }
 }
 
-.rank-next {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: #7f8ba4;
-  font-size: 10.5px;
+@media (prefers-reduced-motion: reduce) {
+  .rank-jewel-spark { animation: none; opacity: .9; transform: none; }
 }
-.rank-next svg { flex: 0 0 auto; }
 
 .rank-streak {
   flex: 0 0 auto;
@@ -1578,15 +1643,14 @@ button:disabled { cursor: wait; opacity: .62; }
 .rank-streak small { font-size: 10px; letter-spacing: .04em; }
 
 @media (max-width: 560px) {
-  /* The bar and the label carry the same information the title does; at phone
-     width the badge, title and streak are what fit. */
   .rank-strip { gap: 10px; padding: 12px 14px; }
-  .rank-next { display: none; }
+  .rank-name { font-size: 19px; }
+  .rank-next-chip { padding: 5px 9px 5px 6px; font-size: 10.5px; }
 }
 
 /*
  * Solo earnings: the tracker under the rank strip. Rank is the difficulty-
- * weighted net of exactly these wagers, so it sits directly beneath the level
+ * weighted net of exactly these wagers, so it sits directly beneath the tier
  * it explains. `.rank-stack` owns the gap to the hub grid so the strip and the
  * tracker read as one block; the strip's own bottom margin steps down inside it.
  *
@@ -1620,6 +1684,7 @@ button:disabled { cursor: wait; opacity: .62; }
   font-variant-numeric: tabular-nums;
 }
 .earnings-stat span { color: #7f8ba4; font-size: 10.5px; }
+.earnings-stat .earnings-tier { display: flex; align-items: center; gap: 6px; }
 .earnings-up { color: #8fd9a8 !important; }
 .earnings-down { color: #f0a3a1 !important; }
 

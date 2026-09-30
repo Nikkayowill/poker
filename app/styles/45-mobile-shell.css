@@ -810,7 +810,7 @@
       0 2px 8px rgba(255, 210, 63, .45);
   }
 
-  /* Rank Up card: the rank strip's look as a full-width button. */
+  /* Rank card: the rank strip's look as a full-width button. */
   .rankup-card {
     width: 100%;
     margin-bottom: 10px;
@@ -820,18 +820,8 @@
     cursor: pointer;
   }
   .rankup-card:active { transform: scale(.985); }
-  .rankup-cue {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    color: var(--brand-gold);
-    font-size: 11px;
-    font-weight: 650;
-    letter-spacing: .14em;
-    text-transform: uppercase;
-  }
-  .skeleton-rankup { display: block; height: 70px; margin-bottom: 10px; border-radius: var(--radius-card); }
+  .rankup-chevron { flex: 0 0 auto; color: var(--brand-gold); }
+  .skeleton-rankup { display: block; height: 82px; margin-bottom: 10px; border-radius: var(--radius-card); }
 
   /* Compact tag on the StackAcres row. */
   .mshell-premium-badge {

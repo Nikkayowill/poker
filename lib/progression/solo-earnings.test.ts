@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { levelForXp, rankProgress } from "./rank";
+import { rankProgress } from "./rank";
 import {
   GOLD_PER_RANK_POINT,
   bandRankWeight,
@@ -7,6 +7,7 @@ import {
   stakeBandIndexes,
   summarizeSoloEarnings,
   weightedNet,
+  withoutResult,
   type EarningsByBand,
 } from "./solo-earnings";
 
@@ -49,12 +50,12 @@ describe("rank points", () => {
 
   it("never go below zero, however deep the player is down", () => {
     expect(rankPointsFrom(0, { 3: totals(5_000_000, 0, 0, 5) })).toBe(0);
-    expect(levelForXp(rankPointsFrom(0, { 3: totals(5_000_000, 0, 0, 5) }))).toBe(1);
+    expect(rankProgress(rankPointsFrom(0, { 3: totals(5_000_000, 0, 0, 5) })).tier.id).toBe("bronze");
   });
 
   it("start a carried-over player from the base they were given", () => {
     expect(rankPointsFrom(3_000, {})).toBe(3_000);
-    expect(rankProgress(rankPointsFrom(3_000, {})).level).toBe(levelForXp(3_000));
+    expect(rankProgress(rankPointsFrom(3_000, {})).tier.id).toBe("silver");
   });
 });
 
@@ -89,5 +90,23 @@ describe("summarizeSoloEarnings", () => {
     expect(summary.totalPaidOut).toBe(1000);
     expect(summary.net).toBe(-2000);
     expect(summary.losses).toBe(2);
+  });
+});
+
+describe("withoutResult", () => {
+  it("undoes a win, so a settle can be priced from the after-state alone", () => {
+    const before: EarningsByBand = { 1: totals(2_000, 3_000, 1, 1) };
+    const after: EarningsByBand = { 1: totals(3_000, 7_000, 2, 1) };
+    expect(withoutResult(after, 1, 1_000, 4_000)).toEqual(before);
+  });
+
+  it("undoes a loss", () => {
+    const after: EarningsByBand = { 0: totals(1_500, 500, 1, 1) };
+    expect(withoutResult(after, 0, 1_000, 0)).toEqual({ 0: totals(500, 500, 1, 0) });
+  });
+
+  it("leaves other bands alone", () => {
+    const after: EarningsByBand = { 0: totals(100, 200), 2: totals(300, 0, 0, 1) };
+    expect(withoutResult(after, 2, 300, 0)[0]).toEqual(after[0]);
   });
 });

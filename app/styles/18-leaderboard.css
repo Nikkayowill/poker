@@ -198,6 +198,7 @@
   color: var(--muted);
   font-size: 11px;
 }
+.leaderboard-sub .leaderboard-jewel { display: inline-block; vertical-align: -3px; margin-right: 5px; }
 
 .leaderboard-points {
   text-align: right;

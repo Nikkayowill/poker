@@ -1,7 +1,7 @@
 import "server-only";
 import { stakePressure } from "@/lib/arcade/stake-pressure";
-import { levelForXp, rewardsBetween, type LevelReward } from "@/lib/progression/rank";
-import { EMPTY_BAND, rankPointsFrom, type BandTotals, type EarningsByBand } from "@/lib/progression/solo-earnings";
+import { rewardsBetween, tierForPoints, type TierReward } from "@/lib/progression/rank";
+import { EMPTY_BAND, rankPointsFrom, withoutResult, type BandTotals, type EarningsByBand } from "@/lib/progression/solo-earnings";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { checkAchievements } from "./achievement-store";
 import { applyMissionEvent } from "./mission-store";
@@ -20,9 +20,9 @@ import { adminClient } from "./supabase-admin";
  *     up before its Gold goes out. A retried settle records nothing and pays
  *     nothing. A failure between the mark and the credit loses that milestone's
  *     Gold rather than risking paying it twice.
- *  2. **Milestones pay once, ever.** Rank can fall, so the same level can be
- *     reached again. max_level_rewarded only moves up, and only the levels above
- *     it are paid.
+ *  2. **Tier Gold pays once, ever.** Rank can fall, so the same tier can be
+ *     reached again. max_level_rewarded holds the highest tier number paid (the
+ *     column predates tiers), only moves up, and only tiers above it are paid.
  *
  * Never throws into its caller. The attempt is already settled and its payout
  * already credited when this runs; a failed write here costs that one result its
@@ -41,9 +41,9 @@ export interface SoloResultInput {
 }
 
 export interface SoloResultOutcome {
-  /** Milestone levels newly reached, in order. Empty on a loss or when nothing new was crossed. */
-  levelUps: LevelReward[];
-  /** Gold actually credited for those. */
+  /** Tiers newly reached, in order. Empty on a loss or when nothing new was crossed. */
+  tierUps: TierReward[];
+  /** Gold actually credited for those tiers. */
   goldAwarded: number;
   /** The wallet after a milestone was paid, or null when nothing was. */
   profile: PlayerProfile | null;
@@ -57,7 +57,7 @@ export interface SoloState {
 
 interface MemoryEntry {
   base: number;
-  maxLevelRewarded: number;
+  maxLevelRewarded: number; // highest tier number paid
   byBand: Record<number, BandTotals>;
 }
 
@@ -215,22 +215,22 @@ async function insertEvent(profileId: string, input: SoloResultInput, band: numb
   return Boolean((data as { recorded: boolean }).recorded);
 }
 
-/** Moves the rewarded mark up to `level` and returns where it was. */
-async function claimMilestones(profileId: string, level: number): Promise<number> {
+/** Moves the rewarded mark up to tier number `tier` and returns where it was. */
+async function claimMilestones(profileId: string, tier: number): Promise<number> {
   const supabase = adminClient();
   if (!supabase) {
     const entry = entryFor(profileId);
     const previous = entry.maxLevelRewarded;
-    if (level > previous) entry.maxLevelRewarded = level;
+    if (tier > previous) entry.maxLevelRewarded = tier;
     return previous;
   }
-  const { data, error } = await supabase.rpc("claim_rank_milestones", { p_profile_id: profileId, p_level: level }).single();
+  const { data, error } = await supabase.rpc("claim_rank_milestones", { p_profile_id: profileId, p_level: tier }).single();
   if (error) throw new Error(`Could not claim rank milestones: ${error.message}`);
   return Number((data as { previous_level: number }).previous_level);
 }
 
 /**
- * Records one settled solo wager and pays any milestone it newly reached.
+ * Records one settled solo wager and pays any tier it newly reached.
  *
  * `token` is the caller's session token when it has one, else null and the
  * credit goes through the by-profile RPC; same split awardWager made.
@@ -250,24 +250,27 @@ export async function recordSoloResult(
     if (!recorded) return null;
 
     const state = await readSoloState(profileId);
-    const level = levelForXp(rankPointsFrom(state.base, state.byBand));
-    const previousLevel = await claimMilestones(profileId, level);
-    const levelUps = rewardsBetween(previousLevel, level);
-    if (levelUps.length === 0) return { levelUps: [], goldAwarded: 0, profile: null };
+    const points = rankPointsFrom(state.base, state.byBand);
+    const pointsBefore = rankPointsFrom(state.base, withoutResult(state.byBand, band, input.wager, payout));
+    if (points > pointsBefore) await applyMissionEvent(profileId, { kind: "rank_points_gained", points: points - pointsBefore });
 
-    await applyMissionEvent(profileId, { kind: "level_gained", levels: levelUps.length });
+    const tier = tierForPoints(points).number;
+    const previousTier = await claimMilestones(profileId, tier);
+    const tierUps = rewardsBetween(previousTier, tier);
+    if (tierUps.length === 0) return { tierUps: [], goldAwarded: 0, profile: null };
+
     try {
       await checkAchievements([profileId]);
     } catch (error) {
-      console.error("achievements.level_check_failed", { profileId, error });
+      console.error("achievements.tier_check_failed", { profileId, error });
     }
 
-    const owed = levelUps.reduce((sum, reward) => sum + reward.gold, 0);
+    const owed = tierUps.reduce((sum, reward) => sum + reward.gold, 0);
     let profile: PlayerProfile | null = null;
     if (owed > 0) {
       profile = token === null ? await creditGoldByProfile(profileId, owed) : await creditGold(token, owed);
     }
-    return { levelUps, goldAwarded: owed, profile };
+    return { tierUps, goldAwarded: owed, profile };
   } catch (error) {
     console.error("solo-earnings.record_failed", { profileId, game: input.game, error });
     return null;

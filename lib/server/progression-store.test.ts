@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import { GOLD_PER_XP, xpToReachLevel } from "@/lib/progression/rank";
+import { GOLD_PER_XP } from "@/lib/progression/rank";
 import { dailyGrantFor, utcDayKey } from "@/lib/progression/streak";
 import { ensureProfile, findProfileBySessionToken } from "./profile-store";
 import {
@@ -25,12 +25,12 @@ beforeEach(() => {
 });
 
 describe("reading progression", () => {
-  it("reports level 1 for a player with no row at all", async () => {
+  it("reports Bronze for a player with no row at all", async () => {
     const { profileId } = await newPlayer("Fresh");
     const progress = await getProgression(profileId);
 
-    expect(progress.level).toBe(1);
-    expect(progress.xp).toBe(0);
+    expect(progress.tier.id).toBe("bronze");
+    expect(progress.points).toBe(0);
     expect(progress.lifetimeWagered).toBe(0);
     expect(progress.streak).toBe(0);
   });
@@ -56,18 +56,18 @@ describe("awarding XP for a wager", () => {
     expect((await getProgression(profileId)).lifetimeWagered).toBe(0);
   });
 
-  it("no longer moves rank or pays level Gold: staking alone is not progress", async () => {
+  it("does not move rank or pay tier Gold: staking alone is not progress", async () => {
     const { token, profileId, startingGold } = await newPlayer("Volume");
 
-    // Enough volume that the old wager-volume rank would have been level 7.
-    const award = await awardWager(profileId, token, goldFor(xpToReachLevel(7)));
+    // Enough volume that a wager-volume rank would have been well past Silver.
+    const award = await awardWager(profileId, token, goldFor(5_000));
 
     expect(award).not.toBeNull();
-    expect(award!.levelUps).toEqual([]);
+    expect(award!.tierUps).toEqual([]);
     expect(award!.goldAwarded).toBe(0);
     expect(award!.profile).toBeNull();
-    expect(award!.progression.level).toBe(1);
-    expect((await getProgression(profileId)).level).toBe(1);
+    expect(award!.progression.tier.id).toBe("bronze");
+    expect((await getProgression(profileId)).tier.id).toBe("bronze");
     expect((await findProfileBySessionToken(token))?.goldBalance).toBe(startingGold);
   });
 

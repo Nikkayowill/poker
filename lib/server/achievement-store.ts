@@ -73,9 +73,9 @@ const DEFAULT_DEFINITIONS: AchievementDefinition[] = [
   { code: "puzzles_completed_100", category: "puzzles_completed", tier: 2, sourceKind: "counter", metric: "puzzles_completed", threshold: 100, rewardGold: 3000, rewardCosmeticId: null, title: "Puzzle Regular", description: "Complete 100 brain games.", sortOrder: 72 },
   { code: "puzzles_completed_500", category: "puzzles_completed", tier: 3, sourceKind: "counter", metric: "puzzles_completed", threshold: 500, rewardGold: 24000, rewardCosmeticId: null, title: "Puzzle Master", description: "Complete 500 brain games.", sortOrder: 73 },
 
-  { code: "level_10", category: "levels_gained", tier: 1, sourceKind: "live", metric: "profile_level", threshold: 10, rewardGold: 500, rewardCosmeticId: null, title: "On The Board", description: "Reach level 10.", sortOrder: 81 },
-  { code: "level_25", category: "levels_gained", tier: 2, sourceKind: "live", metric: "profile_level", threshold: 25, rewardGold: 5000, rewardCosmeticId: null, title: "Made Man", description: "Reach level 25.", sortOrder: 82 },
-  { code: "level_50", category: "levels_gained", tier: 3, sourceKind: "live", metric: "profile_level", threshold: 50, rewardGold: 40000, rewardCosmeticId: null, title: "Legend Of The Room", description: "Reach level 50.", sortOrder: 83 },
+  { code: "level_10", category: "levels_gained", tier: 1, sourceKind: "live", metric: "rank_tier", threshold: 2, rewardGold: 500, rewardCosmeticId: null, title: "On The Board", description: "Reach Silver tier.", sortOrder: 81 },
+  { code: "level_25", category: "levels_gained", tier: 2, sourceKind: "live", metric: "rank_tier", threshold: 4, rewardGold: 5000, rewardCosmeticId: null, title: "Made Man", description: "Reach Emerald tier.", sortOrder: 82 },
+  { code: "level_50", category: "levels_gained", tier: 3, sourceKind: "live", metric: "rank_tier", threshold: 6, rewardGold: 40000, rewardCosmeticId: null, title: "Legend Of The Room", description: "Reach Master tier.", sortOrder: 83 },
 
   // The "museum_secrets_1" ("Ray's Best Friend") achievement that used to sit
   // here was removed along with Ray's Museum -- the feature that fed its
@@ -217,7 +217,7 @@ async function readCounters(profileId: string, metrics: string[]): Promise<Map<s
 function currentValueFor(
   definition: AchievementDefinition,
   standing: { stats: PlayerStats } | null,
-  level: number | null,
+  tier: number | null,
   counters: Map<string, number>,
 ): number {
   if (definition.sourceKind === "stat") {
@@ -231,7 +231,7 @@ function currentValueFor(
       default: return 0;
     }
   }
-  if (definition.sourceKind === "live") return level ?? 0;
+  if (definition.sourceKind === "live") return tier ?? 0;
   return counters.get(definition.metric) ?? 0;
 }
 
@@ -239,20 +239,20 @@ function currentValueFor(
 async function readSources(
   profileId: string,
   definitions: AchievementDefinition[],
-): Promise<{ standing: { stats: PlayerStats } | null; level: number | null; counters: Map<string, number> }> {
+): Promise<{ standing: { stats: PlayerStats } | null; tier: number | null; counters: Map<string, number> }> {
   const needsStat = definitions.some((definition) => definition.sourceKind === "stat");
   const needsLive = definitions.some((definition) => definition.sourceKind === "live");
   const counterMetrics = [...new Set(
     definitions.filter((definition) => definition.sourceKind === "counter").map((definition) => definition.metric),
   )];
 
-  const [standing, level, counters] = await Promise.all([
+  const [standing, tier, counters] = await Promise.all([
     needsStat ? getPlayerStanding(profileId, "lifetime") : Promise.resolve(null),
-    needsLive ? getProgression(profileId).then((progression) => progression.level) : Promise.resolve(null),
+    needsLive ? getProgression(profileId).then((progression) => progression.tier.number) : Promise.resolve(null),
     readCounters(profileId, counterMetrics),
   ]);
 
-  return { standing, level, counters };
+  return { standing, tier, counters };
 }
 
 /** Where the player stands on every achievement, unlocked or not. */
@@ -261,7 +261,7 @@ export async function getAchievementsView(profileId: string, now: Date = new Dat
   const [granted, sources] = await Promise.all([grantedCodes(profileId), readSources(profileId, catalog)]);
 
   const achievements: AchievementView[] = catalog.map((definition) => {
-    const current = currentValueFor(definition, sources.standing, sources.level, sources.counters);
+    const current = currentValueFor(definition, sources.standing, sources.tier, sources.counters);
     const unlockedAt = granted.get(definition.code) ?? null;
     return {
       code: definition.code,
@@ -353,7 +353,7 @@ export async function checkAchievements(profileIds: string[], now: Date = new Da
 
     const sources = await readSources(profileId, remaining);
     for (const definition of remaining) {
-      const current = currentValueFor(definition, sources.standing, sources.level, sources.counters);
+      const current = currentValueFor(definition, sources.standing, sources.tier, sources.counters);
       if (current >= definition.threshold) await grantOne(profileId, definition, now);
     }
   }));
@@ -369,7 +369,7 @@ export async function checkAchievements(profileIds: string[], now: Date = new Da
  * applyMissionEvent makes.
  *
  * Only wired at the duel_won and puzzle_completed call sites: poker_hand_played
- * and level_gained achievements are stat/live-sourced, so their call sites
+ * and tier achievements are stat/live-sourced, so their call sites
  * (hand-completion.ts, progression-store.ts) call checkAchievements directly
  * instead, and achievementCountersForEvent returns no signal for those two
  * kinds here.

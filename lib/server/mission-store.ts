@@ -49,7 +49,7 @@ const DEFAULT_DEFINITIONS: MissionDefinition[] = [
   { code: "weekly_win_duels", cadence: "weekly", metric: "duels_won", target: 10, rewardGold: 3000, dedupeDaily: false, title: "Win ten duels", description: "Win ten PvP duels this week.", sortOrder: 10 },
   { code: "weekly_active_days", cadence: "weekly", metric: "active_day", target: 5, rewardGold: 3600, dedupeDaily: true, title: "Show up five days", description: "Play something on five separate days this week.", sortOrder: 20 },
   { code: "weekly_cross_category", cadence: "weekly", metric: "games_played_any", target: 20, rewardGold: 4500, dedupeDaily: false, title: "Play twenty games", description: "Complete twenty games across poker, duels and brain games.", sortOrder: 30 },
-  { code: "weekly_level_up", cadence: "weekly", metric: "levels_gained", target: 1, rewardGold: 2400, dedupeDaily: false, title: "Rank up", description: "Gain a rank level this week.", sortOrder: 40 },
+  { code: "weekly_level_up", cadence: "weekly", metric: "rank_points_gained", target: 100, rewardGold: 2400, dedupeDaily: false, title: "Climb the ranks", description: "Earn 100 rank points this week.", sortOrder: 40 },
 ];
 
 // ---- memory-mode mirror -------------------------------------------------

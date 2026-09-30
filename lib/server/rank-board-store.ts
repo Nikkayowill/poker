@@ -1,5 +1,5 @@
 import "server-only";
-import { levelForXp, rankTitle } from "@/lib/progression/rank";
+import { tierForPoints, type RankTierId } from "@/lib/progression/rank";
 import { rankPointsFrom, summarizeSoloEarnings } from "@/lib/progression/solo-earnings";
 import { listFriendIds } from "./friends-store";
 import { decorateRankedRows, type RankedIdentity } from "./leaderboard-identity";
@@ -14,8 +14,8 @@ import { listSoloStates, type SoloState } from "./solo-earnings-store";
 
 export type RankBoardEntry = RankedIdentity & {
   points: number;
-  level: number;
-  title: string;
+  tierId: RankTierId;
+  tierName: string;
   /** Label of the stake band the player's earnings centre on, or null with nothing earned yet. */
   difficulty: string | null;
 };
@@ -37,11 +37,11 @@ function byPoints(a: Scored, b: Scored): number {
 
 async function decorate(rows: Scored[]): Promise<RankBoardEntry[]> {
   return decorateRankedRows(rows, (row) => {
-    const level = levelForXp(row.points);
+    const tier = tierForPoints(row.points);
     return {
       points: row.points,
-      level,
-      title: rankTitle(level),
+      tierId: tier.id,
+      tierName: tier.name,
       difficulty: summarizeSoloEarnings(row.state.byBand).difficulty.label,
     };
   });

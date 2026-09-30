@@ -6,6 +6,8 @@ import Link from "next/link";
 import { Coins, Crown } from "lucide-react";
 import { selectSound } from "@/lib/audio/ui-sounds";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
+import { RankJewel } from "@/components/profile/rank-jewel";
+import type { RankTierId } from "@/lib/progression/rank";
 import type { AvatarPreset } from "@/lib/profile/types";
 import { Skeleton } from "@/components/loading/skeleton";
 import { useMinHoldFade } from "@/components/loading/use-min-hold-fade";
@@ -18,15 +20,15 @@ interface RankedAvatarIdentity {
   avatarCosmetic: string;
 }
 
-/** One row of either board: a player's rank points, with the title and difficulty they read as. */
+/** One row of either board: a player's rank points, with the tier and difficulty they read as. */
 interface RankEntry extends RankedAvatarIdentity {
   profileId: string;
   rank: number;
   displayName: string;
   accent: string;
   points: number;
-  level: number;
-  title: string;
+  tierId: RankTierId;
+  tierName: string;
   /** The stake band their earnings centre on, or null before they have earned anything. */
   difficulty: string | null;
 }
@@ -73,7 +75,8 @@ function RankRow({ entry, mine }: { entry: RankEntry; mine: boolean }) {
       <span className="leaderboard-name-block">
         <span className="leaderboard-name">{entry.displayName}{mine && <em> (you)</em>}</span>
         <span className="leaderboard-sub">
-          {entry.title} &middot; Level {entry.level}
+          <RankJewel tier={entry.tierId} size={16} shine={false} className="leaderboard-jewel" />
+          {entry.tierName}
           {entry.difficulty && <> &middot; {entry.difficulty}</>}
         </span>
       </span>

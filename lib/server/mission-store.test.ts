@@ -85,21 +85,25 @@ describe("applying a mission event", () => {
     expect(mission.progress).toBe(3);
   });
 
-  it("does nothing for a wager that crossed no level", async () => {
+  it("does nothing for a wager that added no rank points", async () => {
     const { profileId } = await newPlayer("Steady");
     const now = at("2026-08-10T09:00:00.000Z");
 
-    await applyMissionEvent(profileId, { kind: "level_gained", levels: 0 }, now);
+    await applyMissionEvent(profileId, { kind: "rank_points_gained", points: 0 }, now);
     const mission = (await getMissionsView(profileId, now)).weekly.find((m) => m.code === "weekly_level_up")!;
     expect(mission.progress).toBe(0);
   });
 
-  it("completes the rank-up mission the moment any level is crossed", async () => {
+  it("completes the rank-points mission once 100 points are earned, across wagers", async () => {
     const { profileId } = await newPlayer("Climber");
     const now = at("2026-08-10T09:00:00.000Z");
 
-    await applyMissionEvent(profileId, { kind: "level_gained", levels: 4 }, now);
-    const mission = (await getMissionsView(profileId, now)).weekly.find((m) => m.code === "weekly_level_up")!;
+    await applyMissionEvent(profileId, { kind: "rank_points_gained", points: 60 }, now);
+    let mission = (await getMissionsView(profileId, now)).weekly.find((m) => m.code === "weekly_level_up")!;
+    expect(mission).toMatchObject({ progress: 60, completed: false });
+
+    await applyMissionEvent(profileId, { kind: "rank_points_gained", points: 60 }, now);
+    mission = (await getMissionsView(profileId, now)).weekly.find((m) => m.code === "weekly_level_up")!;
     expect(mission.completed).toBe(true);
   });
 });

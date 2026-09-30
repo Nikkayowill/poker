@@ -19,7 +19,7 @@ describe("achievementCountersForEvent", () => {
     expect(achievementCountersForEvent({ kind: "poker_hand_played", multiplayer: true })).toEqual([]);
   });
 
-  it("is a no-op for a level-up -- rank is live-sourced, not counted", () => {
-    expect(achievementCountersForEvent({ kind: "level_gained", levels: 3 })).toEqual([]);
+  it("is a no-op for rank points -- rank tier is live-sourced, not counted", () => {
+    expect(achievementCountersForEvent({ kind: "rank_points_gained", points: 300 })).toEqual([]);
   });
 });

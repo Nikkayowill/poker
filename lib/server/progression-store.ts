@@ -1,5 +1,5 @@
 import "server-only";
-import { rankProgress, xpForWager, type LevelReward } from "@/lib/progression/rank";
+import { rankProgress, xpForWager, type TierReward } from "@/lib/progression/rank";
 import { rankPointsFrom, summarizeSoloEarnings } from "@/lib/progression/solo-earnings";
 import { liveStreak, streakAfterClaim, utcDayKey } from "@/lib/progression/streak";
 import type { ProgressionSnapshot } from "@/lib/progression/types";
@@ -11,14 +11,14 @@ import { adminClient } from "./supabase-admin";
  * Player progression: rank, lifetime wagered, daily streak.
  *
  * Rank is no longer XP from staking. It is the difficulty-weighted net of solo
- * wagers, kept by lib/server/solo-earnings-store.ts and turned into a level by
- * lib/progression/solo-earnings.ts. This store still counts XP and lifetime
- * wagered for every wager, PVP included, but nothing here pays level rewards or
- * moves rank from them; the milestone Gold comes from the solo store.
+ * wagers, kept by lib/server/solo-earnings-store.ts and turned into a tier by
+ * lib/progression/rank.ts. This store still counts XP and lifetime
+ * wagered for every wager, PVP included, but nothing here pays tier rewards or
+ * moves rank from them; the tier Gold comes from the solo store.
  *
  * The curve itself is not here. lib/progression/rank.ts owns it, is pure, and
  * is the only definition; this module reads xp out of a row and asks that
- * module what it means. The table stores no level for the same reason (see the
+ * module what it means. The table stores no tier for the same reason (see the
  * migration's header).
  *
  * Two ordering rules, restated here rather than referenced, because breaking
@@ -32,7 +32,7 @@ import { adminClient } from "./supabase-admin";
  *     retry.
  *  2. **The Gold goes out through creditGold, never adjustGold.** creditGold is
  *     the guarded credit_gold RPC (20260804160000); adjustGold is still a plain
- *     read-then-write, and a milestone landing while a cash-out credits the
+ *     read-then-write, and a tier reward landing while a cash-out credits the
  *     same wallet would drop one of them. That is the exact race credit_gold
  *     exists to close.
  */
@@ -43,19 +43,19 @@ import { adminClient } from "./supabase-admin";
 export type { ProgressionSnapshot };
 
 export interface WagerAward {
-  /** Every level crossed by this wager, in order. Empty when none were. */
-  levelUps: LevelReward[];
-  /** Gold actually credited for those level-ups. */
+  /** Every tier reached by this wager, in order. Always empty here; see recordSoloResult. */
+  tierUps: TierReward[];
+  /** Gold actually credited for those tiers. */
   goldAwarded: number;
   xpAwarded: number;
   progression: ProgressionSnapshot;
   /**
-   * The wallet after a milestone was paid, or null when nothing was.
+   * The wallet after a tier reward was paid, or null when nothing was.
    *
    * Handed back rather than left for the caller to re-read: the caller is a
    * settle path that already holds a PlayerProfile it is about to serialise,
-   * and a milestone credited but not reflected in that payload shows the
-   * player a level-up and an unchanged balance in the same response.
+   * and a tier reward credited but not reflected in that payload shows the
+   * player a tier-up and an unchanged balance in the same response.
    */
   profile: PlayerProfile | null;
 }
@@ -109,7 +109,7 @@ async function readRow(profileId: string): Promise<ProgressionRow> {
     .eq("profile_id", profileId)
     .maybeSingle();
   if (error) throw new Error(`Could not load progression: ${error.message}`);
-  // No row is not an error: a player who has never wagered is level 1, which
+  // No row is not an error: a player who has never wagered is Bronze, which
   // rankProgress(0) renders from nothing at all.
   if (!data) return EMPTY_ROW;
   return {
@@ -132,9 +132,9 @@ export async function getProgression(
 /**
  * Records Gold staked, for lifetime volume and the legacy XP count.
  *
- * It no longer moves rank or pays level rewards: rank is the net of solo
+ * It no longer moves rank or pays tier rewards: rank is the net of solo
  * wagers now, which recordSoloResult owns. The return shape is kept so the
- * settle paths that read `progression` off it keep working, with `levelUps`
+ * settle paths that read `progression` off it keep working, with `tierUps`
  * always empty and no Gold awarded.
  *
  * `token` is kept in the signature for the same reason; nothing here credits.
@@ -173,7 +173,7 @@ export async function awardWager(
     }
 
     const [row, solo] = await Promise.all([readRow(profileId), readSoloState(profileId)]);
-    return { levelUps: [], goldAwarded: 0, xpAwarded: xp, progression: toSnapshot(row, solo, now), profile: null };
+    return { tierUps: [], goldAwarded: 0, xpAwarded: xp, progression: toSnapshot(row, solo, now), profile: null };
   } catch (error) {
     console.error("progression.award_wager_failed", { profileId, goldStaked, error });
     return null;

@@ -1,52 +1,25 @@
 /**
- * Player rank: the progression spine.
+ * Player rank: a ladder of named tiers, from Bronze to GOAT.
  *
- * Pure and closed-form. This lives in lib/ rather than beside the component
- * that draws the bar because vitest.config.ts collects only lib/ and app/,
- * the same reason lib/arcade/games.ts and lib/profile/daily-gold.ts are
- * where they are. Nothing here reads a clock, a database or a random number,
- * so the whole curve is reachable from `npm test`.
+ * There are no levels. A player's rank points (see lib/progression/
+ * solo-earnings.ts) place them on one of eight tiers, and the tier is the whole
+ * readout. Pure and closed-form: nothing here reads a clock, a database or a
+ * random number. It lives in lib/ because vitest.config.ts collects only lib/
+ * and app/.
  *
- * The economics are worth stating up front, because they constrain every
- * constant below. Gold is bought with real money and granted as progression;
- * chips are gameplay. A level-up reward is therefore a *faucet*, and there's
- * no house edge anywhere in this economy to weigh it against any more, since
- * every staked game left is winner-take-all PvP with no rake. So the
- * constraint is more direct than "stay under the house's cut": a faucet that
- * hands out too much undermines what a real-money Gold purchase is actually
- * worth. The rewards here stay small in Gold and large in standing instead:
- * rank names, badges and milestone unlocks cost the economy nothing and are
- * what actually make a player feel like they've been somewhere.
+ * Reaching a tier for the first time pays its Gold, once ever. The Gold is a
+ * faucet against what a real-money Gold purchase is worth, so the table below
+ * adds up to about what the old every-fifth-level milestones paid over the same
+ * climb. Rank names and jewels cost the economy nothing.
  */
 
 /**
  * Gold wagered per point of XP.
  *
- * This no longer drives the rank. The level curve, titles and milestone Gold
- * below are unchanged, but the number fed to them is now rank points: the
- * difficulty-weighted net of solo wagers (see lib/progression/solo-earnings.ts),
- * which falls on a loss. Staking used to be the input, and a rank that climbed
- * just by playing over time is what that change removed. XP from staking is
- * still counted for lifetime volume, so the conversion stays.
+ * XP is lifetime staking volume and does not move rank. It is still counted,
+ * so the conversion stays.
  */
 export const GOLD_PER_XP = 10;
-
-/**
- * The gap between consecutive levels, in XP, before the linear ramp below.
- *
- * Levels get further apart by exactly this much each time, which makes the
- * cumulative curve a triangular number and its inverse a closed-form square
- * root rather than a loop over a table.
- */
-export const XP_STEP = 250;
-
-/**
- * Where the ladder stops.
- *
- * Capped rather than open-ended so `levelReward` is a finite, testable table
- * and so the top of the curve is a place to arrive at instead of an asymptote.
- */
-export const MAX_LEVEL = 100;
 
 /** XP earned by staking `gold`. Fractions are dropped; a stake never costs XP. */
 export function xpForWager(gold: number): number {
@@ -55,157 +28,115 @@ export function xpForWager(gold: number): number {
 }
 
 /**
- * Total XP needed to *reach* `level`. Level 1 is where everyone starts, so it
- * costs nothing; each level after that costs XP_STEP more than the one before.
+ * The ladder, low to high. `from` is the rank points at which a tier starts and
+ * `rewardGold` is paid the first time a player reaches it. GOAT is the top.
+ *
+ * Gold the currency is not a tier, on purpose: "Gold tier, Gold reward" reads
+ * as a typo.
+ *
+ * A readonly tuple, like STAKES_TIERS in lib/game/tiers.ts, so the ids and the
+ * `RankTierId` union come from this one table.
  */
-export function xpToReachLevel(level: number): number {
-  const capped = Math.min(Math.max(Math.floor(level), 1), MAX_LEVEL);
-  return (XP_STEP * (capped - 1) * capped) / 2;
+export const RANK_TIERS = [
+  { id: "bronze", name: "Bronze", from: 0, rewardGold: 0 },
+  { id: "silver", name: "Silver", from: 2_500, rewardGold: 1_500 },
+  { id: "platinum", name: "Platinum", from: 15_000, rewardGold: 3_000 },
+  { id: "emerald", name: "Emerald", from: 50_000, rewardGold: 10_000 },
+  { id: "diamond", name: "Diamond", from: 125_000, rewardGold: 25_000 },
+  { id: "master", name: "Master", from: 300_000, rewardGold: 40_000 },
+  { id: "grandmaster", name: "Grandmaster", from: 600_000, rewardGold: 75_000 },
+  { id: "goat", name: "GOAT", from: 1_000_000, rewardGold: 100_000 },
+] as const;
+
+export type RankTierId = (typeof RANK_TIERS)[number]["id"];
+
+export interface RankTier {
+  /** 1 for Bronze up to RANK_TIERS.length for GOAT. Stored as the "rewarded up to" mark. */
+  number: number;
+  id: RankTierId;
+  name: string;
+  from: number;
+  rewardGold: number;
 }
 
-/**
- * The level a given lifetime XP total buys.
- *
- * The square root inverts the triangular sum directly, but floating point at a
- * boundary is exactly the kind of thing that shows a player level 9 when they
- * have precisely the XP for 10. The correction below re-tests the candidate
- * against integer arithmetic, so the boundary is decided by the same expression
- * that defined it.
- */
-export function levelForXp(xp: number): number {
-  if (!Number.isFinite(xp) || xp <= 0) return 1;
-  const estimate = Math.floor((1 + Math.sqrt(1 + (8 * xp) / XP_STEP)) / 2);
-  let level = Math.min(Math.max(estimate, 1), MAX_LEVEL);
-  while (level < MAX_LEVEL && xpToReachLevel(level + 1) <= xp) level += 1;
-  while (level > 1 && xpToReachLevel(level) > xp) level -= 1;
-  return level;
+/** Tier numbers run 1..TOP_TIER; 1 is where everyone starts. */
+export const TOP_TIER = RANK_TIERS.length;
+
+/** The tier with this 1-based number, clamped onto the ladder. */
+export function tierByNumber(number: number): RankTier {
+  const at = Math.min(TOP_TIER, Math.max(1, Math.floor(Number.isFinite(number) ? number : 1)));
+  const entry = RANK_TIERS[at - 1];
+  return { number: at, id: entry.id, name: entry.name, from: entry.from, rewardGold: entry.rewardGold };
+}
+
+/** The tier a rank-points total sits on. */
+export function tierForPoints(points: number): RankTier {
+  let number = 1;
+  if (Number.isFinite(points)) {
+    RANK_TIERS.forEach((tier, index) => {
+      if (points >= tier.from) number = index + 1;
+    });
+  }
+  return tierByNumber(number);
 }
 
 export interface RankProgress {
-  level: number;
-  xp: number;
-  /** XP earned since this level began. Always 0 at MAX_LEVEL, which has no next. */
-  intoLevel: number;
-  /** XP this level spans. 0 at MAX_LEVEL, so a bar can render full rather than divide by it. */
-  levelSpan: number;
-  /** 0..1 for the progress bar. Exactly 1 at MAX_LEVEL. */
+  /** Rank points: the difficulty-weighted net of solo wagers, never below 0. */
+  points: number;
+  tier: RankTier;
+  /** The tier above, or null at GOAT. */
+  nextTier: RankTier | null;
+  /** Points earned since this tier began. Always 0 at GOAT. */
+  intoTier: number;
+  /** Points this tier spans. 0 at GOAT, so a bar can render full rather than divide by it. */
+  tierSpan: number;
+  /** Points still needed for the next tier, or null at GOAT. */
+  toNext: number | null;
+  /** 0..1 through the current tier. Exactly 1 at GOAT. */
   ratio: number;
-  title: string;
-  /** The next title and the level that earns it, or null at the top of the ladder. */
-  nextTitle: string | null;
-  nextTitleLevel: number | null;
-}
-
-/**
- * The rank ladder.
- *
- * Bands rather than a name per level: a title that changes every time isn't a
- * title. Each entry is the level at which its name starts, and the table is
- * ordered so a linear scan from the end finds the current band; eight names
- * don't justify a binary search.
- *
- * Readonly tuple for the reason STAKES_TIERS is one in lib/game/tiers.ts: the
- * names are derived from the data instead of restated beside it, so a ninth
- * band can't exist in one place and be missing from another.
- */
-export const RANK_BANDS = [
-  { from: 1, title: "Rail Bird" },
-  { from: 5, title: "Grinder" },
-  { from: 12, title: "Regular" },
-  { from: 22, title: "Rounder" },
-  { from: 35, title: "Shark" },
-  { from: 50, title: "High Roller" },
-  { from: 70, title: "Whale" },
-  { from: 90, title: "Legend" },
-] as const;
-
-export type RankTitle = (typeof RANK_BANDS)[number]["title"];
-
-export function rankTitle(level: number): RankTitle {
-  let title: RankTitle = RANK_BANDS[0].title;
-  for (const band of RANK_BANDS) {
-    if (level >= band.from) title = band.title;
-  }
-  return title;
 }
 
 /** Everything a rank readout needs, derived from one number. */
-export function rankProgress(xp: number): RankProgress {
-  const safeXp = Number.isFinite(xp) && xp > 0 ? Math.floor(xp) : 0;
-  const level = levelForXp(safeXp);
-  const atCap = level >= MAX_LEVEL;
-  const floor = xpToReachLevel(level);
-  const levelSpan = atCap ? 0 : xpToReachLevel(level + 1) - floor;
-  const intoLevel = atCap ? 0 : safeXp - floor;
-  const upcoming = RANK_BANDS.find((band) => band.from > level) ?? null;
+export function rankProgress(points: number): RankProgress {
+  const safe = Number.isFinite(points) && points > 0 ? Math.floor(points) : 0;
+  const tier = tierForPoints(safe);
+  const nextTier = tier.number < TOP_TIER ? tierByNumber(tier.number + 1) : null;
+  const tierSpan = nextTier ? nextTier.from - tier.from : 0;
+  const intoTier = nextTier ? safe - tier.from : 0;
 
   return {
-    level,
-    xp: safeXp,
-    intoLevel,
-    levelSpan,
-    ratio: atCap ? 1 : Math.min(1, intoLevel / levelSpan),
-    title: rankTitle(level),
-    nextTitle: upcoming ? upcoming.title : null,
-    nextTitleLevel: upcoming ? upcoming.from : null,
+    points: safe,
+    tier,
+    nextTier,
+    intoTier,
+    tierSpan,
+    toNext: nextTier ? nextTier.from - safe : null,
+    ratio: nextTier ? Math.min(1, intoTier / tierSpan) : 1,
   };
 }
 
-/**
- * How often a level pays Gold, and the size of that payment.
- *
- * Every fifth level only. A trickle on every level-up is both a bigger faucet
- * and a smaller event; the point of a reward is that arriving at it is worth
- * noticing. MILESTONE_GOLD is per milestone *number*, so level 5 pays 1,500
- * and level 50 pays 15,000: the ramp tracks the rising stakes a player at
- * that level is actually playing, without ever approaching the turnover it
- * took to get there (level 50 costs ~3M Gold wagered and has paid ~82,500
- * Gold back across every milestone below it; see rank.test.ts's guard on
- * that ratio for the margin this still leaves).
- *
- * This was raised from 500 as part of growing play-driven Gold income
- * (missions, achievements, level milestones) so an active player can climb
- * the stakes ladder without buying Gold, which pushed the ratio rank.test.ts
- * guards from ~0.85% to ~2.55% of turnover: a real widening of that test's
- * threshold, not an incidental one.
- */
-export const MILESTONE_EVERY = 5;
-export const MILESTONE_GOLD = 1500;
-
-export interface LevelReward {
-  level: number;
+export interface TierReward {
+  tier: RankTier;
   gold: number;
-  /** True where the level also changes what the player is called. */
-  newTitle: RankTitle | null;
-}
-
-/** What arriving at `level` is worth. Level 1 is the start, not an achievement. */
-export function levelReward(level: number): LevelReward {
-  const at = Math.floor(level);
-  const band = RANK_BANDS.find((entry) => entry.from === at) ?? null;
-  const gold = at > 1 && at % MILESTONE_EVERY === 0
-    ? (at / MILESTONE_EVERY) * MILESTONE_GOLD
-    : 0;
-  return { level: at, gold, newTitle: band ? band.title : null };
 }
 
 /**
- * Every reward crossed by going from `fromLevel` to `toLevel`.
+ * Every tier crossed going from `fromTier` up to `toTier`, each with its Gold.
  *
- * Plural because a single big wager can cross several levels at once, and each
- * one has to pay: awarding only the level landed on would quietly swallow the
- * milestones jumped over. Returns an empty array when nothing was crossed, so
- * the caller can treat "no level-up" and "level-up worth nothing" the same way.
+ * Plural because one big win can jump several tiers, and each has to pay. Empty
+ * when nothing was crossed or the player went down: rank can fall, and a fall
+ * pays nothing and takes nothing back.
  */
-export function rewardsBetween(fromLevel: number, toLevel: number): LevelReward[] {
-  const rewards: LevelReward[] = [];
-  for (let level = Math.floor(fromLevel) + 1; level <= Math.floor(toLevel); level += 1) {
-    rewards.push(levelReward(level));
+export function rewardsBetween(fromTier: number, toTier: number): TierReward[] {
+  const rewards: TierReward[] = [];
+  for (let number = Math.floor(fromTier) + 1; number <= Math.min(TOP_TIER, Math.floor(toTier)); number += 1) {
+    const tier = tierByNumber(number);
+    rewards.push({ tier, gold: tier.rewardGold });
   }
   return rewards;
 }
 
-/** Total Gold owed for crossing from one level to another. */
-export function goldForLevelUps(fromLevel: number, toLevel: number): number {
-  return rewardsBetween(fromLevel, toLevel).reduce((sum, reward) => sum + reward.gold, 0);
+/** Total Gold owed for climbing from one tier to another. */
+export function goldForTierUps(fromTier: number, toTier: number): number {
+  return rewardsBetween(fromTier, toTier).reduce((sum, reward) => sum + reward.gold, 0);
 }

@@ -16,7 +16,7 @@ import { STAKE_PRESSURE_LABELS } from "@/lib/arcade/stake-pressure";
  * boards and does not move this rank.
  */
 
-/** Gold of weighted net earnings per point of rank. Points feed the level curve in rank.ts. */
+/** Gold of weighted net earnings per point of rank. Points place a player on the tier ladder in rank.ts. */
 export const GOLD_PER_RANK_POINT = 20;
 
 /** One stake band's running totals for a player. */
@@ -75,6 +75,25 @@ export function weightedNet(byBand: EarningsByBand): number {
 export function rankPointsFrom(base: number, byBand: EarningsByBand): number {
   const points = Math.floor(base + weightedNet(byBand) / GOLD_PER_RANK_POINT);
   return Math.max(0, points);
+}
+
+/**
+ * The totals as they stood before one result was recorded: the inverse of what
+ * the store adds. Lets the caller price a single settle in rank points from the
+ * after-state alone, with no second read.
+ */
+export function withoutResult(byBand: EarningsByBand, band: number, wager: number, payout: number): EarningsByBand {
+  const current = byBand[band] ?? EMPTY_BAND;
+  const won = payout > 0;
+  return {
+    ...byBand,
+    [band]: {
+      wins: Math.max(0, current.wins - (won ? 1 : 0)),
+      losses: Math.max(0, current.losses - (won ? 0 : 1)),
+      staked: Math.max(0, current.staked - wager),
+      paidOut: Math.max(0, current.paidOut - payout),
+    },
+  };
 }
 
 export interface BandShare {

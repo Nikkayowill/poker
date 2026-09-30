@@ -1,14 +1,16 @@
 import { Gauge } from "lucide-react";
+import type { RankProgress } from "@/lib/progression/rank";
 import type { SoloEarningsSummary } from "@/lib/progression/solo-earnings";
+import { RankJewel } from "./rank-jewel";
 
 /**
- * The solo rank readout: rank points, tier, the running net Gold, and a
+ * The solo rank readout: rank points, tier jewel, the running net Gold, and a
  * difficulty gauge showing which stake bands that Gold came from. No win-loss
  * record on purpose; those stay in private friend matches.
  *
  * Sits directly under the rank strip because it is the reason for the rank:
  * rank is the difficulty-weighted net of exactly these wagers, so a win on a
- * harder band moves the level further and a loss takes points off it. Numbers
+ * harder band moves the rank further and a loss takes points off it. Numbers
  * come from the same ProgressionSnapshot as the strip, so the two cannot
  * disagree.
  */
@@ -22,14 +24,10 @@ function signed(value: number): string {
 
 export function SoloEarningsPanel({
   summary,
-  rankPoints,
-  tier,
-  level,
+  rank,
 }: {
   summary: SoloEarningsSummary;
-  rankPoints: number;
-  tier: string;
-  level: number;
+  rank: RankProgress;
 }) {
   const { difficulty } = summary;
   const played = summary.totalStaked > 0;
@@ -40,13 +38,16 @@ export function SoloEarningsPanel({
       <div className="earnings-stats">
         <div className="earnings-stat">
           <small>Rank points</small>
-          <strong>{compact.format(rankPoints)}</strong>
+          <strong>{compact.format(rank.points)}</strong>
           <span>from solo wagers</span>
         </div>
         <div className="earnings-stat">
           <small>Tier</small>
-          <strong>{tier}</strong>
-          <span>Level {level}</span>
+          <strong className="earnings-tier">
+            <RankJewel tier={rank.tier.id} size={20} shine={false} />
+            {rank.tier.name}
+          </strong>
+          <span>{rank.nextTier ? `${compact.format(rank.toNext ?? 0)} to ${rank.nextTier.name}` : "Top tier"}</span>
         </div>
         <div className="earnings-stat">
           <small>Net Gold</small>

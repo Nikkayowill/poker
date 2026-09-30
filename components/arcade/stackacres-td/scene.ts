@@ -1594,11 +1594,12 @@ export class TopdownScene extends Phaser.Scene {
       const world = this.soilWorldAt(at);
       if (world) {
         const { tx, ty } = soilTileAt(world.x, world.y);
-        tileKey = soilTileKey(tx, ty);
-        this.unitTiles.set(tileKey, unit.id);
+        const key = soilTileKey(tx, ty);
+        tileKey = key;
+        this.unitTiles.set(key, unit.id);
         this.tileOfUnit.set(unit.id, { tx, ty });
-        this.occupiedTiles.add(tileKey);
-        if (bedIsWet(unit)) this.wetTiles.add(tileKey);
+        this.occupiedTiles.add(key);
+        if (bedIsWet(unit)) this.wetTiles.add(key);
       }
       const frame = this.unitFrame(unit);
       const signature = `${frame}|${at.x},${at.y}`;

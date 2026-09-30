@@ -195,7 +195,8 @@ function SlotCard({
   }
   return (
     <li className="sa-checklist-item is-unfound sa-greenhouse-empty-slot">
-      <span className="sa-checklist-item-status">Empty</span>
+      <span className="sa-checklist-item-status">Empty bed</span>
+      <span className="sa-greenhouse-empty-hint">Choose a crop to grow here</span>
       {GREENHOUSE_ALLOWED_STOCK.map((stock) => {
         const def = STACKACRES_CATALOGUE[stock];
         return (
@@ -207,7 +208,7 @@ function SlotCard({
             onClick={contain(() => onSow(stock))}
             onPointerDown={contain()}
           >
-            Sow {def.label} ({def.seedCost.toLocaleString()}g)
+            Sow {def.label} ({def.seedCost.toLocaleString()} Gold)
           </button>
         );
       })}

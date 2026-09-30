@@ -2792,6 +2792,19 @@
   gap: 6px;
 }
 
+.sa-greenhouse-empty-slot {
+  opacity: 1;
+  border-color: var(--sa-glass-line);
+  background: var(--sa-glass-fill-quiet);
+}
+.sa-greenhouse-empty-hint {
+  max-width: 18ch;
+  color: var(--sa-ink-soft);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
 .sa-greenhouse-sow-btn,
 .sa-greenhouse-empty-slot .sa-cta,
 .sa-greenhouse-slots .sa-cta {
@@ -3944,6 +3957,19 @@
 }
 
 .sa-workshop-shelf-name { flex: 1; min-width: 0; }
+
+.sa-workshop-shelf-copy {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.sa-workshop-shelf-purpose {
+  color: var(--sa-ink-soft);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+}
 
 .sa-workshop-shelf .sa-workshop-sell {
   flex: none;

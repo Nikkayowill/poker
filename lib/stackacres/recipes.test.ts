@@ -10,7 +10,12 @@ import {
 } from "./recipes";
 import { CONTRACT_RUNGS } from "./contracts";
 import { MACHINE_KINDS } from "./machines";
-import { isMachineItem, isMachineProcessedItem, machineItemSellPrice } from "./machine-items";
+import {
+  isMachineItem,
+  isMachineProcessedItem,
+  machineItemPurpose,
+  machineItemSellPrice,
+} from "./machine-items";
 
 describe("RECIPE_CATALOGUE", () => {
   it("eats real inventory items and makes a processed good, never its own output", () => {
@@ -130,5 +135,14 @@ describe("contract pricing", () => {
         expect(rungs[i].influenceReward).toBeGreaterThan(rungs[i - 1].influenceReward);
       }
     }
+  });
+});
+
+describe("machine item purpose hints", () => {
+  it("give common raw resources a useful next step", () => {
+    expect(machineItemPurpose("wood").toLowerCase()).toContain("building material");
+    expect(machineItemPurpose("bluegill")).toContain("sell for Gold");
+    expect(machineItemPurpose("meat")).toContain("Exploration find");
+    expect(machineItemPurpose("flour")).toContain("recipes");
   });
 });

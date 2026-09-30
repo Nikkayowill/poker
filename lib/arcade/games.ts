@@ -546,6 +546,42 @@ export function arcadeFloorSummary(games: readonly ArcadeGame[] = ARCADE_GAMES):
   };
 }
 
+/** How many games the Play tab's rail shows before it hands off to "All N games". */
+const PLAY_RAIL_COUNT = 10;
+
+/**
+ * What the Play tab's two rails show from the catalogue: one duel to sit next
+ * to Hold'em, then a short mix of solo wagers and duels for the Ante Up rail.
+ *
+ * The mix is two wagers to every duel. Wagers come first in the catalogue and
+ * there are more of them, so a plain slice would fill the rail with solo
+ * games and never show that the arcade has head-to-head play. The featured
+ * duel is left out of `cards` so one game is never on screen twice. Rows with
+ * no href are dropped: a card that cannot open anything is a dead tap.
+ */
+export function playRailGames(games: readonly ArcadeGame[] = ARCADE_GAMES): {
+  featuredDuel: ArcadeGame | null;
+  cards: ArcadeGame[];
+  total: number;
+} {
+  const { free, duels, wagers, staked } = splitArcadeFloor(games);
+  const openable = (list: ArcadeGame[]) => list.filter((entry) => entry.href !== null);
+  const duelPool = openable(duels);
+  const featuredDuel = duelPool[0] ?? null;
+  const solo = [...openable(free), ...openable(wagers), ...openable(staked)];
+  const restDuels = duelPool.slice(1);
+
+  const cards: ArcadeGame[] = [];
+  let s = 0;
+  let d = 0;
+  while (cards.length < PLAY_RAIL_COUNT && (s < solo.length || d < restDuels.length)) {
+    for (let i = 0; i < 2 && s < solo.length && cards.length < PLAY_RAIL_COUNT; i += 1) cards.push(solo[s++]);
+    if (d < restDuels.length && cards.length < PLAY_RAIL_COUNT) cards.push(restDuels[d++]);
+  }
+
+  return { featuredDuel, cards, total: solo.length + duelPool.length };
+}
+
 export function arcadeActionLabel(game: ArcadeGame, wallet: ArcadeWallet): string {
   switch (arcadeBlockedReason(game, wallet)) {
     case "coming-soon":

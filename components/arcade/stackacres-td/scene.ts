@@ -37,7 +37,7 @@ import {
   type CastPhase,
   type CastSide,
 } from "@/lib/stackacres-td/fishing-cast";
-import { SOIL_TILE, createSoilMap, soilNeighborMask, soilTileAt, type SoilTile } from "@/lib/stackacres/soil";
+import { SOIL_TILE, createSoilMap, soilNeighborMask, soilTileAt, soilTileKey, type SoilTile } from "@/lib/stackacres/soil";
 import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import { hoeSound } from "@/lib/audio/stackacres-sfx";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
@@ -899,10 +899,11 @@ export class TopdownScene extends Phaser.Scene {
       const world = this.mapToSoilWorld(at);
       if (world) {
         const { tx, ty } = soilTileAt(world.x, world.y);
-        tileKey = soilTileKey(tx, ty);
-        this.unitTiles.set(tileKey, unit.id);
+        const key = soilTileKey(tx, ty);
+        tileKey = key;
+        this.unitTiles.set(key, unit.id);
         this.tileOfUnit.set(unit.id, { tx, ty });
-        this.occupiedTiles.add(tileKey);
+        this.occupiedTiles.add(key);
       }
       const frame = this.unitFrame(unit);
       const cue = this.unitCue(unit);

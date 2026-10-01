@@ -3,7 +3,6 @@
 import { useCallback, useMemo, useState } from "react";
 import clsx from "clsx";
 import type { Action } from "@/lib/stackacres/farm-actions";
-import { STACKACRES_CATALOGUE } from "@/lib/stackacres/catalogue";
 import { herdKey, isHerdStock, isPlaced, unplacedHerd, type HerdUnit } from "@/lib/stackacres/herd";
 import type { Tile } from "@/lib/stackacres/empire-buildings";
 import { StackAcresPixelIcon } from "./stackacres-pixel-icon";
@@ -37,9 +36,11 @@ export interface HerdPlace {
   controls: React.ReactNode;
 }
 
-function noun(unit: HerdUnit, plural: boolean): string {
-  const label = isHerdStock(unit.stock) ? STACKACRES_CATALOGUE[unit.stock].label : "animal";
-  return plural ? `${label}s` : label;
+/** The animal, not the catalogue's name for its pen ("Sheep Pen"). */
+function noun(unit: HerdUnit): string {
+  if (unit.stock === "pig") return "sheep";
+  if (unit.stock === "cattle") return "cow";
+  return "animal";
 }
 
 export function useHerdPlace({ active, units, act }: HerdPlaceProps): HerdPlace {
@@ -111,7 +112,7 @@ export function useHerdPlace({ active, units, act }: HerdPlaceProps): HerdPlace 
         <p className={clsx("sa-build-say", notice && "is-problem")}>
           {notice ??
             (next
-              ? `Tap open grass to set down your ${noun(next, false).toLowerCase()}.${waiting.length > 1 ? ` ${waiting.length} waiting.` : ""}`
+              ? `Tap open grass to set down your ${noun(next)}.${waiting.length > 1 ? ` ${waiting.length} waiting.` : ""}`
               : "Tap an animal to pick it up and move it.")}
         </p>
         <div className="sa-build-keys">

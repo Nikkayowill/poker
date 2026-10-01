@@ -8,6 +8,7 @@ import {
   buyStackAcresFeed,
   buyStackAcresStock,
   placeStackAcresAnimal,
+  placeStackAcresFencePiece,
   pickUpStackAcresAnimal,
   workStackAcresLand,
   clearStackAcresUnit,
@@ -128,7 +129,8 @@ import {
 } from "./stackacres-soil-store";
 import { CROP_FIELD_BEDS } from "@/lib/stackacres/world";
 import { SOIL_TILE, soilTileAt } from "@/lib/stackacres/soil";
-import { isHerdMapTile } from "@/lib/stackacres/herd";
+import { herdKey, isHerdMapTile } from "@/lib/stackacres/herd";
+import { HERD_AWAY_MESSAGES, herdAway } from "@/lib/stackacres/herd-risk";
 import { isHoeableMapTile, isWildMapTile, mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
 import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "@/lib/stackacres/homestead-ground";
 
@@ -5573,5 +5575,105 @@ describe("the herd stands where the player puts it", () => {
       status: 404,
     });
     await expect(pickUpStackAcresAnimal(mine.token, { unitId: sheep.id }, T0)).rejects.toMatchObject({ status: 404 });
+  });
+
+  describe("a night in the open", () => {
+    const DAY = 86_400_000;
+
+    /** A yard square whose four neighbours are all fenceable, found on a farm with no beds. */
+    function pennableSquare(): { tx: number; ty: number } {
+      for (let ty = 1; ty < HOMESTEAD_MAP_HEIGHT - 1; ty += 1) {
+        for (let tx = 1; tx < HOMESTEAD_MAP_WIDTH - 1; tx += 1) {
+          if (
+            isHerdMapTile(tx, ty) &&
+            isHoeableMapTile(tx + 1, ty) &&
+            isHoeableMapTile(tx - 1, ty) &&
+            isHoeableMapTile(tx, ty + 1) &&
+            isHoeableMapTile(tx, ty - 1)
+          ) {
+            return { tx, ty };
+          }
+        }
+      }
+      throw new Error("no square to pen");
+    }
+
+    async function placedSheep() {
+      const { token, id } = await funded(500_000, { land: [], beds: false });
+      const unit = unitOf(await buyStackAcresStock(token, { stock: "pig" }, T0), "pig");
+      const square = pennableSquare();
+      await placeStackAcresAnimal(token, { unitId: unit.id, tx: square.tx, ty: square.ty }, T0);
+      return { token, id, unit, square };
+    }
+
+    /** The first moment, a whole number of days after T0, that this animal is away if left in the open. */
+    function awayNight(unitId: string, square: { tx: number; ty: number }): Date {
+      for (let n = 0; n < 60; n += 1) {
+        const at = new Date(T0.getTime() + n * DAY);
+        if (herdAway([{ id: unitId, stock: "pig", mapTx: square.tx, mapTy: square.ty }], new Set(), at.getTime()).size) return at;
+      }
+      throw new Error("never away in 60 nights");
+    }
+
+    it("never shows an animal that is away as ready, and refuses to collect from it", async () => {
+      const { token, unit, square } = await placedSheep();
+      const night = awayNight(unit.id, square);
+
+      const view = await readStackAcres(token, night);
+      const away = view.units.find((u) => u.id === unit.id);
+      expect(away?.away === "wandered" || away?.away === "predator").toBe(true);
+      expect(away?.state).not.toBe("ready");
+
+      const refusal = await harvestStackAcres(token, { unitIds: [unit.id] }, night).catch((error: unknown) => error);
+      expect(refusal).toBeInstanceOf(StackAcresRequestError);
+      expect((refusal as StackAcresRequestError).status).toBe(409);
+      expect(Object.values(HERD_AWAY_MESSAGES)).toContain((refusal as StackAcresRequestError).message);
+    });
+
+    it("takes nothing from the player: the animal and Gold are as they were", async () => {
+      const { token, unit, square } = await placedSheep();
+      const night = awayNight(unit.id, square);
+      const before = await readStackAcres(token, night);
+      await harvestStackAcres(token, { unitIds: [unit.id] }, night).catch(() => undefined);
+      const after = await readStackAcres(token, night);
+      expect(after.units.find((u) => u.id === unit.id)).toMatchObject({ mapTx: square.tx, mapTy: square.ty });
+      expect(after.profile.goldBalance).toBe(before.profile.goldBalance);
+    });
+
+    it("answers the same way every time it is asked that night", async () => {
+      const { token, unit, square } = await placedSheep();
+      const night = awayNight(unit.id, square);
+      const first = (await readStackAcres(token, night)).units.find((u) => u.id === unit.id)?.away;
+      const later = new Date(night.getTime() + 5 * 3_600_000);
+      const second = (await readStackAcres(token, later)).units.find((u) => u.id === unit.id)?.away;
+      expect(second).toBe(first);
+    });
+
+    it("keeps a fenced animal home on the same night", async () => {
+      const { token, unit, square } = await placedSheep();
+      const night = awayNight(unit.id, square);
+      let view = await readStackAcres(token, night);
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ]) {
+        view = await placeStackAcresFencePiece(token, { tx: square.tx + dx, ty: square.ty + dy }, night);
+      }
+      expect(view.fences.map((piece) => herdKey(piece.tx, piece.ty)).sort()).toHaveLength(4);
+      expect(view.units.find((u) => u.id === unit.id)?.away ?? null).toBeNull();
+      const refusal = await harvestStackAcres(token, { unitIds: [unit.id] }, night).catch((error: unknown) => error);
+      expect(Object.values(HERD_AWAY_MESSAGES)).not.toContain((refusal as StackAcresRequestError).message);
+    });
+
+    it("never puts an animal that is not set down away", async () => {
+      const { token } = await funded(500_000, { land: [], beds: false });
+      const unit = unitOf(await buyStackAcresStock(token, { stock: "pig" }, T0), "pig");
+      for (let n = 0; n < 30; n += 1) {
+        const view = await readStackAcres(token, new Date(T0.getTime() + n * DAY));
+        expect(view.units.find((u) => u.id === unit.id)?.away ?? null).toBeNull();
+      }
+    });
   });
 });

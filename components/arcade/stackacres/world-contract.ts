@@ -54,6 +54,8 @@ export interface StackAcresSceneUnit {
    *  (lib/stackacres/herd.ts), or null/absent when it has not been placed. */
   mapTx?: number | null;
   mapTy?: number | null;
+  /** Away for the night (lib/stackacres/herd-risk.ts): not standing on its square, so not drawn. */
+  away?: "wandered" | "predator" | null;
 }
 
 /** Where a tap landed, in CSS pixels relative to the canvas host -- which is

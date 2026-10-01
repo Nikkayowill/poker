@@ -9,6 +9,7 @@
 
 import { STACKACRES_CATALOGUE, isLivestock } from "./catalogue";
 import { farmKitchenBanked } from "./farm-kitchen";
+import { herdNightStartMs } from "./herd-risk";
 import { MACHINE_CATALOGUE, type StackAcresMachineSnapshot } from "./machines";
 import { RECIPE_CATALOGUE } from "./recipes";
 import type { StackAcresUnitSnapshot } from "./units";
@@ -21,7 +22,8 @@ export interface AwayReport {
   lines: string[];
 }
 
-type AwayUnit = Pick<StackAcresUnitSnapshot, "stock" | "state" | "readyAt" | "hungryAt" | "thirstyAt">;
+type AwayUnit = Pick<StackAcresUnitSnapshot, "stock" | "state" | "readyAt" | "hungryAt" | "thirstyAt"> &
+  Partial<Pick<StackAcresUnitSnapshot, "away">>;
 type AwayMachine = Pick<
   StackAcresMachineSnapshot,
   "kind" | "status" | "readyAt" | "recipeId" | "standingRecipe" | "kitchenSince"
@@ -77,8 +79,20 @@ export function buildAwayReport(input: {
   let readyAnimals = 0;
   let hungry = 0;
   const dry: string[] = [];
+  // Only a night that began after the player last looked is news; one that was
+  // already on screen when they left is not announced again.
+  const newNight = herdNightStartMs(nowMs) > lastSeenMs;
+  let wandered = 0;
+  let spooked = 0;
   for (const unit of units) {
     if (unit.state === "mucked") continue;
+    if (unit.away) {
+      if (newNight) {
+        if (unit.away === "predator") spooked += 1;
+        else wandered += 1;
+      }
+      continue;
+    }
     const label = STACKACRES_CATALOGUE[unit.stock].label;
     if (within(unit.readyAt, lastSeenMs, nowMs)) {
       if (isLivestock(unit.stock)) readyAnimals += 1;
@@ -107,6 +121,14 @@ export function buildAwayReport(input: {
     }
   }
 
+  if (wandered > 0) {
+    lines.push(
+      `${wandered} ${plural(wandered, "animal", "animals")} wandered off last night. Make sure to enclose your livestock.`,
+    );
+  }
+  if (spooked > 0) {
+    lines.push(`Something got at ${spooked} ${plural(spooked, "animal", "animals")} last night. A fence keeps them safe.`);
+  }
   if (hungry > 0) lines.push(`${hungry} ${plural(hungry, "animal is", "animals are")} hungry.`);
   if (dry.length > 0) lines.push(`Crops that dried out: ${tally(dry)}.`);
 

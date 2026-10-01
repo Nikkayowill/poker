@@ -67,6 +67,7 @@ function toSceneUnits(units: StackAcresUnitSnapshot[]): StackAcresSceneUnit[] {
     housedIn: unit.housedIn,
     mapTx: unit.mapTx,
     mapTy: unit.mapTy,
+    away: unit.away,
     seed: unit.seed,
   }));
 }

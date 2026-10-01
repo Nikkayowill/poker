@@ -1562,7 +1562,7 @@ export class TopdownScene extends Phaser.Scene {
     if (unit.housedIn) return null;
     // Sheep and cattle stand on the square the player set them on. One not set down yet is not drawn.
     if (isHerdStock(unit.stock)) {
-      if (unit.mapTx == null || unit.mapTy == null || this.areaName !== "homestead") return null;
+      if (unit.mapTx == null || unit.mapTy == null || unit.away || this.areaName !== "homestead") return null;
       const { tile } = this.area;
       return { x: unit.mapTx * tile + tile / 2, y: (unit.mapTy + 1) * tile - 2 };
     }

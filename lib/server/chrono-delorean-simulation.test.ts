@@ -1,5 +1,11 @@
 import { randomUUID } from "crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { __setTrowelCritChanceForTest } from "@/lib/stackacres/equipment";
+
+// These tests assert exact harvest payouts, so the Trowel's luck is switched off here.
+// The luck is tested in stackacres-service.test.ts.
+__setTrowelCritChanceForTest(0);
+
 
 /**
  * End-to-end coverage log: Chrono-DeLorean Mode's OWN offset mechanism

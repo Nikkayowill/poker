@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { readFileSync } from "fs";
 import { join } from "path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   StackAcresRequestError,
   activateStackAcresSynergyPerk,
@@ -172,6 +172,7 @@ import { WATER_CAPACITY } from "@/lib/stackacres/water-can";
 import {
   STACKACRES_STARTING_TIER,
   STACKACRES_TOOL_TIER_DEFS,
+  __setTrowelCritChanceForTest,
   nextToolTier,
   toolUpgradePrice,
 } from "@/lib/stackacres/equipment";
@@ -207,6 +208,11 @@ import {
   STACKACRES_DICE_CRIT_BONUS,
   secretZoneAttemptKey,
 } from "@/lib/stackacres/secrets";
+
+// These tests assert exact harvest payouts, so the Trowel's luck is switched off here.
+// The luck has its own tests below ("a lucky pick on the free rung").
+__setTrowelCritChanceForTest(0);
+
 
 // Passthrough by default; one test swaps createStackAcresUnit's next call for
 // a thrown error, standing in for the DB trigger raising (which the memory
@@ -2143,20 +2149,45 @@ describe("the equipment ladder", () => {
     expect(result.harvest.crit).toBe(false);
   });
 
-  it("never crits on the free rung, however the dice fall", async () => {
-    // The load-bearing one: a player who buys nothing sees exactly the farm
-    // they had before this feature. Pinned at the luckiest possible roll, so
-    // this fails the moment the Trowel is given a non-zero chance.
-    const { token } = await funded(5_000_000);
-    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
-    const unitId = unitOf(bought, "hen").id;
-    const roll = vi.spyOn(Math, "random").mockReturnValue(0);
-    try {
-      const result = await collectOne(token, unitId, HEN_READY);
-      expect(result.harvest.crit).toBe(false);
-    } finally {
-      roll.mockRestore();
-    }
+  describe("a lucky pick on the free rung", () => {
+    // The file switches the Trowel's luck off so exact payouts stay exact. These put it back.
+    const FREE_LUCK = 0.06;
+    beforeEach(() => {
+      __setTrowelCritChanceForTest(FREE_LUCK);
+    });
+    afterEach(() => {
+      __setTrowelCritChanceForTest(0);
+    });
+
+    it("pays at least one extra unit when the roll lands, and no Gold", async () => {
+      const { token } = await funded(5_000_000);
+      const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
+      const unitId = unitOf(bought, "hen").id;
+      const before = await balance(token);
+      const roll = vi.spyOn(Math, "random").mockReturnValue(0);
+      try {
+        const result = await collectOne(token, unitId, HEN_READY);
+        expect(result.harvest.crit).toBe(true);
+        expect(result.harvest.critBonus).toEqual([
+          { item: "eggs", quantity: Math.max(1, Math.floor(HEN_YIELD.quantity * 0.5)) },
+        ]);
+      } finally {
+        roll.mockRestore();
+      }
+      expect(await balance(token)).toBe(before);
+    });
+
+    it("pays nothing extra when the roll misses", async () => {
+      const { token } = await funded(5_000_000);
+      const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
+      const unitId = unitOf(bought, "hen").id;
+      const roll = vi.spyOn(Math, "random").mockReturnValue(FREE_LUCK);
+      try {
+        expect((await collectOne(token, unitId, HEN_READY)).harvest.crit).toBe(false);
+      } finally {
+        roll.mockRestore();
+      }
+    });
   });
 
   it("pays no Gold on a crit, since a crit is produce and not Gold", async () => {

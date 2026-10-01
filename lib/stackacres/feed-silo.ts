@@ -25,6 +25,7 @@ import {
   type ShelfFeedItem,
 } from "./feeding";
 import type { StackAcresInventory } from "./inventory";
+import { hungerWindowMs } from "./units";
 
 /** Servings the Silo may hand out per farm per UTC day. Kept in step by hand
  *  with the `homestead_machines_auto_feeds_check` constraint. */
@@ -118,6 +119,11 @@ export function planSiloFeeding(
   /** When the Silo was built. It never feeds a hunger from before then, so
    *  building one late cannot rescue a batch that already went hungry. */
   builtAt: Date,
+  /** The farm's hunger-window multiplier (./barn.ts). A Barn widens every
+   *  window, so without this the Silo would feed on the catalogue's schedule
+   *  and spend servings on animals a Barn farm does not consider hungry yet
+   *  -- the comfort the player paid for, quietly billed back in feed. */
+  comfort = 1,
 ): SiloPlan {
   const nowMs = now.getTime();
   const builtMs = builtAt.getTime();
@@ -128,7 +134,8 @@ export function planSiloFeeding(
 
   const states: PlanState[] = [];
   for (const unit of units) {
-    const hungerMs = STACKACRES_CATALOGUE[unit.stock].hungerMs;
+    const catalogueHungerMs = STACKACRES_CATALOGUE[unit.stock].hungerMs;
+    const hungerMs = catalogueHungerMs === null ? null : hungerWindowMs(catalogueHungerMs, comfort);
     if (unit.status !== "working" || hungerMs === null || hungerMs <= 0 || !unit.lastFedAt) continue;
     const lastFedMs = Date.parse(unit.lastFedAt);
     const readyMs = Date.parse(unit.readyAt);

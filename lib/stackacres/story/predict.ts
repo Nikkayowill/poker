@@ -38,6 +38,8 @@ export function storyEventsForAction(body: Action, ctx: StoryPredictContext): St
       return [{ kind: "watered", count: body.unitIds && body.unitIds.length > 1 ? body.unitIds.length : 1 }];
     case "feed":
       return [{ kind: "fed", count: 1 }];
+    case "care":
+      return [{ kind: "cared", count: 1 }];
     case "feed-pen": {
       const hungry = ctx.units.filter((u) => u.state === "hungry" && stockZone(u.stock) === body.zone).length;
       return hungry > 0 ? [{ kind: "fed", count: hungry }] : [];

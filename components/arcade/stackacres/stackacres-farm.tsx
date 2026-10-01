@@ -17,6 +17,7 @@ import {
 import clsx from "clsx";
 import {
   Dna,
+  Heart,
   Lock,
   Moon,
   Sparkles,
@@ -188,6 +189,8 @@ import {
 } from "@/lib/stackacres/crossbreeding";
 import { SynergyBadge, SynergyOverlay } from "./SynergyOverlay";
 import { StackAcresHudOverflow } from "./stackacres-hud-overflow";
+import { StackAcresBarnPanel, barnCardsFor } from "./stackacres-barn-panel";
+import { stackacresExchangeDay } from "@/lib/stackacres/exchange";
 import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { STOCK_ICON } from "./stock-icon";
@@ -550,6 +553,16 @@ interface StackAcresResponse {
   fishCaught?: { species: FishSpecies };
   /** Set by a `feed`/`feed-pen` whose serving earned extra eggs (Spinach). */
   fed?: { toast: string };
+  /** Set by a `care` response to what THIS tend did (lib/stackacres/barn.ts).
+   *  `gift` is non-null only on the one tend in a farm's life that earns
+   *  each of Ray's three rungs. */
+  cared?: {
+    unitId: string;
+    name: string;
+    streak: number;
+    bonus: number;
+    gift: { servings: number; line: string } | null;
+  };
   quarryBagged?: { species: QuarrySpecies; meat: number; pelt: number };
   /** Set by a `chop-tree` response to what THIS swing did; null when the
    *  swing missed (the tree was already felled by a faster request). Every
@@ -992,6 +1005,7 @@ export function StackAcresFarm() {
   // `act`'s fixed return type has no room for what a harvest just bred.
   const [crossbreed, setCrossbreed] = useState<CrossbreedBedView>(emptyCrossbreedBedView);
   const [showCrossbreed, setShowCrossbreed] = useState(false);
+  const [showBarn, setShowBarn] = useState(false);
   const lastCrossbreedHarvest = useRef<CrossbreedHarvestSettlement | null>(null);
   // Ray's Mythic Blueprints. Seeded empty -- the dashboard only ever opens
   // from a player press well after mount, by which point the first poll has
@@ -1241,6 +1255,11 @@ export function StackAcresFarm() {
   const [influence, setInfluence] = useState(0);
   const [celebrate, setCelebrate] = useState<{ unitId: string; nonce: number } | null>(null);
   const [lastCollect, setLastCollect] = useState<{ text: string; nonce: number } | null>(null);
+  /** Ray's own line, when a care streak earns one of his three gifts
+   *  (lib/stackacres/barn.ts CARE_GIFT_LADDER). A sentence rather than a
+   *  number, so it gets its own quiet banner and a long enough beat to read
+   *  it -- the 1.9s toast above is the wrong shape for a quotation. */
+  const [rayLine, setRayLine] = useState<{ text: string; nonce: number } | null>(null);
   // Gates a tap-to-play splash: nothing plays until the player has made a
   // real gesture, which also doubles as the autoplay-policy unlock every
   // browser requires before it will let audio start on its own.
@@ -1931,6 +1950,16 @@ export function StackAcresFarm() {
 
   const liveUnits = useMemo(() => withLocalClock(units, nowMs), [units, nowMs]);
 
+  /** The barn as the HUD pill and the panel both read it. One derivation,
+   *  so the badge count and the list can never disagree. */
+  const barnToday = useMemo(() => stackacresExchangeDay(new Date(nowMs)), [nowMs]);
+  const barnCards = useMemo(
+    () => barnCardsFor(liveUnits, new Date(nowMs), barnToday),
+    [liveUnits, nowMs, barnToday],
+  );
+  const barnWaiting = barnCards.filter((card) => card.canTend || card.status === "hungry").length;
+  const hasBarn = processing.machines.some((machine) => machine.kind === "barn");
+
   /** Kept as its own name -- readers below (`radialSoilTile`, the scene push)
    *  don't need to change -- even though there is no longer a starter grant
    *  to merge in. USED TO be `[...starterSoilTiles(CROP_FIELD_BEDS),
@@ -2223,6 +2252,13 @@ export function StackAcresFarm() {
         }
         if ((body.action === "feed" || body.action === "feed-pen") && data.fed) {
           setLastCollect({ text: data.fed.toast, nonce: Date.now() });
+        }
+        // A tend pays no Gold and needs no toast of its own -- the card
+        // settles under the finger. Ray's care gift does, though: it is the
+        // one thing about the barn routine the player would otherwise never
+        // see happen, and it happens exactly three times in a farm's life.
+        if (body.action === "care" && data.cared?.gift) {
+          setRayLine({ text: data.cared.gift.line, nonce: Date.now() });
         }
         // A cast pays no Gold -- it fills the shelf, same as a harvest. This
         // is the server's dice roll, the first point anything knows which fish
@@ -2972,6 +3008,16 @@ export function StackAcresFarm() {
    * not otherwise. Feeding is per pen now, never per animal.
    */
   /** Feeds everyone hungry in a pen. The one place `feed-pen` is sent. */
+  /** Tends one animal. Spends nothing, so there is no affordability check
+   *  here -- the only thing that can refuse it is having already tended it
+   *  today, which `predictStackAcresAction` and the server both catch. */
+  const onTendAnimal = useCallback(
+    (unitId: string) => {
+      void act({ action: "care", unitId });
+    },
+    [act],
+  );
+
   const feedPen = useCallback(
     (zone: ZoneId) => {
       const resident = liveUnits.find((unit) => stockZone(unit.stock) === zone);
@@ -4069,6 +4115,23 @@ export function StackAcresFarm() {
           {Object.values(crossbreed.inventory).reduce((sum, qty) => sum + (qty ?? 0), 0)}
         </strong>
       </button>
+      {/* The barn's own standing badge, same posture as the Forge and the
+          Crossbreeding Bed beside it. The count is animals that want
+          something -- a meal or today's tend -- which is the one number
+          about the barn worth a glance, and it is why this pill exists at
+          all: the feed and care reminder lives here rather than as a
+          floating marker over each animal. */}
+      {barnCards.length > 0 && (
+        <button
+          type="button"
+          className={clsx("sa-prestige-badge sa-barn-badge", { "is-waiting": barnWaiting > 0 })}
+          onClick={() => { panelSound(); setShowBarn(true); }}
+          title="Your animals"
+        >
+          <Heart size={13} aria-hidden="true" />
+          <strong>{barnWaiting > 0 ? barnWaiting : barnCards.length}</strong>
+        </button>
+      )}
       <StackAcresMusicToggle />
     </>
   );
@@ -4305,6 +4368,13 @@ export function StackAcresFarm() {
           {lastCollect && (
             <p key={lastCollect.nonce} className="sa-toast" role="status">
               {lastCollect.text}
+            </p>
+          )}
+
+          {rayLine && (
+            <p key={rayLine.nonce} className="sa-ray-line" role="status">
+              <span className="sa-ray-line-who">Ray</span>
+              {rayLine.text}
             </p>
           )}
 
@@ -5027,6 +5097,18 @@ export function StackAcresFarm() {
           busy={isPending("forge-enchantment")}
           onForge={onForgeEnchantment}
           onClose={() => { panelSound(); setShowForge(false); }}
+        />
+      )}
+
+      {showBarn && (
+        <StackAcresBarnPanel
+          units={liveUnits}
+          now={new Date(nowMs)}
+          today={barnToday}
+          busy={pendingByPrefix("care")}
+          hasBarn={hasBarn}
+          onTend={onTendAnimal}
+          onClose={() => { panelSound(); setShowBarn(false); }}
         />
       )}
 

@@ -37,6 +37,17 @@ import {
 import { STACKACRES_YIELDS, type StackAcresItem } from "@/lib/stackacres/items";
 import { stackacresExchangeDay } from "@/lib/stackacres/exchange";
 import {
+  animalNameFor,
+  applyCare,
+  barnComfort,
+  BARN_CAPACITY_BONUS,
+  CARE_GIFT_LADDER,
+  careGiftFor,
+  hasCaredToday,
+  isTendable,
+  type AnimalCare,
+} from "@/lib/stackacres/barn";
+import {
   harvestTally,
   settleHarvest,
   type HarvestCandidate,
@@ -253,6 +264,7 @@ import {
   createStackAcresUnit,
   SoilSlotConflictError,
   feedStackAcresUnit,
+  careStackAcresUnit,
   getStackAcresUnit,
   listStackAcresUnits,
   setStackAcresUnitPosition,
@@ -1034,12 +1046,37 @@ interface StackAcresRoundSnapshot {
   revision: number;
 }
 
+/**
+ * This farm's hunger-window multiplier: wider with a Barn placed, 1 without
+ * (lib/stackacres/barn.ts).
+ *
+ * Takes machine kinds rather than reading them, so every caller that has
+ * already listed the machines pays nothing for this -- which is `view`, the
+ * one hot path. Only the error/refusal paths below reach for
+ * `barnComfortFor`, which does its own read.
+ */
+function farmComfort(machineKinds: readonly MachineKind[]): number {
+  return barnComfort(machineKinds.includes("barn"));
+}
+
+/** `farmComfort` for a caller that has not already read the machines. */
+async function barnComfortFor(profileId: string): Promise<number> {
+  const machines = await listStackAcresMachines(profileId);
+  return farmComfort(machines.map((machine) => machine.kind));
+}
+
 async function snapshots(profileId: string, now: Date): Promise<StackAcresRoundSnapshot> {
   // Revision before rows, so the number never claims more than the rows show.
   const revision = await readStackAcresRevision(profileId);
   const rows = await listStackAcresUnits(profileId);
-  const irrigatedUnitIds = await irrigatedUnitIdsFor(profileId, rows);
-  return { units: toStackAcresUnitSnapshots(rows, now, irrigatedUnitIds), revision };
+  // Comfort is read here too, not just in `view`: a refusal's round repaints
+  // the farm, and a Barn farm whose refusal round said an animal was hungry
+  // while the next full view said it was not would flicker on every refusal.
+  const [irrigatedUnitIds, comfort] = await Promise.all([
+    irrigatedUnitIdsFor(profileId, rows),
+    barnComfortFor(profileId),
+  ]);
+  return { units: toStackAcresUnitSnapshots(rows, now, irrigatedUnitIds, comfort), revision };
 }
 
 /** Whether each secret item has ever been donated (see `readStackAcresMuseum`
@@ -1390,7 +1427,8 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   FRIENDSHIP_NPCS.forEach((npc, index) => {
     friendship[npc] = friendshipView(npc, storedFriendships[index], now);
   });
-  const units = toStackAcresUnitSnapshots(rows, now, irrigationGrid.irrigatedUnitIds);
+  const comfort = farmComfort(machineRows.map((row) => row.kind));
+  const units = toStackAcresUnitSnapshots(rows, now, irrigationGrid.irrigatedUnitIds, comfort);
   const sectors = unlockedSectors(cleared, units);
   const agingContainer = (kind: "vat" | "cellar", tiers: readonly AgingTier[]): VatContainer | null => {
     const machine = machineRows.find((candidate) => candidate.kind === kind);
@@ -1743,6 +1781,17 @@ export type StackAcresActionResult = StackAcresView & {
   /** Set by `feedStackAcres`/`feedStackAcresPen` when a serving earned extra
    *  eggs (Spinach), with the line to show. Absent on a plain feeding. */
   fed?: { toast: string };
+  /** Set by `careForStackAcresAnimal` to what THIS tend just did -- the
+   *  animal's name, the streak it landed on, the capped bonus now riding on
+   *  its batch, and Ray's gift on the one tend in the farm's life that earns
+   *  each rung. Every other action leaves this undefined. */
+  cared?: {
+    unitId: string;
+    name: string;
+    streak: number;
+    bonus: number;
+    gift: { servings: number; line: string } | null;
+  };
   /** Set by `bagStackAcresQuarry` to what THIS stalk brought back -- every
    *  other action leaves this undefined. The scope never learns this until
    *  it lands, which is the whole point: it plays a difficulty, not a prize. */
@@ -1796,6 +1845,7 @@ function replayDelta(result: StackAcresActionResult): Record<string, unknown> | 
   if (result.vatCollected !== undefined) delta.vatCollected = result.vatCollected;
   if (result.fishCaught !== undefined) delta.fishCaught = result.fishCaught;
   if (result.fed !== undefined) delta.fed = result.fed;
+  if (result.cared !== undefined) delta.cared = result.cared;
   if (result.storyResult !== undefined) delta.storyResult = result.storyResult;
   return Object.keys(delta).length > 0 ? delta : null;
 }
@@ -1912,8 +1962,17 @@ export async function readStackAcres(token: string, now = new Date()): Promise<S
  *  STACKACRES_BASE_CAP's header) -- only livestock still runs a bounded pen. */
 async function capacityFor(profileId: string, stock: StackAcresStock): Promise<number> {
   if (!isLivestock(stock)) return Number.POSITIVE_INFINITY;
-  const capacity = await readStackAcresCapacity(profileId);
-  return capFor(capacity[stock] ?? 0);
+  const [capacity, machines] = await Promise.all([
+    readStackAcresCapacity(profileId),
+    listStackAcresMachines(profileId),
+  ]);
+  // The Barn's slots sit OUTSIDE `STACKACRES_MAX_EXTRA_CAP`, which is why
+  // they are added here rather than folded into `extraSlots` -- a Barn does
+  // not use up a purchase the player could still make. Mirrored exactly by
+  // `homestead_units_enforce_stock_shape`, which is the real guard; this is
+  // the friendly refusal in front of it, and the two must agree.
+  const barnSlots = machines.some((machine) => machine.kind === "barn") ? BARN_CAPACITY_BONUS : 0;
+  return capFor(capacity[stock] ?? 0) + barnSlots;
 }
 
 /* ------------------------------------------------------------------ */
@@ -3164,9 +3223,13 @@ export async function buyStackAcresFeed(
  * `effectiveStackAcresCycle` is the identity, so this is byte-for-byte the
  * same push it always computed.
  */
-function feedPushFor(unit: StoredStackAcresUnit, now: Date): { pushed: Date; newStartedAt: Date | null } {
-  const effective = effectiveStackAcresCycle(unit, now);
-  const hungryAt = hungryAtFor({ stock: unit.stock, lastFedAt: effective.lastFedAt });
+function feedPushFor(
+  unit: StoredStackAcresUnit,
+  now: Date,
+  comfort = 1,
+): { pushed: Date; newStartedAt: Date | null } {
+  const effective = effectiveStackAcresCycle(unit, now, comfort);
+  const hungryAt = hungryAtFor({ stock: unit.stock, lastFedAt: effective.lastFedAt }, comfort);
   const hungrySince = hungryAt ? Date.parse(hungryAt) : NaN;
   const starvedMs = Number.isFinite(hungrySince) ? Math.max(0, now.getTime() - hungrySince) : 0;
   const readyAt = Date.parse(effective.readyAt);
@@ -3240,7 +3303,15 @@ async function runFeedSilo(profileId: string, now: Date): Promise<number> {
     readStackAcresInventory(profileId),
     readStackAcresFeed(profileId),
   ]);
-  const plan = planSiloFeeding(units, inventory, feed, budget, now, new Date(silo.createdAt));
+  const plan = planSiloFeeding(
+    units,
+    inventory,
+    feed,
+    budget,
+    now,
+    new Date(silo.createdAt),
+    farmComfort(machines.map((machine) => machine.kind)),
+  );
   if (plan.servings === 0) return 0;
 
   const used = siloFeedsUsed(silo, day);
@@ -3305,11 +3376,16 @@ export async function feedStackAcres(
     });
   }
 
+  // Read once for this whole call: a Barn widens the window, and the check
+  // that refuses a full animal, the push that pays back its starved time and
+  // the retry below all have to be asking the same question.
+  const comfort = await barnComfortFor(profile.id);
+
   // Only an animal whose last meal has worn off eats. Without this a full hen
   // could be fed Spinach over and over, each serving adding an egg. Checked
   // on the stored row, not the spoil-adjusted cycle, so a long-unfed hen can
   // still be fed to restart it.
-  const hungryAt = hungryAtFor(unit);
+  const hungryAt = hungryAtFor(unit, comfort);
   if (hungryAt === null) {
     throw new StackAcresRequestError("Nothing here eats.", 404, {
       round: await snapshots(profile.id, now),
@@ -3321,7 +3397,7 @@ export async function feedStackAcres(
     });
   }
 
-  const { pushed, newStartedAt } = feedPushFor(unit, now);
+  const { pushed, newStartedAt } = feedPushFor(unit, now, comfort);
 
   // Rule 1 again, in servings rather than Gold: the feed is spent before the
   // write it pays for. Null is "not enough", which reads exactly like a lost
@@ -3346,8 +3422,8 @@ export async function feedStackAcres(
     // the flicker back to hungry the player sees is this exact gap.
     if (!fed) {
       const freshUnit = await getStackAcresUnit(profile.id, unit.id);
-      if (freshUnit && freshUnit.status === "working" && isStackAcresUnitHungry(freshUnit, now)) {
-        const retryPush = feedPushFor(freshUnit, now);
+      if (freshUnit && freshUnit.status === "working" && isStackAcresUnitHungry(freshUnit, now, comfort)) {
+        const retryPush = feedPushFor(freshUnit, now, comfort);
         fed = await feedStackAcresUnit(freshUnit, now, retryPush.pushed, retryPush.newStartedAt, bonus);
       }
     }
@@ -3388,13 +3464,14 @@ export async function feedStackAcresPen(
     });
   }
 
+  const comfort = await barnComfortFor(profile.id);
   const hungry = (await listStackAcresUnits(profile.id))
-    .filter((row) => stockZone(row.stock) === zone && isStackAcresUnitHungry(row, now))
+    .filter((row) => stockZone(row.stock) === zone && isStackAcresUnitHungry(row, now, comfort))
     .sort((a, b) => {
-      const ea = effectiveStackAcresCycle(a, now);
-      const eb = effectiveStackAcresCycle(b, now);
-      const hungryA = hungryAtFor({ stock: a.stock, lastFedAt: ea.lastFedAt }) ?? "";
-      const hungryB = hungryAtFor({ stock: b.stock, lastFedAt: eb.lastFedAt }) ?? "";
+      const ea = effectiveStackAcresCycle(a, now, comfort);
+      const eb = effectiveStackAcresCycle(b, now, comfort);
+      const hungryA = hungryAtFor({ stock: a.stock, lastFedAt: ea.lastFedAt }, comfort) ?? "";
+      const hungryB = hungryAtFor({ stock: b.stock, lastFedAt: eb.lastFedAt }, comfort) ?? "";
       return hungryA.localeCompare(hungryB);
     });
   if (hungry.length === 0) {
@@ -3409,7 +3486,7 @@ export async function feedStackAcresPen(
     const source = await spendServing(profile.id, unit.stock);
     if (source === null) break;
 
-    const { pushed, newStartedAt } = feedPushFor(unit, now);
+    const { pushed, newStartedAt } = feedPushFor(unit, now, comfort);
     const bonus = servingBonusEggs(source);
 
     let fed: StoredStackAcresUnit | null;
@@ -3422,8 +3499,8 @@ export async function feedStackAcresPen(
       // while the rest of the pen stays fed.
       if (!fed) {
         const freshUnit = await getStackAcresUnit(profile.id, unit.id);
-        if (freshUnit && isStackAcresUnitHungry(freshUnit, now)) {
-          const retryPush = feedPushFor(freshUnit, now);
+        if (freshUnit && isStackAcresUnitHungry(freshUnit, now, comfort)) {
+          const retryPush = feedPushFor(freshUnit, now, comfort);
           fed = await feedStackAcresUnit(freshUnit, now, retryPush.pushed, retryPush.newStartedAt, bonus);
         }
       }
@@ -3448,6 +3525,129 @@ export async function feedStackAcresPen(
   }
   await recordStoryEvents(profile.id, [{ kind: "fed", count: fedCount }]);
   return { ...(await view(profile, now)), ...fedResult(sources) };
+}
+
+/** The secret-ledger key one of Ray's care-gift rungs is claimed under. The
+ *  ledger is the free-form per-player flag counter its own migration says it
+ *  is; see the barn-routine migration for why this needs no table. */
+function careGiftKey(rungIndex: number): string {
+  return `care_gift_rung_${rungIndex}`;
+}
+
+/**
+ * Claims one care-gift rung, exactly once for the life of the farm.
+ *
+ * `adjustStackAcresSecretLedger` is an atomic upsert that returns the
+ * POST-increment quantity, so of two requests that both try to claim the
+ * same rung at the same instant, exactly one is handed back 1. That is the
+ * whole guard -- no lock, no read-then-write, and no way for a second tap to
+ * be given a second sack.
+ */
+async function claimCareGiftRung(profileId: string, rungIndex: number): Promise<boolean> {
+  const claimed = await adjustStackAcresSecretLedger(profileId, careGiftKey(rungIndex), 1);
+  return claimed === 1;
+}
+
+/** Which of Ray's care-gift rungs this farm has already been handed. */
+async function claimedCareGiftRungs(profileId: string): Promise<number[]> {
+  const held = await Promise.all(
+    CARE_GIFT_LADDER.map((_rung, index) =>
+      readStackAcresSecretLedgerQty(profileId, careGiftKey(index)),
+    ),
+  );
+  return held.flatMap((quantity, index) => (quantity > 0 ? [index] : []));
+}
+
+/**
+ * Tends one animal: the barn routine's daily interaction (lib/stackacres/barn.ts).
+ *
+ * WHERE GOLD ENTERS: nowhere. WHERE GOLD LEAVES: nowhere. This is the
+ * direction doc's "never charge Gold per basic action" taken literally --
+ * tending costs no Gold, no feed and no energy, and it is the only action on
+ * the farm that spends nothing at all. What it pays is extra PRODUCE on the
+ * batch the animal is already growing, capped at CARE_BONUS_CAP for the
+ * cycle, which reaches Gold only through a sale that is already under the
+ * daily ceiling.
+ *
+ * IT MOVES NO CLOCK. Not `ready_at`, not `last_fed_at`. A tend cannot make
+ * an animal ready sooner, cannot un-starve it and cannot be used in place of
+ * feeding it -- which is what keeps it from being a second, free feed
+ * button.
+ *
+ * ONE PER ANIMAL PER UTC DAY, and the guard that actually enforces that is
+ * in the UPDATE's own where clause (`careStackAcresUnit`), not this
+ * function's check. The check here exists to give the second tap a sentence
+ * rather than a lost race.
+ */
+export async function careForStackAcresAnimal(
+  token: string,
+  unitIdInput: string,
+  now = new Date(),
+): Promise<StackAcresActionResult> {
+  const unitId = parseUnitId(unitIdInput);
+  const profile = await ensureProfile(token);
+  const today = stackacresExchangeDay(now);
+
+  const unit = await getStackAcresUnit(profile.id, unitId);
+  if (!unit || !isTendable(unit)) {
+    throw new StackAcresRequestError("There is nobody here to look after.", 404, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const stored: AnimalCare = {
+    caredOn: unit.caredOn ?? null,
+    careStreak: unit.careStreak ?? 0,
+    careBonus: unit.careBonus ?? 0,
+  };
+  if (hasCaredToday(stored, today)) {
+    throw new StackAcresRequestError(
+      `${animalNameFor(unit.id, unit.stock)} has already had your time today.`,
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  const next = applyCare(stored, today);
+  const tended = await careStackAcresUnit(unit, next);
+  if (!tended) {
+    // Either a version race or the day guard firing on a duplicate that beat
+    // the check above. Both mean the same thing to the player, and neither
+    // spent anything, so there is nothing to refund.
+    throw new StackAcresRequestError(
+      `${animalNameFor(unit.id, unit.stock)} has already had your time today.`,
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  // Ray's gift comes AFTER the tend is written, never before: a gift handed
+  // out for a tend that then lost its race would be feed from nowhere.
+  let gift: { servings: number; line: string } | null = null;
+  const earned = careGiftFor(next.careStreak, await claimedCareGiftRungs(profile.id));
+  if (earned && (await claimCareGiftRung(profile.id, earned.index))) {
+    try {
+      await adjustStackAcresFeed(profile.id, earned.rung.servings);
+      gift = { servings: earned.rung.servings, line: earned.rung.line };
+    } catch (error) {
+      // The rung stays claimed. Ray is not going to hand the same sack over
+      // twice because the barn's own write hiccuped, and a tend that quietly
+      // succeeded is a better outcome than one that throws over a gift.
+      console.error("stackacres.care_gift_failed", { profileId: profile.id, error });
+    }
+  }
+
+  await recordStoryEvents(profile.id, [{ kind: "cared", count: 1 }]);
+  return {
+    ...(await view(profile, now)),
+    cared: {
+      unitId: unit.id,
+      name: animalNameFor(unit.id, unit.stock),
+      streak: next.careStreak,
+      bonus: next.careBonus,
+      gift,
+    },
+  };
 }
 
 /**
@@ -4935,6 +5135,10 @@ export async function harvestStackAcres(
   // A piped crop is never dry, so it ripens on its own clock; without this it
   // read as dry and could not be brought in.
   const irrigated = await irrigatedUnitIdsFor(profile.id, rows);
+  // A Barn widens every hunger window, and readiness is gated on hunger, so
+  // a collect has to ask the comforted question or a Barn farm would be
+  // refused produce its own view says is ready.
+  const comfort = await barnComfortFor(profile.id);
 
   // A named set is the single-tap path; no set at all is "bring in everything
   // that is ready". Naming ONE unit that is not ready is answered with the
@@ -4951,14 +5155,14 @@ export async function harvestStackAcres(
           round: { units: toStackAcresUnitSnapshots(rows, now, irrigated), revision: await readStackAcresRevision(profile.id) },
         });
       }
-      if (isStackAcresUnitHungry(row, now)) {
+      if (isStackAcresUnitHungry(row, now, comfort)) {
         throw new StackAcresRequestError("Feed them first.", 409, {
           round: { units: toStackAcresUnitSnapshots(rows, now, irrigated), revision: await readStackAcresRevision(profile.id) },
         });
       }
       // The client's clock is decoration; this is the answer that counts, and
       // the store's own ready_at guard backs it even if this check is raced.
-      if (!isStackAcresUnitReady(row, now, irrigated.has(row.id))) {
+      if (!isStackAcresUnitReady(row, now, irrigated.has(row.id), comfort)) {
         throw new StackAcresRequestError("Not ready yet.", 409, {
           round: { units: toStackAcresUnitSnapshots(rows, now, irrigated), revision: await readStackAcresRevision(profile.id) },
         });
@@ -4967,7 +5171,7 @@ export async function harvestStackAcres(
   }
 
   const ready = rows.filter(
-    (row) => (!named || named.has(row.id)) && isStackAcresUnitReady(row, now, irrigated.has(row.id)),
+    (row) => (!named || named.has(row.id)) && isStackAcresUnitReady(row, now, irrigated.has(row.id), comfort),
   );
   if (ready.length === 0) {
     throw new StackAcresRequestError("Nothing is ready yet.", 409, {
@@ -4979,8 +5183,11 @@ export async function harvestStackAcres(
     unitId: row.id,
     stock: row.stock,
     // Rule 3: the snapshot taken at stocking, never a re-read of the
-    // catalogue, plus whatever this cycle's feeding earned on top.
-    yieldQuantity: row.yieldQuantity + row.feedBonus,
+    // catalogue, plus whatever this cycle's feeding and daily tending earned
+    // on top. `careBonus` is clamped to CARE_BONUS_CAP at every write and by
+    // a CHECK constraint besides, so this sum has a hard ceiling that does
+    // not depend on how often the player tended.
+    yieldQuantity: row.yieldQuantity + row.feedBonus + (row.careBonus ?? 0),
   });
 
   const planned = settleHarvest(ready.map(candidateOf));
@@ -5032,7 +5239,7 @@ export async function harvestStackAcres(
     const fresh = await listStackAcresUnits(profile.id);
     for (const was of lost) {
       const row = fresh.find((candidate) => candidate.id === was.id);
-      if (row && isStackAcresUnitReady(row, now, irrigated.has(row.id))) await settle(row);
+      if (row && isStackAcresUnitReady(row, now, irrigated.has(row.id), comfort)) await settle(row);
     }
   }
 

@@ -39,6 +39,7 @@ import {
   expandStackAcresCapacity,
   feedStackAcres,
   feedStackAcresPen,
+  careForStackAcresAnimal,
   eatStackAcresFoodAction,
   sleepStackAcres,
   retireStackAcresStock,
@@ -252,6 +253,9 @@ const bodySchema = z.discriminatedUnion("action", [
     unitIds: z.array(unitIdSchema).min(1).max(64).optional(),
   }),
   z.object({ action: z.literal("feed"), unitId: unitIdSchema }),
+  // The daily tend. Takes a unit and nothing else: it spends no Gold, no
+  // feed and no energy, so there is no quantity to bound here.
+  z.object({ action: z.literal("care"), unitId: unitIdSchema }),
   // A pen, not a unit: the server picks which animals in it are hungry.
   z.object({
     action: z.literal("feed-pen"),
@@ -625,6 +629,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return harvestStackAcres(token, { unitIds: action.unitIds }, now);
     case "feed":
       return feedStackAcres(token, action.unitId, now);
+    case "care":
+      return careForStackAcresAnimal(token, action.unitId, now);
     case "feed-pen":
       return feedStackAcresPen(token, action.zone, now);
     case "water":

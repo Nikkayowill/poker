@@ -26,6 +26,7 @@ import { STACKACRES_CATALOGUE, isLivestock, type StackAcresStock } from "./catal
 import { STACKACRES_YIELDS } from "./items";
 import { greenhouseDurationMs } from "./greenhouse";
 import { enrichedGrowthMultiplier } from "./soil-enrich";
+import { applyCare, freshAnimalCare } from "./barn";
 
 /** One owned unit as a store row. See lib/server/stackacres-store.ts. */
 export interface StackAcresUnitRow {
@@ -96,6 +97,18 @@ export interface StackAcresUnitRow {
    */
   mapTx?: number | null;
   mapTy?: number | null;
+  /**
+   * The barn routine (./barn.ts). Livestock only; a crop carries the blank
+   * row and nothing ever reads it there.
+   *
+   * Optional, and absent is how every animal bought before the Barn shipped
+   * loads -- the same posture `mapTx`/`mapTy` above already take. `?? null`
+   * / `?? 0` at every read is the whole backfill, which is why the migration
+   * that adds these columns defaults them rather than rewriting history.
+   */
+  caredOn?: string | null;
+  careStreak?: number;
+  careBonus?: number;
 }
 
 /**
@@ -152,6 +165,14 @@ export interface StackAcresUnitSnapshot {
   /** See `StackAcresUnitRow.mapTx`. */
   mapTx?: number | null;
   mapTy?: number | null;
+  /** See `StackAcresUnitRow.caredOn`. Optional for the same reason `mapTx`
+   *  above is: a snapshot built before the barn routine shipped (and every
+   *  fixture that predates it) simply has no such key, and `?? null` / `?? 0`
+   *  at the read sites is the whole backfill. The server always sends all
+   *  three. */
+  caredOn?: string | null;
+  careStreak?: number;
+  careBonus?: number;
 }
 
 /**
@@ -179,13 +200,36 @@ function progressOf(startedAt: string, readyAt: string, atMs: number): number {
   return Math.min(1, Math.max(0, (atMs - started) / (ready - started)));
 }
 
-/** When this row's animal goes hungry, or null if it never does. */
-export function hungryAtFor(row: Pick<StackAcresUnitRow, "stock" | "lastFedAt">): string | null {
+/**
+ * When this row's animal goes hungry, or null if it never does.
+ *
+ * `comfort` widens the catalogue's own hunger window: 1 is every farm
+ * without a Barn, and `BARN_COMFORT_MULTIPLIER` (lib/stackacres/barn.ts) is
+ * every farm with one. It defaults to 1 so the hundred call sites that
+ * predate the Barn keep asking exactly the question they always asked, and
+ * only a caller that has actually read the farm's machines passes anything
+ * else. Comfort is the ONLY thing the Barn touches on this track -- it never
+ * reaches `durationMs` or `yieldQuantity`, so a Barn makes an animal easier
+ * to keep and never more productive.
+ */
+export function hungryAtFor(
+  row: Pick<StackAcresUnitRow, "stock" | "lastFedAt">,
+  comfort = 1,
+): string | null {
   const def = STACKACRES_CATALOGUE[row.stock];
   if (def.hungerMs === null || !row.lastFedAt) return null;
   const fed = Date.parse(row.lastFedAt);
   if (!Number.isFinite(fed)) return null;
-  return new Date(fed + def.hungerMs).toISOString();
+  return new Date(fed + hungerWindowMs(def.hungerMs, comfort)).toISOString();
+}
+
+/** The catalogue's hunger window as this farm actually experiences it.
+ *  Rounded so a window is always a whole millisecond, and floored at the
+ *  catalogue's own number so a malformed multiplier can never make an
+ *  animal hungrier than the game says it gets. */
+export function hungerWindowMs(catalogueHungerMs: number, comfort: number): number {
+  if (!Number.isFinite(comfort) || comfort <= 1) return catalogueHungerMs;
+  return Math.round(catalogueHungerMs * comfort);
 }
 
 /**
@@ -297,6 +341,7 @@ export function isStackAcresUnitDry(
 export function effectiveStackAcresCycle(
   row: Pick<StackAcresUnitRow, "stock" | "startedAt" | "readyAt" | "lastFedAt">,
   now: Date,
+  comfort = 1,
 ): { startedAt: string; readyAt: string; lastFedAt: string | null } {
   const unchanged = { startedAt: row.startedAt, readyAt: row.readyAt, lastFedAt: row.lastFedAt };
   const def = STACKACRES_CATALOGUE[row.stock];
@@ -309,7 +354,7 @@ export function effectiveStackAcresCycle(
   // Would this cycle still be hungry at its own readyAt, and has `now`
   // actually reached that readyAt? If not, nothing has spoiled -- the row
   // stands exactly as stored, same as any other working animal.
-  const hungryAt = hungryAtFor({ stock: row.stock, lastFedAt: row.lastFedAt });
+  const hungryAt = hungryAtFor({ stock: row.stock, lastFedAt: row.lastFedAt }, comfort);
   const hungryAtMs = hungryAt ? Date.parse(hungryAt) : NaN;
   if (!Number.isFinite(hungryAtMs) || hungryAtMs > readyAtMs || nowMs < readyAtMs) return unchanged;
 
@@ -320,7 +365,12 @@ export function effectiveStackAcresCycle(
   // the hen; guarded here in case a future spoils entry ever does not). If it
   // does not fit, one spoil is all there is: the fresh cycle just runs (and
   // may already be sitting ready) like any other animal.
-  if (def.hungerMs > def.durationMs) {
+  //
+  // A Barn widens that window, so this is asked of the COMFORTED window, not
+  // the catalogue's: a farm whose Barn pushes hen hunger past the Coop's own
+  // cycle has bought its way out of spoiling repeatedly, which is exactly
+  // what comfort is supposed to buy.
+  if (hungerWindowMs(def.hungerMs, comfort) > def.durationMs) {
     return {
       startedAt: row.readyAt,
       readyAt: new Date(readyAtMs + def.durationMs).toISOString(),
@@ -351,10 +401,11 @@ export function effectiveStackAcresCycle(
 export function isStackAcresUnitHungry(
   row: Pick<StackAcresUnitRow, "status" | "stock" | "lastFedAt" | "startedAt" | "readyAt">,
   now: Date,
+  comfort = 1,
 ): boolean {
   if (row.status !== "working" || !isLivestock(row.stock)) return false;
-  const effective = effectiveStackAcresCycle(row, now);
-  const hungryAt = hungryAtFor({ stock: row.stock, lastFedAt: effective.lastFedAt });
+  const effective = effectiveStackAcresCycle(row, now, comfort);
+  const hungryAt = hungryAtFor({ stock: row.stock, lastFedAt: effective.lastFedAt }, comfort);
   if (!hungryAt) return false;
   return Date.parse(hungryAt) <= now.getTime();
 }
@@ -367,13 +418,14 @@ export function isStackAcresUnitReady(
   >,
   now: Date,
   irrigated = false,
+  comfort = 1,
 ): boolean {
   if (row.status !== "working") return false;
   // A hungry unit is frozen: it cannot become ready while it is waiting to be
   // fed, however long its own timestamp says it has been working. A dry crop
   // is frozen the same way, for the same reason -- one guard per track, and
   // no unit is ever subject to both.
-  if (isStackAcresUnitHungry(row, now)) return false;
+  if (isStackAcresUnitHungry(row, now, comfort)) return false;
   // Only ever true for a crop that ran dry mid-cycle -- one that beat the
   // drought to its own finish line, or one an irrigation pipe keeps watered,
   // stays collectable. See its own comment.
@@ -381,7 +433,7 @@ export function isStackAcresUnitReady(
   // Effective, not raw: a spoils unit that fast-forwarded past a voided cycle
   // is judged against ITS fresh readyAt, never the stale one it spoiled
   // through.
-  const effective = effectiveStackAcresCycle(row, now);
+  const effective = effectiveStackAcresCycle(row, now, comfort);
   const ready = Date.parse(effective.readyAt);
   return Number.isFinite(ready) && ready <= now.getTime();
 }
@@ -396,6 +448,7 @@ export function toStackAcresUnitSnapshots(
   rows: readonly StackAcresUnitRow[],
   now: Date,
   irrigatedUnitIds: ReadonlySet<string> = NO_IRRIGATED_UNITS,
+  comfort = 1,
 ): StackAcresUnitSnapshot[] {
   return rows.map((row) => {
     if (row.status === "mucked") {
@@ -418,13 +471,18 @@ export function toStackAcresUnitSnapshots(
         soilSlot: row.soilSlot,
         mapTx: row.mapTx ?? null,
         mapTy: row.mapTy ?? null,
+        // A mucked plot has nobody living on it, so it carries the blank
+        // care row rather than whatever the animal that died there had.
+        caredOn: null,
+        careStreak: 0,
+        careBonus: 0,
       };
     }
 
     const irrigated = irrigatedUnitIds.has(row.id);
-    const hungry = isStackAcresUnitHungry(row, now);
+    const hungry = isStackAcresUnitHungry(row, now, comfort);
     const dry = isStackAcresUnitDry(row, now, irrigated);
-    const ready = isStackAcresUnitReady(row, now, irrigated);
+    const ready = isStackAcresUnitReady(row, now, irrigated, comfort);
     const thirstyAt = thirstyAtFor(row);
     // A dry crop's clock stopped the moment its soil did, so its bar is read
     // at THAT moment rather than at `now`. Everything else is read live.
@@ -432,7 +490,7 @@ export function toStackAcresUnitSnapshots(
     // Effective, not raw: a spoils unit (the Hen Coop) that fast-forwarded
     // past a voided cycle displays that fresh cycle's own clock, not the
     // stale one it spoiled through -- a no-op for every other row.
-    const effective = effectiveStackAcresCycle(row, now);
+    const effective = effectiveStackAcresCycle(row, now, comfort);
     return {
       id: row.id,
       state: ready ? "ready" : hungry ? "hungry" : dry ? "dry" : "working",
@@ -442,7 +500,7 @@ export function toStackAcresUnitSnapshots(
       startedAt: effective.startedAt,
       readyAt: effective.readyAt,
       progress: progressOf(effective.startedAt, effective.readyAt, readAtMs),
-      hungryAt: hungryAtFor({ stock: row.stock, lastFedAt: effective.lastFedAt }),
+      hungryAt: hungryAtFor({ stock: row.stock, lastFedAt: effective.lastFedAt }, comfort),
       // A piped crop never dries, and the browser re-derives dryness from
       // this alone, so it has to say "never" rather than a time that passes.
       thirstyAt: irrigated ? null : thirstyAt,
@@ -454,6 +512,13 @@ export function toStackAcresUnitSnapshots(
       soilSlot: row.soilSlot,
       mapTx: row.mapTx ?? null,
       mapTy: row.mapTy ?? null,
+      // Straight through from the row. The barn panel derives the streak it
+      // SHOWS from these (`liveCareStreak`), rather than this doing it --
+      // the same split every other field here keeps, where the snapshot
+      // carries the facts and the renderer decides how to say them.
+      caredOn: row.caredOn ?? null,
+      careStreak: row.careStreak ?? 0,
+      careBonus: row.careBonus ?? 0,
     };
   });
 }
@@ -515,6 +580,7 @@ export function withLocalClockUnit(unit: StackAcresUnitSnapshot, nowMs: number):
 export function optimisticallyFedUnit(
   unit: StackAcresUnitSnapshot,
   nowMs: number,
+  comfort = 1,
 ): StackAcresUnitSnapshot {
   const hungrySince = unit.hungryAt ? Date.parse(unit.hungryAt) : NaN;
   const starvedMs = Number.isFinite(hungrySince) ? Math.max(0, nowMs - hungrySince) : 0;
@@ -524,8 +590,32 @@ export function optimisticallyFedUnit(
   return {
     ...unit,
     readyAt: new Date(pushed).toISOString(),
-    hungryAt: hungerMs === null ? null : new Date(nowMs + hungerMs).toISOString(),
+    hungryAt:
+      hungerMs === null
+        ? null
+        : new Date(nowMs + hungerWindowMs(hungerMs, comfort)).toISOString(),
   };
+}
+
+/**
+ * The animal this browser expects the instant a `care` tap is sent, computed
+ * the same way `careForStackAcresAnimal` computes it server-side. A guess,
+ * like every other helper here: the response overwrites it, and a refusal's
+ * own round rolls it back.
+ *
+ * Tending moves no clock at all -- not `readyAt`, not `hungryAt`. It is the
+ * one tend in this game that is purely about the animal rather than about
+ * its timer, which is exactly why it can be free.
+ */
+export function optimisticallyCaredUnit(
+  unit: StackAcresUnitSnapshot,
+  today: string,
+): StackAcresUnitSnapshot {
+  const care = applyCare(
+    { caredOn: unit.caredOn ?? null, careStreak: unit.careStreak ?? 0, careBonus: unit.careBonus ?? 0 },
+    today,
+  );
+  return { ...unit, caredOn: care.caredOn, careStreak: care.careStreak, careBonus: care.careBonus };
 }
 
 /**
@@ -629,6 +719,7 @@ export function optimisticallyStockedUnit(input: {
     permanent: input.permanent,
     housedIn: input.inGreenhouse ? "greenhouse" : null,
     soilSlot: input.soilSlot ?? null,
+    ...freshAnimalCare(),
   };
 }
 
@@ -674,5 +765,10 @@ export function optimisticallyRestartedUnit(
       ? { thirstyAt: null, isWatered: true, seed: false }
       : { state: "dry" as const, thirstyAt: new Date(nowMs).toISOString(), isWatered: false, seed: true }),
     muckFee: null,
+    // The care bonus belongs to the batch that was just collected, so a
+    // restart starts it over -- the same rule `feedBonus` already follows in
+    // `collectStackAcresUnit`. The STREAK is not touched: that is a fact
+    // about the player's habit, not about this cycle's produce.
+    careBonus: 0,
   };
 }

@@ -26,6 +26,8 @@ const PLACE: Record<MachineKind, BuildPlace> = {
   vat: "Workshop",
   feed_silo: "Workshop",
   smelter: "Workshop",
+  // Raised in the yard beside the animals it houses, not inside a building.
+  barn: "Workshop",
   oven: "House",
   stew_pot: "House",
   counter: "House",

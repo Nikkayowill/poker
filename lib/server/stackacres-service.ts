@@ -826,6 +826,15 @@ export interface StackAcresView {
    *  already applied, so two actions in flight at once can never have the
    *  earlier-finishing one's stale response clobber the later one's. */
   revision: number;
+  /**
+   * The second map's own resource HUD (docs/stackacres-second-map-direction.md
+   * section 6a): Gold is the existing shared balance above, and Wood/Wheat/
+   * Workers are honest zeros until that map's own clearing/hiring economy is
+   * built. Not `woodNodes`/`wheatPlots` above -- those are the Homestead's
+   * real chop/grow systems; these are the empire district's own counters,
+   * currently always 0 rather than aliased onto a different economy.
+   */
+  empire: { wood: number; wheat: number; workers: number };
 }
 
 /**
@@ -1379,6 +1388,10 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     fences,
     clock: { offsetMs: clockOffset, serverNowMs: now.getTime() },
     revision,
+    // Stub until the empire district's own clearing/hiring economy exists
+    // (docs/stackacres-second-map-direction.md section 6, still OPEN) --
+    // real zeros from the server, not a client-side literal.
+    empire: { wood: 0, wheat: 0, workers: 0 },
   };
 }
 

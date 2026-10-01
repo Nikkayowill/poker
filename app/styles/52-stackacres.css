@@ -4992,6 +4992,35 @@
     100% { opacity: 0; transform: translate(-50%, 0); }
   }
 }
+
+/* The empire district's own resource HUD (v1 scaffold) -- top-left, over the
+   canvas, up only while the farmer is on that map. See stackacres-farm.tsx's
+   own doc comment on `onEmpireMap`. */
+.sa-empire-hud {
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 2px solid var(--sa-paint-line);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paint-fill-open);
+  box-shadow: var(--sa-paint-rim-sm), var(--sa-drop);
+  pointer-events: none;
+}
+.sa-empire-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sa-ink);
+  font-family: var(--sa-font);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
 .sa-goals-list { display: grid; gap: 10px; margin: 0; padding: 2px 27px 27px; list-style: none; }
 .sa-goals-list > li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; opacity: 0.7; }
 .sa-goals-list > li.is-current { opacity: 1; }

@@ -13,6 +13,9 @@ import { selectSound } from "@/lib/audio/ui-sounds";
 import { isStakesTier, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { createRequestSequence } from "@/lib/ui/request-sequence";
+import { watchInvalidations } from "@/lib/realtime/watch-invalidations";
+import { SNG_STATE_CHANGED, sitAndGoLobbyChannelName, sitAndGoTableChannelName } from "@/lib/sit-and-go/sit-and-go-channel";
+import { browserSupabase } from "@/lib/supabase/browser-client";
 
 /**
  * The client half of a Sit & Go: the tier lobby, the waiting room, and the
@@ -26,7 +29,6 @@ import { createRequestSequence } from "@/lib/ui/request-sequence";
  * to rebuild any slice of it.
  */
 
-const POLL_MS = 2000;
 const MAX_SEATS = 6;
 
 export interface SitAndGoTable {
@@ -101,7 +103,7 @@ export function SitAndGoShell() {
         if (data.table !== undefined) setTable(data.table ?? null);
       }
     } catch {
-      // A dropped poll is not worth a banner; the next one is two seconds away.
+      // A dropped read is not worth a banner; the next ping or reconnect reads again.
     } finally {
       if (mounted.current) setLoaded(true);
     }
@@ -151,18 +153,29 @@ export function SitAndGoShell() {
 
   useEffect(() => {
     mounted.current = true;
-    // A background tab would otherwise poll every POLL_MS forever.
-    const poll = () => {
-      if (!document.hidden) void refresh();
-    };
-    const first = window.setTimeout(poll, 0);
-    const timer = window.setInterval(poll, POLL_MS);
+    const first = window.setTimeout(() => void refresh(), 0);
     return () => {
       mounted.current = false;
       window.clearTimeout(first);
-      window.clearInterval(timer);
     };
   }, [refresh]);
+
+  // Cross-browser sync: a table appearing or filling in the open list, a seat
+  // taken, the table dealing. A trigger pings sng:lobby and sng:<tableId> on
+  // every write to the sit-and-go tables and this re-reads, so nothing polls.
+  // Keyed on the table id rather than the table object, so a version bump
+  // does not tear the channel down.
+  const tableId = table?.id ?? null;
+  useEffect(() => {
+    const supabase = browserSupabase();
+    if (!supabase) return;
+    return watchInvalidations({
+      supabase,
+      channelName: tableId ? sitAndGoTableChannelName(tableId) : sitAndGoLobbyChannelName(),
+      event: SNG_STATE_CHANGED,
+      refresh,
+    });
+  }, [tableId, refresh]);
 
   // The instant the 6th seat fills, the table is active with a real gameId.
   // Edge-triggered (once per table id) so a stray extra poll after the

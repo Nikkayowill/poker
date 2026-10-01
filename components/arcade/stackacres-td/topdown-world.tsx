@@ -285,7 +285,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       popUnit: (unitId) => sceneRef.current?.popUnit(unitId),
       pullCrop: (unitId) => sceneRef.current?.pullCrop(unitId),
       celebrateCascade: (unitIds) => sceneRef.current?.celebrate(unitIds),
-      celebrateCrit: (unitId) => sceneRef.current?.celebrate([unitId]),
+      celebrateCrit: (unitId, multiplier) => sceneRef.current?.celebrateCrit(unitId, multiplier),
       floatAt: (at, text, tone) => sceneRef.current?.floatAt(at, text, tone),
       setTravelerUnlocks: (unlocked) => sceneRef.current?.setTravelerUnlocks(unlocked),
       soilTiles: () => sceneRef.current?.soilTiles() ?? [],

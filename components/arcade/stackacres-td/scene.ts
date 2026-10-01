@@ -131,6 +131,7 @@ import type { QuestPlaceId } from "@/lib/stackacres/story/places";
 import { isTravelerId, type TravelerId } from "@/lib/stackacres/story/travelers";
 import { cropSpot, penFeedSpot, stockZone, type WorldPoint } from "@/lib/stackacres/world";
 import { isHerdStock } from "@/lib/stackacres/herd";
+import type { GuardDog } from "@/lib/stackacres/guard-dog";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresSceneUnit, TapPoint, TravelerUnlocks, UseSquare } from "../stackacres/world-contract";
@@ -669,6 +670,9 @@ export class TopdownScene extends Phaser.Scene {
   /** The fence pieces the farm has put up, and what draws them. */
   private fences: FencePiece[] = [];
   private fenceImages: Phaser.GameObjects.Image[] = [];
+  /** The guard dogs on the Homestead, and what draws them. */
+  private guardDogs: GuardDog[] = [];
+  private guardDogImages: Phaser.GameObjects.Image[] = [];
   /** The buildings standing on the Far Field, and what draws them there. */
   private empireBuildings: PlacedEmpireBuilding[] = [];
   private buildingImages: Phaser.GameObjects.Image[] = [];
@@ -1151,6 +1155,8 @@ export class TopdownScene extends Phaser.Scene {
     this.soilImages.clear();
     for (const image of this.fenceImages) image.destroy();
     this.fenceImages = [];
+    for (const image of this.guardDogImages) image.destroy();
+    this.guardDogImages = [];
     for (const image of this.buildingImages) image.destroy();
     this.buildingImages = [];
     for (const object of this.ghostObjects) object.destroy();
@@ -1291,6 +1297,7 @@ export class TopdownScene extends Phaser.Scene {
     this.applyNpcs();
     this.drawSoil();
     this.drawFences();
+    this.drawGuardDogs();
     this.drawBuildings();
     this.drawGhost();
     this.drawGroceryGhost();
@@ -1422,8 +1429,11 @@ export class TopdownScene extends Phaser.Scene {
       canopy?.setVisible(visible);
       if (visible) for (const [tx, ty] of spec.blocks) blocked.add(tileKey(tx, ty));
     }
-    // A fence piece stands on its square like anything else built there.
-    if (this.areaName === "homestead") for (const piece of this.fences) blocked.add(tileKey(piece.tx, piece.ty));
+    // A fence piece stands on its square like anything else built there, and so does a dog.
+    if (this.areaName === "homestead") {
+      for (const piece of this.fences) blocked.add(tileKey(piece.tx, piece.ty));
+      for (const dog of this.guardDogs) blocked.add(tileKey(dog.tx, dog.ty));
+    }
     // So does a building on the Far Field, over its whole plan.
     if (this.areaName === "empire") {
       for (const building of this.empireBuildings) {
@@ -3330,6 +3340,27 @@ export class TopdownScene extends Phaser.Scene {
         .setOrigin(0, 0)
         .setDepth(piece.ty * tile + FENCE_FRAME.foot);
       this.fenceImages.push(image);
+    }
+  }
+
+  setGuardDogs(dogs: readonly GuardDog[]): void {
+    this.guardDogs = [...dogs];
+    if (!this.booted) return;
+    this.applyGates();
+    this.drawGuardDogs();
+  }
+
+  /** Each dog on its square, facing the way its id says, sorted in by its feet like the herd. */
+  private drawGuardDogs(): void {
+    for (const image of this.guardDogImages) image.destroy();
+    this.guardDogImages = [];
+    if (this.areaName !== "homestead") return;
+    const { tile } = this.area;
+    for (const dog of this.guardDogs) {
+      const side = dog.id.charCodeAt(dog.id.length - 1) % 2 ? "left" : "right";
+      const y = (dog.ty + 1) * tile - 2;
+      const image = this.add.image(dog.tx * tile + tile / 2, y, "common", `dog_${side}`).setOrigin(0.5, 1).setDepth(y);
+      this.guardDogImages.push(image);
     }
   }
 

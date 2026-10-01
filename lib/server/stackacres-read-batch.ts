@@ -62,6 +62,8 @@ export interface StackAcresReadBatch {
   forage_nodes?: Record<string, unknown>[];
   axe?: Record<string, unknown> | null;
   fences?: Record<string, unknown>[];
+  /** Absent until the guard dog migration (20261001195736) redefines the batch. */
+  guard_dogs?: Record<string, unknown>[];
   empire_buildings?: Record<string, unknown>[];
   grocery?: Record<string, unknown> | null;
   /** The wild acres a farm owns. Absent until the acres migration redefines the batch. */

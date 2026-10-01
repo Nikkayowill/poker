@@ -1,6 +1,7 @@
 "use client";
 
 import { fenceKey, type FencePiece } from "@/lib/stackacres/fences";
+import type { GuardDog } from "@/lib/stackacres/guard-dog";
 import { soilToMapTile } from "@/lib/stackacres/hoeable";
 import {
   useCallback,
@@ -620,6 +621,8 @@ interface StackAcresResponse {
   fences?: FencePiece[];
   /** The wild acres this farm owns and what the next one costs. */
   acres?: StackAcresAcresView;
+  /** The guard dogs standing on the Homestead, by map square. */
+  guardDogs?: GuardDog[];
   /** Set (to an item id or null) by a `tap-secret-zone` response only --
    *  absent from every other action's answer. */
   discovery?: SecretItemId | null;
@@ -909,6 +912,7 @@ function farmFieldsOf(data: Partial<StackAcresResponse>): Partial<FarmFields> {
   if (data.forageNodes) fields.forageNodes = data.forageNodes;
   if (data.landObstacles) fields.landObstacles = data.landObstacles;
   if (data.fences) fields.fences = data.fences;
+  if (data.guardDogs) fields.guardDogs = data.guardDogs;
   if (data.secrets) fields.secrets = data.secrets;
   if (data.secretDonations) fields.secretDonations = data.secretDonations;
   if (data.synergy) fields.synergy = data.synergy;
@@ -1274,6 +1278,7 @@ export function StackAcresFarm() {
   /** The wild acres owned. Server answers only: an acre is never guessed. */
   const [acres, setAcres] = useState<StackAcresAcresView>(() => acresView([]));
   const ownedAcres = useMemo(() => new Set(acres.owned), [acres]);
+  const [guardDogs, setGuardDogs] = useState<GuardDog[]>([]);
   /** Which map squares hold a piece, for the belt's "is there a fence here". */
   const fencedSquares = useMemo(() => new Set(fences.map((piece) => fenceKey(piece.tx, piece.ty))), [fences]);
   /** Same sidecar for the Workshop and the vat: what the last processing
@@ -1760,6 +1765,7 @@ export function StackAcresFarm() {
     lay("forageNodes", setForageNodes);
     lay("landObstacles", setLandObstacles);
     lay("fences", setFences);
+    lay("guardDogs", setGuardDogs);
     lay("secrets", setSecrets);
     lay("secretDonations", setSecretDonations);
     // Three atoms here, one field in a guess.
@@ -2976,7 +2982,7 @@ export function StackAcresFarm() {
     act,
     farmerTile,
   });
-  const herdPlace = useHerdPlace({ active: onHomesteadMap, units: liveUnits, act });
+  const herdPlace = useHerdPlace({ active: onHomesteadMap, units: liveUnits, dogs: guardDogs, act });
   const acreDeed = useAcreDeed({
     active: onHomesteadMap,
     acres,
@@ -4465,6 +4471,7 @@ export function StackAcresFarm() {
               forageNodes={forageNodes}
               landObstacles={landObstacles}
               fences={fences}
+              guardDogs={guardDogs}
               empireBuildings={build.shown}
               buildMode={build.buildMode || arrange.buildMode || herdPlace.buildMode}
               buildGhost={build.ghost}
@@ -4556,8 +4563,11 @@ export function StackAcresFarm() {
           {/* The Farm Planner, under the clock on the right. Absent entirely
               when the Journal has nothing pressing to say -- an empty card
               saying "nothing to do" is chrome a player learns to stop
-              reading, same reasoning as the Harvest key below. */}
+              reading, same reasoning as the Harvest key below. Only out on the
+              Homestead: indoors it sits over the barn counter and the other
+              props a finger has to reach. */}
           {next &&
+            onHomesteadMap &&
             (nextHidden ? (
               <StackAcresNextActionReopen onOpen={() => setNextPanelHidden(false)} />
             ) : (

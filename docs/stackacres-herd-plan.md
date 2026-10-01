@@ -50,7 +50,14 @@ per-acre daily upkeep, the guard dog is in, slaughter stays off-screen.
    crop trampling and crowding. The animal comes back next day. Never debits Gold. Hens in Hen
    Haven count as protected. The away report gets the "wandered off last night. Make sure to
    enclose your livestock." line.
-4. **Guard dog.** An item that protects animals near it. First thing to drop if time runs short.
+4. **Guard dog (built on `feat/stackacres-guard-dog`, not merged).** `lib/stackacres/guard-dog.ts`:
+   a dog costs 20,000 Gold, two to a farm, and stands on a Homestead square under the herd's own
+   placement rules. A sheep or cow in the open within 3 squares of a dog is "guarded": it stays home
+   like a fenced one. A crowded pen stays crowded; a dog cannot fix that. Bought from the herd bar
+   (the Dog key, then a tap on open grass), moved for free by lifting it like an animal. Gold leaves
+   before the row exists and comes back if the write is refused. Rows live in `homestead_guard_dogs`
+   (migration `20261001195736`, which also folds the dogs into `stackacres_read_batch`). Drawn from
+   `dog_left`/`dog_right` in the common atlas, the rig's `area_farm.dog`.
 5. **Land by the acre (built on `feat/stackacres-acres`, not merged).** Rectangular acres, escalating
    Gold plus Wood and Stone, one flat daily per-acre upkeep netted off payouts the way upkeep works
    today. Existing farms keep any ground they already use.

@@ -83,6 +83,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
     forageNodes,
     landObstacles,
     fences,
+    guardDogs,
     empireBuildings,
     buildMode,
     buildGhost,
@@ -127,6 +128,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
     forageNodes,
     landObstacles,
     fences,
+    guardDogs,
     empireBuildings,
     buildMode,
     buildGhost,
@@ -142,6 +144,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       forageNodes,
       landObstacles,
       fences,
+      guardDogs,
       empireBuildings,
       buildMode,
       buildGhost,
@@ -243,6 +246,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       scene.setForageNodes(now.forageNodes);
       scene.setLandObstacles(now.landObstacles);
       scene.setFences(now.fences);
+      scene.setGuardDogs(now.guardDogs);
       scene.setEmpireBuildings(now.empireBuildings);
       scene.setBuildMode(now.buildMode);
       scene.setBuildGhost(now.buildGhost);
@@ -442,6 +446,10 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   useEffect(() => {
     sceneRef.current?.setFences(fences);
   }, [fences]);
+
+  useEffect(() => {
+    sceneRef.current?.setGuardDogs(guardDogs);
+  }, [guardDogs]);
 
   useEffect(() => {
     sceneRef.current?.setEmpireBuildings(empireBuildings);

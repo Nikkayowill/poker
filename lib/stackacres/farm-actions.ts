@@ -138,6 +138,10 @@ export type Action =
   // map square. Neither spends or refunds anything.
   | { action: "place-animal"; unitId: string; tx: number; ty: number }
   | { action: "pick-up-animal"; unitId: string }
+  // The guard dog (./guard-dog.ts), by Homestead map square. Buying spends
+  // Gold; moving one you own is free.
+  | { action: "buy-dog"; tx: number; ty: number }
+  | { action: "move-dog"; id: string; tx: number; ty: number }
   // Far Field buildings (./empire-buildings.ts), by the top-left square of
   // their plan. Buying spends Gold, Wood and Metal; placing one you own and
   // picking it up are free.
@@ -272,6 +276,8 @@ export function intentOf(body: Action): string {
   if ("crop" in body) return `${body.action}:${body.crop}`;
   // One building at a time is moved or picked up; two different ones are two intents.
   if (body.action === "place-building" || body.action === "pick-up-building") return `building:${body.id}`;
+  // One dog at a time is moved; two different dogs are two intents.
+  if (body.action === "move-dog") return `dog:${body.id}`;
   // Likewise one piece of the grocery's floor, and one person at a time hired or let go. Keyed on kind as
   // well as the square, checked before the generic `tx` branch below: two different kinds can share a
   // square (a rug under a fixture), and buying one must never be taken for a retry of the other.
@@ -373,6 +379,8 @@ export function purchaseCueText(body: Action): string | null {
       return "Drone deployed!";
     case "buy-building":
       return `${EMPIRE_BUILDINGS[body.kind].label} built!`;
+    case "buy-dog":
+      return "Your dog's on watch!";
     default:
       return null;
   }

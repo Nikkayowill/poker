@@ -3,6 +3,7 @@
 import { Check, MapPin, X } from "lucide-react";
 import clsx from "clsx";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
+import type { FarmBoardLine } from "@/lib/stackacres/farm-board";
 import type { JournalCue, JournalStep, JournalView } from "@/lib/stackacres/journal";
 import { journalChapterLabel } from "@/lib/stackacres/journal";
 import { StackAcresPixelIcon } from "./stackacres-pixel-icon";
@@ -51,6 +52,56 @@ function NowBlock({ cue }: { cue: JournalCue }) {
   );
 }
 
+/** What a board line's period is called, in the player's words rather than
+ *  "daily"/"weekly". The long line is the only one that survives midnight. */
+const SLOT_WHEN: Record<FarmBoardLine["slot"], string> = {
+  easy: "Today",
+  steady: "Today",
+  long: "This week",
+};
+
+function BoardLines({
+  lines,
+  onClaim,
+}: {
+  lines: readonly FarmBoardLine[];
+  onClaim: (code: string) => void;
+}) {
+  return (
+    <ul className="sa-journal-board">
+      {lines.map((line) => (
+        <li key={line.code} className={line.claimed ? "is-done" : undefined}>
+          <span className="sa-journal-tick" aria-hidden="true">
+            {line.complete ? <Check size={12} /> : null}
+          </span>
+          <div>
+            <span className="sa-journal-board-head">
+              {line.label}
+              <span className="sa-journal-board-when">{SLOT_WHEN[line.slot]}</span>
+            </span>
+            <span className="sa-journal-board-pay">
+              {line.claimed
+                ? `Took ${line.goldReward.toLocaleString()} Gold`
+                : `${line.progress} of ${line.target} \u00b7 ${line.goldReward.toLocaleString()} Gold, ${line.influenceReward} Influence`}
+            </span>
+            {line.claimable ? (
+              <button type="button" className="sa-journal-board-claim" onClick={() => onClaim(line.code)}>
+                Take {line.goldReward.toLocaleString()} Gold
+              </button>
+            ) : (
+              !line.claimed && (
+                <span className="sa-journal-meter" aria-hidden="true">
+                  <span style={{ width: `${(line.progress / line.target) * 100}%` }} />
+                </span>
+              )
+            )}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function StepLines({ step }: { step: JournalStep }) {
   return (
     <li className={step.built ? "is-built" : undefined}>
@@ -89,7 +140,15 @@ function StepLines({ step }: { step: JournalStep }) {
   );
 }
 
-export function StackAcresJournalSheet({ view, onClose }: { view: JournalView; onClose: () => void }) {
+export function StackAcresJournalSheet({
+  view,
+  onClaimBoard,
+  onClose,
+}: {
+  view: JournalView;
+  onClaimBoard: (code: string) => void;
+  onClose: () => void;
+}) {
   const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(onClose);
   return (
     <div className="profile-overlay" role="presentation" onMouseDown={onBackdropMouseDown}>
@@ -106,6 +165,16 @@ export function StackAcresJournalSheet({ view, onClose }: { view: JournalView; o
 
         <div className="sa-journal">
           <NowBlock cue={view.now} />
+
+          {view.board.length > 0 && (
+            <section className="sa-journal-block" aria-labelledby="sa-journal-board">
+              {/* Above the chapters on purpose: this is the short answer to
+                  "what now", and the chapters are the long one. Nothing here
+                  is claimable -- a finished line has already paid. */}
+              <h3 id="sa-journal-board">The board</h3>
+              <BoardLines lines={view.board} onClaim={onClaimBoard} />
+            </section>
+          )}
 
           {view.waiting.length > 0 && (
             <section className="sa-journal-block" aria-labelledby="sa-journal-waiting">

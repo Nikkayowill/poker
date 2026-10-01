@@ -16,6 +16,7 @@ import {
 } from "react";
 import clsx from "clsx";
 import {
+  Backpack,
   Dna,
   Lock,
   Moon,
@@ -181,6 +182,8 @@ import {
   type CrossbreedActionResult,
   type CrossbreedHarvestActionResult,
 } from "./crossbreed-bed-sheet";
+import { ResourceGuideSheet } from "./resource-guide-sheet";
+import type { GuideDestinationId } from "@/lib/stackacres/resource-guide";
 import {
   emptyCrossbreedBedView,
   type CrossbreedBedView,
@@ -202,6 +205,7 @@ import { StackAcresStoryDialogue } from "./stackacres-story-dialogue";
 import { useStackAcresStory, type StackAcresStoryController } from "@/lib/stackacres/story/use-stackacres-story";
 import { storyEventsForAction } from "@/lib/stackacres/story/predict";
 import { travelerHasStoryToTell, type StackAcresStoryView } from "@/lib/stackacres/story/state";
+import type { FarmBoardView } from "@/lib/stackacres/farm-board";
 import type { StoryIntent } from "@/lib/stackacres/story/dialogue";
 import type { QuestPlaceId } from "@/lib/stackacres/story/places";
 import { TRAVELER_CATALOGUE, type TravelerId } from "@/lib/stackacres/story/travelers";
@@ -700,6 +704,10 @@ interface StackAcresResponse {
    *  working, which leaves every traveler's bubble unreachable rather than
    *  wrong. See lib/stackacres/story/. */
   story?: StackAcresStoryView;
+  /** The Daily Farm Board, straight off `StackAcresView.farmBoard`. Optional
+   *  for the same reason `story` above is: a bundle that predates the
+   *  feature shows no board rather than an empty one. */
+  farmBoard?: FarmBoardView;
   /** Set only by a `story-meet`/`story-turn-in` response; every other
    *  action's answer leaves this undefined. `story` above already carries
    *  the resulting standing -- this is only what THIS call just did, so the
@@ -997,6 +1005,7 @@ export function StackAcresFarm() {
   // `act`'s fixed return type has no room for what a harvest just bred.
   const [crossbreed, setCrossbreed] = useState<CrossbreedBedView>(emptyCrossbreedBedView);
   const [showCrossbreed, setShowCrossbreed] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
   const lastCrossbreedHarvest = useRef<CrossbreedHarvestSettlement | null>(null);
   // Ray's Mythic Blueprints. Seeded empty -- the dashboard only ever opens
   // from a player press well after mount, by which point the first poll has
@@ -1065,6 +1074,13 @@ export function StackAcresFarm() {
    * bubble and its optimistic tick.
    */
   const [storyView, setStoryView] = useState<StackAcresStoryView | null>(null);
+  /**
+   * The Daily Farm Board, as the server counted it. Same "full state, not a
+   * diff" posture as `storyView` above: every response carries the whole
+   * board, so a line that just completed arrives already complete and there
+   * is no local reducer to keep in step.
+   */
+  const [farmBoard, setFarmBoard] = useState<FarmBoardView | null>(null);
   /**
    * Land the player may work, and what keeping it costs today.
    *
@@ -1347,6 +1363,10 @@ export function StackAcresFarm() {
    * and then fire at once the moment it resumed. The tap-to-play splash is
    * that gesture -- it exists for the music for exactly this reason, and the
    * ambience rides on the same one rather than inventing a second prompt.
+   * The splash's own Play handler builds the context inside its tap
+   * (stackacres-play-screen.tsx); the start here is a no-op after that and a
+   * real start only when the farm mounts some other way. Stopping is this
+   * effect's job either way.
    */
   useEffect(() => {
     if (!hasStarted) return;
@@ -1803,6 +1823,7 @@ export function StackAcresFarm() {
     }
     if (data.blueprints) setBlueprints(data.blueprints);
     if (data.story) setStoryView(data.story);
+    if (data.farmBoard) setFarmBoard(data.farmBoard);
   }, [acceptRevision, layFarm, gameHourNow]);
 
   /**
@@ -2693,6 +2714,15 @@ export function StackAcresFarm() {
 
   /** The Eat tab in the player's house (./stackacres-kitchen.tsx). */
   const onEat = useCallback((item: FoodItem) => act({ action: "eat", item }), [act]);
+  /**
+   * Taking a finished Farm Board line's reward, from the Journal.
+   *
+   * No optimistic patch: this is the one board interaction that moves Gold,
+   * and the server's own answer carries both the new balance and the line
+   * marked claimed. Guessing at it would mean showing a payout that a
+   * refusal then has to take back.
+   */
+  const onClaimBoard = useCallback((code: string) => act({ action: "claim-farm-board", code }), [act]);
   /** Built machine kinds, for the seed locks (lib/stackacres/seed-unlocks.ts). */
   const builtKinds = useMemo(
     () => new Set(processing.machines.map((machine) => machine.kind)),
@@ -3127,6 +3157,30 @@ export function StackAcresFarm() {
   const onWorldSignpostTap = useCallback(() => {
     panelSound();
     setShowContracts(true);
+  }, []);
+
+  /** The Resource Guide's buttons: close the guide, open the screen. */
+  const onGuideDestination = useCallback((destination: GuideDestinationId) => {
+    panelSound();
+    setShowGuide(false);
+    switch (destination) {
+      case "workshop":
+        setShowWorkshop(true);
+        break;
+      case "house":
+        setShowHouse(true);
+        break;
+      case "contracts":
+        setShowContracts(true);
+        break;
+      case "store-sell":
+        setStoreTab("sell");
+        setShowStore(true);
+        break;
+      case "crossbreed":
+        setShowCrossbreed(true);
+        break;
+    }
   }, []);
 
   /** A finger landed on the Workshop building. Same shape
@@ -3817,6 +3871,25 @@ export function StackAcresFarm() {
       forageNodes,
       nowMs,
     }),
+  const journal = useMemo(
+    () =>
+      journalView({
+        gold,
+        inventory: processing.inventory,
+        built: builtKinds,
+        units: liveUnits,
+        contract: processing.contract,
+        vat,
+        cellar,
+        story: storyView,
+        farmBoard,
+        progress: shopProgress,
+        machines: processing.machines,
+        woodNodes,
+        stoneNodes,
+        forageNodes,
+        nowMs,
+      }),
     [
       gold,
       processing.inventory,
@@ -3827,6 +3900,7 @@ export function StackAcresFarm() {
       vat,
       cellar,
       storyView,
+      farmBoard,
       shopProgress,
       woodNodes,
       stoneNodes,
@@ -4141,6 +4215,15 @@ export function StackAcresFarm() {
         <strong>
           {Object.values(crossbreed.inventory).reduce((sum, qty) => sum + (qty ?? 0), 0)}
         </strong>
+      </button>
+      <button
+        type="button"
+        className="sa-prestige-badge"
+        onClick={() => { panelSound(); setShowGuide(true); }}
+        title="Resource Guide"
+        aria-label="Resource Guide"
+      >
+        <Backpack size={13} aria-hidden="true" />
       </button>
       <StackAcresMusicToggle />
     </>
@@ -4990,7 +5073,11 @@ export function StackAcresFarm() {
       )}
 
       {showGoals && (
-        <StackAcresJournalSheet view={journal} onClose={() => { panelSound(); setShowGoals(false); }} />
+        <StackAcresJournalSheet
+          view={journal}
+          onClaimBoard={onClaimBoard}
+          onClose={() => { panelSound(); setShowGoals(false); }}
+        />
       )}
 
       {chapterCard && (
@@ -5129,6 +5216,15 @@ export function StackAcresFarm() {
           onPlant={onPlantCrossbreed}
           onHarvest={onHarvestCrossbreed}
           onClose={() => { panelSound(); setShowCrossbreed(false); }}
+        />
+      )}
+
+      {showGuide && (
+        <ResourceGuideSheet
+          inventory={processing.inventory}
+          crossbreedInventory={crossbreed.inventory}
+          onOpenDestination={onGuideDestination}
+          onClose={() => { panelSound(); setShowGuide(false); }}
         />
       )}
 

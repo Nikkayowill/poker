@@ -18,6 +18,9 @@
  *   enchantment-forged   <- forge-enchantment
  *   crossbreed-harvested <- harvest-crossbreed
  *   place-reached        <- reach-quest-place
+ *   wood-chopped         <- chop-tree (the Wood a landed swing paid)
+ *   stone-mined          <- mine-stone (the Stone a landed swing paid)
+ *   forage-picked        <- gather-forage (the seed a picked bush paid)
  *
  * `deliver` objectives are not events. They read the inventory at turn-in.
  */
@@ -43,6 +46,15 @@ export type StoryEvent =
   | { readonly kind: "contract-fulfilled" }
   | { readonly kind: "enchantment-forged" }
   | { readonly kind: "crossbreed-harvested"; readonly item: CrossbreedItem }
-  | { readonly kind: "place-reached"; readonly placeId: QuestPlaceId };
+  | { readonly kind: "place-reached"; readonly placeId: QuestPlaceId }
+  // The three gathering actions. Added for the Daily Farm Board
+  // (../farm-board.ts), which needs the early-game actions a new farm can
+  // actually do; no traveler quest asks for them yet, and the board is why
+  // they emit at all. `count` is what the swing or the pick really paid, not
+  // one per tap -- an axe rung pays more Wood per swing, and a bush's seed
+  // count is its own roll.
+  | { readonly kind: "wood-chopped"; readonly count: number }
+  | { readonly kind: "stone-mined"; readonly count: number }
+  | { readonly kind: "forage-picked"; readonly count: number };
 
 export type StoryEventKind = StoryEvent["kind"];

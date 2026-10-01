@@ -144,6 +144,8 @@ describe("beltAnimation", () => {
     expect(beltAnimation({ kind: "till", tx: 0, ty: 0 })).toBe("hoe");
     expect(beltAnimation({ kind: "lift", tx: 0, ty: 0 })).toBe("hoe");
     expect(beltAnimation({ kind: "plant", tx: 0, ty: 0, stock: "carrot" })).toBe("plant");
+    expect(beltAnimation({ kind: "fence", tx: 0, ty: 0 })).toBe("fence");
+    expect(beltAnimation({ kind: "unfence", tx: 0, ty: 0 })).toBe("fence");
     expect(beltAnimation({ kind: "nothing", reason: "no", why: "blocked" })).toBeNull();
     expect(beltAnimation({ kind: "idle" })).toBeNull();
   });

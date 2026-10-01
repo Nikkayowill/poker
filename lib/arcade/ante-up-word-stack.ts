@@ -13,9 +13,9 @@
  * bonus" rule.
  */
 
-import { ladderMultiplier, type WagerLadder } from "./ante-up-ladder";
+import { ladderMultiplier, scaleLadder, type WagerLadder } from "./ante-up-ladder";
 import type { WordStackRound } from "./puzzles/word-stack";
-import { stakePressure, type StakePressure } from "./stake-pressure";
+import { MIN_WIN_MULTIPLIER, STAKE_PRESSURES, stakePressure, type StakePressure } from "./stake-pressure";
 
 /**
  * The floor for a wager. Zero is always allowed too, for practice with no
@@ -27,46 +27,28 @@ import { stakePressure, type StakePressure } from "./stake-pressure";
 export const MIN_ANTE_UP_WAGER = 500;
 
 /**
- * Win-only payout multiplier, keyed by how many guesses the win took.
- * Starting numbers, easy to retune here.
+ * Win-only payout multiplier, keyed by how many guesses the win took. This is
+ * Medium's ladder and the reference every other band is scaled from; see
+ * scaleForBand in stake-pressure.ts.
  *
- * A 6-guess win pays below 1x on purpose. Scraping the answer on the last
- * legal guess is the outcome closest to not winning at all, and paying a
- * premium for it (it used to pay 1.5x) meant any win was profitable and the
- * wager carried almost no risk. The top rung came down too: a 1-guess win is
- * luck rather than skill, and at 8x it was the single largest per-attempt
- * payout anywhere in the app.
+ * Every win pays back more than the stake, even on the 6th guess. Someone
+ * who solves the word should never end up down Gold. The rungs still slope
+ * hard, so a 6-guess win pays far less than a 2-guess win.
  */
 export const WAGER_MULTIPLIER_BY_GUESSES: WagerLadder = {
-  1: 4, 2: 4, 3: 2.5, 4: 1.6, 5: 1.1, 6: 0.7,
+  1: 4, 2: 4, 3: 2.5, 4: 1.8, 5: 1.4, 6: 1.15,
 };
 
 /**
- * Each stake band's ladder. Bands 1-3 play hard mode and only profit on a
- * 3-guess solve or better; the multiples shrink so the expected return
- * crosses 1x at that band's skill target.
- *
- * Calibration. Guess shares by skill, from the NYT/WordleBot aggregate for the
- * median (mean 4.06) and sharpened for stronger players; hard mode slides
- * 20/12/8/5% of each bucket one guess later.
- *
- *   player (hard mode)  solve<=3  band1 EV  band2 EV  band3 EV
- *   median (mean 4.06)    25.7%    0.93x     0.67x     0.55x
- *   +1SD   (mean 3.73)    37.5%    1.24x     0.94x     0.77x
- *   +2SD   (mean 3.54)    47.2%    1.44x     1.13x     0.94x
- *   +3SD   (mean 3.38)    57.0%    1.63x     1.30x     1.10x
- *
- * Band 0 is normal mode: the median profits 86.5% of the time.
- * One word can't separate +1SD from +2SD by win rate, since solving in 3 or
- * fewer only rises about 10 points per SD, so the bands differ by payout
- * rather than by who can profit.
+ * Each stake band's ladder. Easy barely pays, and every band above pays a
+ * bigger gain on the same rungs, so a 10k win on Easy is small and a 1M win
+ * on Expert is large. Every rung is above 1x: a solved word never costs Gold,
+ * and the risk in a wager is missing all six guesses. Medium and up play hard
+ * mode.
  */
-export const WORD_STACK_LADDER_BY_PRESSURE: Readonly<Record<StakePressure, WagerLadder>> = {
-  0: WAGER_MULTIPLIER_BY_GUESSES,
-  1: { 1: 3, 2: 3, 3: 2.2, 4: 0.8, 5: 0.3, 6: 0 },
-  2: { 1: 2.4, 2: 2.4, 3: 1.9, 4: 0.5, 5: 0, 6: 0 },
-  3: { 1: 2, 2: 2, 3: 1.7, 4: 0.3, 5: 0, 6: 0 },
-};
+export const WORD_STACK_LADDER_BY_PRESSURE: Readonly<Record<StakePressure, WagerLadder>> = Object.fromEntries(
+  STAKE_PRESSURES.map((pressure) => [pressure, scaleLadder(WAGER_MULTIPLIER_BY_GUESSES, pressure)]),
+) as Record<StakePressure, WagerLadder>;
 
 /** What a wager's stake band sets for its round. Copied onto the round at open. */
 export interface WordStackStakeRules {
@@ -84,14 +66,20 @@ export function wordStackStakeRules(wager: number): WordStackStakeRules {
 
 /** Lobby lines for each stake band; see components/arcade/stake-pressure-note.tsx. */
 const HARD_MODE_LINE = "Hard mode: green letters stay put and gold letters must be used in every later guess.";
+function payLine(pressure: StakePressure): string {
+  const ladder = WORD_STACK_LADDER_BY_PRESSURE[pressure];
+  return `Any win pays back more than you staked. 1-2 guesses pay ${ladder[1]}x, 3 pays ${ladder[3]}x, 6 pays ${ladder[6]}x.`;
+}
+
 export const WORD_STACK_PRESSURE_RULES = {
-  1: [HARD_MODE_LINE, "Profit needs 3 guesses or fewer: 1-2 pay 3x, 3 pays 2.2x, 4 pays back 0.8x, 5 pays 0.3x."],
-  2: [HARD_MODE_LINE, "Profit needs 3 guesses or fewer: 1-2 pay 2.4x, 3 pays 1.9x, 4 pays back 0.5x."],
-  3: [HARD_MODE_LINE, "Profit needs 3 guesses or fewer: 1-2 pay 2x, 3 pays 1.7x, 4 pays back 0.3x."],
+  1: [HARD_MODE_LINE, payLine(1)],
+  2: [HARD_MODE_LINE, payLine(2)],
+  3: [HARD_MODE_LINE, payLine(3)],
+  4: [HARD_MODE_LINE, payLine(4)],
 } as const;
 
-/** The lowest rung, and so the payout for a guess count the ladder does not name. */
-export const WORD_STACK_LADDER_FLOOR = 0.7;
+/** The payout for a guess count the ladder does not name: the least any win pays. */
+export const WORD_STACK_LADDER_FLOOR = MIN_WIN_MULTIPLIER;
 
 /** Always-pays multiplier for the shared daily board's completion bonus. A loss still floors at 1.0x. */
 const DAILY_BONUS_MULTIPLIER_BY_GUESSES: Readonly<Record<number, number>> = {

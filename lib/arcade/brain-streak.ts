@@ -27,7 +27,7 @@
  */
 
 import type { RandomInt } from "@/lib/game/deck";
-import { stakePressure, type StakePressure } from "@/lib/arcade/stake-pressure";
+import { scaleForBand, stakePressure, type StakePressure } from "@/lib/arcade/stake-pressure";
 
 export const MIN_ANTE_UP_WAGER = 500;
 
@@ -124,12 +124,16 @@ export function brainStreakMaxMisses(
   return rules.maxMissesByPressure?.[pressure] ?? rules.maxMisses ?? null;
 }
 
-/** The payout ladder a run opened at `pressure` gets. */
+/**
+ * The payout ladder a run opened at `pressure` gets: the band's scores (its own
+ * where it has them) paying that band's scale of the usual multiples.
+ */
 export function brainStreakLadder(
   rules: Pick<BrainStreakConfig, "ladder" | "ladderByPressure">,
   pressure: StakePressure,
 ): readonly StreakRung[] {
-  return rules.ladderByPressure?.[pressure] ?? rules.ladder;
+  const base = rules.ladderByPressure?.[pressure] ?? rules.ladder;
+  return base.map((rung) => ({ ...rung, multiplier: scaleForBand(rung.multiplier, pressure) }));
 }
 
 function finishedStatus(ladder: readonly StreakRung[], score: number): BrainStreakStatus {
@@ -297,7 +301,9 @@ export const SEQUENCE_RECALL_BANDS: Record<StakePressure, SequenceRecallBand> = 
   0: { pads: 4, startLength: 2, flashMs: 400, gapMs: 160 },
   1: { pads: 4, startLength: 3, flashMs: 250, gapMs: 100 },
   2: { pads: 6, startLength: 3, flashMs: 200, gapMs: 80 },
-  3: { pads: 6, startLength: 4, flashMs: 175, gapMs: 70 },
+  // Elite sits between Hard and Expert, by judgement rather than the model above.
+  3: { pads: 6, startLength: 3, flashMs: 185, gapMs: 74 },
+  4: { pads: 6, startLength: 4, flashMs: 175, gapMs: 70 },
 };
 
 /**
@@ -312,7 +318,7 @@ export const BRAIN_STREAK_RULES: Record<BrainStreakGame, Omit<BrainStreakConfig,
       { min: 9, multiplier: 3 },
       { min: 7, multiplier: 2 },
       { min: 5, multiplier: 1.3 },
-      { min: 3, multiplier: 0.8 },
+      { min: 3, multiplier: 1.1 },
     ],
   },
   // Three misses at band 3, so throwing away the two-digit x two-digit problems
@@ -320,12 +326,12 @@ export const BRAIN_STREAK_RULES: Record<BrainStreakGame, Omit<BrainStreakConfig,
   "quick-math": {
     mode: "sprint",
     timeLimitMs: 60_000,
-    maxMissesByPressure: { 3: 3 },
+    maxMissesByPressure: { 4: 3 },
     ladder: [
       { min: 20, multiplier: 3 },
       { min: 15, multiplier: 2 },
       { min: 10, multiplier: 1.3 },
-      { min: 5, multiplier: 0.8 },
+      { min: 5, multiplier: 1.1 },
     ],
   },
   "pattern-predictor": {
@@ -359,26 +365,32 @@ export const BRAIN_STREAK_RULES: Record<BrainStreakGame, Omit<BrainStreakConfig,
       { min: 20, multiplier: 2.5 },
       { min: 15, multiplier: 1.8 },
       { min: 10, multiplier: 1.2 },
-      { min: 7, multiplier: 0.7 },
+      { min: 7, multiplier: 1.1 },
     ],
     ladderByPressure: {
       1: [
         { min: 24, multiplier: 2.5 },
         { min: 19, multiplier: 1.8 },
         { min: 15, multiplier: 1.2 },
-        { min: 11, multiplier: 0.7 },
+        { min: 11, multiplier: 1.1 },
       ],
       2: [
         { min: 28, multiplier: 2.5 },
         { min: 24, multiplier: 1.8 },
         { min: 20, multiplier: 1.2 },
-        { min: 15, multiplier: 0.7 },
+        { min: 15, multiplier: 1.1 },
       ],
       3: [
+        { min: 31, multiplier: 2.5 },
+        { min: 27, multiplier: 1.8 },
+        { min: 24, multiplier: 1.2 },
+        { min: 19, multiplier: 1.1 },
+      ],
+      4: [
         { min: 33, multiplier: 2.5 },
         { min: 30, multiplier: 1.8 },
         { min: 27, multiplier: 1.2 },
-        { min: 22, multiplier: 0.7 },
+        { min: 22, multiplier: 1.1 },
       ],
     },
   },

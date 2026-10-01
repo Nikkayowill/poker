@@ -23,15 +23,15 @@ describe("anteUpWordStackPayout", () => {
   });
 
   // Mirrors WAGER_MULTIPLIER_BY_GUESSES in ante-up-word-stack.ts: 1/2 guesses
-  // -> 4x, 3 -> 2.5x, 4 -> 1.6x, 5 -> 1.1x, 6 -> 0.7x. The last rung is below
-  // 1x on purpose; see that table's own comment.
+  // -> 4x, 3 -> 2.5x, 4 -> 1.8x, 5 -> 1.4x, 6 -> 1.15x. Every rung is above
+  // 1x; see that table's own comment.
   it.each([
     [1, 4],
     [2, 4],
     [3, 2.5],
-    [4, 1.6],
-    [5, 1.1],
-    [6, 0.7],
+    [4, 1.8],
+    [5, 1.4],
+    [6, 1.15],
   ])("pays wager * the tier for a %i-guess win", (guessCount, multiplier) => {
     expect(anteUpWordStackPayout({ wager: 1000, word: round("won", guessCount) })).toBe(Math.round(1000 * multiplier));
   });
@@ -41,11 +41,10 @@ describe("anteUpWordStackPayout", () => {
     expect(anteUpWordStackPayout({ wager: 333, word: round("won", 1) })).toBe(Math.round(333 * 4));
   });
 
-  it("returns less than the wager for a win on the last legal guess", () => {
-    // The rung that used to pay 1.5x. Scraping it on guess 6 is the outcome
-    // closest to losing, so it must cost the player something -- a table where
-    // every win profits is what made the wager risk-free.
-    expect(anteUpWordStackPayout({ wager: 1000, word: round("won", 6) })).toBeLessThan(1000);
+  it("returns more than the wager for a win on the last legal guess, but less than a 2-guess win", () => {
+    const sixth = anteUpWordStackPayout({ wager: 1000, word: round("won", 6) });
+    expect(sixth).toBeGreaterThan(1000);
+    expect(sixth).toBeLessThan(anteUpWordStackPayout({ wager: 1000, word: round("won", 2) }));
   });
 });
 
@@ -71,39 +70,48 @@ describe("wordStackDailyBonusMultiplier", () => {
 describe("wordStackStakeRules", () => {
   it.each([
     [0, false, 0],
-    [9_999, false, 0],
-    [10_000, true, 1],
+    [24_999, false, 0],
+    [25_000, true, 1],
     [100_000, true, 2],
-    [1_000_000, true, 3],
+    [500_000, true, 3],
+    [1_000_000, true, 4],
   ] as const)("a %i wager: hard mode %s, band %i ladder", (wager, hardMode, band) => {
     expect(wordStackStakeRules(wager)).toEqual({ hardMode, ladder: WORD_STACK_LADDER_BY_PRESSURE[band] });
   });
 
-  it("keeps today's ladder for small stakes", () => {
-    expect(WORD_STACK_LADDER_BY_PRESSURE[0]).toBe(WAGER_MULTIPLIER_BY_GUESSES);
+  it("uses the reference table as Medium's ladder", () => {
+    expect(WORD_STACK_LADDER_BY_PRESSURE[1]).toEqual(WAGER_MULTIPLIER_BY_GUESSES);
   });
 
-  it("profits only on a 3-guess solve or better from 10k up, with the top multiple shrinking by band", () => {
-    const tops = ([1, 2, 3] as const).map((band) => {
-      const ladder = WORD_STACK_LADDER_BY_PRESSURE[band];
-      for (const guesses of [1, 2, 3]) expect(ladder[guesses]).toBeGreaterThan(1);
-      for (const guesses of [4, 5, 6]) expect(ladder[guesses]).toBeLessThan(1);
-      expect(ladder[6]).toBe(0);
-      return ladder[1];
-    });
-    expect(tops).toEqual([...tops].sort((a, b) => b - a));
+  it("pays more than the stake on every win in every band, and more in every band up", () => {
+    const bands = ([0, 1, 2, 3, 4] as const).map((band) => WORD_STACK_LADDER_BY_PRESSURE[band]);
+    for (const ladder of bands) {
+      for (const guesses of [1, 2, 3, 4, 5, 6]) expect(ladder[guesses]).toBeGreaterThan(1);
+      expect(ladder[6]).toBeLessThan(ladder[2]);
+    }
+    for (let i = 1; i < bands.length; i++) {
+      for (const guesses of [1, 2, 3, 4, 5, 6]) {
+        expect(bands[i][guesses]).toBeGreaterThanOrEqual(bands[i - 1][guesses]);
+      }
+    }
+  });
+
+  it("barely pays on Easy and pays well on Expert", () => {
+    expect(WORD_STACK_LADDER_BY_PRESSURE[0][1]).toBeLessThanOrEqual(2.5);
+    expect(WORD_STACK_LADDER_BY_PRESSURE[0][6]).toBeLessThan(1.1);
+    expect(WORD_STACK_LADDER_BY_PRESSURE[4][1]).toBeGreaterThanOrEqual(5);
   });
 
   it("pays a 1M round from its stored ladder", () => {
-    const ladder = WORD_STACK_LADDER_BY_PRESSURE[3];
-    expect(anteUpWordStackPayout({ wager: 1_000_000, word: round("won", 3), ladder })).toBe(1_700_000);
-    expect(anteUpWordStackPayout({ wager: 1_000_000, word: round("won", 4), ladder })).toBe(300_000);
-    expect(anteUpWordStackPayout({ wager: 1_000_000, word: round("won", 6), ladder })).toBe(0);
+    const ladder = WORD_STACK_LADDER_BY_PRESSURE[4];
+    expect(anteUpWordStackPayout({ wager: 1_000_000, word: round("won", 3), ladder })).toBe(3_330_000);
+    expect(anteUpWordStackPayout({ wager: 1_000_000, word: round("won", 4), ladder })).toBe(2_240_000);
+    expect(anteUpWordStackPayout({ wager: 1_000_000, word: round("won", 6), ladder })).toBe(1_230_000);
   });
 
-  it("floors an unnamed rung at the stored ladder's lowest value", () => {
-    const ladder = WORD_STACK_LADDER_BY_PRESSURE[3];
-    expect(anteUpWordStackPayout({ wager: 1000, word: round("won", 7), ladder })).toBe(0);
-    expect(anteUpWordStackPayout({ wager: 1000, word: round("won", 7) })).toBe(700);
+  it("floors an unnamed rung at the least any win pays", () => {
+    const ladder = WORD_STACK_LADDER_BY_PRESSURE[4];
+    expect(anteUpWordStackPayout({ wager: 1000, word: round("won", 7), ladder })).toBe(1050);
+    expect(anteUpWordStackPayout({ wager: 1000, word: round("won", 7) })).toBe(1050);
   });
 });

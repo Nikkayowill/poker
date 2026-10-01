@@ -87,7 +87,7 @@ beforeEach(() => {
 describe("stake pressure", () => {
   it("refuses Quick at a big stake without touching the wallet", async () => {
     const { token, id } = await funded(200_000);
-    await expect(openAnteUpWordFillIn(token, "quick", 10_000, NOW)).rejects.toThrow(/Marathon or harder/);
+    await expect(openAnteUpWordFillIn(token, "quick", 25_000, NOW)).rejects.toThrow(/Marathon or harder/);
     await expect(openAnteUpWordFillIn(token, "quick", 150_000, NOW)).rejects.toBeInstanceOf(
       AnteUpWordFillInRequestError,
     );

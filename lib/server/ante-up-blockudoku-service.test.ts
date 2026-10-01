@@ -170,7 +170,7 @@ describe("wagering", () => {
 describe("stake pressure", () => {
   it("refuses a board too easy for the stake without touching the wallet", async () => {
     const { token, id } = await funded(2_000_000);
-    await expect(openAnteUpBlockudoku(token, "casual", 10_000, NOW)).rejects.toThrow(/Standard or harder/);
+    await expect(openAnteUpBlockudoku(token, "casual", 25_000, NOW)).rejects.toThrow(/Standard or harder/);
     await expect(openAnteUpBlockudoku(token, "standard", 100_000, NOW)).rejects.toThrow(/Hardcore or harder/);
     await expect(openAnteUpBlockudoku(token, "standard", 1_000_000, NOW)).rejects.toBeInstanceOf(
       AnteUpBlockudokuRequestError,

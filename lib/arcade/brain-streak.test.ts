@@ -141,8 +141,8 @@ describe("finished statuses fit the ante_up_attempts.status CHECK", () => {
     for (const attempt of [missed, expiredLow, expiredHigh, cashedOut]) expect(allowed.has(attempt.status)).toBe(true);
     expect(expiredLow.status).toBe("lost");
     expect(expiredHigh.status).toBe("won");
-    expect(brainStreakPayout(expiredHigh)).toBe(1300);
-    expect(brainStreakPayout(cashedOut)).toBe(3000);
+    expect(brainStreakPayout(expiredHigh)).toBe(1120);
+    expect(brainStreakPayout(cashedOut)).toBe(1800);
   });
 });
 
@@ -161,17 +161,17 @@ describe("stake pressure on the streak engine", () => {
   it("copies the band onto the run at open and keeps using it", () => {
     const config = BRAIN_STREAK_CONFIGS["sequence-recall"];
     const attempt = startBrainStreakAttempt("sequence-recall", config, 1_000_000, seededRandom(1), now);
-    expect(attempt.pressure).toBe(3);
-    expect((attempt.round.prompt.sequence as number[]).length).toBe(SEQUENCE_RECALL_BANDS[3].startLength);
+    expect(attempt.pressure).toBe(4);
+    expect((attempt.round.prompt.sequence as number[]).length).toBe(SEQUENCE_RECALL_BANDS[4].startLength);
     const next = answerBrainStreakRound(attempt, config, attempt.round.answer, seededRandom(2), now).attempt;
-    expect((next.round.prompt.sequence as number[]).length).toBe(SEQUENCE_RECALL_BANDS[3].startLength + 1);
+    expect((next.round.prompt.sequence as number[]).length).toBe(SEQUENCE_RECALL_BANDS[4].startLength + 1);
     expect(next.round.prompt.colors).toBe(6);
-    expect(toBrainStreakSnapshot(next, { id: "x", version: 2 }, now).pressure).toBe(3);
+    expect(toBrainStreakSnapshot(next, { id: "x", version: 2 }, now).pressure).toBe(4);
   });
 
   it("free play and small wagers play band 0", () => {
     const config = BRAIN_STREAK_CONFIGS["sequence-recall"];
-    for (const wager of [0, 500, 9_999]) {
+    for (const wager of [0, 500, 24_999]) {
       const attempt = startBrainStreakAttempt("sequence-recall", config, wager, seededRandom(3), now);
       expect(attempt.pressure).toBe(0);
       expect(attempt.round.prompt).toMatchObject({ colors: 4, flashMs: 400, gapMs: 160 });
@@ -179,10 +179,10 @@ describe("stake pressure on the streak engine", () => {
     }
   });
 
-  it("flash timing follows the 400/250/200/175ms steps and never slows down", () => {
-    const flashes = ([0, 1, 2, 3] as const).map((p) => SEQUENCE_RECALL_BANDS[p].flashMs);
-    expect(flashes).toEqual([400, 250, 200, 175]);
-    for (const p of [0, 1, 2, 3] as const) {
+  it("flash timing follows the 400/250/200/185/175ms steps and never slows down", () => {
+    const flashes = ([0, 1, 2, 3, 4] as const).map((p) => SEQUENCE_RECALL_BANDS[p].flashMs);
+    expect(flashes).toEqual([400, 250, 200, 185, 175]);
+    for (const p of [0, 1, 2, 3, 4] as const) {
       expect(SEQUENCE_RECALL_BANDS[p].gapMs).toBe(SEQUENCE_RECALL_BANDS[p].flashMs * 0.4);
     }
   });
@@ -198,21 +198,21 @@ describe("stake pressure on the streak engine", () => {
     expect(toBrainStreakSnapshot(old, { id: "x", version: 1 }, now).pressure).toBe(0);
   });
 
-  it("trivia raises the bar for a profit per band, copied onto the run", () => {
+  it("trivia raises the bar for its third rung per band, copied onto the run", () => {
     const config = BRAIN_STREAK_CONFIGS["trivia-blitz"];
-    const bars = [1000, 10_000, 100_000, 5_000_000].map((wager) => {
+    const bars = [1000, 25_000, 100_000, 500_000, 5_000_000].map((wager) => {
       const attempt = startBrainStreakAttempt("trivia-blitz", config, wager, seededRandom(1), now);
       expect(attempt.maxMisses).toBe(3);
-      return [...attempt.ladder].reverse().find((rung) => rung.multiplier > 1)!.min;
+      return attempt.ladder[2].min;
     });
-    expect(bars).toEqual([10, 15, 20, 27]);
+    expect(bars).toEqual([10, 15, 20, 24, 27]);
     for (let i = 1; i < bars.length; i++) {
-      expect(bars[i] / bars[i - 1]).toBeGreaterThanOrEqual(1.2);
+      expect(bars[i] / bars[i - 1]).toBeGreaterThanOrEqual(1.1);
       expect(bars[i] / bars[i - 1]).toBeLessThanOrEqual(1.5);
     }
     const run = startBrainStreakAttempt("trivia-blitz", config, 100_000, seededRandom(1), now);
-    expect(streakMultiplierForScore(run.ladder, 19)).toBeLessThan(1);
-    expect(streakMultiplierForScore(run.ladder, 20)).toBeGreaterThan(1);
+    expect(streakMultiplierForScore(run.ladder, 19)).toBeLessThan(1.2);
+    expect(streakMultiplierForScore(run.ladder, 20)).toBeGreaterThanOrEqual(1.2);
   });
 
   it("quick math allows three misses only at the top band", () => {
@@ -233,7 +233,7 @@ describe("stake pressure on the streak engine", () => {
 
 describe("quick math by stake band", () => {
   const config = BRAIN_STREAK_CONFIGS["quick-math"];
-  const deal = (pressure: 0 | 1 | 2 | 3, score: number, count = 400) => {
+  const deal = (pressure: 0 | 1 | 2 | 3 | 4, score: number, count = 400) => {
     const random = seededRandom(pressure * 100 + score + 1);
     return Array.from({ length: count }, () => config.nextRound(score, random, pressure));
   };
@@ -247,7 +247,7 @@ describe("quick math by stake band", () => {
   });
 
   it("every band's answer is a whole, non-negative number that fits the keypad", () => {
-    for (const pressure of [0, 1, 2, 3] as const) {
+    for (const pressure of [0, 1, 2, 3, 4] as const) {
       for (const score of [0, 10, 25]) {
         for (const round of deal(pressure, score)) {
           const value = Number(round.answer);
@@ -260,17 +260,17 @@ describe("quick math by stake band", () => {
   });
 
   it("bigger stakes deal bigger numbers and harder operations", () => {
-    const ops = (pressure: 0 | 1 | 2 | 3) => new Set(deal(pressure, 0).map((round) => round.prompt.op));
+    const ops = (pressure: 0 | 1 | 2 | 3 | 4) => new Set(deal(pressure, 0).map((round) => round.prompt.op));
     expect(ops(0)).toEqual(new Set(["+", "-", "×"]));
     expect(ops(1)).toEqual(new Set(["+", "-", "×", "÷"]));
-    expect(ops(3).has("+")).toBe(false);
-    const mean = (pressure: 0 | 1 | 2 | 3) => {
+    expect(ops(4).has("+")).toBe(false);
+    const mean = (pressure: 0 | 1 | 2 | 3 | 4) => {
       const rounds = deal(pressure, 0);
       return rounds.reduce((sum, round) => sum + (round.prompt.a as number), 0) / rounds.length;
     };
     expect(mean(1)).toBeGreaterThan(mean(0));
     expect(mean(2)).toBeGreaterThan(mean(1));
-    const twoByTwo = deal(3, 0).filter((round) => round.prompt.op === "×" && (round.prompt.b as number) >= 11);
+    const twoByTwo = deal(4, 0).filter((round) => round.prompt.op === "×" && (round.prompt.b as number) >= 11);
     expect(twoByTwo.length).toBeGreaterThan(0);
   });
 });
@@ -279,7 +279,7 @@ describe("pattern predictor", () => {
   const config = BRAIN_STREAK_CONFIGS["pattern-predictor"];
 
   it("always offers four distinct options with exactly one right answer", () => {
-    for (const pressure of [0, 1, 2, 3] as const) {
+    for (const pressure of [0, 1, 2, 3, 4] as const) {
       const random = seededRandom(pressure + 7);
       for (let score = 0; score < 25; score++) {
         for (let i = 0; i < 40; i++) {
@@ -321,7 +321,7 @@ describe("pattern predictor", () => {
   });
 
   it("ramps up: later rounds and bigger stakes deal longer, bigger patterns", () => {
-    const size = (pressure: 0 | 1 | 2 | 3, score: number) => {
+    const size = (pressure: 0 | 1 | 2 | 3 | 4, score: number) => {
       const random = seededRandom(score * 10 + pressure);
       let total = 0;
       for (let i = 0; i < 200; i++) {

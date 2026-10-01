@@ -264,12 +264,11 @@ export function AnteUpMemory() {
           <p>
             Clear all eight pairs within {memoryStakeRules(0).maxTurns} turns to win and cash out;
             run past that cap, or give up early, and the wager is gone. Speed is what pays: a
-            fast clear multiplies the wager, a slow one can pay back less than you staked, so
-            clearing the board isn&apos;t by itself a profit.
+            fast clear multiplies the wager, and even a slow one pays back more than you staked.
           </p>
           <p>
-            Bigger wagers deal bigger boards: 10 pairs from 10,000 Gold, 12 from 100,000 and 15
-            from 1,000,000, each with more turns to match. On the 15-pair board aces and kings
+            Bigger wagers deal bigger boards: 10 pairs from 25,000 Gold, 12 from 100,000 and 15
+            from 500,000, each with more turns to match. On the 15-pair board aces and kings
             come as a black pair and a red pair, so the colour has to match as well as the rank.
           </p>
         </HowToPlayModal>
@@ -308,7 +307,7 @@ export function AnteUpMemory() {
                 ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
                 : wager > ceiling
                   ? `Memory Match caps at ${ceiling.toLocaleString()} Gold a wager.`
-                  : `Clear the board inside ${lobbyRules.maxTurns} turns. Speed is what pays: a fast clear multiplies the wager, a slow one returns less than you staked, and running past the cap loses it outright.`}
+                  : `Clear the board inside ${lobbyRules.maxTurns} turns. Speed is what pays: a fast clear multiplies the wager, even a slow one pays back more than you staked, and running past the cap loses it outright.`}
           </p>
           <StakePressureNote wager={wager} rules={MEMORY_PRESSURE_RULES} />
 

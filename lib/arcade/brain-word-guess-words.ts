@@ -29,6 +29,7 @@ export const WORD_GUESS_POOLS: Record<StakePressure, readonly string[]> = {
   1: poolFor(1),
   2: poolFor(2),
   3: poolFor(3),
+  4: poolFor(4),
 };
 
 function poolFor(pressure: StakePressure): readonly string[] {

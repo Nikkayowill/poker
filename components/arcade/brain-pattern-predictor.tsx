@@ -43,7 +43,8 @@ function Controls() {
 const PRESSURE_RULES = {
   1: ["Starts 6 rounds in: Fibonacci-style sums, interleaved sequences, multiply-then-add."],
   2: ["Starts 10 rounds in, with the hardest rules: mixed operations, cubes, doubling gaps."],
-  3: ["Starts 14 rounds in: the hardest rules with bigger numbers."],
+  3: ["Starts 12 rounds in: the hardest rules with bigger numbers."],
+  4: ["Starts 14 rounds in: the hardest rules with bigger numbers still."],
 } as const;
 
 export function BrainPatternPredictor() {

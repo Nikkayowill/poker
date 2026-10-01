@@ -222,12 +222,12 @@ function difficultyForStake(current: NonogramDifficulty, wager: number): Nonogra
   return isNonogramDifficulty(lowest) ? lowest : current;
 }
 
-/** "10k" for a board a stake of 10k or more can't be played on. Null if no stake locks it. */
+/** "25k" for a board a stake of 25k or more can't be played on. Null if no stake locks it. */
 function stakeLockedFrom(difficulty: NonogramDifficulty): string | null {
   const ladder = ANTE_UP_TIER_LADDERS.nonogram;
   if (!ladder) return null;
   const index = ladder.tiers.indexOf(difficulty);
-  const band = ([1, 2, 3] as const).find((pressure) => ladder.minTierByPressure[pressure] > index);
+  const band = ([1, 2, 3, 4] as const).find((pressure) => ladder.minTierByPressure[pressure] > index);
   return band ? stakePressureThreshold(band).replace("+", "") : null;
 }
 
@@ -830,8 +830,8 @@ export function AnteUpNonogram() {
             The clock starts on your first square. Fill every square in the picture before it
             runs out and you win; run out of time, spend the budget, or resign, and the wager
             is gone. Bigger boards run a longer clock, allow more mistakes and pay more on a
-            win. Bigger stakes need bigger boards: 10k and up plays Medium or bigger, 100k Hard
-            or bigger, and 1M Expert or Master. From 10k the clocks are tighter, and from 100k
+            win. Bigger stakes need bigger boards: 25k and up plays Medium or bigger, 100k Hard
+            or bigger, and 1M Expert or Master. From 25k the clocks are tighter, and from 100k
             finished lines are not crossed for you.
           </p>
         </HowToPlayModal>

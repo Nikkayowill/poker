@@ -373,12 +373,11 @@ export function WordStackBoard({ day, onExit }: { day?: string; onExit?: () => v
           <p>
             It&apos;s one shared word a day for everyone, so there&apos;s exactly one wagered
             attempt allowed — choose your wager, or play free, before it opens. Fewer guesses
-            pays more; scraping the answer on your last guess pays back less than you staked, and
-            missing all six loses the wager outright. Whatever you wager, the payout it can earn
-            is locked in the moment the round opens.
+            pays more, and any win pays back more than you staked. Missing all six loses the
+            wager outright. Whatever you wager, the payout it can earn is locked in the moment the round opens.
           </p>
           <p>
-            Wagers of 10,000 Gold or more play hard mode: a green letter has to stay in its spot
+            Wagers of 25,000 Gold or more play hard mode: a green letter has to stay in its spot
             and a gold letter has to be used in every later guess. A guess that skips a hint is
             turned away without costing you a try.
           </p>
@@ -422,7 +421,7 @@ export function WordStackBoard({ day, onExit }: { day?: string; onExit?: () => v
                 ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
                 : overCeiling
                   ? `Word Stack caps at ${ceiling.toLocaleString()} Gold a wager.`
-                  : "Fewer guesses, bigger payout. Scraping it on the last guess pays back less than you staked, and missing all six loses the wager outright."}
+                  : "Fewer guesses, bigger payout. Any win pays back more than you staked, and missing all six loses the wager outright."}
           </p>
           <StakePressureNote wager={wager} rules={WORD_STACK_PRESSURE_RULES} />
           <button

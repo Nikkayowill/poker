@@ -166,7 +166,7 @@ describe("settlement", () => {
     const result = await clearActiveAttempt(token, id);
     expect(result.status).toBe("won");
     expect(result.turns).toBe(8); // MEMORY_PAIRS -- pairing every rank on sight is the fastest possible clear
-    expect(result.payout).toBe(2000); // wager * the small-stake top multiplier
+    expect(result.payout).toBe(1800); // wager * the Easy band's top multiplier
 
     // At least the payout -- a win can also complete a daily mission and
     // credit its own (much smaller) reward alongside it. A win crediting less
@@ -244,7 +244,7 @@ describe("stake bands", () => {
     const result = await clearActiveAttempt(token, id);
     expect(result.status).toBe("won");
     expect(result.turns).toBe(15);
-    expect(result.payout).toBe(3_500_000);
+    expect(result.payout).toBe(4_100_000);
   });
 
   it("keeps the free board at 8 pairs", async () => {

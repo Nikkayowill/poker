@@ -131,7 +131,7 @@ describe("stake pressure", () => {
   it("refuses a grid too easy for the stake, with the reason, and leaves the wallet alone", async () => {
     const { token } = await funded(5_000_000);
     const cases = [
-      ["easy", 10_000, "Medium"],
+      ["easy", 25_000, "Medium"],
       ["medium", 100_000, "Hard"],
       ["hard", 1_000_000, "Expert"],
     ] as const;
@@ -145,7 +145,7 @@ describe("stake pressure", () => {
 
   it("opens the lowest grid each band allows", async () => {
     const cases = [
-      ["medium", 10_000],
+      ["medium", 25_000],
       ["hard", 100_000],
       ["expert", 1_000_000],
     ] as const;

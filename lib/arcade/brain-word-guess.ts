@@ -13,7 +13,7 @@
  * several in a row is not.
  */
 
-import { stakePressure, type StakePressure } from "@/lib/arcade/stake-pressure";
+import { scaleForBand, stakePressure, type StakePressure } from "@/lib/arcade/stake-pressure";
 
 export const MIN_ANTE_UP_WAGER = 500;
 
@@ -48,12 +48,20 @@ export interface WordGuessBand {
   ladder: readonly WordGuessRung[];
 }
 
-const rungs = (three: number, two: number, gain: number, floor: number): WordGuessRung[] => [
-  { maxMisses: three, multiplier: 3 },
-  { maxMisses: two, multiplier: 2 },
-  { maxMisses: gain, multiplier: 1.3 },
-  { maxMisses: floor, multiplier: 0.8 },
-];
+/**
+ * A ladder from its four miss counts. With a `pressure` the multiples are that
+ * band's scale of the usual 3x, 2x, 1.3x and 1.1x; without one they are the
+ * usual multiples, which is what runs stored before bands pay on.
+ */
+const rungs = (three: number, two: number, gain: number, floor: number, pressure?: StakePressure): WordGuessRung[] => {
+  const pay = (multiplier: number) => (pressure === undefined ? multiplier : scaleForBand(multiplier, pressure));
+  return [
+    { maxMisses: three, multiplier: pay(3) },
+    { maxMisses: two, multiplier: pay(2) },
+    { maxMisses: gain, multiplier: pay(1.3) },
+    { maxMisses: floor, multiplier: pay(1.1) },
+  ];
+};
 
 /**
  * Calibration, share of runs that finish on a rung above 1x (misses shared across the run).
@@ -68,13 +76,16 @@ const rungs = (three: number, two: number, gain: number, floor: number): WordGue
  *   3: 4 words        0%     2%   21%   60%
  */
 export const WORD_GUESS_BANDS: Record<StakePressure, WordGuessBand> = {
-  0: { words: 1, minDifficulty: null, ladder: rungs(1, 3, 4, 5) },
-  1: { words: 2, minDifficulty: -1, ladder: rungs(2, 5, 7, 9) },
-  2: { words: 3, minDifficulty: 0, ladder: rungs(3, 6, 8, 10) },
-  3: { words: 4, minDifficulty: 0, ladder: rungs(3, 5, 7, 9) },
+  0: { words: 1, minDifficulty: null, ladder: rungs(1, 3, 4, 5, 0) },
+  1: { words: 2, minDifficulty: -1, ladder: rungs(2, 5, 7, 9, 1) },
+  2: { words: 3, minDifficulty: 0, ladder: rungs(3, 6, 8, 10, 2) },
+  // Elite deals Hard's three words on Expert's tighter miss counts. Set by
+  // judgement, not the model above.
+  3: { words: 3, minDifficulty: 0, ladder: rungs(3, 5, 7, 9, 3) },
+  4: { words: 4, minDifficulty: 0, ladder: rungs(3, 5, 7, 9, 4) },
 };
 
-const LEGACY_LADDER = WORD_GUESS_BANDS[0].ladder;
+const LEGACY_LADDER = rungs(1, 3, 4, 5);
 
 /** The miss count that ends a run: one past its last rung. */
 export function wordGuessMissCap(ladder: readonly WordGuessRung[]): number {

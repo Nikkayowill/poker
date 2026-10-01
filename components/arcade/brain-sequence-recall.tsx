@@ -150,12 +150,12 @@ function Controls() {
   );
 }
 
-function pressureLine(pressure: 1 | 2 | 3): string {
+function pressureLine(pressure: 1 | 2 | 3 | 4): string {
   const band = SEQUENCE_RECALL_BANDS[pressure];
   return `${band.pads} pads, ${band.flashMs}ms flashes, and sequences start at ${band.startLength}.`;
 }
 
-const PRESSURE_RULES = { 1: [pressureLine(1)], 2: [pressureLine(2)], 3: [pressureLine(3)] };
+const PRESSURE_RULES = { 1: [pressureLine(1)], 2: [pressureLine(2)], 3: [pressureLine(3)], 4: [pressureLine(4)] };
 
 export function BrainSequenceRecall() {
   return (

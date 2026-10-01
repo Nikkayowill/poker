@@ -117,7 +117,7 @@ const STAKE_RULES = {
   ],
 };
 
-/** "Under 10k" style limit for a tier a big stake locks out, or null if no stake does. */
+/** "Under 25k" style limit for a tier a big stake locks out, or null if no stake does. */
 function stakeLimitLabel(id: BlockudokuDifficulty): string | null {
   const index = LADDER.tiers.indexOf(id);
   const band = LADDER.minTierByPressure.findIndex((min) => min > index);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ladderMultiplier, type WagerLadder } from "./ante-up-ladder";
+import { MIN_WIN_MULTIPLIER } from "./stake-pressure";
 import {
   WAGER_MULTIPLIER_BY_GUESSES,
   WORD_STACK_LADDER_FLOOR,
@@ -56,9 +57,9 @@ describe("ladderMultiplier", () => {
 
 describe("anteUpWordStackPayout", () => {
   it("pays a pre-retune round at the rate it was opened under", () => {
-    // 6-guess win: 1.5x then, 0.7x now. Profit or loss on the same board.
+    // 6-guess win: 1.5x then, 1.15x now.
     expect(anteUpWordStackPayout({ wager: 1000, word: word("won", 6), ladder: OLD_WORD_STACK })).toBe(1500);
-    expect(anteUpWordStackPayout({ wager: 1000, word: word("won", 6) })).toBe(700);
+    expect(anteUpWordStackPayout({ wager: 1000, word: word("won", 6) })).toBe(1150);
   });
 
   it("pays a round with no stored ladder at today's rate", () => {
@@ -70,18 +71,18 @@ describe("anteUpWordStackPayout", () => {
     expect(anteUpWordStackPayout({ wager: 1000, word: word("lost", 6), ladder: OLD_WORD_STACK })).toBe(0);
   });
 
-  it("names its floor as the lowest rung it has", () => {
+  it("names its floor as the least any win pays", () => {
     // The floor must never be the cheap way to a big payout.
-    const rungs = Object.values(WAGER_MULTIPLIER_BY_GUESSES);
-    expect(WORD_STACK_LADDER_FLOOR).toBe(Math.min(...rungs));
+    expect(WORD_STACK_LADDER_FLOOR).toBe(MIN_WIN_MULTIPLIER);
+    for (const rung of Object.values(WAGER_MULTIPLIER_BY_GUESSES)) expect(WORD_STACK_LADDER_FLOOR).toBeLessThanOrEqual(rung);
   });
 });
 
 describe("anteUpConnectionsPayout", () => {
   it("pays a pre-retune round at the rate it was opened under", () => {
-    // 3-mistake win: 1.5x then, 0.6x now.
+    // 3-mistake win: 1.5x then, 1.15x now.
     expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 3), ladder: OLD_CONNECTIONS })).toBe(1500);
-    expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 3) })).toBe(600);
+    expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 3) })).toBe(1150);
   });
 
   it("pays a round with no stored ladder at today's rate", () => {
@@ -89,8 +90,8 @@ describe("anteUpConnectionsPayout", () => {
     expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 0) })).toBe(Math.round(1000 * live));
   });
 
-  it("names its floor as the lowest rung it has", () => {
-    const rungs = Object.values(WAGER_MULTIPLIER_BY_MISTAKES);
-    expect(CONNECTIONS_LADDER_FLOOR).toBe(Math.min(...rungs));
+  it("names its floor as the least any win pays", () => {
+    expect(CONNECTIONS_LADDER_FLOOR).toBe(MIN_WIN_MULTIPLIER);
+    for (const rung of Object.values(WAGER_MULTIPLIER_BY_MISTAKES)) expect(CONNECTIONS_LADDER_FLOOR).toBeLessThanOrEqual(rung);
   });
 });

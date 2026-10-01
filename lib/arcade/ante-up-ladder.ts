@@ -21,6 +21,8 @@
  * object keys are strings anyway, and a numeric index reads through unchanged.
  */
 
+import { scaleForBand, type StakePressure } from "./stake-pressure";
+
 /** Rung key (guesses taken, mistakes made) to the multiple of the wager it pays. */
 export type WagerLadder = Readonly<Record<number, number>>;
 
@@ -43,4 +45,11 @@ export function ladderMultiplier(
   floor: number,
 ): number {
   return (stored ?? live)[rung] ?? floor;
+}
+
+/** A Medium-reference ladder as one stake band pays it; see scaleForBand. */
+export function scaleLadder(ladder: WagerLadder, pressure: StakePressure): WagerLadder {
+  return Object.fromEntries(
+    Object.entries(ladder).map(([rung, multiplier]) => [rung, scaleForBand(multiplier, pressure)]),
+  );
 }

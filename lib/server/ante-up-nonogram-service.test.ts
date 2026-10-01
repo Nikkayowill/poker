@@ -132,7 +132,7 @@ describe("opening an attempt", () => {
   it("refuses a board too small for the stake, with the reason, and leaves the wallet alone", async () => {
     const { token } = await funded(5_000_000);
     const cases = [
-      ["easy", 10_000, "Medium"],
+      ["easy", 25_000, "Medium"],
       ["medium", 100_000, "Hard"],
       ["hard", 1_000_000, "Expert"],
     ] as const;
@@ -146,7 +146,7 @@ describe("opening an attempt", () => {
 
   it("opens the smallest board each stake band allows", async () => {
     const cases = [
-      ["medium", 10_000],
+      ["medium", 25_000],
       ["hard", 100_000],
       ["expert", 1_000_000],
       ["master", 1_000_000],

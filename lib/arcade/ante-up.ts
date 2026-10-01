@@ -42,9 +42,9 @@ import { stakePressure } from "./stake-pressure";
 export const MIN_ANTE_UP_WAGER = 500;
 
 export interface AnteUpTier {
-  /** How long the clock runs for free play and stakes under 10k. */
+  /** How long the clock runs for free play and stakes under 25k. */
   timeLimitMs: number;
-  /** How long it runs from 10k up, where each band is set for a stronger player. */
+  /** How long it runs from 25k up, where each band is set for a stronger player. */
   rankedTimeLimitMs: number;
   /** What a win pays: wager * multiplier. */
   multiplier: number;
@@ -76,8 +76,8 @@ export interface AnteUpTier {
  * Win rate on the easiest grid each stake band allows, by player:
  *
  *   band (floor grid, clock)   median   +1SD   +2SD   +3SD
- *   <10k   (easy, 8 min)         91%     98%     99%    100%
- *   10k+   (medium, 7 min)       19%     68%     96%    99%
+ *   <25k   (easy, 8 min)         91%     98%     99%    100%
+ *   25k+   (medium, 7 min)       19%     68%     96%    99%
  *   100k+  (hard, 8 min)          1%     16%     64%    95%
  *   1M+    (expert, 10 min)       0%      1%     16%    64%
  *

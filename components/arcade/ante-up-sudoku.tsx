@@ -83,12 +83,12 @@ function difficultyForStake(current: SudokuDifficulty, wager: number): SudokuDif
   return isSudokuDifficulty(lowest) ? lowest : current;
 }
 
-/** "10k" for a grid a stake of 10k or more can't be played on. Null if no stake locks it. */
+/** "25k" for a grid a stake of 25k or more can't be played on. Null if no stake locks it. */
 function stakeLockedFrom(difficulty: SudokuDifficulty): string | null {
   const ladder = ANTE_UP_TIER_LADDERS.sudoku;
   if (!ladder) return null;
   const index = ladder.tiers.indexOf(difficulty);
-  const band = ([1, 2, 3] as const).find((pressure) => ladder.minTierByPressure[pressure] > index);
+  const band = ([1, 2, 3, 4] as const).find((pressure) => ladder.minTierByPressure[pressure] > index);
   return band ? stakePressureThreshold(band).replace("+", "") : null;
 }
 
@@ -517,8 +517,7 @@ export function AnteUpSudoku() {
   const insufficientGold = wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance < wager;
   const tier = ANTE_UP_TIERS[difficulty];
   const stakeProblem = anteUpStakeProblem("sudoku", difficulty, wager);
-  // What the attempt did to the balance, not what it credited: the slow
-  // rungs can pay back less than was staked. See lib/arcade/ante-up-result.ts.
+  // What the attempt did to the balance, not what it credited. See lib/arcade/ante-up-result.ts.
   const result = anteUpResultLine(attempt?.wager ?? 0, attempt?.payout ?? 0);
   // Clamped at the tier's own time limit: expiresAt is the server's deadline
   // and `now` is the browser's clock, so a slow response would otherwise put
@@ -561,8 +560,8 @@ export function AnteUpSudoku() {
             Pick a difficulty, then wager Gold or play free. Beat the grid before its clock runs
             out and you win; let the clock expire or give up and the wager is gone. A wrong digit
             costs a mistake, and the third mistake ends the grid. Harder difficulties run a longer clock
-            and pay more on a win. Bigger stakes need harder grids: 10k and up plays Medium or
-            harder, 100k Hard or harder, and 1M Expert only, and from 10k some clocks are
+            and pay more on a win. Bigger stakes need harder grids: 25k and up plays Medium or
+            harder, 100k Hard or harder, and 1M Expert only, and from 25k some clocks are
             tighter. Your wager, clock and payout are locked in the moment you ante up.
           </p>
         </HowToPlayModal>

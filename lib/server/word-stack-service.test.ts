@@ -14,7 +14,6 @@ import {
 import { adjustGold, ensureProfile } from "./profile-store";
 import { advancePuzzleRound, createPuzzleRound, getPuzzleRound } from "./daily-puzzle-store";
 import {
-  WAGER_MULTIPLIER_BY_GUESSES,
   WORD_STACK_LADDER_BY_PRESSURE,
 } from "@/lib/arcade/ante-up-word-stack";
 import type { StoredWordStackRound } from "./word-stack-service";
@@ -417,7 +416,7 @@ describe("the wager ladder travels with the round", () => {
     await startWordStackPuzzle(token, 1000);
 
     const stored = await getPuzzleRound<StoredWordStackRound>(id, WORD_STACK_GAME, today());
-    expect(stored?.round.wagerLadder).toEqual(WAGER_MULTIPLIER_BY_GUESSES);
+    expect(stored?.round.wagerLadder).toEqual(WORD_STACK_LADDER_BY_PRESSURE[0]);
   });
 
   it("leaves a free round without one, since it has no payout to protect", async () => {
@@ -438,7 +437,7 @@ describe("the wager ladder travels with the round", () => {
 
     const stored = await getPuzzleRound<StoredWordStackRound>(id, WORD_STACK_GAME, today());
     expect(stored?.round.guesses).toHaveLength(2);
-    expect(stored?.round.wagerLadder).toEqual(WAGER_MULTIPLIER_BY_GUESSES);
+    expect(stored?.round.wagerLadder).toEqual(WORD_STACK_LADDER_BY_PRESSURE[0]);
   });
 
   it("pays a mid-flight round from its own ladder after a retune", async () => {
@@ -528,15 +527,15 @@ describe("a big stake plays hard mode", () => {
     return word;
   }
 
-  it("keeps normal rules under 10k", async () => {
+  it("keeps normal rules under 25k", async () => {
     const { token } = await fundedPlayer(50_000);
-    const view = await startWordStackPuzzle(token, 9_999);
+    const view = await startWordStackPuzzle(token, 24_999);
     expect(view.round?.hardMode).toBe(false);
   });
 
-  it("opens hard mode at 10k and refuses a guess that drops a green, without spending it", async () => {
+  it("opens hard mode at 25k and refuses a guess that drops a green, without spending it", async () => {
     const { token, id } = await fundedPlayer(50_000);
-    const view = await startWordStackPuzzle(token, 10_000);
+    const view = await startWordStackPuzzle(token, 25_000);
     expect(view.round?.hardMode).toBe(true);
 
     const answer = todaysAnswer();
@@ -555,12 +554,12 @@ describe("a big stake plays hard mode", () => {
     expect(stored?.round.wagerLadder).toEqual(WORD_STACK_LADDER_BY_PRESSURE[1]);
   });
 
-  it("stamps the top-stake ladder at 1M, where a 6th-guess win pays nothing", async () => {
+  it("stamps the top-stake ladder at 1M, where even a 6th-guess win pays back more than the stake", async () => {
     const { token, id } = await fundedPlayer(2_000_000);
     await startWordStackPuzzle(token, 1_000_000);
     const stored = await getPuzzleRound<StoredWordStackRound>(id, WORD_STACK_GAME, today());
     expect(stored?.round.hardMode).toBe(true);
-    expect(stored?.round.wagerLadder).toEqual(WORD_STACK_LADDER_BY_PRESSURE[3]);
+    expect(stored?.round.wagerLadder).toEqual(WORD_STACK_LADDER_BY_PRESSURE[4]);
   });
 
   it("loads a big-stake round stored before hard mode existed with the old rules", async () => {

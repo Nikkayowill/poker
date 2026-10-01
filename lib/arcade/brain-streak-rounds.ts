@@ -82,7 +82,9 @@ type MathKind = "add32" | "sub32" | "add33" | "sub33" | "mul21s" | "mul21m" | "m
 const MATH_KINDS: Record<Exclude<StakePressure, 0>, readonly MathKind[]> = {
   1: ["add32", "sub32", "mul21s", "dive"],
   2: ["add33", "sub33", "mul21m", "divh"],
-  3: ["sub33", "mul21b", "mul22", "divh"],
+  // Elite deals Expert's problems without the two-digit products.
+  3: ["add33", "sub33", "mul21b", "divh"],
+  4: ["sub33", "mul21b", "mul22", "divh"],
 };
 
 /** Harder arithmetic for a bigger stake. Ranges still widen every 5 correct. */
@@ -154,7 +156,7 @@ interface Pattern {
  *   2 (10)                1%    15%   70%   95%
  *   3 (14)                0%     1%   15%   70%
  */
-const PATTERN_HEAD_START: Record<StakePressure, number> = { 0: 0, 1: 6, 2: 10, 3: 14 };
+const PATTERN_HEAD_START: Record<StakePressure, number> = { 0: 0, 1: 6, 2: 10, 3: 12, 4: 14 };
 
 /** Which rule families unlock at which level. A round draws from its own tier and the one below. */
 function patternTier(level: number): 0 | 1 | 2 | 3 {
@@ -446,7 +448,7 @@ export const TRIVIA_BLITZ_CONFIG: BrainStreakConfig = {
   ...BRAIN_STREAK_RULES["trivia-blitz"],
   nextRound: (_score, randomInt, pressure) => {
     // The short statements are well-known myths a regular soon learns, so
-    // wagers of 10k and up draw from the question bank only.
+    // wagers of 25k and up draw from the question bank only.
     const skip = !pressure ? 0 : TRIVIA_STATEMENTS.length;
     const index = skip + randomInt(TRIVIA_STATEMENTS.length + TRIVIA_QUESTIONS.length - skip);
     if (index < TRIVIA_STATEMENTS.length) {

@@ -59,7 +59,7 @@ export const ANTE_UP_WORD_FILL_IN_TIERS: Readonly<Record<AnteUpWordFillInTier, A
 };
 
 /**
- * Marathon's clock by stake band (under 10k, 10k+, 100k+, 1M+).
+ * Marathon's clock by stake band (under 25k, 25k+, 100k+, 1M+).
  *
  * There is no wrong move in this game, so the clock is the only way to lose,
  * and the bands are set from a solve-time model, not measured play. A median
@@ -70,14 +70,16 @@ export const ANTE_UP_WORD_FILL_IN_TIERS: Readonly<Record<AnteUpWordFillInTier, A
  *
  *   board          clock   median  +1SD  +2SD  +3SD
  *   Quick 9x9      6:00     90%    99%  100%  100%
- *   Marathon, 10k+ 6:30     16%    56%   90%   99%
+ *   Marathon, 25k+ 6:30     16%    56%   90%   99%
  *   Marathon, 100k+ 5:00     2%    19%   60%   92%
+ *   Marathon, 500k+ 4:25
  *   Marathon, 1M+  3:50      0%     3%   21%   64%
  */
-const MARATHON_CLOCK_BY_PRESSURE: readonly [number, number, number, number] = [
+const MARATHON_CLOCK_BY_PRESSURE: readonly [number, number, number, number, number] = [
   390 * 1000,
   390 * 1000,
   300 * 1000,
+  265 * 1000,
   230 * 1000,
 ];
 

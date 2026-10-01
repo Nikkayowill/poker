@@ -129,8 +129,9 @@ describe("lights out by stake band", () => {
 
   it("bigger stakes deal bigger boards, copied onto the run with their ladder", () => {
     const cases = [
-      [10_000, 6, 10, 17],
+      [25_000, 6, 10, 17],
       [100_000, 6, 14, 20],
+      [500_000, 7, 14, 19],
       [1_000_000, 7, 15, 20],
     ] as const;
     for (const [wager, size, par, cap] of cases) {
@@ -144,7 +145,7 @@ describe("lights out by stake band", () => {
   });
 
   it("every band's boards are solvable within par", () => {
-    for (const pressure of [0, 1, 2, 3] as const) {
+    for (const pressure of [0, 1, 2, 3, 4] as const) {
       const band = LIGHTS_OUT_BANDS[pressure];
       const random = seededRandom(pressure + 40);
       for (let i = 0; i < 30; i++) {
@@ -161,10 +162,10 @@ describe("lights out by stake band", () => {
 
   it("the move cap and payout follow the run's own ladder", () => {
     const attempt = startBrainLightsOut(seededRandom(7), 1_000_000, now);
-    expect(attempt.ladder?.map((rung) => rung.multiplier)).toEqual([3, 2, 0.8]);
-    expect(brainLightsOutPayout({ ...attempt, status: "won", moves: 15 })).toBe(3_000_000);
-    expect(brainLightsOutPayout({ ...attempt, status: "won", moves: 16 })).toBe(2_000_000);
-    expect(brainLightsOutPayout({ ...attempt, status: "won", moves: 18 })).toBe(800_000);
+    expect(attempt.ladder?.map((rung) => rung.multiplier)).toEqual([4.1, 2.55, 1.16]);
+    expect(brainLightsOutPayout({ ...attempt, status: "won", moves: 15 })).toBe(4_100_000);
+    expect(brainLightsOutPayout({ ...attempt, status: "won", moves: 16 })).toBe(2_550_000);
+    expect(brainLightsOutPayout({ ...attempt, status: "won", moves: 18 })).toBe(1_160_000);
     expect(brainLightsOutPayout({ ...attempt, status: "won", moves: 21 })).toBe(0);
     let run = attempt;
     for (let i = 0; i < 20 && run.status === "active"; i++) run = tapBrainLightsOut(run, i % 2, now);
@@ -172,10 +173,11 @@ describe("lights out by stake band", () => {
   });
 
   it("steps each band's median waste up geometrically", () => {
-    // Taps x board side is the model's difficulty; each band is 1.3x to 1.6x the last.
-    const load = ([0, 1, 2, 3] as const).map((p) => LIGHTS_OUT_BANDS[p].taps * LIGHTS_OUT_BANDS[p].size);
+    // Taps x board side is the model's difficulty; each band is harder than the last.
+    // Easy to Hard step 1.4x to 1.5x, and Elite sits between Hard and Expert.
+    const load = ([0, 1, 2, 3, 4] as const).map((p) => LIGHTS_OUT_BANDS[p].taps * LIGHTS_OUT_BANDS[p].size);
     for (let i = 1; i < load.length; i++) {
-      expect(load[i] / load[i - 1]).toBeGreaterThanOrEqual(1.2);
+      expect(load[i] / load[i - 1]).toBeGreaterThanOrEqual(1.05);
       expect(load[i] / load[i - 1]).toBeLessThanOrEqual(1.6);
     }
   });

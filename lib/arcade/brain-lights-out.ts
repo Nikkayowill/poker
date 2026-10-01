@@ -11,7 +11,7 @@
  */
 
 import type { RandomInt } from "@/lib/game/deck";
-import { stakePressure, type StakePressure } from "@/lib/arcade/stake-pressure";
+import { scaleForBand, stakePressure, type StakePressure } from "@/lib/arcade/stake-pressure";
 
 export const MIN_ANTE_UP_WAGER = 500;
 
@@ -50,16 +50,25 @@ export const LIGHTS_OUT_BANDS: Record<StakePressure, LightsOutBand> = {
   0: { size: 5, taps: 8, slack: [4, 8, 12] },
   1: { size: 6, taps: 10, slack: [2, 3, 7] },
   2: { size: 6, taps: 14, slack: [1, 2, 6] },
-  3: { size: 7, taps: 15, slack: [1, 1, 5] },
+  // Elite is a 7x7 board like Expert, with one fewer tap to undo and a move
+  // more of slack on the middle rung. Set by judgement, not the model above.
+  3: { size: 7, taps: 14, slack: [1, 2, 5] },
+  4: { size: 7, taps: 15, slack: [1, 1, 5] },
 };
 
-export function lightsOutLadder(band: LightsOutBand): LightsOutRung[] {
+/**
+ * The rungs for a band's board. With a `pressure` the multiples are that
+ * band's scale of the usual 3x, 2x, 1.3x and 1.1x; without one they are the
+ * usual multiples, which is what runs stored before bands pay on.
+ */
+export function lightsOutLadder(band: LightsOutBand, pressure?: StakePressure): LightsOutRung[] {
   const par = band.taps;
+  const pay = (multiplier: number) => (pressure === undefined ? multiplier : scaleForBand(multiplier, pressure));
   const ladder: LightsOutRung[] = [
-    { maxMoves: par, multiplier: 3 },
-    { maxMoves: par + band.slack[0], multiplier: 2 },
-    { maxMoves: par + band.slack[1], multiplier: 1.3 },
-    { maxMoves: par + band.slack[2], multiplier: 0.8 },
+    { maxMoves: par, multiplier: pay(3) },
+    { maxMoves: par + band.slack[0], multiplier: pay(2) },
+    { maxMoves: par + band.slack[1], multiplier: pay(1.3) },
+    { maxMoves: par + band.slack[2], multiplier: pay(1.1) },
   ];
   // Where two rungs share a move count, the better one is the one that pays.
   return ladder.filter((rung, i) => i === 0 || rung.maxMoves > ladder[i - 1].maxMoves);
@@ -150,7 +159,7 @@ export function startBrainLightsOut(randomInt: RandomInt, wager: number, now: Da
   return {
     wager,
     pressure,
-    ladder: lightsOutLadder(band),
+    ladder: lightsOutLadder(band, pressure),
     lights: scrambleLightsOut(randomInt, band.size, band.taps),
     moves: 0,
     status: "active",

@@ -1,14 +1,11 @@
 /**
  * What a finished Ante Up attempt actually did to the player's balance.
  *
- * Every Ante Up board used to render a win as `+{payout} Gold` and fire the
- * gold celebration whenever the payout was above zero. That was safe only
- * while every winning rung paid more than 1x. It no longer does: the slow
- * rungs at Memory Match, Word Stack and Connections deliberately pay back
- * less than was staked, so that clearing a board is not by itself profit (see
- * each game's own multiplier table for why). Against those rungs the old
- * display is a lie -- a 1,000 Gold wager returning 600 rendered as "+600 Gold"
- * under a celebration, while the player was 400 down.
+ * A win never pays back less than the stake (lib/arcade/win-never-loses.test.ts
+ * pins that for every game), so a payout above zero is always at least the
+ * wager. The helper still works from payout minus wager rather than trusting
+ * that, so a table that ever slipped under 1x would show the real number
+ * instead of "+X Gold" under a celebration.
  *
  * The wager left the wallet when the attempt opened, so the honest number is
  * always payout minus wager. One helper rather than the same ternary in five

@@ -29,13 +29,13 @@ import { useAnswerKeys } from "./brain-streak";
 
 const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000, 25_000] as const;
 
-function pressureLine(pressure: 1 | 2 | 3): string {
+function pressureLine(pressure: 1 | 2 | 3 | 4): string {
   const band = WORD_GUESS_BANDS[pressure];
-  const gain = band.ladder.find((rung) => rung.multiplier > 1 && rung.multiplier < 2);
-  return `${band.words} harder words in a row, sharing ${wordGuessMissCap(band.ladder)} misses. A profit needs ${gain?.maxMisses ?? 0} misses or fewer in total.`;
+  const top = band.ladder[0];
+  return `${band.words} harder words in a row, sharing ${wordGuessMissCap(band.ladder)} misses. Any win pays back more than you staked, up to ${top.multiplier}x for ${top.maxMisses} misses or fewer.`;
 }
 
-const PRESSURE_RULES = { 1: [pressureLine(1)], 2: [pressureLine(2)], 3: [pressureLine(3)] };
+const PRESSURE_RULES = { 1: [pressureLine(1)], 2: [pressureLine(2)], 3: [pressureLine(3)], 4: [pressureLine(4)] };
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz".split("");
 
 interface Response {

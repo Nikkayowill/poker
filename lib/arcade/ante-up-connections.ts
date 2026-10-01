@@ -9,9 +9,9 @@
  * used by lib/server/connections-service.ts.
  */
 
-import { ladderMultiplier, type WagerLadder } from "./ante-up-ladder";
+import { ladderMultiplier, scaleLadder, type WagerLadder } from "./ante-up-ladder";
 import { CONNECTIONS_MAX_MISTAKES, type ConnectionsRound } from "./puzzles/connections";
-import { stakePressure, type StakePressure } from "./stake-pressure";
+import { MIN_WIN_MULTIPLIER, STAKE_PRESSURES, stakePressure, type StakePressure } from "./stake-pressure";
 
 /** The floor for a wager. Restated per game; see ante-up-word-stack.ts's MIN_ANTE_UP_WAGER for why. */
 export const MIN_ANTE_UP_WAGER = 500;
@@ -20,52 +20,42 @@ export const MIN_ANTE_UP_WAGER = 500;
  * Win-only payout multiplier, keyed by mistakes made. Starting numbers, easy
  * to retune here.
  *
- * A 3-mistake win pays below 1x on purpose, for the same reason Word Stack's
- * 6-guess rung does: solving on the last life left is the outcome closest to
- * losing, and paying a premium for it made every win profitable and the wager
- * close to risk-free. A clean 4-for-4 grid is still the point of the game, so
- * it keeps the largest multiple by a wide margin.
+ * Every win pays back more than the stake, even a 3-mistake solve, for the
+ * same reason as Word Stack's 6-guess rung. A clean 4-for-4 grid is still the
+ * point of the game, so it keeps the largest multiple by a wide margin.
  */
 export const WAGER_MULTIPLIER_BY_MISTAKES: WagerLadder = {
-  0: 4, 1: 2.2, 2: 1.2, 3: 0.6,
+  0: 4, 1: 2.2, 2: 1.5, 3: 1.15,
 };
 
 /**
- * How many mistakes end a round at each stake band: 4, 3, 2, then 1. From
- * band 1 up only a clean solve profits, and less room to fish for groups by
- * trial and error is what makes the band harder.
+ * How many mistakes end a round at each stake band: 4, 3, 2, 2, then 1. From
+ * Medium up there is less room to fish for groups by trial and error, which
+ * is what makes the band harder. Elite keeps Hard's two lives; what it adds is
+ * a bigger payout.
  */
 export const CONNECTIONS_MISTAKES_BY_PRESSURE: Readonly<Record<StakePressure, number>> = {
   0: CONNECTIONS_MAX_MISTAKES,
   1: 3,
   2: 2,
-  3: 1,
+  3: 2,
+  4: 1,
 };
 
 /**
- * Each stake band's ladder. WAGER_MULTIPLIER_BY_MISTAKES above stays as the
- * fallback for rounds stored without one.
- *
- * Calibration. Assumed mistakes per board (0/1/2/3/4+), no public percentile
- * data exists: median 20/20/17/13/30%, +1SD 40/25/15/8/12%, +2SD
- * 60/22/10/4/4%, +3SD 78/15/5/1.5/0.5%.
- *
- *   player   band0 profit/EV  band1        band2        band3
- *   median     70% 1.26x      20% 0.77x    20% 0.50x    20% 0.32x
- *   +1SD       88% 1.86x      40% 1.44x    40% 0.96x    40% 0.64x
- *   +2SD       96% 2.31x      60% 2.05x    60% 1.39x    60% 0.96x
- *   +3SD      100% 2.66x      78% 2.58x    78% 1.76x    78% 1.25x
- *
- * A single board can't separate the percentiles by win rate (a clean solve
- * is the finest skill signal it gives), so the clean-solve multiple falls
- * about 0.7x per band to put the 1x break-even at that band's target.
+ * Each stake band's ladder: WAGER_MULTIPLIER_BY_MISTAKES scaled for the band,
+ * with a rung only for each mistake count the band's lives still allow. Easy
+ * barely pays and every band above pays a bigger gain. Every rung is above
+ * 1x: solving the grid never costs Gold, and the risk in a wager is running
+ * out of lives.
  */
-export const CONNECTIONS_LADDER_BY_PRESSURE: Readonly<Record<StakePressure, WagerLadder>> = {
-  0: { 0: 3, 1: 1.6, 2: 1.2, 3: 1.05 },
-  1: { 0: 3.2, 1: 0.5, 2: 0.2 },
-  2: { 0: 2.2, 1: 0.3 },
-  3: { 0: 1.6 },
-};
+export const CONNECTIONS_LADDER_BY_PRESSURE: Readonly<Record<StakePressure, WagerLadder>> = Object.fromEntries(
+  STAKE_PRESSURES.map((pressure) => {
+    const scaled = scaleLadder(WAGER_MULTIPLIER_BY_MISTAKES, pressure);
+    const lives = CONNECTIONS_MISTAKES_BY_PRESSURE[pressure];
+    return [pressure, Object.fromEntries(Object.entries(scaled).filter(([mistakes]) => Number(mistakes) < lives))];
+  }),
+) as Record<StakePressure, WagerLadder>;
 
 /** What a wager's stake band sets for its round. Copied onto the round at open. */
 export interface ConnectionsStakeRules {
@@ -82,14 +72,21 @@ export function connectionsStakeRules(wager: number): ConnectionsStakeRules {
 }
 
 /** Lobby lines for each stake band; see components/arcade/stake-pressure-note.tsx. */
+function payLine(pressure: StakePressure): string {
+  const ladder = CONNECTIONS_LADDER_BY_PRESSURE[pressure];
+  const later = Object.keys(ladder).length > 1 ? ` One mistake pays ${ladder[1]}x.` : "";
+  return `Any win pays back more than you staked. A clean solve pays ${ladder[0]}x.${later}`;
+}
+
 export const CONNECTIONS_PRESSURE_RULES = {
-  1: ["3 mistakes end the board instead of 4.", "Only a clean solve profits: 3.2x. One mistake pays back 0.5x."],
-  2: ["2 mistakes end the board instead of 4.", "Only a clean solve profits: 2.2x. One mistake pays back 0.3x."],
-  3: ["One mistake ends the board.", "A clean solve pays 1.6x."],
+  1: ["3 mistakes end the board instead of 4.", payLine(1)],
+  2: ["2 mistakes end the board instead of 4.", payLine(2)],
+  3: ["2 mistakes end the board instead of 4.", payLine(3)],
+  4: ["One mistake ends the board.", payLine(4)],
 } as const;
 
-/** The lowest rung, and so the payout for a mistake count the ladder does not name. */
-export const CONNECTIONS_LADDER_FLOOR = 0.6;
+/** The payout for a mistake count the ladder does not name: the least any win pays. */
+export const CONNECTIONS_LADDER_FLOOR = MIN_WIN_MULTIPLIER;
 
 /** Always-pays multiplier for the shared daily board's completion bonus. A loss still floors at 1.0x. */
 const DAILY_BONUS_MULTIPLIER_BY_MISTAKES: Readonly<Record<number, number>> = {

@@ -310,7 +310,7 @@ describe("stake pressure", () => {
   it("refuses a board too easy for the stake, with the reason, and leaves the wallet alone", async () => {
     const { token } = await funded(5_000_000);
     const cases = [
-      ["beginner", 10_000, "Intermediate"],
+      ["beginner", 25_000, "Intermediate"],
       ["intermediate", 100_000, "Expert"],
       ["expert", 1_000_000, "Master"],
     ] as const;
@@ -324,7 +324,7 @@ describe("stake pressure", () => {
 
   it("opens the lowest board each stake band allows", async () => {
     const cases = [
-      ["intermediate", 10_000],
+      ["intermediate", 25_000],
       ["expert", 100_000],
       ["master", 5_000_000],
     ] as const;

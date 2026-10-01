@@ -44,13 +44,13 @@ function Controls() {
   );
 }
 
-function pressureLine(pressure: 1 | 2 | 3): string {
+function pressureLine(pressure: 1 | 2 | 3 | 4): string {
   const ladder = brainStreakLadder(BRAIN_STREAK_RULES["trivia-blitz"], pressure);
-  const gain = [...ladder].reverse().find((rung) => rung.multiplier > 1);
-  return `Questions only, no quick myth statements. A profit needs ${gain?.min ?? 0} right.`;
+  const top = ladder[0];
+  return `Questions only, no quick myth statements. Any win pays back more than you staked, up to ${top.multiplier}x for ${top.min} right.`;
 }
 
-const PRESSURE_RULES = { 1: [pressureLine(1)], 2: [pressureLine(2)], 3: [pressureLine(3)] };
+const PRESSURE_RULES = { 1: [pressureLine(1)], 2: [pressureLine(2)], 3: [pressureLine(3)], 4: [pressureLine(4)] };
 
 export function BrainTriviaBlitz() {
   return (

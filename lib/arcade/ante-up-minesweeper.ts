@@ -15,7 +15,7 @@
  * same job ANTE_UP_MEMORY_MAX_TURNS does for Memory Match, and it also stops
  * an abandoned attempt from holding the player's one active slot forever.
  *
- * Free play and small stakes get limits above real solve times. From 10k up
+ * Free play and small stakes get limits above real solve times. From 25k up
  * the clock is set so a player at that band's level of skill usually makes
  * it and most others don't; see ANTE_UP_MINESWEEPER_TIERS. A beginner
  * board with five minutes on it was a certain win, and a certain win paying
@@ -47,11 +47,11 @@ export const MIN_ANTE_UP_WAGER = 500;
 
 export interface AnteUpMinesweeperTier {
   /**
-   * For free play and stakes under 10k. Measured from the first click, not
+   * For free play and stakes under 25k. Measured from the first click, not
    * from opening the attempt; see the round's own clock.
    */
   readonly timeLimitMs: number;
-  /** From 10k up, where each band is set for a stronger player. */
+  /** From 25k up, where each band is set for a stronger player. */
   readonly rankedTimeLimitMs: number;
   readonly multiplier: number;
 }
@@ -70,8 +70,8 @@ export interface AnteUpMinesweeperTier {
  * Win rate on the easiest board each stake band allows, by player:
  *
  *   band (floor board, clock)       median   +1SD   +2SD   +3SD
- *   <10k   (beginner, 3:00)           84%     92%     96%    98%
- *   10k+   (intermediate, 2:00)        8%     66%     93%    97%
+ *   <25k   (beginner, 3:00)           84%     92%     96%    98%
+ *   25k+   (intermediate, 2:00)        8%     66%     93%    97%
  *   100k+  (expert, 2:30)             0%     21%     82%    96%
  *   1M+    (master, 1:40)             0%      0%     19%    84%
  *

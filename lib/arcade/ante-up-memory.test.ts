@@ -185,16 +185,13 @@ describe("anteUpMemoryPayout", () => {
     expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(MEMORY_PAIRS) })).toBe(3000); // <=8
     expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(10) })).toBe(2000); // <=10
     expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(12) })).toBe(1300); // <=12
-    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(14) })).toBe(900); // <=14
-    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(16) })).toBe(600); // 15-16, a win that still costs
+    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(14) })).toBe(1100); // <=14
+    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(16) })).toBe(1050); // 15-16, a slow win still pays back more than the stake
   });
 
-  it("returns less than the wager for a slow clear", () => {
-    // The two slowest rungs pay below 1x on purpose. Every rung used to pay
-    // above it, which made any win profitable and the wager close to
-    // risk-free; see wagerMultiplierForTurns' own comment.
-    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(14) })).toBeLessThan(1000);
-    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(16) })).toBeLessThan(1000);
+  it("returns more than the wager for a slow clear", () => {
+    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(14) })).toBeGreaterThan(1000);
+    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(16) })).toBeGreaterThan(1000);
   });
 
   it("rounds to a whole Gold amount", () => {
@@ -214,8 +211,8 @@ describe("wagerMultiplierForTurns", () => {
     expect(wagerMultiplierForTurns(MEMORY_PAIRS)).toBe(3);
     expect(wagerMultiplierForTurns(10)).toBe(2);
     expect(wagerMultiplierForTurns(12)).toBe(1.3);
-    expect(wagerMultiplierForTurns(14)).toBe(0.9);
-    expect(wagerMultiplierForTurns(16)).toBe(0.6);
+    expect(wagerMultiplierForTurns(14)).toBe(1.1);
+    expect(wagerMultiplierForTurns(16)).toBe(1.05);
   });
 });
 
@@ -262,9 +259,10 @@ describe("stake bands", () => {
 
   it.each([
     [0, 8, 20, 4],
-    [9_999, 8, 20, 4],
-    [10_000, 10, 24, 5],
+    [24_999, 8, 20, 4],
+    [25_000, 10, 24, 5],
     [100_000, 12, 28, 6],
+    [500_000, 15, 40, 6],
     [1_000_000, 15, 34, 6],
   ])("a %i wager deals %i pairs with a %i-turn cap, %i columns", (wager, pairs, maxTurns, columns) => {
     const attempt = startAnteUpMemory(sequential, wager, START);
@@ -285,15 +283,15 @@ describe("stake bands", () => {
       const multipliers = rules.rungs.map((rung) => rung.multiplier);
       expect([...multipliers].sort((a, b) => b - a)).toEqual(multipliers);
       expect(multipliers[0]).toBeGreaterThan(1);
-      expect(multipliers[multipliers.length - 1]).toBeLessThan(1);
+      expect(multipliers[multipliers.length - 1]).toBeGreaterThan(1);
     }
   });
 
   it("pays a new attempt from its own ladder", () => {
     const attempt = startAnteUpMemory(sequential, 1_000_000, START);
     const board = { ...attempt.board, status: "solved" as const, turns: 27 };
-    expect(anteUpMemoryPayout({ ...attempt, board })).toBe(1_800_000);
-    expect(anteUpMemoryPayout({ ...attempt, board: { ...board, turns: 28 } })).toBe(200_000);
+    expect(anteUpMemoryPayout({ ...attempt, board })).toBe(1_780_000);
+    expect(anteUpMemoryPayout({ ...attempt, board: { ...board, turns: 28 } })).toBe(1_160_000);
   });
 
   it("forfeits a 15-pair attempt at 34 turns, not 16", () => {

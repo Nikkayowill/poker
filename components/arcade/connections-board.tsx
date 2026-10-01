@@ -381,9 +381,9 @@ export function ConnectionsBoard({ day, onExit }: { day?: string; onExit?: () =>
             round opens.
           </p>
           <p>
-            Bigger wagers leave less room for trial and error: from 10,000 Gold three mistakes end
-            the board, from 100,000 Gold two do, and from 1,000,000 Gold one does. At those
-            stakes only a clean solve makes a profit.
+            Bigger wagers leave less room for trial and error: from 25,000 Gold three mistakes end
+            the board, from 100,000 Gold two do, and from 1,000,000 Gold one does. At every
+            stake a win still pays back more than you staked.
           </p>
         </HowToPlayModal>
       )}

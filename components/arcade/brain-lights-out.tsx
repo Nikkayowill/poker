@@ -23,6 +23,7 @@ import {
   type BrainLightsOutSnapshot,
 } from "@/lib/arcade/brain-lights-out";
 import { StakePressureNote } from "@/components/arcade/stake-pressure-note";
+import { stakePressure } from "@/lib/arcade/stake-pressure";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { useActionQueue } from "@/components/shared/use-action-queue";
 import { createRequestSequence } from "@/lib/ui/request-sequence";
@@ -39,13 +40,13 @@ import { createRequestSequence } from "@/lib/ui/request-sequence";
 
 const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000, 25_000] as const;
 
-function pressureLine(pressure: 1 | 2 | 3): string {
+function pressureLine(pressure: 1 | 2 | 3 | 4): string {
   const band = LIGHTS_OUT_BANDS[pressure];
-  const ladder = lightsOutLadder(band);
-  return `${band.size}x${band.size} board scrambled by ${band.taps} taps. 3x needs a clear in ${band.taps} moves, and the cap is ${ladder[ladder.length - 1].maxMoves}.`;
+  const ladder = lightsOutLadder(band, pressure);
+  return `${band.size}x${band.size} board scrambled by ${band.taps} taps. ${ladder[0].multiplier}x needs a clear in ${band.taps} moves, and the cap is ${ladder[ladder.length - 1].maxMoves}. Any clear pays back more than you staked.`;
 }
 
-const PRESSURE_RULES = { 1: [pressureLine(1)], 2: [pressureLine(2)], 3: [pressureLine(3)] };
+const PRESSURE_RULES = { 1: [pressureLine(1)], 2: [pressureLine(2)], 3: [pressureLine(3)], 4: [pressureLine(4)] };
 
 interface Response {
   attempt: BrainLightsOutSnapshot | null;
@@ -221,7 +222,7 @@ export function BrainLightsOut() {
   const ceiling = maxAnteUpWager("lights-out" as AnteUpGame, null);
   const canAfford = wager === 0 || (wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance >= wager);
   const insufficientGold = wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance < wager;
-  const lobbyLadder = lightsOutLadder(lightsOutBandFor(wager));
+  const lobbyLadder = lightsOutLadder(lightsOutBandFor(wager), stakePressure(wager));
   const maxMoves = attempt?.maxMoves ?? lobbyLadder[lobbyLadder.length - 1].maxMoves;
   const movesLeft = Math.max(0, maxMoves - shownMoves);
   const ranOutOfMoves = attempt !== null && attempt.status === "lost" && attempt.moves >= attempt.maxMoves;
@@ -292,7 +293,7 @@ export function BrainLightsOut() {
               ? "Free practice — no payout on a win, but there's no fun in that."
               : wager < MIN_ANTE_UP_WAGER
                 ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
-                : `Clear the board inside ${maxMoves} moves. Speed is what pays: a fast clear multiplies the wager, a slow one returns less than you staked, and running past the cap loses it outright.`}
+                : `Clear the board inside ${maxMoves} moves. Speed is what pays: a fast clear multiplies the wager, even a slow one pays back more than you staked, and running past the cap loses it outright.`}
           </p>
 
           <button

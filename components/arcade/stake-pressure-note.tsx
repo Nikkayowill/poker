@@ -10,7 +10,7 @@ import {
 
 /**
  * The lobby line that tells a player what their stake changes. Each game
- * passes the rules its own bands add; nothing shows under 10k.
+ * passes the rules its own bands add; nothing shows under 25k.
  */
 export function StakePressureNote({
   wager,

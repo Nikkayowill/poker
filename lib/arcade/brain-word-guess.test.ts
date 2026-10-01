@@ -93,7 +93,7 @@ describe("word guess by stake band", () => {
   it("deals the band's number of distinct words from its own pool", () => {
     let seed = 1;
     const random = (max: number) => (seed = (seed * 48271) % 2147483647) % max;
-    for (const pressure of [0, 1, 2, 3] as const) {
+    for (const pressure of [0, 1, 2, 3, 4] as const) {
       for (let i = 0; i < 50; i++) {
         const words = pickWordGuessWords(random, pressure);
         expect(words).toHaveLength(WORD_GUESS_BANDS[pressure].words);
@@ -104,7 +104,7 @@ describe("word guess by stake band", () => {
   });
 
   it("a multi-word run moves to the next word and shares one miss budget", () => {
-    let run = startBrainWordGuess(["jazz", "puppy"], 10_000, now);
+    let run = startBrainWordGuess(["jazz", "puppy"], 25_000, now);
     expect(run.pressure).toBe(1);
     expect(wordGuessMissCap(run.ladder!)).toBe(10);
     run = guessBrainWordLetter(run, "e", now);
@@ -118,7 +118,7 @@ describe("word guess by stake band", () => {
     expect(run.status).toBe("won");
     snapshot = toBrainWordGuessSnapshot(run, { id: "x", version: 2 });
     expect(snapshot).toMatchObject({ wordNumber: 2, wordCount: 2 });
-    expect(brainWordGuessPayout(run)).toBe(30_000);
+    expect(brainWordGuessPayout(run)).toBe(75_000);
   });
 
   it("the run's ladder sets the payout and the miss cap", () => {
@@ -128,8 +128,8 @@ describe("word guess by stake band", () => {
     run = guessBrainWordLetter(run, "l", now);
     expect(run.status).toBe("lost");
     expect(run.misses).toBe(10);
-    expect(brainWordGuessPayout({ ...run, status: "won", misses: 7 })).toBe(1_300_000);
-    expect(brainWordGuessPayout({ ...run, status: "won", misses: 8 })).toBe(800_000);
+    expect(brainWordGuessPayout({ ...run, status: "won", misses: 7 })).toBe(1_470_000);
+    expect(brainWordGuessPayout({ ...run, status: "won", misses: 8 })).toBe(1_160_000);
   });
 
   it("loads a one-word run stored before bands existed with six misses", () => {

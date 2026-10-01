@@ -63,11 +63,11 @@ export function maxAnteUpWager(_game: AnteUpGame, _tier: string | null): number 
  * Games with no tiers get harder another way, inside their own rules.
  */
 export const ANTE_UP_TIER_LADDERS: Partial<Record<AnteUpGame, TierLadder<string>>> = {
-  sudoku: { tiers: ["easy", "medium", "hard", "expert"], minTierByPressure: [0, 1, 2, 3] },
-  minesweeper: { tiers: ["beginner", "intermediate", "expert", "master"], minTierByPressure: [0, 1, 2, 3] },
-  nonogram: { tiers: ["easy", "medium", "hard", "expert", "master"], minTierByPressure: [0, 1, 2, 3] },
-  blockudoku: { tiers: ["casual", "standard", "hardcore"], minTierByPressure: [0, 1, 2, 2] },
-  "word-fill-in": { tiers: ["quick", "marathon"], minTierByPressure: [0, 1, 1, 1] },
+  sudoku: { tiers: ["easy", "medium", "hard", "expert"], minTierByPressure: [0, 1, 2, 2, 3] },
+  minesweeper: { tiers: ["beginner", "intermediate", "expert", "master"], minTierByPressure: [0, 1, 2, 2, 3] },
+  nonogram: { tiers: ["easy", "medium", "hard", "expert", "master"], minTierByPressure: [0, 1, 2, 2, 3] },
+  blockudoku: { tiers: ["casual", "standard", "hardcore"], minTierByPressure: [0, 1, 2, 2, 2] },
+  "word-fill-in": { tiers: ["quick", "marathon"], minTierByPressure: [0, 1, 1, 1, 1] },
 };
 
 /** Whether `tier` may be played at this stake. Always true for a game with no tiers. */

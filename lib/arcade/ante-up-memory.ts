@@ -32,7 +32,7 @@ import {
   type MemoryFlipProblem,
   type MemoryRound,
 } from "./puzzles/memory";
-import { stakePressure, type StakePressure } from "./stake-pressure";
+import { scaleForBand, stakePressure, type StakePressure } from "./stake-pressure";
 import type { RandomInt } from "@/lib/game/deck";
 import type { Card } from "@/lib/game/types";
 
@@ -54,13 +54,9 @@ export const ANTE_UP_MEMORY_MAX_TURNS = 16;
  * Win-only payout multiplier, keyed by turns taken, read off the attempt's own
  * ladder (the legacy one if it has none).
  *
- * The slow rungs pay **less than 1x on purpose**: a slow win returns less
- * than the wager, so clearing the board is not by itself profitable. Every
- * rung used to pay above 1x, which meant any win at all made money and the
- * only way to lose Gold was to miss the cap entirely -- with the cap set as
- * loosely as it was, that made a wagered attempt close to risk-free, and a
- * risk-free wager compounds without bound. Speed is the skill this game
- * actually tests, so speed is what has to be paid for.
+ * Every rung pays above 1x, so a cleared board never costs Gold. Speed is
+ * what the ladder pays for: a fast clear multiplies the wager, a slow one
+ * returns a little more than it. The risk in a wager is running past the cap.
  *
  * Exported, not just used internally by anteUpMemoryPayout below, because the
  * board's own payout field is 0 for the entire game (it only becomes real
@@ -90,8 +86,8 @@ export const LEGACY_MEMORY_RUNGS: readonly MemoryPayoutRung[] = [
   { upTo: MEMORY_PAIRS, multiplier: 3 },
   { upTo: 10, multiplier: 2 },
   { upTo: 12, multiplier: 1.3 },
-  { upTo: 14, multiplier: 0.9 },
-  { upTo: 16, multiplier: 0.6 },
+  { upTo: 14, multiplier: 1.1 },
+  { upTo: 16, multiplier: 1.05 },
 ];
 
 /** A stake band's board: how many pairs, the turn cap, and what each pace pays. */
@@ -113,47 +109,25 @@ export interface MemoryStakeRules {
  *   2 (12, 28)          4% 0.20x     23% 0.60x     61% 1.23x     89% 1.80x
  *   3 (15, 34)        0.3% 0.03x      4% 0.19x     24% 0.59x     62% 1.25x
  */
+/** Medium's payout for each pace, fastest first; every band scales these with scaleForBand. */
+const MEMORY_PACE_MULTIPLIERS = [3, 2, 1.5, 1.1] as const;
+
+/** A band's rungs: the turn count each pace ends at, paying the band's scale of the usual multiples. */
+function memoryRungs(pressure: StakePressure, upTo: readonly [number, number, number, number]): MemoryPayoutRung[] {
+  return upTo.map((turns, i) => ({ upTo: turns, multiplier: scaleForBand(MEMORY_PACE_MULTIPLIERS[i], pressure) }));
+}
+
+/**
+ * Elite is a 15-pair board like Expert with 40 turns instead of 34, so it sits
+ * between Hard's 12 pairs and Expert's tighter cap. The bands are set by
+ * judgement, not simulation.
+ */
 export const MEMORY_RULES_BY_PRESSURE: Readonly<Record<StakePressure, MemoryStakeRules>> = {
-  0: {
-    pairs: 8,
-    maxTurns: 20,
-    rungs: [
-      { upTo: 12, multiplier: 2 },
-      { upTo: 14, multiplier: 1.5 },
-      { upTo: 17, multiplier: 1.2 },
-      { upTo: 20, multiplier: 0.5 },
-    ],
-  },
-  1: {
-    pairs: 10,
-    maxTurns: 24,
-    rungs: [
-      { upTo: 15, multiplier: 3 },
-      { upTo: 17, multiplier: 2 },
-      { upTo: 19, multiplier: 1.5 },
-      { upTo: 24, multiplier: 0.4 },
-    ],
-  },
-  2: {
-    pairs: 12,
-    maxTurns: 28,
-    rungs: [
-      { upTo: 18, multiplier: 3 },
-      { upTo: 20, multiplier: 2.2 },
-      { upTo: 22, multiplier: 1.6 },
-      { upTo: 28, multiplier: 0.3 },
-    ],
-  },
-  3: {
-    pairs: 15,
-    maxTurns: 34,
-    rungs: [
-      { upTo: 22, multiplier: 3.5 },
-      { upTo: 24, multiplier: 2.5 },
-      { upTo: 27, multiplier: 1.8 },
-      { upTo: 34, multiplier: 0.2 },
-    ],
-  },
+  0: { pairs: 8, maxTurns: 20, rungs: memoryRungs(0, [12, 14, 17, 20]) },
+  1: { pairs: 10, maxTurns: 24, rungs: memoryRungs(1, [15, 17, 19, 24]) },
+  2: { pairs: 12, maxTurns: 28, rungs: memoryRungs(2, [18, 20, 22, 28]) },
+  3: { pairs: 15, maxTurns: 40, rungs: memoryRungs(3, [26, 29, 32, 40]) },
+  4: { pairs: 15, maxTurns: 34, rungs: memoryRungs(4, [22, 24, 27, 34]) },
 };
 
 export function memoryStakeRules(wager: number): MemoryStakeRules {
@@ -161,14 +135,19 @@ export function memoryStakeRules(wager: number): MemoryStakeRules {
 }
 
 /** Lobby lines for each stake band; see components/arcade/stake-pressure-note.tsx. */
+function memoryLines(pressure: Exclude<StakePressure, 0>, board: string): string[] {
+  const { pairs, maxTurns, rungs } = MEMORY_RULES_BY_PRESSURE[pressure];
+  const lines = [`${pairs} pairs on a ${board} board, ${maxTurns} turns to clear it.`];
+  if (pairs > 13) lines.push("Aces and kings come as a black pair and a red pair, so colour has to match too.");
+  lines.push(`Any clear pays back more than you staked, up to ${rungs[0].multiplier}x for a fast one.`);
+  return lines;
+}
+
 export const MEMORY_PRESSURE_RULES = {
-  1: ["10 pairs on a 5 by 4 board, 24 turns to clear it.", "Profit needs 19 turns or fewer."],
-  2: ["12 pairs on a 6 by 4 board, 28 turns to clear it.", "Profit needs 22 turns or fewer."],
-  3: [
-    "15 pairs on a 6 by 5 board, 34 turns to clear it.",
-    "Aces and kings come as a black pair and a red pair, so colour has to match too.",
-    "Profit needs 27 turns or fewer.",
-  ],
+  1: memoryLines(1, "5 by 4"),
+  2: memoryLines(2, "6 by 4"),
+  3: memoryLines(3, "6 by 5"),
+  4: memoryLines(4, "6 by 5"),
 } as const;
 
 export type AnteUpMemoryStatus = "active" | "won" | "lost";

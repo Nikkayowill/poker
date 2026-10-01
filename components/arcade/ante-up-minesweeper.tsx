@@ -108,12 +108,12 @@ function difficultyForStake(current: MinesweeperDifficulty, wager: number): Mine
   return isMinesweeperDifficulty(lowest) ? lowest : current;
 }
 
-/** "10k" for a board a stake of 10k or more can't be played on. Null if no stake locks it. */
+/** "25k" for a board a stake of 25k or more can't be played on. Null if no stake locks it. */
 function stakeLockedFrom(difficulty: MinesweeperDifficulty): string | null {
   const ladder = ANTE_UP_TIER_LADDERS.minesweeper;
   if (!ladder) return null;
   const index = ladder.tiers.indexOf(difficulty);
-  const band = ([1, 2, 3] as const).find((pressure) => ladder.minTierByPressure[pressure] > index);
+  const band = ([1, 2, 3, 4] as const).find((pressure) => ladder.minTierByPressure[pressure] > index);
   return band ? stakePressureThreshold(band).replace("+", "") : null;
 }
 
@@ -468,7 +468,7 @@ export function AnteUpMinesweeper() {
             starts on your first click; clear the board before it runs out and you win. Hit a
             mine, let the clock expire, or resign, and the wager is gone. Harder difficulties
             run a longer clock and pay more on a win. Bigger stakes need bigger boards and
-            run tighter clocks: 10k and up plays Intermediate or harder, 100k Expert or harder,
+            run tighter clocks: 25k and up plays Intermediate or harder, 100k Expert or harder,
             and 1M Master only.
           </p>
         </HowToPlayModal>

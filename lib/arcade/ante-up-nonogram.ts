@@ -55,11 +55,11 @@ export const MIN_ANTE_UP_WAGER = 500;
 
 export interface AnteUpNonogramTier {
   /**
-   * For free play and stakes under 10k. Measured from the first square, not
+   * For free play and stakes under 25k. Measured from the first square, not
    * from opening the attempt; see the round's own clock.
    */
   readonly timeLimitMs: number;
-  /** From 10k up, where each band is set for a stronger player. */
+  /** From 25k up, where each band is set for a stronger player. */
   readonly rankedTimeLimitMs: number;
   readonly multiplier: number;
 }
@@ -71,7 +71,7 @@ export interface AnteUpNonogramTier {
  * certain win, and a big stake can't be played on it at all
  * (lib/arcade/ante-up-stakes.ts).
  *
- * The clocks from 10k up come from a skill model, not from solve-rate data we
+ * The clocks from 25k up come from a skill model, not from solve-rate data we
  * don't have yet (lib/arcade/ante-up-calibration.test.ts holds it and checks
  * the targets). A median player's time on our boards is taken as easy 1.5,
  * medium 7, hard 18, expert 35 and master 55 minutes, below the 10-15 minute
@@ -85,8 +85,8 @@ export interface AnteUpNonogramTier {
  * Win rate on the smallest board each stake band allows, by player:
  *
  *   band (floor board, clock)     median   +1SD   +2SD   +3SD
- *   <10k   (easy, 4 min)            95%     97%     99%    99%
- *   10k+   (medium, 5 min)          12%     67%     96%    99%
+ *   <25k   (easy, 4 min)            95%     97%     99%    99%
+ *   25k+   (medium, 5 min)          12%     67%     96%    99%
  *   100k+  (hard, 9 min)             0%     16%     73%    97%
  *   1M+    (expert, 11 min)          0%      1%     19%    78%
  *   1M+    (master, 16 min)          0%      0%     13%    69%

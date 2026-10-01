@@ -49,8 +49,8 @@ export interface AnteUpBlockudokuTier {
  * which is why it only pays 1.2x.
  *
  *   band  board                     median  +1SD  +2SD  +3SD
- *   <10k  Casual, 150 in 5:00        100%   100%  100%  100%
- *   10k+  Standard, 1800 in 9:00       8%    55%   97%   98%
+ *   <25k  Casual, 150 in 5:00        100%   100%  100%  100%
+ *   25k+  Standard, 1800 in 9:00       8%    55%   97%   98%
  *   100k+ Hardcore, 2500 in 9:00       0%    13%   75%   95%
  *   1M+   Grandmaster, 3500 in 9:00    0%     0%   19%   68%
  */
@@ -73,7 +73,7 @@ export const ANTE_UP_BLOCKUDOKU_GRANDMASTER: AnteUpBlockudokuTier = {
 
 /** The terms a stake actually plays on this tier. */
 export function anteUpBlockudokuTerms(difficulty: BlockudokuDifficulty, wager: number): AnteUpBlockudokuTier {
-  if (difficulty === "hardcore" && stakePressure(wager) === 3) return ANTE_UP_BLOCKUDOKU_GRANDMASTER;
+  if (difficulty === "hardcore" && stakePressure(wager) === 4) return ANTE_UP_BLOCKUDOKU_GRANDMASTER;
   return ANTE_UP_BLOCKUDOKU_TIERS[difficulty];
 }
 

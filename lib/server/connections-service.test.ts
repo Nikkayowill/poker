@@ -455,15 +455,15 @@ describe("a big stake allows fewer mistakes", () => {
     return [scattered(), ([0, 1, 2, 3] as ConnectionsLevel[]).map((level) => group(level)[1])];
   }
 
-  it("keeps four mistakes under 10k", async () => {
+  it("keeps four mistakes under 25k", async () => {
     const { token } = await fundedPlayer(50_000);
-    const view = await startConnectionsPuzzle(token, 9_999);
+    const view = await startConnectionsPuzzle(token, 24_999);
     expect(view.round?.mistakesAllowed).toBe(4);
   });
 
-  it("allows three at 10k", async () => {
+  it("allows three at 25k", async () => {
     const { token, id } = await fundedPlayer(50_000);
-    const view = await startConnectionsPuzzle(token, 10_000);
+    const view = await startConnectionsPuzzle(token, 25_000);
     expect(view.round?.mistakesAllowed).toBe(3);
     const stored = await getPuzzleRound<StoredConnectionsRound>(id, CONNECTIONS_GAME, today());
     expect(stored?.round.maxMistakes).toBe(3);

@@ -3864,6 +3864,7 @@ export function StackAcresFarm() {
       vat,
       cellar,
       story: storyView,
+      farmBoard,
       progress: shopProgress,
       machines: processing.machines,
       woodNodes,
@@ -3871,25 +3872,6 @@ export function StackAcresFarm() {
       forageNodes,
       nowMs,
     }),
-  const journal = useMemo(
-    () =>
-      journalView({
-        gold,
-        inventory: processing.inventory,
-        built: builtKinds,
-        units: liveUnits,
-        contract: processing.contract,
-        vat,
-        cellar,
-        story: storyView,
-        farmBoard,
-        progress: shopProgress,
-        machines: processing.machines,
-        woodNodes,
-        stoneNodes,
-        forageNodes,
-        nowMs,
-      }),
     [
       gold,
       processing.inventory,

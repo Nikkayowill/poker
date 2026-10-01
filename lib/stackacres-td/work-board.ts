@@ -24,28 +24,68 @@ export interface Tile {
   ty: number;
 }
 
-export type TaskKind = "restock" | "serve" | "checkout";
+export type TaskKind =
+  | "restock"
+  | "serve"
+  | "checkout"
+  | "feed"
+  | "water"
+  | "muck"
+  | "eggs"
+  | "milk"
+  | "harvest"
+  | "sow"
+  | "turnout"
+  | "bringin";
 
 /** The stocker fills shelves from the stockroom, the produce clerk serves at the produce counter, cashiers work the tills. */
 export type Job = "stocker" | "produce" | "cashier";
 
+/** On the farm (work-barn.ts) the stock hand feeds, waters and mucks out, the dairy hand milks and
+ *  collects the eggs, the field hand sows and brings in the crop, and the stable hand grooms the horses,
+ *  leads them out to the paddock in the morning and back in at evening, and keeps their paddock. */
+export type FarmJob = "hand" | "dairy" | "field" | "stable";
+
+/** Any job on any worksite. */
+export type CrewJob = Job | FarmJob;
+
 /** Which notes each job will take off the board. */
-export const JOB_TASKS: Record<Job, readonly TaskKind[]> = {
+export const JOB_TASKS: Record<CrewJob, readonly TaskKind[]> = {
   stocker: ["restock"],
   produce: ["serve"],
   cashier: ["checkout"],
+  hand: ["feed", "water", "muck"],
+  dairy: ["milk", "eggs"],
+  field: ["harvest", "sow"],
+  // The horses' own troughs and mucking out only (work-barn.ts `forTheHorses`).
+  stable: ["turnout", "bringin", "feed", "water", "muck"],
 };
 
-/** Higher goes first. A customer waiting to be served beats a shelf running low. */
-export const PRIORITY: Record<TaskKind, number> = { checkout: 3, serve: 3, restock: 2 };
+/** Higher goes first. A customer waiting to be served beats a shelf running low; a dry trough beats everything on the farm. */
+export const PRIORITY: Record<TaskKind, number> = {
+  checkout: 3,
+  serve: 3,
+  restock: 2,
+  water: 4,
+  milk: 3,
+  feed: 3,
+  eggs: 2,
+  harvest: 2,
+  turnout: 2,
+  bringin: 3,
+  muck: 1,
+  sow: 1,
+};
 
 /**
  * What someone is doing, which is what the view animates: walking, walking with a crate in their arms,
  * standing, reaching out (stocking a shelf, picking produce, taking something off a shelf), handing
  * something over (produce across the counter, money at the till), ringing items through, sitting on a
- * break, and throwing up their hands on the way out of a shop that let them down.
+ * break, and throwing up their hands on the way out of a shop that let them down. On the farm: tipping
+ * feed or water into a trough, milking, forking out a pen, bending to the crop or the nest boxes, and
+ * brushing a horse down.
  */
-export type Act = "walk" | "carry" | "idle" | "reach" | "give" | "scan" | "sit" | "despair";
+export type Act = "walk" | "carry" | "idle" | "reach" | "give" | "scan" | "sit" | "despair" | "pour" | "milk" | "muck" | "harvest" | "groom";
 
 export interface Task {
   id: number;
@@ -153,7 +193,7 @@ export class Board {
    */
   claim(
     worker: string,
-    job: Job,
+    job: CrewJob,
     from: Tile,
     route: Router,
     atLeast = 0,
@@ -385,4 +425,6 @@ export interface WalkerView {
   doing: Act;
   /** Goods in their arms (a worker) or their basket (a customer). */
   carrying: number;
+  /** What's in their arms, where it matters which (a farm hand's pail, sack or basket). */
+  holding?: string;
 }

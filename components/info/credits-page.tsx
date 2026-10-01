@@ -107,6 +107,19 @@ export function CreditsPage() {
               <a href="/stackacres-td/characters/CREDITS.md">CREDITS.md</a>.
             </li>
             <li>
+              <strong>The farm animals</strong> — the hens, sheep, cows and
+              pigs are{" "}
+              <a href="https://opengameart.org/node/11629">LPC style farm animals</a>{" "}
+              by Daniel Eddeland (daneeklu), the piglets are from{" "}
+              <a href="https://opengameart.org/node/83210">Pigs Rework</a> by
+              Daniel Eddeland and Jordan Irwin (AntumDeluge), and the horses are{" "}
+              <a href="https://opengameart.org/content/lpc-horse-extended">LPC Horse Extended</a>{" "}
+              by Benjamin K. Smith (BenCreating), built on bluecarrot16&rsquo;s{" "}
+              <a href="https://opengameart.org/content/lpc-horses">[LPC] Horses</a>.
+              All under CC-BY 3.0; see{" "}
+              <a href="/stackacres-td/animals/CREDITS.md">CREDITS.md</a>.
+            </li>
+            <li>
               <strong>Inside the house, the barn and the workshop</strong> — the
               walls, floors, windows, rugs and furniture are{" "}
               <a href="https://github.com/ElizaWy/LPC">LPC Revised</a>, drawn by

@@ -267,10 +267,66 @@ CAST.update({
                          ("torso_clothes_longsleeve2_buttoned", "tan"), ("legs_pants2", "brown"), ("feet_boots_revised", "walnut")],
                   palette={"body": "brown", "hair": "black", "eye": "brown"}),
 })
+# The barn crew. Each job has its own clothes so a player can tell them apart
+# across the yard: denim overalls for the stock hands who feed, water and muck out, a white shirt and a brown
+# half apron for the dairy hands who milk and collect the eggs, and tan overalls for the field hands.
+CAST.update({
+    "abe": dict(items=[BODY, ("heads_human_male_elderly", None), ("hair_plain", None), ("beards_winter", None),
+                       ("torso_clothes_longsleeve", "red"), ("torso_aprons_overalls", "blue"), ("legs_pants2", "navy"),
+                       ("feet_boots_revised", "brown"), ("hat_cap_bonnie", "leather")],
+                palette={"body": "light", "hair": "gray", "eye": "blue"}),
+    "jed": dict(items=[BODY, ("heads_human_male", None), ("hair_curly_short2", None), ("hat_headband_thick", "red"),
+                       ("torso_clothes_longsleeve2_buttoned", "tan"), ("torso_aprons_overalls", "blue"),
+                       ("legs_pants2", "navy"), ("feet_boots_revised", "walnut")],
+                body="teen", palette={"body": "brown", "hair": "black", "eye": "brown"}),
+    "hattie": dict(items=[BODY, ("heads_human_female", None), ("hair_ponytail2", None), ("hat_bandana", "red"),
+                          ("torso_clothes_longsleeve", "white"), ("torso_aprons_apron_half", "brown"),
+                          ("legs_pants2", "brown"), ("feet_boots_revised", "brown")],
+                   body="female", palette={"body": "bronze", "hair": "dark_brown", "eye": "brown"}),
+    "etta": dict(items=[BODY, ("heads_human_female", None), ("hair_bangs_bun", None), ("torso_clothes_longsleeve", "white"),
+                        ("torso_aprons_apron_half", "walnut"), ("legs_pants2", "charcoal"), ("feet_boots_revised", "black")],
+                 body="female", palette={"body": "light", "hair": "ginger", "eye": "green"}),
+    "clem": dict(items=[BODY, ("heads_human_male", None), ("hair_plain", None), ("beards_medium", None),
+                        ("torso_clothes_shortsleeve", "teal"), ("torso_aprons_overalls", "tan"), ("legs_pants2", "tan"),
+                        ("feet_boots_revised", "walnut"), ("hat_cap_bonnie", "tan")],
+                 palette={"body": "bronze", "hair": "black", "eye": "brown"}),
+    "wyatt": dict(items=[BODY, ("heads_human_male", None), ("hair_plain", None), ("hat_bandana", "navy"),
+                         ("torso_clothes_longsleeve", "forest"), ("torso_aprons_overalls", "tan"), ("legs_pants2", "tan"),
+                         ("feet_boots_revised", "brown")],
+                  body="teen", palette={"body": "amber", "hair": "chestnut", "eye": "brown"}),
+    # The third of each job, for the bigger farm. LPC draws overalls on the male, female and teen bodies
+    # only, so Rufus is big by his beard and build of clothes rather than the muscular body.
+    "rufus": dict(items=[BODY, ("heads_human_male_elderly", None), ("hair_balding", None), ("beards_winter", None),
+                         ("torso_clothes_longsleeve2_buttoned", "maroon"), ("torso_aprons_overalls", "blue"),
+                         ("legs_pants2", "navy"), ("feet_boots_revised", "black")],
+                  palette={"body": "taupe", "hair": "dark_brown", "eye": "brown"}),
+    "nora": dict(items=[BODY, ("heads_human_female", None), ("hair_braid", None), ("torso_clothes_longsleeve", "white"),
+                        ("torso_aprons_apron_half", "leather"), ("legs_pants2", "navy"), ("feet_boots_revised", "brown")],
+                 body="female", palette={"body": "brown", "hair": "black", "eye": "brown"}),
+    "cal": dict(items=[BODY, ("heads_human_male", None), ("hair_messy", None), ("hat_bandana2", "green"),
+                       ("torso_clothes_tshirt", "sky"), ("torso_aprons_overalls", "tan"), ("legs_pants2", "tan"),
+                       ("feet_boots_revised", "brown")],
+                body="teen", palette={"body": "light", "hair": "blonde", "eye": "blue"}),
+    # A fourth stock hand, now there are pigs and horses to feed.
+    "silas": dict(items=[BODY, ("heads_human_male", None), ("hair_plain", None), ("beards_medium", None),
+                         ("torso_clothes_longsleeve", "gray"), ("torso_aprons_overalls", "blue"), ("legs_pants2", "navy"),
+                         ("feet_boots_revised", "walnut"), ("hat_cap_bonnie", "navy")],
+                  palette={"body": "brown", "hair": "gray", "eye": "brown"}),
+    # The stable hands wear forest green shirts, tan breeches and tall folded boots.
+    "amos": dict(items=[BODY, ("heads_human_male", None), ("hair_plain", None), ("torso_clothes_longsleeve2_buttoned", "forest"),
+                        ("legs_pants2", "tan"), ("feet_boots_fold", "black")],
+                 palette={"body": "light", "hair": "chestnut", "eye": "green"}),
+    "ruby": dict(items=[BODY, ("heads_human_female", None), ("hair_long_straight", None), ("torso_clothes_longsleeve2_vneck", "forest"),
+                        ("legs_pants2", "tan"), ("feet_boots_fold", "black"), ("hat_cap_bonnie", "forest")],
+                 body="female", palette={"body": "amber", "hair": "black", "eye": "brown"}),
+})
 # What each carries in their arms at work, and who takes the apron off to sit on a break.
 STORE_STAFF = {"june": None, "omar": None, "nell": None, "theo": None, "rosa": "produce", "ines": "produce", "kofi": "produce",
                "dale": "crate", "cole": "crate",
                "ravi": None, "noor": None, "lucia": None, "sade": "produce", "otto": "produce", "wren": "crate", "zeke": "crate"}
+# The barn crew and the job each one does: stock (feed, water, muck out), dairy (milk, eggs) or field.
+FARM_CREW = {"abe": "stock", "jed": "stock", "rufus": "stock", "silas": "stock", "hattie": "dairy", "etta": "dairy",
+             "nora": "dairy", "clem": "field", "wyatt": "field", "cal": "field", "ruby": "stable", "amos": "stable"}
 STORE_SHOPPERS = ("mabel", "priya", "gus", "hank", "lena", "tomas", "ada", "bruno", "cora", "dev", "elsie", "felix", "gemma",
                   "hugo", "iris", "jonah", "kiko", "luis", "maya", "ned", "olive", "pablo", "quinn", "rhea", "sam", "tilly",
                   "uma", "vince", "winnie", "yusuf")

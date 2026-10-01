@@ -986,3 +986,37 @@ def market_cart():
     s.rect(11, 20, 3, 3, "o")
     s.rect(24, 19, 3, 7, "N")
     return s.outline(), (19, 26)
+
+
+# ------------------------------------------------------------------ Barnyard: the stable and the sty
+
+def stable():
+    """A shed-row stable: four open stalls under a lean-to roof and a feed room at the east end. The base
+    point is the back of the stall row, so a horse standing in a stall is drawn over the stable."""
+    w, h = 164, 70
+    s = Sprite(w, h)
+    s.rect(0, 0, w, 26, "s")
+    s.rect(0, 26, w, 2, "W")
+    s.rect(2, 28, 128, 40, "K")
+    s.rect(2, 56, 128, 12, "Y")
+    for x in (1, 33, 65, 97, 129):
+        s.rect(x, 26, 3, 42, "o")
+    s.rect(130, 28, 32, 40, "R")
+    s.rect(146, 40, 14, 28, "N")
+    return s.outline(), (82, 52)
+
+
+def pig_ark():
+    """A tin pig ark: a half-round shelter, its open end toward the yard with straw inside."""
+    w, h = 52, 34
+    s = Sprite(w, h)
+    for y in range(2, 30):
+        for x in range(2, w - 2):
+            if ((x - w / 2) / (w / 2 - 2)) ** 2 + ((y - 30) / 28) ** 2 <= 1:
+                s.put(x, y, "s" if (y // 3) % 2 else "g")
+    for y in range(12, 30):
+        for x in range(8, w - 8):
+            if ((x - w / 2) / (w / 2 - 8)) ** 2 + ((y - 30) / 18) ** 2 <= 1:
+                s.put(x, y, "K")
+    s.rect(10, 26, w - 20, 4, "Y")
+    return s.outline(), (w // 2, 31)

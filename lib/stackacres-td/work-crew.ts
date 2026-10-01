@@ -35,6 +35,7 @@ import {
   walkAmong,
   type Board,
   type Crowd,
+  type CrewJob,
   type Job,
   type Router,
   type Task,
@@ -103,22 +104,22 @@ export interface Leg {
   around?: boolean;
 }
 
-export interface Plan {
+export interface Plan<J extends CrewJob = Job> {
   legs: Leg[];
   /** Put back whatever the worker is carrying when the job falls through halfway. */
   giveBack: (count: number) => void;
   /** Another job to run on into from here, claimed off the board for this worker, or null. */
-  chain?: (worker: Worker) => { task: Task; legs: Leg[] } | null;
+  chain?: (worker: Worker<J>) => { task: Task; legs: Leg[] } | null;
 }
 
 /** Turns a note into the legs of the job, or null when the note has gone stale. */
-export type Planner = (task: Task, worker: Worker) => Plan | null;
+export type Planner<J extends CrewJob = Job> = (task: Task, worker: Worker<J>) => Plan<J> | null;
 
 /** What a worker steps with, handed in by the site each step. */
-export interface WorkContext {
+export interface WorkContext<J extends CrewJob = Job> {
   board: Board;
   route: Router;
-  planner: Planner;
+  planner: Planner<J>;
   crowd: Crowd;
   /** The site's walking pace, ms a tile. */
   msPerTile: number;
@@ -131,16 +132,18 @@ export interface WorkContext {
   random: () => number;
 }
 
-export class Worker {
+export class Worker<J extends CrewJob = Job> {
   state: WorkerState = "IDLE";
   readonly walker: Walker;
   carrying = 0;
+  /** What the goods in their arms are, where a site says ("milk", "feed"); cleared with them. */
+  holding: string | null = null;
   /** 1 rested, 0 worn out. */
   energy = 1;
   private tasks: Task[] = [];
   /** Notes whose work has started: never put back on the board, only torn up. */
   private started = new Set<string>();
-  private plan: Plan | null = null;
+  private plan: Plan<J> | null = null;
   private leg = 0;
   private workLeft = 0;
   private nextLook: number;
@@ -153,7 +156,9 @@ export class Worker {
 
   constructor(
     readonly name: string,
-    readonly job: Job,
+    // Never inferred from the argument: a worker is a Worker<Job> on the grocery and a Worker<FarmJob> on the
+    // farm, not a Worker<"stocker"> that won't take the grocery's planner.
+    readonly job: NoInfer<J>,
     readonly sprite: string,
     at: Tile,
     firstLook: number,
@@ -180,19 +185,19 @@ export class Worker {
     return this.state === "BREAK";
   }
 
-  private msPerTile(ctx: WorkContext): number {
+  private msPerTile(ctx: WorkContext<J>): number {
     const weary = this.energy < WEARY ? 1.15 : 1;
     const dawdle = this.has("dawdler") ? 1.2 : 1;
     return ctx.msPerTile * this.profile.walk * weary * dawdle;
   }
 
-  private wearOut(dt: number, rate: number, ctx: WorkContext): void {
+  private wearOut(dt: number, rate: number, ctx: WorkContext<J>): void {
     if (this.has("overworker")) return;
     const steady = this.has("steady") ? 0.7 : 1;
     this.energy = Math.max(0, this.energy - (dt / this.profile.endurance) * rate * steady * ctx.wear);
   }
 
-  step(now: number, dt: number, ctx: WorkContext): void {
+  step(now: number, dt: number, ctx: WorkContext<J>): void {
     const { board, route, planner } = ctx;
     // A few transitions can happen in one tick (a note is claimed and the walk begins); never loop forever.
     for (let hops = 0; hops < 4; hops++) {
@@ -320,7 +325,7 @@ export class Worker {
    * Stuck short of the job's own square because someone stands on it: work it from a free square beside
    * it if the job allows, or after long enough put the job back on the board for later.
    */
-  private whenHeldUp(now: number, ctx: WorkContext): void {
+  private whenHeldUp(now: number, ctx: WorkContext<J>): void {
     const leg = this.currentLeg();
     const next = this.walker.path[0];
     if (!leg || !this.goal || !next || !sameTile(next, this.goal)) return;
@@ -352,13 +357,14 @@ export class Worker {
     }
     if (this.carrying > 0) this.plan?.giveBack(this.carrying);
     this.carrying = 0;
+    this.holding = null;
     this.walker.path = [];
     this.clear();
     this.rest(now);
   }
 
   /** On the way to a job, hands still empty: drop it for a worse one on the board, if there is one. */
-  private glanceForWorse(now: number, ctx: WorkContext): boolean {
+  private glanceForWorse(now: number, ctx: WorkContext<J>): boolean {
     if (now < this.nextLook || this.leg !== 0 || this.carrying > 0 || this.tasks.length !== 1) return false;
     this.nextLook = now + LOOK_EVERY_MS;
     const current = this.tasks[0];
@@ -379,7 +385,7 @@ export class Worker {
     return true;
   }
 
-  private nextLeg(now: number, ctx: WorkContext): void {
+  private nextLeg(now: number, ctx: WorkContext<J>): void {
     this.leg += 1;
     if (this.leg >= this.legs().length) {
       this.state = "COMPLETE";
@@ -396,7 +402,7 @@ export class Worker {
   }
 
   /** Nothing to do: back to their post, if they're not there already, to wait facing the right way. */
-  private goHome(ctx: WorkContext): void {
+  private goHome(ctx: WorkContext<J>): void {
     if (!this.home || this.walker.path.length > 0 || this.walker.stepLeft > 0) return;
     if (sameTile(this.walker.tile, this.home)) {
       this.walker.facing = this.homeFacing;
@@ -406,7 +412,7 @@ export class Worker {
     if (path) this.walker.path = path;
   }
 
-  private goOnBreak(ctx: WorkContext): void {
+  private goOnBreak(ctx: WorkContext<J>): void {
     this.state = "BREAK";
     this.goal = null;
     if (!ctx.breakSpot) return;
@@ -427,6 +433,7 @@ export class Worker {
     }
     if (this.carrying > 0) this.plan?.giveBack(this.carrying);
     this.carrying = 0;
+    this.holding = null;
     this.walker.path = [];
     this.clear();
     this.rest(now);
@@ -464,6 +471,8 @@ export class Worker {
 
   view(): WalkerView {
     const { tile, from, stepMs, stepLeft, facing } = this.walker;
-    return { id: this.name, sprite: this.sprite, tile, from, stepMs, stepLeft, facing, doing: this.doing(), carrying: this.carrying };
+    const view: WalkerView = { id: this.name, sprite: this.sprite, tile, from, stepMs, stepLeft, facing, doing: this.doing(), carrying: this.carrying };
+    if (this.holding !== null && this.carrying > 0) view.holding = this.holding;
+    return view;
   }
 }

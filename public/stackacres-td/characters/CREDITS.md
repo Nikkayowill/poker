@@ -81,6 +81,9 @@ CC-BY 3.0, CC-BY 3.0+, CC-BY 4.0, CC-BY 4.0+, CC-BY-SA 3.0, CC-BY-SA 3.0+, CC0, 
 - **facial/glasses/halfmoon** - ElizaWy - OGA-BY 3.0
   - https://github.com/ElizaWy/LPC/tree/main/Characters/Head%20Accessories
   - https://opengameart.org/content/lpc-expanded-sit-run-jump-more
+- **feet/boots/fold** - JaidynReiman - OGA-BY 3.0+, CC-BY 3.0+, GPL 3.0
+  - https://opengameart.org/content/lpc-kimono-relm
+  - https://opengameart.org/content/lpc-expanded-socks-shoes
 - **feet/boots/revised** - ElizaWy, JaidynReiman, Stephen Challener (Redshrike), Johannes Sjölund (wulax) - OGA-BY 3.0
   - https://github.com/ElizaWy/LPC/tree/main/Characters/Clothing
   - https://opengameart.org/content/lpc-expanded-sit-run-jump-more
@@ -200,8 +203,15 @@ CC-BY 3.0, CC-BY 3.0+, CC-BY 4.0, CC-BY 4.0+, CC-BY-SA 3.0, CC-BY-SA 3.0+, CC0, 
   - https://opengameart.org/content/lpc-female-orcogregoblintroll-base-walkcycle
   - https://github.com/makrohn/Universal-LPC-spritesheet/commit/f50007cb47c235d8896cafae7a613f0b6a9a09a8?short_path=02b86d4#diff-02b86d45789a3e3e8e79519c7d17d15c9e6ecc9b4ddecb1bcd8dfbbaef430b75
   - https://opengameart.org/content/lpc-expanded-hats-facial-helmets
+- **hat/cloth/bandana2** - Napsio (Vitruvian Studio), JaidynReiman, Michael Whitlock (bigbeargames), Matthew Krohn (makrohn), Marcel van de Steeg (MadMarcel) - OGA-BY 3.0, CC-BY-SA 3.0
+  - https://opengameart.org/content/lpc-female-orcogregoblintroll-base-walkcycle
+  - https://github.com/makrohn/Universal-LPC-spritesheet/commit/f50007cb47c235d8896cafae7a613f0b6a9a09a8?short_path=02b86d4#diff-02b86d45789a3e3e8e79519c7d17d15c9e6ecc9b4ddecb1bcd8dfbbaef430b75
+  - https://opengameart.org/content/lpc-expanded-hats-facial-helmets
 - **hat/cloth/hood** - Johannes Sjölund (wulax), JaidynReiman - OGA-BY 3.0, CC-BY-SA 3.0, GPL 3.0
   - https://opengameart.org/content/lpc-medieval-fantasy-character-sprites
+  - https://opengameart.org/content/lpc-expanded-hats-facial-helmets
+- **hat/headband/thick** - JaidynReiman - OGA-BY 3.0+, CC-BY 3.0+, GPL 3.0
+  - https://opengameart.org/content/lpc-relm-hair-xlong-ponytail
   - https://opengameart.org/content/lpc-expanded-hats-facial-helmets
 - **hat/helmet/close** - bluecarrot16 - OGA-BY 3.0, CC-BY 3.0, CC-BY 4.0, GPL 2.0, GPL 3.0
   - https://opengameart.org/content/lpc-helmets
@@ -278,11 +288,15 @@ CC-BY 3.0, CC-BY 3.0+, CC-BY 4.0, CC-BY 4.0+, CC-BY-SA 3.0, CC-BY-SA 3.0+, CC0, 
   - https://opengameart.org/content/lpc-hand-tools
 - **tools/pickaxe** - bluecarrot16, JaidynReiman, Pierre Vigier (pvigier), Tuomo Untinen (reemax) - OGA-BY-3.0, CC-BY 4.0, CC-BY-SA 3.0+, GPL 2.0+
   - https://opengameart.org/content/lpc-hand-tools
+- **tools/shovel** - bluecarrot16, JaidynReiman, Pierre Vigier (pvigier), Johannes Sjölund (wulax), Inboxninja - CC-BY-SA 3.0
+  - https://opengameart.org/content/lpc-hand-tools
 - **tools/watering_can** - bluecarrot16 - OGA-BY 3.0+, CC-BY 4.0+, GPL 2.0+
   - https://opengameart.org/content/lpc-hand-tools
 - **torso/aprons/apron** - Nila122 - OGA-BY 3.0, CC-BY-SA 3.0, GPL 2.0, GPL 3.0
   - https://opengameart.org/content/lpc-aprons
 - **torso/aprons/apron_full** - ElizaWy, bluecarrot16 - OGA-BY 3.0, GPL 3.0
+  - http://opengameart.org/content/lpc-clothing-updates
+- **torso/aprons/apron_half** - ElizaWy, bluecarrot16 - OGA-BY 3.0, GPL 3.0
   - http://opengameart.org/content/lpc-clothing-updates
 - **torso/aprons/overalls** - ElizaWy, bluecarrot16, JaidynReiman - OGA-BY 3.0, GPL 3.0
   - https://opengameart.org/content/lpc-revised-character-basics
@@ -358,6 +372,13 @@ CC-BY 3.0, CC-BY 3.0+, CC-BY 4.0, CC-BY 4.0+, CC-BY-SA 3.0, CC-BY-SA 3.0+, CC0, 
   - https://opengameart.org/content/lpc-7-womens-shirts
   - http://opengameart.org/content/lpc-clothing-updates
   - https://opengameart.org/content/lpc-revised-character-basics
+  - https://github.com/ElizaWy/LPC/tree/main/Characters/Clothing
+  - https://opengameart.org/content/lpc-expanded-sit-run-jump-more
+  - https://opengameart.org/content/lpc-expanded-simple-shirts
+- **torso/clothes/shortsleeve/shortsleeve/male** - bluecarrot16, ElizaWy, JaidynReiman, Stephen Challener (Redshrike) - OGA-BY 3.0, CC-BY-SA 3.0, GPL 3.0
+  - https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
+  - http://opengameart.org/content/lpc-revised-character-basics
+  - http://opengameart.org/content/lpc-clothing-updates
   - https://github.com/ElizaWy/LPC/tree/main/Characters/Clothing
   - https://opengameart.org/content/lpc-expanded-sit-run-jump-more
   - https://opengameart.org/content/lpc-expanded-simple-shirts

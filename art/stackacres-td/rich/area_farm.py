@@ -331,3 +331,120 @@ def hitching_post():
         c.put(x, 22, "grass", 5.4)
     c.outline()
     return c.image(), (6, 24)
+
+
+# ------------------------------------------------------------------ Barnyard: the stable and the sty
+
+# The stable's lamp by the feed room door, for the night lighting (build_area.lit).
+LIGHTS = {"stable": [(142, 38, "lantern")]}
+
+
+def stable():
+    """A shed-row stable in the barn's red boards under a slate roof: four open stalls, each with a hay rack on
+    the shaded back wall and straw on the floor, and a shut feed room at the east end with a saddle on its wall.
+    The base point is the back of the stall row, so a horse standing in its stall is drawn in front of it."""
+    w, h, eave, floor = 164, 74, 26, 58
+    c = Canvas(w, h)
+    for y in range(1, eave):                                         # slate courses, paler up the slope
+        course = (y - 1) // 4
+        for x in range(w):
+            level = 3.0 + (eave - y) * 0.08 - x / w * 0.8
+            if (y - 1) % 4 == 3:
+                level -= 1.2                                          # the shadow under each course's lip
+            if (x + (course % 2) * 5) % 10 == 0:
+                level -= 0.7
+            level += (hash2(x // 10, course, 11) - 0.5) * 0.5
+            c.put(x, y, "slate", level)
+    for x in range(w):
+        c.put(x, 0, "slate", 5.0)                                     # ridge cap
+        c.put(x, eave, "white", 5.2)                                  # fascia
+        c.put(x, eave + 1, "white", 2.8)
+    for y in range(eave + 2, h - 2):                                 # the stalls' back wall, deep in shade
+        for x in range(2, 130):
+            level = 0.4 + (y - eave - 2) * 0.03 - (0.3 if (x - 2) % 6 == 0 else 0)
+            c.put(x, y, "wood", level)
+    for y in range(floor, h - 2):                                    # straw bedding, lit toward the open front
+        for x in range(2, 130):
+            v = hash2(x, y * 3, 21)
+            level = 1.2 + (y - floor) * 0.14 + (v - 0.5) * 0.9 - (0.6 if y == floor else 0)
+            c.put(x, y, "straw", level)
+    for k in range(4):
+        x0 = 2 + 32 * k
+        for y in range(34, 44):                                      # a slatted hay rack, hay over its top
+            for x in range(x0 + 10, x0 + 23):
+                slat = (x - x0 - 10) % 3 == 0
+                if y < 36:
+                    c.put(x, y, "straw", 4.4 + (hash2(x, y, 5) - 0.5) * 1.6)
+                elif slat:
+                    c.put(x, y, "wood", 3.6 - (y - 36) * 0.1)
+                else:
+                    c.put(x, y, "straw", 2.2 - (y - 36) * 0.1)
+        for x in range(x0 + 10, x0 + 23):
+            c.put(x, 44, "wood", 2.6)
+    for k in range(5):                                               # the stall posts
+        px = 1 + 32 * k
+        for y in range(eave + 2, h - 2):
+            c.put(px, y, "wood", 5.0 - (0.7 if hash2(px, y // 4, 3) < 0.25 else 0))
+            c.put(px + 1, y, "wood", 3.4)
+            c.put(px + 2, y, "wood", 1.5)
+    for y in range(eave + 2, h - 2):                                 # the feed room, boarded red like the barn
+        for x in range(132, 162):
+            level = 3.8 - (x - 132) * 0.03 - (y - eave) * 0.01 - (1.3 if (x - 132) % 5 == 0 else 0)
+            c.put(x, y, "barnred", level + (hash2(x // 5, y // 7, 13) - 0.5) * 0.4)
+    for y in range(42, h - 2):                                       # its door: white frame, Z brace
+        for x in range(146, 160):
+            edge = x in (146, 159) or y == 42
+            c.put(x, y, "white" if edge else "barnred", 4.6 if edge else 2.6 - (0.9 if (x - 146) % 4 == 0 else 0))
+    for y in range(44, h - 3):                                       # the brace, corner to corner
+        x = 147 + round((y - 44) * 11 / (h - 48))
+        c.put(x, y, "white", 4.2)
+        c.put(x + 1, y, "white", 3.0)
+    c.put(156, 58, "gold", 4.6)                                      # latch
+    c.put(157, 58, "gold", 3.2)
+    for y in range(36, 42):                                          # a lamp on its bracket by the door
+        for x in range(140, 144):
+            c.put(x, y, "lamp" if 37 <= y <= 40 and 141 <= x <= 142 else "coal", 4.6 if y < 39 else 3.6)
+    c.put(141, 35, "coal", 2.0)
+    c.put(142, 35, "coal", 2.0)
+    for x in range(w):                                               # the stone sill along the front
+        c.put(x, h - 2, "stone", 4.4 if (x // 8) % 2 else 3.8)
+        c.put(x, h - 1, "stone", 2.0)
+    c.outline()
+    return c.image(), (82, 56)
+
+
+def pig_ark():
+    """A tin pig ark: a half-round shelter with its open end to the yard, the tin's ribs curving over the top,
+    rust in the grooves and straw spilling out of the dark mouth."""
+    w, h = 52, 34
+    cx, base = 25.5, 31
+    c = Canvas(w, h)
+    for y in range(1, base + 1):
+        for x in range(w):
+            outer = ((x - cx) / 24.5) ** 2 + ((y - base) / 29) ** 2
+            mouth = ((x - cx) / 16.5) ** 2 + ((y - base) / 20) ** 2
+            if outer > 1:
+                continue
+            if mouth <= 1:
+                depth = 0.3 + max(0, (y - 18)) * 0.05
+                c.put(x, y, "wood", depth)                            # the dark inside
+                continue
+            band = (outer - mouth) / 1.0
+            rib = int((math.sqrt(outer) * 12)) % 2                   # ribs following the curve
+            level = 4.2 - (x - cx) / 24 * 1.4 + (0.7 if rib else -0.5) + (1.0 - y / base) * 0.6
+            ramp = "stone"
+            if rib == 0 and noise1(x, y * 0.5, 3, 17) > 0.8:
+                ramp, level = "orange", level - 1.8                   # rust in a groove
+            c.put(x, y, ramp, level)
+    for x in range(w):                                               # the front edge of the tin catching light
+        for y in range(1, base + 1):
+            mouth = ((x - cx) / 16.5) ** 2 + ((y - base) / 20) ** 2
+            if 1 < mouth <= 1.16:
+                c.put(x, y, "stone", 6.0 if x < cx else 4.8)
+    for y in range(24, base + 2):                                    # straw bedding, spilling from the mouth
+        for x in range(9, w - 9):
+            spill = ((x - cx) / 17) ** 2 + ((y - base) / 7.5) ** 2
+            if spill <= 1 or (y >= base - 1 and abs(x - cx) < 19 and hash2(x, y, 7) < 0.6):
+                c.put(x, y, "straw", 2.6 + (y - 24) * 0.25 + (hash2(x, y, 9) - 0.5) * 1.6)
+    c.outline()
+    return c.image(), (26, base)

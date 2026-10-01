@@ -35,6 +35,9 @@ LPC_HEIGHT = 50
 # softens the pixels. Cutting back to a palette undoes both. Transparent pixels are keyed to a
 # colour no sprite uses so the palette can carry one transparent index.
 COLOURS, KEY = 48, (255, 0, 255)
+# The barn crew carry six loads of their own colours (hay, water, milk, eggs, muck, wheat) on top of their
+# clothes, and at 48 the palette gives the loads' few pixels away to skin and cloth: the water went grey.
+FARM_COLOURS = 96
 
 # Frame holds, kept from the rig so actions keep the timing the game was tuned against.
 DURATIONS = {"harvest": [110, 170, 170, 350], "water": [160, 160, 160, 160],
@@ -173,7 +176,10 @@ def stepped(walk, stand):
 # stride is his. Everyone else keeps the 112 frame sheet the game already loads, except the grocery's
 # people, who walk the shop floor all day and are only loaded where the shop is.
 STORE_PEOPLE = set(cast.STORE_STAFF) | set(cast.STORE_SHOPPERS)
-STRIDES = {"farmer"} | STORE_PEOPLE
+# The barn crew work the yard all day like the grocery's staff work the floor, and get the same small,
+# trimmed sheets and the same stride.
+FARM_PEOPLE = set(cast.FARM_CREW)
+STRIDES = {"farmer"} | STORE_PEOPLE | FARM_PEOPLE
 
 # What the grocery's people do, cut from LPC poses (lib/stackacres-td/work-board.ts `Act`): reaching out
 # (stocking a shelf, picking produce, taking something off a shelf) is the thrust with the arm out; handing
@@ -234,6 +240,119 @@ def held_walk(who, d, thing):
     return out
 
 
+# What the barn crew carry across the yard, each cut from the LPC interior sheets: a hay bale to feed a
+# trough, a pail of water from the well, the same pail full of milk, a basket of eggs from the coop, a
+# basket of dirty straw out of a pen, and a sheaf of wheat in from the field.
+FARM_LOADS = ("feed", "water", "milk", "eggs", "muck", "sheaf")
+# The pail's water and milk, darkest to lightest: the pack draws the pail near empty, so it is filled to
+# just under the rim with one of these (`pail`).
+WATER = [(40, 84, 132), (64, 122, 180), (104, 168, 220), (186, 226, 248)]
+MILK = [(196, 186, 164), (230, 222, 202), (246, 242, 228), (255, 255, 250)]
+# Muck is the pack's green hay repainted as dark, wet straw.
+MUCK = [(46, 32, 20), (84, 60, 32), (130, 100, 52), (176, 146, 82)]
+
+
+def _repaint(img, ramp):
+    """Every drawn pixel repainted along `ramp` by how light it was."""
+    out = img.copy()
+    px = out.load()
+    for y in range(out.height):
+        for x in range(out.width):
+            r, g, b, a = px[x, y]
+            if a:
+                lum = (r * 3 + g * 6 + b) / 2550
+                px[x, y] = (*ramp[min(len(ramp) - 1, int(lum * len(ramp) * 1.25))], a)
+    return out
+
+
+def _in(container, heap, rise_part=3):
+    """`heap` sitting down in `container`, just its top showing over the rim."""
+    rise = max(1, heap.height // rise_part)
+    out = Image.new("RGBA", (max(container.width, heap.width), container.height + rise))
+    out.alpha_composite(heap, ((out.width - heap.width) // 2, 0))
+    out.alpha_composite(container, ((out.width - container.width) // 2, out.height - container.height))
+    return out
+
+
+def _shrunk(img, width):
+    img = img.crop(img.getbbox())
+    return img.resize((width, max(1, round(img.height * width / img.width))), Image.LANCZOS)
+
+
+def pail(ramp):
+    """The pack's pail (Buckets.png, column 0 row 1) filled with `ramp`, and without the shadow it casts on
+    the floor, since it is carried. The pixel rows are that drawing's: the inside of the rim is rows 4 to 7,
+    and the shadow is everything from row 19 down outside the pail's foot."""
+    img = interior_piece("Objects/Small Items/Buckets.png", 0, 1)
+    px = img.load()
+    inside = {(68, 39, 37), (107, 60, 46), (60, 94, 139), (79, 143, 186), (49, 72, 41), (25, 51, 45)}
+    outline = (42, 23, 34)
+    for y in range(img.height):
+        for x in range(img.width):
+            r, g, b, a = px[x, y]
+            if y >= 21 or (y >= 19 and (r, g, b) == outline and not 2 <= x <= 16):
+                px[x, y] = (0, 0, 0, 0)
+            elif 4 <= y <= 7 and 3 <= x <= 16 and a and (r, g, b) in inside:
+                shade = 3 if y == 5 and 7 <= x <= 9 else {4: 1, 5: 2, 6: 2, 7: 0}[y]
+                px[x, y] = (*ramp[shade], 255)
+    return img.crop(img.getbbox())
+
+
+def farm_load(kind):
+    """One of FARM_LOADS, drawn in LPC pixels, ready for `held_walk`."""
+    if kind in ("water", "milk"):
+        return _shrunk(pail(WATER if kind == "water" else MILK), 18)
+    if kind == "feed":
+        # A bale cut across the pack's straw, keeping its ragged ends.
+        straw = Image.open(os.path.join(INTERIOR, "Objects/Small Items/Hay & Straw.png")).convert("RGBA").crop((64, 0, 128, 96))
+        straw = straw.crop(straw.getbbox())
+        return _shrunk(straw.crop((0, 20, straw.width, 52)), 22)
+    if kind == "eggs":
+        basket = interior_piece("Objects/Small Items/Baskets A.png", 0, 0, 0.62)
+        eggs = interior_piece("Objects/Small Items/Food/Eggs.png", 0, 2, 0.5)
+        return _in(basket, eggs, rise_part=2)
+    if kind == "muck":
+        basket = interior_piece("Objects/Small Items/Baskets A.png", 0, 1, 0.62)
+        straw = Image.open(os.path.join(INTERIOR, "Objects/Small Items/Hay & Straw.png")).convert("RGBA").crop((0, 0, 64, 96))
+        return _in(basket, _repaint(_shrunk(straw.rotate(90, expand=True), 17), MUCK), rise_part=2)
+    if kind == "sheaf":
+        # Four long-stalked ears bound together and carried across the arms, heads to one side.
+        ear = interior_piece("Objects/Small Items/Food/Grains, Grasses.png", 5, 0)
+        bundle = Image.new("RGBA", (ear.width + 9, ear.height + 1))
+        for dx, dy in ((0, 1), (3, 0), (6, 1), (9, 0)):
+            bundle.alpha_composite(ear, (dx, dy))
+        return _shrunk(bundle.rotate(90, expand=True), 24)
+    raise KeyError(kind)
+
+
+# The barn crew's work, cut from LPC poses. Tipping a load into a trough is the hands held together at
+# the chest (the spellcast's) with the body leaning over the trough and back (`bent`): (column, drop,
+# lean) per frame. Shovelling muck is LPC's shovel on the thrust: drawn back, pushed in, dug, lifted.
+# Milking is sitting low on the ground with the hands working in front, the spellcast's two hand
+# heights in turn (`seated_hands`).
+POUR = [(2, 0, 0), (2, 2, 1), (2, 4, 2), (2, 2, 1)]
+POUR_MS = [200, 180, 420, 200]
+SHOVEL = ("tool_shovel", None)
+MUCK_COLS, MUCK_MS = [1, 3, 4, 2], [200, 160, 280, 200]
+MILK_SEAT, MILK_HANDS, MILK_MS = 1, [1, 2, 1, 2], [240, 240, 240, 240]
+# Brushing a horse down is the slash with nothing in the hand: drawn in, swept out along her flank, higher,
+# and back. The stable hands only.
+GROOM_COLS, GROOM_MS = [2, 3, 4, 3], [220, 180, 260, 180]
+
+
+def seated_hands(who, d, seat, hands):
+    """LPC's sit pose `seat` with the arms and chest from the spellcast column `hands`, lowered to sit
+    where the seated body's shoulders are."""
+    sat = who.frames("sit", d)[seat]
+    arms = who.frames("spellcast", d)[hands]
+    stand = who.frames("idle", d)[0]
+    drop = sat.getbbox()[1] - stand.getbbox()[1]
+    out = Image.new("RGBA", sat.size)
+    out.alpha_composite(sat.crop((0, LPC_WAIST - 6 + drop, lpc.FRAME, lpc.FRAME)), (0, LPC_WAIST - 6 + drop))
+    out.alpha_composite(arms.crop((0, 0, lpc.FRAME, LPC_WAIST - 6)), (0, drop))
+    return out
+
+
 def basket_walk(who, d):
     """A shopper's walk with a hand basket hanging at their side."""
     basket = interior_piece("Objects/Small Items/Baskets A.png", 0, 0, 0.62)
@@ -274,7 +393,7 @@ def frames_for(name, height):
         out.append(("walk", d, [place(f, height) for f in pick], [WALK_MS] * 4))
     # The grocery's people never farm, so their sheets skip the farm's actions (the first sixteen frames,
     # the walk that holds the standing poses the scene names by index, stay where they are).
-    for action, how in ACTIONS.items() if name not in STORE_PEOPLE else ():
+    for action, how in ACTIONS.items() if name not in STORE_PEOPLE | FARM_PEOPLE else ():
         for d in DIRS:
             who = dressed(how["tools"])
             if how.get("poses") == "pick":
@@ -323,9 +442,44 @@ def frames_for(name, height):
             if name in cast.STORE_STAFF:               # shoppers don't take breaks on the staff chair
                 sit = unaproned.frames("sit", d)
                 out.append(("sit", d, [place(sit[0], height)] * 4, SIT_MS))
+    if name in FARM_PEOPLE:
+        out.extend(farm_frames(name, dressed([]), dressed([SHOVEL]), height))
     if name in HOLDERS:
         src = dressed([]).frames(HOLD["anim"], "down")
         out.append(("hold", "down", [place(src[c], height) for c in HOLD["cols"]], HOLD_MS))
+    return out
+
+
+def farm_frames(name, who, shovel, height):
+    """The barn crew's tags: a carry for each of FARM_LOADS, tipping a load into a trough, reaching, handing
+    over, picking, milking, shovelling muck, sitting on a break, and for the stable hands grooming. The apron comes off to sit down, as the
+    grocery's does (LPC never drew one seated)."""
+    spec = cast.CAST[name]
+    unaproned = lpc.Character([i for i in spec["items"] if not i[0].startswith("torso_aprons_apron")],
+                              body=spec.get("body", "male"), palette=spec.get("palette"))
+    loads = {kind: farm_load(kind) for kind in FARM_LOADS}
+    out = []
+    for d in DIRS:
+        stand = who.frames("idle", d)[0]
+        for kind, thing in loads.items():
+            out.append((f"carry_{kind}", d, strided(held_walk(who, d, thing), stand, d, height), [STRIDE_MS] * 8))
+        hands = who.frames("spellcast", d)
+        out.append(("pour", d, [place(bent(hands[c].convert("RGBA"), drop, lean, d), height) for c, drop, lean in POUR],
+                    POUR_MS))
+        for act in ("reach", "give"):
+            anim, cols, holds = STORE_ACTS[act]
+            src = who.frames(anim, d)
+            out.append((act, d, [place(src[min(c, len(src) - 1)], height) for c in cols], holds))
+        out.append(("harvest", d, [place(bent(who.frames(anim, d)[col].convert("RGBA"), drop, lean, d), height)
+                                   for anim, col, drop, lean in PICK[d]], DURATIONS["harvest"]))
+        out.append(("milk", d, [place(seated_hands(unaproned, d, MILK_SEAT, h), height) for h in MILK_HANDS], MILK_MS))
+        dig = shovel.frames("thrust", d)
+        out.append(("muck", d, [place(dig[c], height) for c in MUCK_COLS], MUCK_MS))
+        sit = unaproned.frames("sit", d)
+        out.append(("sit", d, [place(sit[0], height)] * 4, SIT_MS))
+        if cast.FARM_CREW[name] == "stable":
+            brush = who.frames("slash", d)
+            out.append(("groom", d, [place(brush[c], height) for c in GROOM_COLS], GROOM_MS))
     return out
 
 
@@ -354,7 +508,7 @@ def packed(frames, width=COLS * SIZE):
     return sheet, rects
 
 
-def write(name, blocks):
+def write(name, blocks, out=OUT):
     """The sheet and its Aseprite-shaped JSON, in the layout Phaser's createFromAseprite reads."""
     frames, sheet_frames, tags, rows, row = [], {}, [], [], 0
     for action, d, imgs, holds in blocks:
@@ -376,7 +530,7 @@ def write(name, blocks):
         else:
             tags.append({"name": tag, "from": first, "to": len(frames) - 1,
                          "direction": "forward", "color": "#000000ff"})
-    if name in STORE_PEOPLE:
+    if name in STORE_PEOPLE | FARM_PEOPLE:
         sheet, rects = packed(frames)
         for i, ((fx, fy, fw, fh), box) in enumerate(rects):
             sheet_frames[str(i)].update({
@@ -386,15 +540,19 @@ def write(name, blocks):
         sheet = Image.new("RGBA", (COLS * SIZE, row * SIZE))
         for i, c, r in rows:
             sheet.alpha_composite(frames[i], (c * SIZE, r * SIZE))
-    os.makedirs(OUT, exist_ok=True)
-    small, clear = paletted(sheet)
-    small.save(os.path.join(OUT, f"{name}.png"), transparency=clear, optimize=True)
-    with open(os.path.join(OUT, f"{name}.json"), "w") as fh:
+    os.makedirs(out, exist_ok=True)
+    small, clear = paletted(sheet, FARM_COLOURS if name in FARM_PEOPLE else COLOURS)
+    small.save(os.path.join(out, f"{name}.png"), transparency=clear, optimize=True)
+    with open(os.path.join(out, f"{name}.json"), "w") as fh:
         json.dump({"frames": sheet_frames,
                    "meta": {"image": f"{name}.png", "format": "RGBA8888",
                             "size": {"w": sheet.width, "h": sheet.height}, "scale": "1",
                             "frameTags": tags}}, fh, separators=(",", ":"))
     return len(frames), sheet.size
+
+
+# Every tool anyone is drawn holding, for the credits and the licence check.
+TOOLS = [t for how in list(ACTIONS.values()) + list(SWINGS.values()) for t in how["tools"]] + [SHOVEL]
 
 
 def credits(names):
@@ -406,8 +564,7 @@ def credits(names):
     rows, licences = {}, set()
     for name in names:
         spec = cast.CAST[name]
-        tools = [t for how in list(ACTIONS.values()) + list(SWINGS.values()) for t in how["tools"]]
-        who = lpc.Character(spec["items"] + tools, body=spec.get("body", "male"),
+        who = lpc.Character(spec["items"] + TOOLS, body=spec.get("body", "male"),
                             palette=spec.get("palette"))
         for row in who.credits():
             rows[row.get("file")] = row
@@ -432,29 +589,34 @@ def credits(names):
     return authors, licences
 
 
-def paletted(img):
+def paletted(img, colours=COLOURS):
     """An RGBA sheet as a palette PNG with one transparent index."""
     alpha = img.getchannel("A").point(lambda v: 255 if v >= 128 else 0)
     rgb = img.convert("RGB")
     rgb.paste(KEY, mask=ImageChops.invert(alpha))
-    out = rgb.quantize(colors=COLOURS, method=Image.MEDIANCUT, dither=Image.NONE)
+    out = rgb.quantize(colors=colours, method=Image.MEDIANCUT, dither=Image.NONE)
     palette = out.getpalette()
-    clear = min(range(COLOURS),
+    clear = min(range(colours),
                 key=lambda i: sum((palette[i * 3 + c] - KEY[c]) ** 2 for c in range(3)))
     return out, clear
 
 
-def main(names):
-    """Everyone in the cast, except the two LPC cannot dress unless they are asked for by name."""
-    names = names or [n for n in cast.CAST if n not in cast.ODD_ONES]
+def main(args):
+    """Everyone in the cast, except the two LPC cannot dress unless they are asked for by name.
+    `--out <dir>` writes the sheets there instead of public/stackacres-td/characters."""
+    out = OUT
+    if args[:1] == ["--out"]:
+        out, args = args[1], args[2:]
+    everyone = [n for n in cast.CAST if n not in cast.ODD_ONES]
+    names = args or everyone
     for name in names:
-        count, size = write(name, frames_for(name, cast.TARGET_HEIGHT))
+        count, size = write(name, frames_for(name, cast.TARGET_HEIGHT), out)
         print(f"{name:9s} {count:3d} frames  {size[0]}x{size[1]}")
-    authors, licences = credits(names)
+    # The credits cover the whole cast whoever was rebuilt, or building a few would drop the rest.
+    authors, licences = credits(sorted(set(everyone) | set(names)))
     print(f"\ncredits: {len(authors)} artists, licences {sorted(licences)}")
     strict = [n for n in names for p in [cast.build(n).license_problems()] if p]
-    tools = lpc.Character([t for how in list(ACTIONS.values()) + list(SWINGS.values()) for t in how["tools"]])
-    share_alike = tools.license_problems()
+    share_alike = lpc.Character(TOOLS).license_problems()
     if strict:
         print("share-alike only, in a wardrobe:", strict)
     if share_alike:

@@ -23,6 +23,7 @@ cast rebuilds from one command and a character is a list of clothes instead of a
 | `verify.py` | reads the built PNG and its tags back, so a layout mistake shows as a broken picture |
 | `mockup.py` | drops sprites into a real area, the way the game draws it |
 | `review.py` | the before and after pictures for a review page |
+| `animals.py` | the barnyard's animals, from LPC's farm animals, piglets and horses in `animals/` (see its `SOURCES.md`), into `public/stackacres-td/animals/` |
 
 ## Things that cost an hour to find out
 

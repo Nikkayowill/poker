@@ -116,6 +116,9 @@ export type Action =
   | { action: "request-contract" }
   | { action: "pass-contract" }
   | { action: "fulfill-contract" }
+  // Takes one finished Daily Farm Board line's reward (../stackacres/
+  // farm-board.ts). The code names its own period, so nothing else is sent.
+  | { action: "claim-farm-board"; code: string }
   | { action: "tap-secret-zone"; zoneId: HiddenZoneId }
   | { action: "donate-secret-item"; itemId: SecretItemId }
   | { action: "consume-secret-item"; itemId: SecretItemId }

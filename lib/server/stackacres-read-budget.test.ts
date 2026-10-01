@@ -29,8 +29,12 @@ import { describe, expect, it } from "vitest";
  */
 describe("the StackAcres read budget", () => {
   const SERVICE = readFileSync(join(process.cwd(), "lib/server/stackacres-service.ts"), "utf8");
+  // The NEWEST migration that redefines the batch, not the first one that
+  // did. Every later redefinition copies the whole body forward, so the
+  // latest file is the live definition -- point this at the new file
+  // whenever one of them redefines it again.
   const MIGRATION = readFileSync(
-    join(process.cwd(), "supabase/migrations/20260928232207_stackacres_read_batch_fold_far_field.sql"),
+    join(process.cwd(), "supabase/migrations/20261001020000_stackacres_farm_board.sql"),
     "utf8",
   );
 
@@ -105,7 +109,16 @@ describe("the StackAcres read budget", () => {
     // Far Field migration that redefines it also creates its own tables.
     const batchFn = MIGRATION.slice(MIGRATION.indexOf("create or replace function public.stackacres_read_batch"));
     const keys = batchFn.match(/^\s{4}'[a-z_]+', /gm) ?? [];
-    expect(keys.length).toBe(42);
+    // 44: the Far Field migration's 42, plus the Daily Farm Board's two
+    // period rows (20261001020000). The board is NOT in the fallback array
+    // above, and deliberately: its read is a conditional draw rather than a
+    // plain per-table select (it writes a row on the period's first read),
+    // so it lives in farmBoardView beside the other exceptions' reasoning.
+    // It still belongs in the batch, or a live-Supabase farm would draw a
+    // board it then could not see.
+    expect(keys.length).toBe(44);
+    expect(batchFn).toContain("'farm_board_daily'");
+    expect(batchFn).toContain("'farm_board_weekly'");
   });
 
   it("returns the whole farm from the actions route too", () => {

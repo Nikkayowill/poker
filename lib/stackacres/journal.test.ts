@@ -27,6 +27,7 @@ const FRESH: JournalInput = {
   vat: null,
   cellar: null,
   story: null,
+  farmBoard: null,
   progress: { sectors: [], influence: 0, greenhouseBuilt: false, cropFieldsUnlocked: false },
   machines: [],
   woodNodes: [],

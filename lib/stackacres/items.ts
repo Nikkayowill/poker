@@ -73,25 +73,32 @@ export const STACKACRES_ITEM_CATALOGUE: Readonly<Record<StackAcresItem, StackAcr
   wool: { label: "Fleece", plural: "Fleeces", icon: "ico-fleece", sellPrice: 76 },
   milk: { label: "Milk", plural: "Milk", icon: "ico-milk", sellPrice: 220 },
 
-  /* ---- Tier 1 (fast/cheap): sellPrice 2, yield quantity 1. Unchanged by the
-   * 2026-09-12 crop-roster swap -- see catalogue.ts's TIER1 comment. ---- */
+  /* ---- Tier 1 -- Homestead: sellPrice 2, yield quantity 1. Unchanged by
+   * the 2026-09-14 seed-tier pass -- see catalogue.ts's FARMSTEAD comment. ---- */
   lettuce: { label: "Lettuce", plural: "Lettuce", icon: "ico-lettuce", sellPrice: 2 },
   spinach: { label: "Spinach", plural: "Spinach", icon: "ico-spinach", sellPrice: 2 },
   radish: { label: "Radish", plural: "Radishes", icon: "ico-radish", sellPrice: 2 },
-  onion: { label: "Onion", plural: "Onions", icon: "ico-onion", sellPrice: 2 },
   carrot: { label: "Carrot", plural: "Carrots", icon: "ico-carrot", sellPrice: 2 },
-  potato: { label: "Potato", plural: "Potatoes", icon: "ico-potato", sellPrice: 2 },
-  cabbage: { label: "Cabbage", plural: "Cabbages", icon: "ico-cabbage", sellPrice: 2 },
 
-  /* ---- Tier 2 (medium): sellPrice 25, yield quantity 4. ---- */
+  /* ---- Tier 2 -- River Plot: sellPrice 14, yield quantity 4. Retuned
+   * 2026-09-14 alongside these four moving into catalogue.ts's new
+   * RIVER_PLOT bucket (25 seed) -- 14 x 4 nets 31 over seed, the same
+   * "comfortably positive, not a giveaway" margin every other tier keeps. ---- */
+  onion: { label: "Onion", plural: "Onions", icon: "ico-onion", sellPrice: 14 },
+  potato: { label: "Potato", plural: "Potatoes", icon: "ico-potato", sellPrice: 14 },
+  cabbage: { label: "Cabbage", plural: "Cabbages", icon: "ico-cabbage", sellPrice: 14 },
+  green_bean: { label: "Green Bean", plural: "Green Beans", icon: "ico-green_bean", sellPrice: 14 },
+
+  /* ---- Tier 3 -- Highland Ridge: sellPrice 25, yield quantity 4. ---- */
   broccoli: { label: "Broccoli", plural: "Broccoli", icon: "ico-broccoli", sellPrice: 25 },
   pepper: { label: "Pepper", plural: "Peppers", icon: "ico-pepper", sellPrice: 25 },
   bell_pepper: { label: "Bell Pepper", plural: "Bell Peppers", icon: "ico-bell_pepper", sellPrice: 25 },
   celery: { label: "Celery", plural: "Celery", icon: "ico-celery", sellPrice: 25 },
-  green_bean: { label: "Green Bean", plural: "Green Beans", icon: "ico-green_bean", sellPrice: 25 },
-  tomato: { label: "Tomato", plural: "Tomatoes", icon: "ico-tomato", sellPrice: 25 },
 
-  /* ---- Tier 3 (slow/valuable): sellPrice 44, yield quantity 5. ---- */
+  /* ---- Tier 4 -- Ancient Grove: sellPrice 44, yield quantity 5. Tomato
+   * moved up into this bucket 2026-09-14 (was Tier 2/25 sellPrice); its
+   * sellPrice/yield now match its three grove-mates exactly. ---- */
+  tomato: { label: "Tomato", plural: "Tomatoes", icon: "ico-tomato", sellPrice: 44 },
   corn: { label: "Corn", plural: "Corn", icon: "ico-corn", sellPrice: 44 },
   eggplant: { label: "Eggplant", plural: "Eggplants", icon: "ico-eggplant", sellPrice: 44 },
   // Own icon, "ico-wheatsheaf" -- NOT machine-items.ts's "ico-wheat" glyph,
@@ -113,21 +120,21 @@ export const STACKACRES_YIELDS: Readonly<Record<StackAcresStock, StackAcresYield
   cattle: { item: "milk", quantity: 8 },
 
   /* ---- All 16 crops: item id == stock id, always. Tier 1 quantity is 1,
-   * tier 2 is 4, tier 3 is 5 -- see the tier comments in
+   * tiers 2-3 are 4, tier 4 is 5 -- see the tier comments in
    * STACKACRES_ITEM_CATALOGUE above. ---- */
   lettuce: { item: "lettuce", quantity: 1 },
   spinach: { item: "spinach", quantity: 1 },
   radish: { item: "radish", quantity: 1 },
-  onion: { item: "onion", quantity: 1 },
   carrot: { item: "carrot", quantity: 1 },
-  potato: { item: "potato", quantity: 1 },
-  cabbage: { item: "cabbage", quantity: 1 },
+  onion: { item: "onion", quantity: 4 },
+  potato: { item: "potato", quantity: 4 },
+  cabbage: { item: "cabbage", quantity: 4 },
+  green_bean: { item: "green_bean", quantity: 4 },
   broccoli: { item: "broccoli", quantity: 4 },
   pepper: { item: "pepper", quantity: 4 },
   bell_pepper: { item: "bell_pepper", quantity: 4 },
   celery: { item: "celery", quantity: 4 },
-  green_bean: { item: "green_bean", quantity: 4 },
-  tomato: { item: "tomato", quantity: 4 },
+  tomato: { item: "tomato", quantity: 5 },
   corn: { item: "corn", quantity: 5 },
   eggplant: { item: "eggplant", quantity: 5 },
   wheatsheaf: { item: "wheatsheaf", quantity: 5 },

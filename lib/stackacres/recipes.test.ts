@@ -8,7 +8,7 @@ import {
   recipeRawGoldValue,
   recipesForMachine,
 } from "./recipes";
-import { CONTRACT_RUNGS } from "./contracts";
+import { CONTRACT_RUNGS, contractRequirements } from "./contracts";
 import { MACHINE_KINDS } from "./machines";
 import { isMachineItem, isMachineProcessedItem, machineItemSellPrice } from "./machine-items";
 
@@ -98,6 +98,11 @@ describe("contract pricing", () => {
   it("pays a uniform premium over the raw inputs, on every rung", () => {
     // A rung under 1.0x makes the machine a sink; one far above the others
     // turns the single open contract into a reroll puzzle. Narrow band.
+    //
+    // Summed across EVERY good a rung requires, not just the primary --
+    // a multi-good rung (see contracts.ts's own header) has to clear this
+    // band against the full combined raw value of everything it asks for,
+    // or its second ingredient could be priced arbitrarily.
     const priced = CONTRACT_RUNGS.map((rung) => {
       const recipe = recipeForOutput(rung.item);
       if (!recipe) return null;
@@ -107,8 +112,16 @@ describe("contract pricing", () => {
     expect(priced.length).toBeGreaterThan(0);
     for (const rung of CONTRACT_RUNGS) {
       if (rung.item === "flour") continue; // priced off seed, see contracts.ts
-      const recipe = recipeForOutput(rung.item)!;
-      const ratio = rung.goldReward / (recipeRawGoldValue(recipe) * rung.quantity);
+      // A raw-crop extra requirement (see contracts.ts's header) has no
+      // recipe to look up and contributes nothing to this ratio -- there is
+      // no rung today whose PRIMARY is a raw crop, so this never silently
+      // exempts the good this check actually exists to police.
+      const rawValue = contractRequirements(rung).reduce((total, requirement) => {
+        if (!isMachineProcessedItem(requirement.item)) return total;
+        const recipe = recipeForOutput(requirement.item);
+        return recipe ? total + recipeRawGoldValue(recipe) * requirement.quantity : total;
+      }, 0);
+      const ratio = rung.goldReward / rawValue;
       expect(ratio).toBeGreaterThan(1.25);
       expect(ratio).toBeLessThan(1.35);
     }

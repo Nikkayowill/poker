@@ -48,7 +48,7 @@ import { machineItemSellPrice, type MachineItemId, type MachineProcessedItem } f
 import type { MachineKind } from "./machines";
 import { hasEnough, type StackAcresInventory } from "./inventory";
 
-export const RECIPE_IDS = ["flour", "cheese", "cloth", "cake"] as const;
+export const RECIPE_IDS = ["flour", "cheese", "cloth", "cake", "spinach_loaf"] as const;
 export type RecipeId = (typeof RECIPE_IDS)[number];
 
 export function isRecipeId(value: string): value is RecipeId {
@@ -113,6 +113,22 @@ export const RECIPE_CATALOGUE: Readonly<Record<RecipeId, RecipeDef>> = {
     ],
     output: { item: "cake", quantity: 1 },
     processingMs: 0,
+  },
+  // The one recipe that combines two GROWN crops rather than a crop and
+  // livestock produce -- Wheat (wheatsheaf) and Spinach, both straight off
+  // the Crop Fields, ground together at the Mill. Queued like Flour (the
+  // Mill's other recipe), not instant like Cake: this is still the Mill,
+  // which has always been a wait, and there is no reason this recipe alone
+  // should feel different from the machine it runs on.
+  spinach_loaf: {
+    label: "Spinach Loaf",
+    machine: "mill",
+    inputs: [
+      { item: "wheatsheaf", quantity: 2 },
+      { item: "spinach", quantity: 10 },
+    ],
+    output: { item: "spinach_loaf", quantity: 1 },
+    processingMs: 60 * 1000,
   },
 };
 

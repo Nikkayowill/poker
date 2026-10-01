@@ -38,6 +38,8 @@ export interface StackAcresSectorModalProps {
   unlocked: readonly SectorId[];
   /** Crops and animals going, for the "keep N going" line. */
   unitCount: number;
+  /** Town Influence earned to date, for a sector's "earn N Influence" line. */
+  influence: number;
   /** Null while the profile has not loaded; the price still shows. */
   goldBalance: number | null;
   unlimitedGold: boolean;
@@ -53,6 +55,7 @@ export function StackAcresSectorModal({
   sector,
   unlocked,
   unitCount,
+  influence,
   goldBalance,
   unlimitedGold,
   upkeepOutstanding,
@@ -61,7 +64,7 @@ export function StackAcresSectorModal({
   onClose,
 }: StackAcresSectorModalProps) {
   const def = STACKACRES_SECTORS[sector];
-  const check = sectorClearCheck(sector, { unlocked, unitCount });
+  const check = sectorClearCheck(sector, { unlocked, unitCount, influence });
   // The land fee is a requirement like any other, and shown as one rather
   // than as an error after the fact -- a player who taps Clear and is told
   // about a bill they were never shown has been ambushed by their own farm.

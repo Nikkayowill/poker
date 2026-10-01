@@ -112,7 +112,7 @@ describe("unlockedSectors", () => {
 });
 
 describe("sectorClearCheck", () => {
-  const noUnits = { unlocked: [HOME_SECTOR] as SectorId[], unitCount: 0 };
+  const noUnits = { unlocked: [HOME_SECTOR] as SectorId[], unitCount: 0, influence: 0 };
 
   it("reports land you already hold as nothing to buy", () => {
     const check = sectorClearCheck("farmstead", noUnits);
@@ -129,17 +129,42 @@ describe("sectorClearCheck", () => {
     expect(check.requirements.some((requirement) => !requirement.met)).toBe(true);
   });
 
-  it("opens the first rung once enough stock is going", () => {
+  it("opens the first rung once enough stock is going and Influence is earned", () => {
     const check = sectorClearCheck("wallow", {
       unlocked: [HOME_SECTOR],
       unitCount: STACKACRES_SECTORS.wallow.requiresUnits,
+      influence: STACKACRES_SECTORS.wallow.requiresInfluence,
     });
     expect(check.ok).toBe(true);
     expect(check.requirements.every((requirement) => requirement.met)).toBe(true);
   });
 
+  it("holds the first rung shut on units alone, Gold and Influence notwithstanding", () => {
+    // The "cannot just buy it with poker Gold" half of the gate: plenty of
+    // Influence and units is not enough on its own if the OTHER requirement
+    // is not met either -- every requirement is independent, not a total
+    // to clear.
+    const check = sectorClearCheck("wallow", {
+      unlocked: [HOME_SECTOR],
+      unitCount: 0,
+      influence: STACKACRES_SECTORS.wallow.requiresInfluence,
+    });
+    expect(check.ok).toBe(false);
+  });
+
+  it("holds the first rung shut on Influence alone, units notwithstanding", () => {
+    const check = sectorClearCheck("wallow", {
+      unlocked: [HOME_SECTOR],
+      unitCount: STACKACRES_SECTORS.wallow.requiresUnits,
+      influence: 0,
+    });
+    expect(check.ok).toBe(false);
+    const line = check.requirements.find((requirement) => requirement.label.includes("Influence"));
+    expect(line?.met).toBe(false);
+  });
+
   it("holds a later rung shut until the one before it is cleared", () => {
-    const plenty = { unlocked: [HOME_SECTOR] as SectorId[], unitCount: 99 };
+    const plenty = { unlocked: [HOME_SECTOR] as SectorId[], unitCount: 99, influence: 999 };
     const second = SECTOR_LADDER[1];
     const blocked = sectorClearCheck(second, plenty);
     expect(blocked.ok).toBe(false);
@@ -148,14 +173,25 @@ describe("sectorClearCheck", () => {
     const open = sectorClearCheck(second, {
       unlocked: [HOME_SECTOR, SECTOR_LADDER[0]],
       unitCount: 99,
+      influence: 999,
     });
     expect(open.ok).toBe(true);
   });
 
   it("says how many units the player has, not just how many are wanted", () => {
-    const check = sectorClearCheck("wallow", { unlocked: [HOME_SECTOR], unitCount: 1 });
+    const check = sectorClearCheck("wallow", { unlocked: [HOME_SECTOR], unitCount: 1, influence: 0 });
     const line = check.requirements.find((requirement) => requirement.label.includes("going"));
     expect(line?.label).toContain("you have 1");
+  });
+
+  it("says how much Influence the player has, not just how much is wanted", () => {
+    const check = sectorClearCheck("wallow", {
+      unlocked: [HOME_SECTOR],
+      unitCount: STACKACRES_SECTORS.wallow.requiresUnits,
+      influence: 3,
+    });
+    const line = check.requirements.find((requirement) => requirement.label.includes("Influence"));
+    expect(line?.label).toContain("you have 3");
   });
 });
 

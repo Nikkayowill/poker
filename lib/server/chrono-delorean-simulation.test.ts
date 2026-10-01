@@ -286,6 +286,11 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     await service.unlockStackAcresCropFields(token, t0);
     await service.stockStackAcres(token, { stock: "carrot" }, t0);
     await service.stockStackAcres(token, { stock: "carrot" }, t0);
+    // Wallow also gates on Town Influence now (2026-09-14) -- granted
+    // directly rather than earned through a real contract, since this test
+    // is about Land Maintenance across simulated days, not about how
+    // Influence itself is earned.
+    await store.adjustStackAcresInfluence(profile.id, sectors.STACKACRES_SECTORS.wallow.requiresInfluence);
     const afterWallow = await service.clearStackAcresSector(token, "wallow", t0);
 
     const [clearedSectors, capacity, cropFieldsUnlocked] = await Promise.all([

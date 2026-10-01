@@ -38,9 +38,27 @@
  * Gr8FarmPack 2D pixel-art set (see scripts/prepare-stackacres-farmpack-crops.py).
  * Same "just found some" trade the CraftPix pass itself once made against the
  * original two hand-vector crops. Every id below is both the stock kind and
- * its own art id, same as before. Three tiers by seed cost/duration/yield --
- * see each tier's own comment below; TIER1/TIER2/TIER3's own numbers are
- * untouched by this swap, only which crop sits in which tier changed.
+ * its own art id, same as before.
+ *
+ * SEED TIERS (2026-09-14): the 16 crops used to sit behind exactly one gate
+ * -- the standalone Crop Fields unlock (./crop-fields.ts), 15,000 Gold and 2
+ * units, after which all 16 were simultaneously buyable. That was the actual
+ * mechanic behind "I unlocked a seed, now what?": there was no second choice
+ * left to make. `tier` below (1-4) is the real ladder: Tier 1 needs nothing
+ * beyond Crop Fields, same as every crop always did, but Tiers 2-4 now also
+ * carry a `requiredQuestFlag`/`minimumMilestone` (this file already imports
+ * `StackAcresShopLock` for `StackAcresFeedDef`, so `StackAcresStockDef`
+ * extending it costs nothing new) -- the exact same gate
+ * `requireUnlockedShopEntry` already enforces for tool tiers in
+ * lib/server/stackacres-service.ts, reused rather than reinvented. See
+ * ./crop-tiers.ts for the sector each tier corresponds to. The four pricing
+ * buckets below (FARMSTEAD/RIVER_PLOT/HIGHLAND_RIDGE/ANCIENT_GROVE) are
+ * unchanged in shape from the old TIER1/TIER2/TIER3 buckets -- Farmstead and
+ * Ancient Grove keep the old Tier-1 and Tier-3 numbers outright, Highland
+ * Ridge keeps the old Tier-2 numbers, and River Plot is the one genuinely new
+ * bucket, sized between them. See ./items.ts for the matching sellPrice/yield
+ * retune -- moving a crop to a different bucket changes what it nets, not
+ * just what it costs.
  *
  * `wheatsheaf`, not `wheat`: the obvious id collides with two things already
  * in this codebase named plain `wheat` -- machine-items.ts's MACHINE_RAW_ITEMS
@@ -52,26 +70,33 @@
  * already used below and still uses.
  */
 
-import type { StackAcresShopLock } from "./shop-locks";
+import { STACKACRES_MAX_MILESTONE, type StackAcresShopLock } from "./shop-locks";
 
 export const STACKACRES_CROPS = [
-  // Tier 1 (fast/cheap): 1 seed / 15s / 8m thirst (unreachable at 15s -- see
-  // TIER1 below) / 2 muck.
+  // Tier 1 -- Homestead: 1 seed / 15s / 8m thirst (unreachable at 15s -- see
+  // FARMSTEAD below) / 2 muck. No lock beyond Crop Fields.
   "lettuce",
   "spinach",
   "radish",
-  "onion",
   "carrot",
+  // Tier 2 -- River Plot: 25 seed / 25m / 12m thirst / 35 muck. Locked
+  // behind clearing the Fold (`cleared_wallow`).
+  "onion",
   "potato",
   "cabbage",
-  // Tier 2 (medium): 55 seed / 90m / 40m thirst / 90 muck.
+  "green_bean",
+  // Tier 3 -- Highland Ridge: 55 seed / 90m / 40m thirst / 90 muck. Locked
+  // behind clearing Ox Fields (`cleared_oxfields`).
   "broccoli",
   "pepper",
   "bell_pepper",
   "celery",
-  "green_bean",
+  // Tier 4 -- Ancient Grove: 120 seed / 4h / 90m thirst / 200 muck. Locked
+  // behind every farm milestone (see ./shop-locks.ts) -- deliberately not a
+  // new or promoted sector, see ./crop-tiers.ts's own header for why. Each
+  // of these four also carries a grid-synergy buff to its neighbours (see
+  // ./grid-synergy.ts).
   "tomato",
-  // Tier 3 (slow/valuable): 120 seed / 4h / 90m thirst / 200 muck.
   "corn",
   "eggplant",
   "wheatsheaf",
@@ -117,9 +142,18 @@ export type SeedStock = Partial<Record<StackAcresCrop, number>>;
  *  that isn't just the player's own balance. */
 export const STACKACRES_SEED_BAGS_PER_PURCHASE = 20;
 
-export interface StackAcresStockDef {
+export interface StackAcresStockDef extends StackAcresShopLock {
   /** What the player calls it. */
   label: string;
+  /**
+   * The seed-tier ladder (1-4), crops only -- null for the three livestock
+   * kinds, which are gated by their own sector/pen rules already and were
+   * never part of the "too many seeds at once" problem this exists to fix.
+   * Present on every entry rather than left implicit, same reasoning as
+   * `spoils` above: a stock's tier is a decision made at that entry, not a
+   * default nobody chose. See ./crop-tiers.ts.
+   */
+  tier: 1 | 2 | 3 | 4 | null;
   /** Gold debited when the unit is stocked for one cycle. */
   seedCost: number;
   /** Working time until it can be collected, excluding any time spent hungry. */
@@ -198,9 +232,15 @@ export interface StackAcresStockDef {
  * seedCost/sellPrice/quantity retune, kept as whole Gold throughout since
  * nothing in this economy handles fractional currency).
  */
-const TIER1 = { seedCost: 1, durationMs: 15 * 1000, hungerMs: null, thirstMs: 8 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
-const TIER2 = { seedCost: 55, durationMs: 90 * 60 * 1000, hungerMs: null, thirstMs: 40 * 60 * 1000, spoils: false, muckFee: 90, ownableOutright: true } as const;
-const TIER3 = { seedCost: 120, durationMs: 4 * 60 * 60 * 1000, hungerMs: null, thirstMs: 90 * 60 * 1000, spoils: false, muckFee: 200, ownableOutright: true } as const;
+const FARMSTEAD = { seedCost: 1, durationMs: 15 * 1000, hungerMs: null, thirstMs: 8 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
+/**
+ * The one genuinely new pricing bucket in the 2026-09-14 tier pass -- sized
+ * between FARMSTEAD and HIGHLAND_RIDGE (which is the old, unchanged Tier-2
+ * bucket) so Tier 2 reads as a real step up rather than a re-costed Tier 1.
+ */
+const RIVER_PLOT = { seedCost: 25, durationMs: 25 * 60 * 1000, hungerMs: null, thirstMs: 12 * 60 * 1000, spoils: false, muckFee: 35, ownableOutright: true } as const;
+const HIGHLAND_RIDGE = { seedCost: 55, durationMs: 90 * 60 * 1000, hungerMs: null, thirstMs: 40 * 60 * 1000, spoils: false, muckFee: 90, ownableOutright: true } as const;
+const ANCIENT_GROVE = { seedCost: 120, durationMs: 4 * 60 * 60 * 1000, hungerMs: null, thirstMs: 90 * 60 * 1000, spoils: false, muckFee: 200, ownableOutright: true } as const;
 
 /**
  * Seed cost, time and hunger. What a unit YIELDS is in ./items.ts: the value
@@ -208,32 +248,37 @@ const TIER3 = { seedCost: 120, durationMs: 4 * 60 * 60 * 1000, hungerMs: null, t
  * not a payout baked in here.
  */
 export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresStockDef>> = {
-  // ---- Tier 1 (fast/cheap). ----
-  lettuce: { label: "Lettuce", ...TIER1 },
-  spinach: { label: "Spinach", ...TIER1 },
-  radish: { label: "Radish", ...TIER1 },
-  onion: { label: "Onion", ...TIER1 },
-  carrot: { label: "Carrot", ...TIER1 },
-  potato: { label: "Potato", ...TIER1 },
-  cabbage: { label: "Cabbage", ...TIER1 },
+  // ---- Tier 1 -- Homestead. No lock beyond Crop Fields. ----
+  lettuce: { label: "Lettuce", tier: 1, ...FARMSTEAD },
+  spinach: { label: "Spinach", tier: 1, ...FARMSTEAD },
+  radish: { label: "Radish", tier: 1, ...FARMSTEAD },
+  carrot: { label: "Carrot", tier: 1, ...FARMSTEAD },
 
-  // ---- Tier 2 (medium). ----
-  broccoli: { label: "Broccoli", ...TIER2 },
-  pepper: { label: "Pepper", ...TIER2 },
-  bell_pepper: { label: "Bell Pepper", ...TIER2 },
-  celery: { label: "Celery", ...TIER2 },
-  green_bean: { label: "Green Bean", ...TIER2 },
-  tomato: { label: "Tomato", ...TIER2 },
+  // ---- Tier 2 -- River Plot. Locked behind clearing the Fold. ----
+  onion: { label: "Onion", tier: 2, requiredQuestFlag: "cleared_wallow", ...RIVER_PLOT },
+  potato: { label: "Potato", tier: 2, requiredQuestFlag: "cleared_wallow", ...RIVER_PLOT },
+  cabbage: { label: "Cabbage", tier: 2, requiredQuestFlag: "cleared_wallow", ...RIVER_PLOT },
+  green_bean: { label: "Green Bean", tier: 2, requiredQuestFlag: "cleared_wallow", ...RIVER_PLOT },
 
-  // ---- Tier 3 (slow/valuable). ----
-  corn: { label: "Corn", ...TIER3 },
-  eggplant: { label: "Eggplant", ...TIER3 },
+  // ---- Tier 3 -- Highland Ridge. Locked behind clearing Ox Fields. ----
+  broccoli: { label: "Broccoli", tier: 3, requiredQuestFlag: "cleared_oxfields", ...HIGHLAND_RIDGE },
+  pepper: { label: "Pepper", tier: 3, requiredQuestFlag: "cleared_oxfields", ...HIGHLAND_RIDGE },
+  bell_pepper: { label: "Bell Pepper", tier: 3, requiredQuestFlag: "cleared_oxfields", ...HIGHLAND_RIDGE },
+  celery: { label: "Celery", tier: 3, requiredQuestFlag: "cleared_oxfields", ...HIGHLAND_RIDGE },
+
+  // ---- Tier 4 -- Ancient Grove. Locked behind every farm milestone -- see
+  // this file's header on why that is a milestone count, not a new sector.
+  // Each of these four also buffs its grid neighbours; see ./grid-synergy.ts.
+  tomato: { label: "Tomato", tier: 4, minimumMilestone: STACKACRES_MAX_MILESTONE, ...ANCIENT_GROVE },
+  corn: { label: "Corn", tier: 4, minimumMilestone: STACKACRES_MAX_MILESTONE, ...ANCIENT_GROVE },
+  eggplant: { label: "Eggplant", tier: 4, minimumMilestone: STACKACRES_MAX_MILESTONE, ...ANCIENT_GROVE },
   // Labelled Wheat, keyed as wheatsheaf -- see this file's header for why the
   // plain id collides with an unrelated existing item.
-  wheatsheaf: { label: "Wheat", ...TIER3 },
+  wheatsheaf: { label: "Wheat", tier: 4, minimumMilestone: STACKACRES_MAX_MILESTONE, ...ANCIENT_GROVE },
 
   hen: {
     label: "Hen Coop",
+    tier: null,
     seedCost: 50,
     durationMs: 15 * 60 * 1000,
     // Retuned 2026-09-11 from 45 minutes (longer than the Coop's own cycle,
@@ -257,6 +302,7 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     // every plot row, and renaming it would be a data migration to fix a
     // caption. Draw a pig and this one line goes back.
     label: "Sheep Pen",
+    tier: null,
     seedCost: 300,
     durationMs: 4 * 60 * 60 * 1000,
     hungerMs: 2 * 60 * 60 * 1000,
@@ -267,6 +313,7 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
   },
   cattle: {
     label: "Cattle Pen",
+    tier: null,
     seedCost: 1_200,
     durationMs: 24 * 60 * 60 * 1000,
     hungerMs: 8 * 60 * 60 * 1000,

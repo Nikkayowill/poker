@@ -30,6 +30,7 @@ function contract(over: Partial<StackAcresContractRow> = {}): StackAcresContract
     influenceReward: 10,
     status: "open",
     createdAt: "2026-09-04T00:00:00.000Z",
+    extraRequirements: [],
     ...over,
   };
 }

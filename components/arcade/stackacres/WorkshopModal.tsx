@@ -134,6 +134,7 @@ const RECIPE_VERB: Record<RecipeId, string> = {
   cheese: "Make",
   cloth: "Weave",
   cake: "Bake",
+  spinach_loaf: "Mill",
 };
 
 /** "3 Wheat → 1 Flour · 20s" / "2 Eggs + 1 Milk + 1 Flour → 1 Cake · instant". */

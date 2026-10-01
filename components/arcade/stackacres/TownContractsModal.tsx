@@ -7,6 +7,7 @@ import { useModalDismiss } from "@/components/use-modal-dismiss";
 import {
   CONTRACT_RUNGS,
   contractProgress,
+  contractRequirements as contractDefRequirements,
   isPostedRung,
   type ContractDef,
   type StackAcresContractRow,
@@ -200,14 +201,24 @@ function contain<E extends SyntheticEvent>(handler?: (event: E) => void) {
   };
 }
 
+/** Includes every extra requirement, not just the primary pair -- two rungs
+ *  sharing an item/quantity but differing in what else they ask for (see
+ *  contracts.ts's own header) need distinct keys, the same reason
+ *  `isPostedRung` compares the same list. */
 function rungKey(def: ContractDef): string {
-  return `${def.item}-${def.quantity}`;
+  return contractDefRequirements(def)
+    .map((requirement) => `${requirement.item}x${requirement.quantity}`)
+    .join("+");
 }
 
-/** "2 Flour for the town" -- built from the requirement rather than stored, so
- *  a retune of the ladder cannot leave a title describing the old rung. */
+/** "2 Flour for the town", or "4 Flour + 1 Cheese for the town" for a
+ *  multi-good rung -- built from the requirements rather than stored, so a
+ *  retune of the ladder cannot leave a title describing the old rung. */
 function rungTitle(def: ContractDef): string {
-  return `${machineItemLabel(def.item, def.quantity)} for the town`;
+  const goods = contractDefRequirements(def)
+    .map((requirement) => machineItemLabel(requirement.item, requirement.quantity))
+    .join(" + ");
+  return `${goods} for the town`;
 }
 
 function rewardsOf(def: ContractDef): readonly ContractReward[] {
@@ -273,9 +284,13 @@ export function TownContractsModal({
     () =>
       CONTRACT_RUNGS.map((def) => {
         const posted = isPostedRung(contract, def);
-        const requirements: readonly ContractRequirement[] = [
-          { item: def.item, required: def.quantity, held: heldOf(def.item) },
-        ];
+        const requirements: readonly ContractRequirement[] = contractDefRequirements(def).map(
+          (requirement) => ({
+            item: requirement.item,
+            required: requirement.quantity,
+            held: heldOf(requirement.item),
+          }),
+        );
         return {
           id: posted && contract ? contract.id : rungKey(def),
           title: rungTitle(def),

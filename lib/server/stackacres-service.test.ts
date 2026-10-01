@@ -84,6 +84,7 @@ import {
   adjustStackAcresCapacity,
   createStackAcresMachine,
   buildStackAcresGreenhouseRow,
+  createStackAcresContract,
 } from "./stackacres-store";
 import {
   STACKACRES_PRESTIGE_BASE_MULTIPLIER,
@@ -146,6 +147,7 @@ import {
 } from "@/lib/stackacres/wheat-plot";
 import { MACHINE_CAP, MACHINE_CATALOGUE, MACHINE_KINDS } from "@/lib/stackacres/machines";
 import { RECIPE_CATALOGUE } from "@/lib/stackacres/recipes";
+import { contractRequirements } from "@/lib/stackacres/contracts";
 import { SYNERGY_PERKS } from "@/lib/stackacres/synergy-perks";
 import {
   HIDDEN_ZONES,
@@ -619,6 +621,77 @@ describe("buyStackAcresSeed — Ray's shelf", () => {
     await expect(
       buyStackAcresSeed(token, { crop: "not-a-real-crop", quantity: 1 }, T0),
     ).rejects.toBeInstanceOf(StackAcresRequestError);
+  });
+
+  describe("the seed-tier ladder", () => {
+    // `funded` pre-shelves 1000 of every crop (see its own comment); every
+    // test below zeroes the one crop it cares about first, so an absolute
+    // "bought exactly 1" assertion is meaningful.
+
+    it("lets a genuinely fresh farm buy Tier 1 with no land and no flags at all", async () => {
+      const { token, id } = await funded(500_000, { land: [], cropFieldsUnlocked: false });
+      await adjustStackAcresSeedStock(id, "carrot", -1000);
+      const view = await buyStackAcresSeed(token, { crop: "carrot", quantity: 1 }, T0);
+      expect(view.seedStock.carrot).toBe(1);
+    });
+
+    it("refuses Tier 2 until the Fold is cleared, and takes no Gold for it", async () => {
+      const { token, id } = await funded(500_000, { land: [], cropFieldsUnlocked: false });
+      await adjustStackAcresSeedStock(id, "onion", -1000);
+      const before = await balance(token);
+
+      await expect(
+        buyStackAcresSeed(token, { crop: "onion", quantity: 1 }, T0),
+      ).rejects.toBeInstanceOf(StackAcresRequestError);
+      expect(await balance(token)).toBe(before);
+
+      await recordStackAcresSectorCleared(id, "wallow", T0);
+      const view = await buyStackAcresSeed(token, { crop: "onion", quantity: 1 }, T0);
+      expect(view.seedStock.onion).toBe(1);
+    });
+
+    it("refuses Tier 3 with the Fold cleared but not Ox Fields", async () => {
+      const { token, id } = await funded(500_000, { land: [], cropFieldsUnlocked: false });
+      await adjustStackAcresSeedStock(id, "broccoli", -1000);
+      await recordStackAcresSectorCleared(id, "wallow", T0);
+
+      await expect(
+        buyStackAcresSeed(token, { crop: "broccoli", quantity: 1 }, T0),
+      ).rejects.toBeInstanceOf(StackAcresRequestError);
+
+      await recordStackAcresSectorCleared(id, "oxfields", T0);
+      const view = await buyStackAcresSeed(token, { crop: "broccoli", quantity: 1 }, T0);
+      expect(view.seedStock.broccoli).toBe(1);
+    });
+
+    it("refuses Tier 4 until every farm milestone is earned", async () => {
+      const { token, id } = await funded(500_000, {
+        land: [...SECTOR_LADDER],
+        cropFieldsUnlocked: false,
+      });
+      await adjustStackAcresSeedStock(id, "corn", -1000);
+      // Both sectors cleared is only 2 of the 5 milestones -- corn stays shut.
+      await expect(
+        buyStackAcresSeed(token, { crop: "corn", quantity: 1 }, T0),
+      ).rejects.toBeInstanceOf(StackAcresRequestError);
+
+      await recordStackAcresCropFieldsUnlocked(id, T0);
+      await adjustStackAcresInfluence(id, 1);
+      await buildStackAcresGreenhouseRow(id);
+      // Now all 5: crop_fields_unlocked, cleared_wallow, cleared_oxfields,
+      // town_trusted, greenhouse_raised.
+      const view = await buyStackAcresSeed(token, { crop: "corn", quantity: 1 }, T0);
+      expect(view.seedStock.corn).toBe(1);
+    });
+
+    it("grandfathers a farm that already paid the old Crop Fields unlock into every tier", async () => {
+      // cropFieldsUnlocked: true, no land cleared, no influence -- the exact
+      // shape of a farm that unlocked crops before this ladder existed.
+      const { token, id } = await funded(500_000, { land: [], cropFieldsUnlocked: true });
+      await adjustStackAcresSeedStock(id, "corn", -1000);
+      const view = await buyStackAcresSeed(token, { crop: "corn", quantity: 1 }, T0);
+      expect(view.seedStock.corn).toBe(1);
+    });
   });
 });
 
@@ -2574,6 +2647,7 @@ describe("clearing land", () => {
   it("sells the first rung once its requirements are met, and takes the Gold", async () => {
     const { token, id } = await greenfield();
     await stockToward(token, STACKACRES_SECTORS[FIRST].requiresUnits);
+    await adjustStackAcresInfluence(id, STACKACRES_SECTORS[FIRST].requiresInfluence);
     const before = await balance(token);
 
     const view = await clearStackAcresSector(token, FIRST, T0);
@@ -2584,8 +2658,9 @@ describe("clearing land", () => {
   });
 
   it("lets the land it just sold be stocked", async () => {
-    const { token } = await greenfield();
+    const { token, id } = await greenfield();
     await stockToward(token, STACKACRES_SECTORS[FIRST].requiresUnits);
+    await adjustStackAcresInfluence(id, STACKACRES_SECTORS[FIRST].requiresInfluence);
     await clearStackAcresSector(token, FIRST, T0);
 
     // Pig is the Fold's (FIRST's) own stock -- proving the land just sold is
@@ -2595,13 +2670,15 @@ describe("clearing land", () => {
   });
 
   it("holds a later rung shut until the one before it is cleared", async () => {
-    // Requirements met on units, Gold in hand, and still refused: the ladder
-    // is the thing being tested, not the price. Two rungs since the
-    // 2026-09-08 district merge (see SECTOR_LADDER's own header) -- SECOND
-    // (Ox Fields) names FIRST (the Fold) in its own `requires`, so trying it
-    // first is refused until FIRST is actually cleared.
-    const { token } = await greenfield();
+    // Requirements met on units, Gold and Influence in hand, and still
+    // refused: the ladder is the thing being tested, not the price. Two
+    // rungs since the 2026-09-08 district merge (see SECTOR_LADDER's own
+    // header) -- SECOND (Ox Fields) names FIRST (the Fold) in its own
+    // `requires`, so trying it first is refused until FIRST is actually
+    // cleared.
+    const { token, id } = await greenfield();
     await stockToward(token, STACKACRES_SECTORS[SECOND].requiresUnits);
+    await adjustStackAcresInfluence(id, STACKACRES_SECTORS[SECOND].requiresInfluence);
 
     const before = await balance(token);
     await expect(clearStackAcresSector(token, SECOND, T0)).rejects.toBeInstanceOf(
@@ -2616,8 +2693,9 @@ describe("clearing land", () => {
   });
 
   it("charges for the same land once, and refunds the tab that lost the race", async () => {
-    const { token } = await greenfield();
+    const { token, id } = await greenfield();
     await stockToward(token, STACKACRES_SECTORS[FIRST].requiresUnits);
+    await adjustStackAcresInfluence(id, STACKACRES_SECTORS[FIRST].requiresInfluence);
     const before = await balance(token);
 
     await clearStackAcresSector(token, FIRST, T0);
@@ -3041,22 +3119,6 @@ describe("wheat and machines", () => {
 });
 
 describe("Town Contracts", () => {
-  /** Grows and mills enough Flour to fulfil whatever contract this player is
-   *  holding, regardless of which rung was drawn. */
-  async function stockpileFlour(token: string, flour: number, at = T0): Promise<Date> {
-    let now = at;
-    let made = 0;
-    while (made < flour) {
-      await sowStackAcresWheat(token, now);
-      now = new Date(now.getTime() + WHEAT_DURATION_MS);
-      await workStackAcres(token, now); // collects wheat, starts the mill
-      now = new Date(now.getTime() + RECIPE_CATALOGUE.flour.processingMs);
-      await workStackAcres(token, now); // collects the run into inventory
-      made += RECIPE_CATALOGUE.flour.output.quantity;
-    }
-    return now;
-  }
-
   it("posts one open contract and refuses a second while one is open", async () => {
     const { token } = await funded();
     await placeStackAcresMachine(token, "mill", T0);
@@ -3068,14 +3130,21 @@ describe("Town Contracts", () => {
   });
 
   it("fulfilling pays Gold and Influence, deducts the goods, and closes the contract", async () => {
-    const { token } = await funded();
+    const { token, id } = await funded();
     await placeStackAcresMachine(token, "mill", T0);
     const opened = await requestStackAcresContract(token, T0);
     const contract = opened.contract!;
-    const now = await stockpileFlour(token, contract.quantity, T0);
+    // Credited directly rather than grown-and-milled: the Mill can draw
+    // several different rungs now (Flour alone, Flour + Spinach, or Spinach
+    // Loaf -- lib/stackacres/contracts.ts's CONTRACT_RUNGS), and this test
+    // is about the fulfil/pay/close mechanics working for WHICHEVER one
+    // came up, not about re-proving the grow-and-mill pipeline itself.
+    for (const requirement of contractRequirements(contract)) {
+      await adjustStackAcresInventory(id, requirement.item, requirement.quantity);
+    }
 
     const before = await balance(token);
-    const result = await fulfillStackAcresTownContract(token, now);
+    const result = await fulfillStackAcresTownContract(token, T0);
 
     expect(result.contractReward).toEqual({
       gold: contract.goldReward,
@@ -3083,7 +3152,9 @@ describe("Town Contracts", () => {
     });
     expect(await balance(token)).toBe(before + contract.goldReward);
     expect(result.influence).toBe(contract.influenceReward);
-    expect(result.inventory.flour ?? 0).toBe(0);
+    for (const requirement of contractRequirements(contract)) {
+      expect(result.inventory[requirement.item] ?? 0).toBe(0);
+    }
     expect(result.contract).toBeNull();
   });
 
@@ -3098,6 +3169,98 @@ describe("Town Contracts", () => {
     expect(await balance(token)).toBe(before);
   });
 
+  describe("a multi-good rung", () => {
+    // Posted directly through the store rather than via `requestStackAcresContract`'s
+    // random draw, so the test names exactly which rung it is exercising.
+    const MULTI_GOOD_DEF = {
+      item: "flour" as const,
+      quantity: 4,
+      extraRequirements: [{ item: "cheese" as const, quantity: 1 }],
+      goldReward: 1_150,
+      influenceReward: 55,
+    };
+
+    it("deducts every required good and pays the combined reward", async () => {
+      const { token, id } = await funded();
+      await createStackAcresContract(id, MULTI_GOOD_DEF);
+      await adjustStackAcresInventory(id, "flour", 4);
+      await adjustStackAcresInventory(id, "cheese", 1);
+      const before = await balance(token);
+
+      const result = await fulfillStackAcresTownContract(token, T0);
+
+      expect(await balance(token)).toBe(before + MULTI_GOOD_DEF.goldReward);
+      expect(result.contractReward).toEqual({
+        gold: MULTI_GOOD_DEF.goldReward,
+        influence: MULTI_GOOD_DEF.influenceReward,
+      });
+      expect(result.inventory.flour ?? 0).toBe(0);
+      expect(result.inventory.cheese ?? 0).toBe(0);
+      expect(result.contract).toBeNull();
+    });
+
+    it("refuses when only the primary good is held, and deducts nothing at all", async () => {
+      const { token, id } = await funded();
+      await createStackAcresContract(id, MULTI_GOOD_DEF);
+      await adjustStackAcresInventory(id, "flour", 4);
+      // No cheese at all.
+      const before = await balance(token);
+
+      await expect(fulfillStackAcresTownContract(token, T0)).rejects.toBeInstanceOf(
+        StackAcresRequestError,
+      );
+
+      expect(await balance(token)).toBe(before);
+      // The Flour that WAS held must not have been debited either -- rule 1
+      // in reverse: a contract this farm cannot fully pay for charges it
+      // nothing, not even the goods it happened to have enough of.
+      const view = await readStackAcres(token, T0);
+      expect(view.inventory.flour ?? 0).toBe(4);
+      expect(view.contract).not.toBeNull();
+    });
+
+    it("refuses when only the secondary good is held, rolling back the primary deduction", async () => {
+      const { token, id } = await funded();
+      await createStackAcresContract(id, MULTI_GOOD_DEF);
+      await adjustStackAcresInventory(id, "flour", 2); // short of the 4 required
+      await adjustStackAcresInventory(id, "cheese", 1);
+      const before = await balance(token);
+
+      await expect(fulfillStackAcresTownContract(token, T0)).rejects.toBeInstanceOf(
+        StackAcresRequestError,
+      );
+
+      expect(await balance(token)).toBe(before);
+      const view = await readStackAcres(token, T0);
+      expect(view.inventory.flour ?? 0).toBe(2);
+      expect(view.inventory.cheese ?? 0).toBe(1);
+    });
+
+    it("fulfils a rung whose extra requirement is a raw crop, not another processed good", async () => {
+      const { token, id } = await funded();
+      const rawCropDef = {
+        item: "flour" as const,
+        quantity: 3,
+        extraRequirements: [{ item: "spinach" as const, quantity: 20 }],
+        goldReward: 280,
+        influenceReward: 20,
+      };
+      await createStackAcresContract(id, rawCropDef);
+      await adjustStackAcresInventory(id, "flour", 3);
+      await adjustStackAcresInventory(id, "spinach", 20);
+      const before = await balance(token);
+
+      const result = await fulfillStackAcresTownContract(token, T0);
+
+      expect(await balance(token)).toBe(before + rawCropDef.goldReward);
+      expect(result.contractReward).toEqual({
+        gold: rawCropDef.goldReward,
+        influence: rawCropDef.influenceReward,
+      });
+      expect(result.inventory.flour ?? 0).toBe(0);
+      expect(result.inventory.spinach ?? 0).toBe(0);
+    });
+  });
 });
 
 describe("recipes", () => {

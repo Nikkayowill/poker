@@ -5099,6 +5099,7 @@ export function StackAcresFarm() {
           sector={clearing}
           unlocked={sectors}
           unitCount={units.length}
+          influence={influence}
           goldBalance={profile?.goldBalance ?? null}
           unlimitedGold={profile?.unlimitedGold === true}
           upkeepOutstanding={upkeep.due}

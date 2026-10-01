@@ -18,6 +18,7 @@ import {
   type StackAcresCrop,
   type StackAcresLivestock,
   type StackAcresStock,
+  type StackAcresStockDef,
 } from "@/lib/stackacres/catalogue";
 import {
   effectiveStackAcresCycle,
@@ -105,6 +106,11 @@ import {
   type SoilTile,
   type SoilTileCoord,
 } from "@/lib/stackacres/soil";
+import {
+  stockBySoilSlot,
+  synergyGrowthMultiplier,
+  synergyYieldBonus,
+} from "@/lib/stackacres/grid-synergy";
 import {
   SOIL_BAGS_PER_PURCHASE,
   soilGrowthMultiplier,
@@ -402,7 +408,13 @@ import {
   type CrossbreedPlotView,
 } from "@/lib/stackacres/crossbreeding";
 import type { CrossbreedItem } from "@/lib/stackacres/crossbreed-items";
-import { canFulfillContract, drawContract, type StackAcresContractRow } from "@/lib/stackacres/contracts";
+import {
+  canFulfillContract,
+  contractRequirements,
+  drawContract,
+  type ContractRequirement,
+  type StackAcresContractRow,
+} from "@/lib/stackacres/contracts";
 import {
   RECIPE_CATALOGUE,
   isInstantRecipe,
@@ -893,6 +905,7 @@ function toContractView(contract: StoredContract): StackAcresContractRow {
     influenceReward: contract.influenceReward,
     status: contract.status,
     createdAt: contract.createdAt,
+    extraRequirements: contract.extraRequirements,
   };
 }
 
@@ -1282,8 +1295,8 @@ async function assignSoilSlot(
   stock: StackAcresStock,
   inGreenhouse: boolean,
   tile: SoilTileCoord | null = null,
-): Promise<{ slot: number | null; growthMultiplier: number }> {
-  const plain = { slot: null, growthMultiplier: 1 };
+): Promise<{ slot: number | null; growthMultiplier: number; yieldBonus: number }> {
+  const plain = { slot: null, growthMultiplier: 1, yieldBonus: 0 };
   if (inGreenhouse) return plain;
   if (!(STACKACRES_CROPS as readonly string[]).includes(stock)) return plain;
 
@@ -1306,7 +1319,16 @@ async function assignSoilSlot(
   const tileRow = soilSlotTile(soil, slot);
   if (!tileRow) return plain;
 
-  return { slot, growthMultiplier: soilGrowthMultiplier(soilTileTier(tileRow)) };
+  // Grid Synergy (lib/stackacres/grid-synergy.ts): a Tier 4 Ancient Grove
+  // neighbour's buff, multiplied straight into the soil tier's own
+  // multiplier -- the two stack the same way the Greenhouse's own
+  // multiplier already stacks with soil tier.
+  const stockBySlot = stockBySoilSlot(units);
+  const growthMultiplier =
+    soilGrowthMultiplier(soilTileTier(tileRow)) * synergyGrowthMultiplier(soil, tileRow, stockBySlot);
+  const yieldBonus = synergyYieldBonus(STACKACRES_YIELDS[stock].quantity, soil, tileRow, stockBySlot);
+
+  return { slot, growthMultiplier, yieldBonus };
 }
 
 /**
@@ -1681,6 +1703,32 @@ async function requireUnlockedShopEntry(
   });
 }
 
+/**
+ * `requireUnlockedShopEntry`, specifically for a crop's own seed-tier lock
+ * (see catalogue.ts's header) -- every crop/livestock purchase or sowing
+ * path routes through this instead of the generic check directly, so the
+ * one grandfather rule below cannot be forgotten at any call site.
+ *
+ * GRANDFATHERED: a farm that already paid the old standalone Crop Fields
+ * unlock (./crop-fields.ts, 15,000 Gold + 2 units) before this tier ladder
+ * existed keeps every tier open, full stop -- it already bought "every crop,
+ * unlocked," and this pass does not retroactively take four fifths of that
+ * purchase away. Only a farm that has NOT paid it -- which, from the moment
+ * this ships, means every new farm -- goes through the real ladder. This is
+ * the one deliberate asymmetry in an otherwise-uniform lock: tool tiers and
+ * feed shipments carry no such grandfather, because nothing before this
+ * pass ever sold a player "every tool, forever" the way Crop Fields did.
+ */
+async function requireUnlockedCropTier(
+  def: StackAcresStockDef,
+  profileId: string,
+  now: Date,
+): Promise<void> {
+  if (def.tier === null || def.tier === 1) return;
+  if (await readStackAcresCropFieldsUnlocked(profileId)) return;
+  await requireUnlockedShopEntry(def, profileId, now);
+}
+
 /** Refuses an action aimed at land nobody has cleared yet. The client hides
  *  these controls entirely (a locked sector paints no pens to tap), so this
  *  is the guard against a hand-rolled request rather than a UI state. */
@@ -1721,8 +1769,11 @@ export async function clearStackAcresSector(
   // Owing rent on the land you have is a reason not to be sold more of it,
   // and this settles the bill on the way past -- and hands over the two
   // answers the requirement check is about to ask for.
-  const { sectors, units } = await readLand(profile.id);
-  const check = sectorClearCheck(sector, { unlocked: sectors, unitCount: units.length });
+  const [{ sectors, units }, influence] = await Promise.all([
+    readLand(profile.id),
+    readStackAcresInfluence(profile.id),
+  ]);
+  const check = sectorClearCheck(sector, { unlocked: sectors, unitCount: units.length, influence });
   if (check.wild) {
     // Ground the 2026-09-07 map re-lay reserved with no system under it yet
     // (see ./lib/stackacres/sectors.ts's `SectorState`). Refused here as well
@@ -2227,6 +2278,11 @@ export async function plantStackAcresCrossbreedBed(
       { round: await snapshots(profile.id, now) },
     );
   }
+  // On top of Crop Fields above: WHICH of the 16 crops this farm may sow,
+  // even into the Crossbreeding Bed.
+  if (isStackAcresCrop(stock)) {
+    await requireUnlockedCropTier(def, profile.id, now);
+  }
 
   let debited: PlayerProfile;
   if (isLivestock(stock)) {
@@ -2331,6 +2387,14 @@ export async function buyStackAcresStock(
   const price = stackacresStockPrice(stock);
   const profile = await ensureProfile(token);
 
+  // The seed-tier gate applies here too -- buying a Tier 2-4 crop outright
+  // must not be a way around the same lock `buyStackAcresSeed` enforces.
+  // Tier 1 never reaches this check at all: it is never ownable outright
+  // (the `!stackacresStockOwnableOutright` refusal above), and livestock
+  // carries no lock (`requireUnlockedShopEntry` no-ops on an entry with
+  // neither field set).
+  await requireUnlockedCropTier(def, profile.id, now);
+
   const land = await readLand(profile.id);
   requireOpenSector(land.sectors, stockZone(stock), `${def.label}s`);
 
@@ -2388,7 +2452,7 @@ export async function buyStackAcresStock(
           // deliberately NOT stored: it is spent, gone, and re-derivable from the
           // stock whenever it is needed.
           stake: def.seedCost,
-          yieldQuantity: produce.quantity,
+          yieldQuantity: produce.quantity + soilAssignment.yieldBonus,
           startedAt: now,
           // Snapshotted here for good, the same as the sow path: the bed's
           // growth multiplier is baked into `ready_at` once and never
@@ -2472,6 +2536,12 @@ export async function stockStackAcres(
       409,
       { round: await snapshots(profile.id, now) },
     );
+  }
+  // On top of Crop Fields above: WHICH of the 16 crops this farm may sow.
+  // Stacks with the check above rather than replacing it -- see
+  // catalogue.ts's seed-tier header.
+  if (isStackAcresCrop(stock)) {
+    await requireUnlockedCropTier(def, profile.id, now);
   }
 
   if (inGreenhouse && !isGreenhouseStock(stock)) {
@@ -2595,7 +2665,7 @@ export async function stockStackAcres(
         await createStackAcresUnit(profile.id, {
           stock,
           stake: def.seedCost,
-          yieldQuantity: produce.quantity,
+          yieldQuantity: produce.quantity + soilAssignment.yieldBonus,
           startedAt: now,
           readyAt: new Date(now.getTime() + durationMs),
           // An animal counts as fed the moment it arrives; a crop never eats.
@@ -4344,12 +4414,17 @@ export async function requestStackAcresContract(
  * THE SECOND (and only other) GOLD PAYER IN THIS FILE -- see the module
  * header. Ordered the same way as every other spend-then-settle action here:
  *
- *   1. The goods leave inventory first (rule 1, applied to items instead of
- *      Gold, exactly as `harvestStackAcres` applies it to Gold before the
- *      write it pays for).
+ *   1. Every required good leaves inventory first (rule 1, applied to items
+ *      instead of Gold, exactly as `harvestStackAcres` applies it to Gold
+ *      before the write it pays for) -- one good for a plain contract, more
+ *      than one for a multi-good rung (see contracts.ts's own header). A
+ *      deduction that comes up short partway through a multi-good list rolls
+ *      back whatever already left, so a contract this farm cannot fully pay
+ *      for never partially charges it.
  *   2. The contract is marked fulfilled under a guard that can settle it at
- *      most once. Losing that race refunds the goods -- nothing here can pay
- *      out for a contract someone else already collected.
+ *      most once. Losing that race refunds every good just deducted --
+ *      nothing here can pay out for a contract someone else already
+ *      collected.
  *   3. Gold has today's Land Maintenance netted off the top
  *      (`netUpkeepFromPayout`), and Gold plus Influence are credited only
  *      once step 2 is durable.
@@ -4368,26 +4443,42 @@ export async function fulfillStackAcresTownContract(
   }
 
   const inventory = await readStackAcresInventory(profile.id);
-  if (!canFulfillContract(inventoryQuantity(inventory, contract.item), contract)) {
+  const requirements = contractRequirements(contract);
+  if (!canFulfillContract((item) => inventoryQuantity(inventory, item), contract)) {
+    const shortfall = requirements.find(
+      (req) => inventoryQuantity(inventory, req.item) < req.quantity,
+    ) as ContractRequirement;
     throw new StackAcresRequestError(
-      `This contract needs ${machineItemLabel(contract.item, contract.quantity)}.`,
+      `This contract needs ${machineItemLabel(shortfall.item, shortfall.quantity)}.`,
       409,
       { round: await snapshots(profile.id, now) },
     );
   }
 
-  // Step 1: the goods leave first.
-  const afterDeduct = await adjustStackAcresInventory(profile.id, contract.item, -contract.quantity);
-  if (afterDeduct === null) {
-    throw new StackAcresRequestError("Not enough on hand.", 409, {
-      round: await snapshots(profile.id, now),
-    });
+  // Step 1: every required good leaves first, in order, rolling back
+  // whatever already left if a later one in the same list comes up short --
+  // a concurrent spend on a different good between the check above and here
+  // is the only way that happens, since the check just passed.
+  const deducted: ContractRequirement[] = [];
+  for (const requirement of requirements) {
+    const afterDeduct = await adjustStackAcresInventory(profile.id, requirement.item, -requirement.quantity);
+    if (afterDeduct === null) {
+      for (const done of deducted) {
+        await adjustStackAcresInventory(profile.id, done.item, done.quantity).catch(() => null);
+      }
+      throw new StackAcresRequestError("Not enough on hand.", 409, {
+        round: await snapshots(profile.id, now),
+      });
+    }
+    deducted.push(requirement);
   }
 
   // Step 2: settle the contract itself, exactly once.
   const settled = await settleStackAcresContract(contract);
   if (!settled) {
-    await adjustStackAcresInventory(profile.id, contract.item, contract.quantity).catch(() => null);
+    for (const requirement of requirements) {
+      await adjustStackAcresInventory(profile.id, requirement.item, requirement.quantity).catch(() => null);
+    }
     throw new StackAcresRequestError("That contract was already settled.", 409, {
       round: await snapshots(profile.id, now),
     });
@@ -5016,6 +5107,10 @@ export async function buyStackAcresSeed(
     );
   }
   const def = STACKACRES_CATALOGUE[crop];
+  // The seed-tier gate: Tier 1 carries no lock, Tiers 2-4 do (see
+  // catalogue.ts's own header) -- the same `requireUnlockedShopEntry` every
+  // other gated shelf row already goes through, not a parallel check.
+  await requireUnlockedCropTier(def, profile.id, now);
   const cost = def.seedCost * quantity;
 
   const debited = await spendGoldByProfile(profile.id, cost);

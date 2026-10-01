@@ -21,6 +21,7 @@ import {
 } from "@/lib/stackacres/machine-items";
 import type { StackAcresInventory } from "@/lib/stackacres/inventory";
 import type { StackAcresWheatPlotRow } from "@/lib/stackacres/wheat-plot";
+import type { ContractRequirement } from "@/lib/stackacres/contracts";
 import { isMachineKind, type MachineKind, type StackAcresMachineRow } from "@/lib/stackacres/machines";
 import { isRecipeId, type RecipeId } from "@/lib/stackacres/recipes";
 import type { AgingManifest } from "@/lib/stackacres/aging";
@@ -2359,10 +2360,13 @@ export interface StoredContract {
   influenceReward: number;
   status: "open" | "fulfilled";
   createdAt: string;
+  /** See lib/stackacres/contracts.ts's ContractDef.extraRequirements. Always
+   *  an array, empty for a single-good contract. */
+  extraRequirements: readonly ContractRequirement[];
 }
 
 const CONTRACT_COLUMNS =
-  "id, profile_id, item, quantity, gold_reward, influence_reward, status, created_at";
+  "id, profile_id, item, quantity, gold_reward, influence_reward, status, created_at, extra_requirements";
 
 export interface ContractDbRow {
   id: string;
@@ -2373,6 +2377,42 @@ export interface ContractDbRow {
   influence_reward: number | string;
   status: string;
   created_at: string;
+  /** jsonb, already parsed by supabase-js: an array of {item, quantity}, or
+   *  null for a contract with no extra requirements. Read defensively --
+   *  `parseExtraRequirements` below is the one place that trusts it. */
+  extra_requirements: unknown;
+}
+
+/**
+ * Parses `homestead_contracts.extra_requirements` defensively: a malformed
+ * or unexpected shape (a hand-edited row, a future column change read by
+ * old code) becomes an empty list rather than a thrown error or a
+ * fabricated requirement nobody actually posted.
+ */
+function parseExtraRequirements(value: unknown): ContractRequirement[] {
+  if (!Array.isArray(value)) return [];
+  const parsed: ContractRequirement[] = [];
+  for (const entry of value) {
+    if (
+      entry &&
+      typeof entry === "object" &&
+      "item" in entry &&
+      "quantity" in entry &&
+      typeof (entry as { item: unknown }).item === "string" &&
+      // An extra requirement may be a raw crop as well as a processed good
+      // (see contracts.ts's own header) -- the primary `item` column below
+      // stays processed-good-only, this one does not.
+      isMachineItem((entry as { item: string }).item) &&
+      typeof (entry as { quantity: unknown }).quantity === "number" &&
+      (entry as { quantity: number }).quantity > 0
+    ) {
+      parsed.push({
+        item: (entry as { item: MachineItemId }).item,
+        quantity: (entry as { quantity: number }).quantity,
+      });
+    }
+  }
+  return parsed;
 }
 
 export function contractFromRow(row: ContractDbRow): StoredContract {
@@ -2385,6 +2425,7 @@ export function contractFromRow(row: ContractDbRow): StoredContract {
     influenceReward: Number(row.influence_reward),
     status: row.status === "fulfilled" ? "fulfilled" : "open",
     createdAt: String(row.created_at),
+    extraRequirements: parseExtraRequirements(row.extra_requirements),
   };
 }
 
@@ -2425,10 +2466,17 @@ export async function readStackAcresOpenContract(profileId: string): Promise<Sto
  */
 export async function createStackAcresContract(
   profileId: string,
-  def: { item: MachineProcessedItem; quantity: number; goldReward: number; influenceReward: number },
+  def: {
+    item: MachineProcessedItem;
+    quantity: number;
+    goldReward: number;
+    influenceReward: number;
+    extraRequirements?: readonly ContractRequirement[];
+  },
 ): Promise<StoredContract | null> {
   const supabase = adminClient();
   const now = new Date().toISOString();
+  const extraRequirements = def.extraRequirements ?? [];
 
   if (!supabase) {
     const existing = [...memoryContracts.values()].some(
@@ -2444,6 +2492,7 @@ export async function createStackAcresContract(
       influenceReward: def.influenceReward,
       status: "open",
       createdAt: now,
+      extraRequirements,
     };
     memoryContracts.set(contract.id, { ...contract });
     return { ...contract };
@@ -2455,6 +2504,7 @@ export async function createStackAcresContract(
       profile_id: profileId,
       item: def.item,
       quantity: def.quantity,
+      extra_requirements: extraRequirements.length > 0 ? extraRequirements : null,
       gold_reward: def.goldReward,
       influence_reward: def.influenceReward,
       status: "open",

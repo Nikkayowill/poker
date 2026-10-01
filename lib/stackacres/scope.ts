@@ -38,6 +38,7 @@ export const STACKACRES_WORKSHOP_SHELF_ITEMS: readonly MachineItemId[] = [
   "wheat",
   "flour",
   "cake",
+  "spinach_loaf",
 ];
 
 /** Machine kinds kept on the Workshop sheet this pass. Mill (flour) and Dairy

@@ -151,6 +151,16 @@ export interface SectorDef {
    * player can see the number going up.
    */
   requiresUnits: number;
+  /**
+   * Town Influence the player must have earned before this land is offered
+   * -- 2026-09-14, added on top of `clearCost`/`requiresUnits`, never in
+   * place of either. `clearCost` stays exactly what it always was: land
+   * still costs about what land cost (see this table's own header), so a
+   * player who has genuinely never fulfilled a Town Contract still cannot
+   * buy their way past this with Gold alone, however much of it they carry
+   * in from the tables. 0 for every sector that never gates on it.
+   */
+  requiresInfluence: number;
   /** What the clearing modal says is under the growth. One line. */
   promise: string;
 }
@@ -177,6 +187,7 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     clearCost: 0,
     requires: null,
     requiresUnits: 0,
+    requiresInfluence: 0,
     promise: "Home. The barn, the pond and the yard.",
   },
   // Free alongside the Farmstead -- see `HOME_SECTORS`.
@@ -186,6 +197,7 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     clearCost: 0,
     requires: null,
     requiresUnits: 0,
+    requiresInfluence: 0,
     promise: "Yours already. Every Hen Coop you keep stands here.",
   },
   wallow: {
@@ -196,6 +208,10 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     // Crop Fields' unlock is no longer a sector this can chain off.
     requires: null,
     requiresUnits: 4,
+    // One or two fulfilled Town Contracts' worth (CONTRACT_RUNGS' own
+    // smallest rungs pay 10-25 Influence each) -- reachable the first
+    // afternoon a Mill is running, not a grind, but genuinely not zero.
+    requiresInfluence: 25,
     promise: "Cleared, this becomes your Sheep Pens.",
   },
   oxfields: {
@@ -204,6 +220,7 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     clearCost: 100_000,
     requires: "wallow",
     requiresUnits: 6,
+    requiresInfluence: 75,
     promise: "Cleared, this becomes your Cattle Pens — the best-paying stock on the farm.",
   },
 
@@ -219,6 +236,7 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     clearCost: 0,
     requires: null,
     requiresUnits: 0,
+    requiresInfluence: 0,
     promise: "One day: the town itself, instead of a board you post to.",
   },
   mine: {
@@ -227,6 +245,7 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     clearCost: 0,
     requires: null,
     requiresUnits: 0,
+    requiresInfluence: 0,
     promise: "One day: a way down, and whatever is under the hill.",
   },
   coast: {
@@ -235,6 +254,7 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     clearCost: 0,
     requires: null,
     requiresUnits: 0,
+    requiresInfluence: 0,
     promise: "One day: market stalls on the shore, and a dock to work from.",
   },
   oak: {
@@ -243,6 +263,7 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     clearCost: 0,
     requires: null,
     requiresUnits: 0,
+    requiresInfluence: 0,
     promise: "One day: whatever the old tree has been waiting for.",
   },
 };
@@ -330,7 +351,7 @@ export interface SectorClearCheck {
  */
 export function sectorClearCheck(
   id: SectorId,
-  context: { unlocked: readonly SectorId[]; unitCount: number },
+  context: { unlocked: readonly SectorId[]; unitCount: number; influence: number },
 ): SectorClearCheck {
   const def = STACKACRES_SECTORS[id];
   // Checked before `alreadyOpen`, and before the price is read at all: wild
@@ -353,6 +374,15 @@ export function sectorClearCheck(
     requirements.push({
       label: `Keep ${def.requiresUnits} crops or animals going (you have ${context.unitCount})`,
       met: context.unitCount >= def.requiresUnits,
+    });
+  }
+  if (def.requiresInfluence > 0) {
+    // The "cannot just buy it with poker Gold" half of the gate: earned only
+    // by fulfilling a Town Contract (lib/stackacres/town.ts), never by
+    // spending. See SectorDef.requiresInfluence's own comment.
+    requirements.push({
+      label: `Earn ${def.requiresInfluence} Town Influence from a contract (you have ${context.influence})`,
+      met: context.influence >= def.requiresInfluence,
     });
   }
 

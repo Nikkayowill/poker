@@ -526,6 +526,7 @@ export function predictStackAcresAction(
       const check = sectorClearCheck(body.sector, {
         unlocked: ctx.sectors,
         unitCount: ctx.units.length,
+        influence: ctx.influence,
       });
       if (check.alreadyOpen || !check.ok) return null;
       const profile = debited(ctx, check.cost);

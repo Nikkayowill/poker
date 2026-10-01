@@ -41,7 +41,7 @@ import { FISH_SPECIES } from "./fishing";
 /** Wheat, plus the pond's three catchable fish: nothing crafted, nothing
  *  harvested off a stocked unit either -- see this file's header. */
 export const MACHINE_RAW_ITEMS = ["wheat", ...FISH_SPECIES] as const;
-export const MACHINE_PROCESSED_ITEMS = ["flour", "cheese", "cloth", "cake"] as const;
+export const MACHINE_PROCESSED_ITEMS = ["flour", "cheese", "cloth", "cake", "spinach_loaf"] as const;
 
 export type MachineRawItem = (typeof MACHINE_RAW_ITEMS)[number];
 export type MachineProcessedItem = (typeof MACHINE_PROCESSED_ITEMS)[number];
@@ -122,6 +122,13 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   cheese: { label: "Cheese", plural: "Cheese", icon: "ico-cheese", sellPrice: 700 },
   cloth: { label: "Cloth", plural: "Cloth", icon: "ico-cloth", sellPrice: 320 },
   cake: { label: "Cake", plural: "Cakes", icon: "ico-cake", sellPrice: 400 },
+  // Genuinely two-crop-input recipe (see recipes.ts's own header): Wheat
+  // (wheatsheaf) and Spinach ground together at the Mill. Reuses the Cake
+  // icon -- no art was commissioned for this pass, and a baked-good glyph is
+  // the closest fit already on the sheet. Raw value (2 Wheat @ 44 + 10
+  // Spinach @ 2 = 108) leaves a tight ~6% margin over Sell, the same
+  // proportional gap Cheese/Cloth already carry.
+  spinach_loaf: { label: "Spinach Loaf", plural: "Spinach Loaves", icon: "ico-cake", sellPrice: 115 },
 };
 
 /** What one of `item` sells for, whatever space it started in. */

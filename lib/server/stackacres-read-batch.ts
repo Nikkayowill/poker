@@ -49,7 +49,7 @@ export interface StackAcresReadBatch {
   story: Record<string, unknown> | null;
   /** Today's Daily Farm Board row, and this week's. Null until the player's
    *  first read of that period draws one. Added by
-   *  20261001020000_stackacres_farm_board.sql. */
+   *  20261001180411_stackacres_farm_board.sql. */
   farm_board_daily: Record<string, unknown> | null;
   farm_board_weekly: Record<string, unknown> | null;
   /** Absent until the Chapter 1 migration redefines the batch. */

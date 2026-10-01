@@ -80,5 +80,5 @@ a Barn farm never sees one screen call an animal hungry and another call it fed.
 - Client: `components/arcade/stackacres/stackacres-barn-panel.tsx`, the HUD badge in
   `stackacres-farm.tsx`, `lib/stackacres/optimistic-actions.ts`
 - Story: `lib/stackacres/story/events.ts`, `quests.ts`, `predict.ts`
-- Migration: `supabase/migrations/20261001020000_stackacres_barn_routine.sql`
+- Migration: `supabase/migrations/20261001180327_stackacres_barn_routine.sql`
 - E2E: `tests/e2e/stackacres-barn.spec.ts`

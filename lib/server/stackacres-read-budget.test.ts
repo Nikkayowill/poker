@@ -34,7 +34,7 @@ describe("the StackAcres read budget", () => {
   // latest file is the live definition -- point this at the new file
   // whenever one of them redefines it again.
   const MIGRATION = readFileSync(
-    join(process.cwd(), "supabase/migrations/20261001020000_stackacres_farm_board.sql"),
+    join(process.cwd(), "supabase/migrations/20261001180411_stackacres_farm_board.sql"),
     "utf8",
   );
 
@@ -110,7 +110,7 @@ describe("the StackAcres read budget", () => {
     const batchFn = MIGRATION.slice(MIGRATION.indexOf("create or replace function public.stackacres_read_batch"));
     const keys = batchFn.match(/^\s{4}'[a-z_]+', /gm) ?? [];
     // 44: the Far Field migration's 42, plus the Daily Farm Board's two
-    // period rows (20261001020000). The board is NOT in the fallback array
+    // period rows (20261001180411). The board is NOT in the fallback array
     // above, and deliberately: its read is a conditional draw rather than a
     // plain per-table select (it writes a row on the period's first read),
     // so it lives in farmBoardView beside the other exceptions' reasoning.

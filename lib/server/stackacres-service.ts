@@ -1906,6 +1906,26 @@ export async function readStackAcres(token: string, now = new Date()): Promise<S
   return { ...result, revision };
 }
 
+/**
+ * The same farm `readStackAcres` builds, for a profile the caller resolved by
+ * id rather than by session token. Visitor Mode's only way in.
+ *
+ * Its caller (lib/server/stackacres-showcase-service.ts) projects the result
+ * down to the layout and a five-line header before anything crosses the wire
+ * -- this returns the OWNER'S FULL VIEW, purse and inventory included, and
+ * must never be handed to a route directly.
+ *
+ * Write-free, like every other read here: `view()` only bumps a revision
+ * inside an action's own scope (see `bumpRevisionOnce`), and a visitor's read
+ * is not in one.
+ *
+ * No revision travels with it. A revision is what the owner's client compares
+ * its own pending actions against, and a visitor has none to compare.
+ */
+export async function readStackAcresViewByProfile(profile: PlayerProfile, now: Date): Promise<StackAcresView> {
+  return view(profile, now);
+}
+
 /** How many of `stock` this player may OCCUPY a slot with at once right now
  *  (working or mucked -- see `countOccupiedStackAcresUnits`'s own comment
  *  for why mucked still counts). Crops have no ceiling any more (catalogue.ts

@@ -240,6 +240,7 @@ import { isSeedUnlocked, seedLockLine } from "@/lib/stackacres/seed-unlocks";
 import { chapterFinishedBy, chapterViews, currentChapter, type Chapter } from "@/lib/stackacres/chapters";
 import { StackAcresChapterCard } from "./stackacres-chapters";
 import { StackAcresJournalChip, StackAcresJournalSheet } from "./stackacres-journal";
+import { StackAcresShowcaseChip, StackAcresShowcaseSheet } from "./stackacres-showcase-sheet";
 import {
   isClearableSector,
   landClearingProgress,
@@ -1147,6 +1148,7 @@ export function StackAcresFarm() {
   );
   const [showMap, setShowMap] = useState(false);
   const [showGoals, setShowGoals] = useState(false);
+  const [showShowcase, setShowShowcase] = useState(false);
   /** The chapter Ray is congratulating the player on, or null. */
   const [chapterCard, setChapterCard] = useState<Chapter | null>(null);
   /** Where the farmer stood when the map was opened, for its "you are here". */
@@ -4069,6 +4071,10 @@ export function StackAcresFarm() {
           {Object.values(crossbreed.inventory).reduce((sum, qty) => sum + (qty ?? 0), 0)}
         </strong>
       </button>
+      {/* "Who can visit my farm", and what the visitors thought. Same
+          standing-badge posture as the three above it: a setting worth a
+          glance, not a permanent line of text over the map. */}
+      <StackAcresShowcaseChip onOpen={() => { panelSound(); setShowShowcase(true); }} />
       <StackAcresMusicToggle />
     </>
   );
@@ -4901,6 +4907,12 @@ export function StackAcresFarm() {
         />
       )}
 
+      {showShowcase && profile && (
+        <StackAcresShowcaseSheet
+          profileId={profile.id}
+          onClose={() => { panelSound(); setShowShowcase(false); }}
+        />
+      )}
       {showGoals && (
         <StackAcresJournalSheet view={journal} onClose={() => { panelSound(); setShowGoals(false); }} />
       )}

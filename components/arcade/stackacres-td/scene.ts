@@ -678,10 +678,23 @@ export class TopdownScene extends Phaser.Scene {
   private groceryObjects: Phaser.GameObjects.GameObject[] = [];
   private nextRegrowCheck = 0;
 
-  constructor(callbacks: TopdownCallbacks, host: HTMLElement) {
+  /**
+   * Visitor Mode: this map belongs to somebody else, so nothing on it may be
+   * touched. Panning and pinching still work -- looking around is the whole
+   * point -- but a tap hit-tests nothing and the thumb stick is refused, so
+   * the owner's farmer stands where they left him.
+   *
+   * Fixed at boot rather than pushed as a prop: a farm cannot change hands
+   * mid-scene, and a flag that can flip is a flag that can flip to the wrong
+   * value while a visitor's finger is down.
+   */
+  private readonly visitor: boolean;
+
+  constructor(callbacks: TopdownCallbacks, host: HTMLElement, options: { visitor?: boolean } = {}) {
     super("stackacres-td");
     this.callbacks = callbacks;
     this.host = host;
+    this.visitor = options.visitor === true;
   }
 
   preload(): void {
@@ -1893,6 +1906,9 @@ export class TopdownScene extends Phaser.Scene {
   /** A tap at a viewport point: find what it landed on, walk there, and hand it to the shell on arrival. */
   tapAt(clientX: number, clientY: number): void {
     if (!this.booted || this.travelling) return;
+    // Somebody else's farm. The pan and the pinch that got the visitor here
+    // have already happened by now; this is where every tap stops.
+    if (this.visitor) return;
     // A swing plays out; a second tap would cut it off before the blade lands.
     if (this.swing) return;
     // A cast owns the farmer until it resolves. Before the fish is on, a tap
@@ -2662,6 +2678,9 @@ export class TopdownScene extends Phaser.Scene {
 
   setStick(push: Point | null): void {
     if (!this.booted) return;
+    // Visitor Mode hides the stick outright (topdown-world.tsx), so this is
+    // the belt to that suspenders: nothing walks somebody else's farmer.
+    if (this.visitor) return;
     // The stick is refused outright for the whole cast, the fight included --
     // it is its own DOM element beside the canvas, so the gauge's capture-phase
     // grip on the canvas does nothing about it. It does not back a cast out

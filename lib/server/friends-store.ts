@@ -422,7 +422,12 @@ async function blockedCounterparts(profileId: string): Promise<Set<string>> {
   return result;
 }
 
-async function areFriends(x: string, y: string): Promise<boolean> {
+/**
+ * Whether these two are friends. The one place that question is answered, so
+ * a feature gated on friendship (Visitor Mode's `friends` setting) can never
+ * disagree with the drawer about who is on the list.
+ */
+export async function areFriends(x: string, y: string): Promise<boolean> {
   const [a, b] = canonicalPair(x, y);
   const supabase = adminClient();
   if (!supabase) return memoryDb.friendships.has(`${a}:${b}`);

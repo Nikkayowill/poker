@@ -32,12 +32,12 @@ describe("the ladder itself", () => {
     }
   });
 
-  it("gives the free rung no crit at all", () => {
-    // The other half of "shipping this cannot change anything for a player who
-    // buys nothing" -- see the ladder's own comment. A lucky harvest is what
-    // the first purchase BUYS, not a rate it nudges.
-    expect(STACKACRES_TOOL_TIER_DEFS[STACKACRES_STARTING_TIER].critChance).toBe(0);
-    expect(rollHarvestCrit(STACKACRES_STARTING_TIER, () => 0)).toBe(false);
+  it("gives the free rung a small crit chance, well under the first paid rung", () => {
+    const free = STACKACRES_TOOL_TIER_DEFS[STACKACRES_STARTING_TIER].critChance;
+    expect(free).toBeGreaterThan(0);
+    expect(free).toBeLessThan(STACKACRES_TOOL_TIER_DEFS["iron-shovel"].critChance / 2);
+    expect(rollHarvestCrit(STACKACRES_STARTING_TIER, () => 0)).toBe(true);
+    expect(rollHarvestCrit(STACKACRES_STARTING_TIER, () => free)).toBe(false);
   });
 
   it("improves on every axis as it climbs, and never regresses on one", () => {
@@ -174,6 +174,13 @@ describe("critBonusQuantity", () => {
     }
   });
 
+  it("pays at least one extra unit on a single pick, at every rung", () => {
+    for (const tier of STACKACRES_TOOL_TIERS) {
+      expect(critBonusQuantity(1, tier), tier).toBe(1);
+      expect(critBonusQuantity(2, tier), tier).toBeGreaterThanOrEqual(1);
+    }
+  });
+
   it("adds nothing to a line with nothing in it", () => {
     for (const tier of STACKACRES_TOOL_TIERS) {
       expect(critBonusQuantity(0, tier), tier).toBe(0);
@@ -186,6 +193,10 @@ describe("critBonusQuantity", () => {
     for (const tier of STACKACRES_TOOL_TIERS) {
       expect(critBonusQuantity(1_000, tier), tier).toBeLessThanOrEqual(1_000);
     }
+  });
+
+  it("pays nothing when the bonus itself is zero", () => {
+    expect(critBonusQuantity(5, "iron-shovel", 0)).toBe(0);
   });
 
   it("takes a forged bonus over the tier's own", () => {

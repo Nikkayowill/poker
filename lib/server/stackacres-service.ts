@@ -2865,7 +2865,7 @@ export async function buyStackAcresStock(
   if (isStackAcresCrop(stock) && soilAssignment.slot === null) {
     await refundGold(profile.id, price);
     throw new StackAcresRequestError(
-      `${def.label} needs a bed to go into. Till some soil in the Crop Fields first.`,
+      `${def.label} needs a bed to go into. Hoe a bed on the grass by the house first.`,
       409,
       { round: await snapshots(profile.id, now) },
     );
@@ -3055,7 +3055,7 @@ export async function stockStackAcres(
   if (!inGreenhouse && isStackAcresCrop(stock) && soilAssignment.slot === null) {
     await adjustStackAcresSeedStock(profile.id, stock, 1).catch(() => null);
     throw new StackAcresRequestError(
-      `${def.label} needs a bed to go into. Till some soil in the Crop Fields first.`,
+      `${def.label} needs a bed to go into. Hoe a bed on the grass by the house first.`,
       409,
       { round: await snapshots(profile.id, now) },
     );
@@ -4879,6 +4879,9 @@ export async function workStackAcresLand(
 
   if (swing.item && swing.quantity > 0) {
     await adjustStackAcresInventory(profile.id, swing.item, swing.quantity);
+    // Clearing land counts as chopping and mining for the farm board and the travellers.
+    if (swing.item === "wood") await recordStoryEvents(profile.id, [{ kind: "wood-chopped", count: swing.quantity }], now);
+    if (swing.item === "stone") await recordStoryEvents(profile.id, [{ kind: "stone-mined", count: swing.quantity }], now);
   }
   const opened = swing.cleared ? await openIfCleared(profile.id, obstacle.ground, now) : false;
   return {

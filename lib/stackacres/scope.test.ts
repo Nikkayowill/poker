@@ -36,7 +36,7 @@ describe("the Workshop shelf", () => {
     expect([...STACKACRES_WORKSHOP_SHELF_ITEMS]).toEqual([
       "eggs", "milk", "wheat", "flour", "cake", "bread", "stew", "salad", "cattle_feed",
       "sauce", "salsa", "stuffed_peppers", "pickles", "sauerkraut",
-      "bean_casserole", "harvest_feast",
+      "bean_casserole", "harvest_feast", "bluegill", "trout", "catfish", "cheese", "cloth",
     ]);
     for (const item of STACKACRES_WORKSHOP_SHELF_ITEMS) expect(isMachineItem(item)).toBe(true);
   });

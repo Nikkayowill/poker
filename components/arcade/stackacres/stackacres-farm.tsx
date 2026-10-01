@@ -45,6 +45,7 @@ import { timeOfDay } from "@/lib/audio/stackacres-music";
 import {
   buySound,
   collectSound,
+  comboSound,
   expandSound,
   feedSound,
   forageSound,
@@ -307,6 +308,7 @@ import { sendActionWithRetry } from "@/lib/stackacres/action-retry";
 import { EMPTY_EMPIRE, type EmpireSnapshot } from "@/lib/stackacres/empire-buildings";
 import { useEmpireBuild } from "./empire-build";
 import { useHerdPlace } from "./herd-place";
+import { comboLabel, nextCombo, type ComboState } from "@/lib/stackacres/combo";
 import { useAcreDeed } from "./acre-deed";
 import { acreGate, acresView, type StackAcresAcresView } from "@/lib/stackacres/acres";
 import { isHerdStock } from "@/lib/stackacres/herd";
@@ -1275,6 +1277,8 @@ export function StackAcresFarm() {
    *  (lib/stackacres/land-clearing.ts). */
   const [landObstacles, setLandObstacles] = useState<LandObstacleSnapshot[]>([]);
   const [fences, setFences] = useState<FencePiece[]>([]);
+  /** The run of quick picks, for the floating x2, x3. Feel only. */
+  const pickCombo = useRef<ComboState | null>(null);
   /** The wild acres owned. Server answers only: an acre is never guessed. */
   const [acres, setAcres] = useState<StackAcresAcresView>(() => acresView([]));
   const ownedAcres = useMemo(() => new Set(acres.owned), [acres]);
@@ -2262,7 +2266,10 @@ export function StackAcresFarm() {
           // the multiple the ladder just paid. `1 + critBonus` because the
           // label reads as a total ("CRIT! x2" for a bonus of 1).
           if (single && harvest.crit && harvest.critBonus.length > 0) {
-            world.current?.celebrateCrit(single, 1 + stackacresToolTierDef(toolTierRef.current).critBonus);
+            // The multiple the pick really paid: everything it brought in over what it would have.
+            const total = harvest.tally.reduce((sum, line) => sum + line.quantity, 0);
+            const bonus = harvest.critBonus.reduce((sum, line) => sum + line.quantity, 0);
+            world.current?.celebrateCrit(single, total > bonus ? total / (total - bonus) : 1 + bonus);
           }
         }
         if (body.action === "upgrade-tool" && data.upgraded) {
@@ -3795,6 +3802,13 @@ export function StackAcresFarm() {
           if (unitsBeingCollected(inFlight.current).has(action.unitId)) return;
           const picked = liveUnits.find((candidate) => candidate.id === action.unitId);
           if (picked) collectSound(picked.stock);
+          const combo = nextCombo(pickCombo.current, Date.now());
+          pickCombo.current = combo;
+          const comboText = comboLabel(combo.count);
+          if (comboText) {
+            comboSound(combo.count);
+            world.current?.floatAt(square.at, comboText, "gain");
+          }
           world.current?.pullCrop(action.unitId);
           // NOT batched, even mid-stroke: the Critical Harvest Cascade chains off
           // THIS request's own settled result, and a batched send has no promise
@@ -4792,7 +4806,7 @@ export function StackAcresFarm() {
               {storeTab === "seeds" && (
                 <>
                   <p className="sa-sheet-note">
-                    Buy seeds here, then tap bare ground in the Crop Fields to plant them.
+                    Buy seeds here, then hoe a bed on the grass by the house and plant them.
                   </p>
                   <div className="sa-stock-cards">
                     {shopSeeds.map((crop) => {

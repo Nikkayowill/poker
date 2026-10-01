@@ -49,6 +49,12 @@ export const STACKACRES_WORKSHOP_SHELF_ITEMS: readonly MachineItemId[] = [
   "sauerkraut",
   "bean_casserole",
   "harvest_feast",
+  // What the pond and the Vat and Loom give: held goods that sell, so each needs a row.
+  "bluegill",
+  "trout",
+  "catfish",
+  "cheese",
+  "cloth",
 ];
 
 /** Machine kinds kept on the Workshop sheet this pass. Mill (flour) and Dairy

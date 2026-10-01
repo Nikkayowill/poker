@@ -17,6 +17,8 @@ import {
   boughtAcreCount,
   isAcreId,
 } from "./acres";
+import { LAND_OBSTACLES, LAND_OBSTACLE_DEFS } from "./land-clearing";
+import { MACHINE_CATALOGUE } from "./machines";
 import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH, HOMESTEAD_WILD_ROWS } from "./homestead-ground";
 import { isWildMapTile } from "./hoeable";
 
@@ -137,15 +139,30 @@ describe("who may build where", () => {
 describe("price and upkeep", () => {
   it("starts cheap and climbs on every axis", () => {
     const first = acrePrice(0);
-    expect(first).toEqual({ gold: 300, wood: 15, stone: 8 });
+    expect(first).toEqual({ gold: 300, wood: 15, stone: 5 });
     let previous = first;
     for (let owned = 1; owned < ACRES.length; owned += 1) {
       const next = acrePrice(owned);
       expect(next.gold).toBeGreaterThan(previous.gold);
       expect(next.wood).toBeGreaterThan(previous.wood);
-      expect(next.stone).toBeGreaterThan(previous.stone);
+      expect(next.stone).toBeGreaterThanOrEqual(previous.stone);
       previous = next;
     }
+  });
+
+  it("asks for less Stone over every acre than the wild land holds, with room for the machines", () => {
+    let total = 0;
+    for (let owned = 0; owned < ACRES.length; owned += 1) total += acrePrice(owned).stone;
+    const boulder = LAND_OBSTACLE_DEFS.boulder;
+    const held = LAND_OBSTACLES.cropfields.filter((o) => o.kind === "boulder").length * (boulder.perHit * boulder.hits + boulder.clearBonus);
+    const machineStone = (["feed_silo", "cellar", "smelter"] as const).reduce(
+      (sum, kind) => sum + (MACHINE_CATALOGUE[kind].materials ?? []).filter((m) => m.item === "stone").reduce((n, m) => n + m.quantity, 0),
+      0,
+    );
+    expect(held).toBeGreaterThan(0);
+    expect(machineStone).toBeGreaterThan(0);
+    expect(total).toBeLessThanOrEqual(held - machineStone);
+    expect(acrePrice(ACRES.length - 1).stone).toBeGreaterThan(acrePrice(0).stone);
   });
 
   it("rounds Gold to the nearest 50", () => {

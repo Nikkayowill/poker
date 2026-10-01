@@ -24,6 +24,7 @@
 
 import { playFarmAnimal, playFarmSample, playFarmVoice, startFarmLoop, startFarmTone, type FarmLoop, type FarmTone } from "./stackacres-ambience";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
+import { comboHz } from "@/lib/stackacres/combo";
 
 /**
  * Seed going into the ground: `stock`, the Bushels path onto a fresh unit.
@@ -56,6 +57,12 @@ export function collectSound(stock: StackAcresStock) {
   }
   playFarmVoice("leaf-snip", 0.85);
   window.setTimeout(() => playFarmVoice("harvest-pour", 0.8), 90);
+}
+
+/** A short rising blip for the Nth quick pick in a row. */
+export function comboSound(count: number) {
+  const tone = startFarmTone(0.05, comboHz(count));
+  if (tone) window.setTimeout(() => tone.stop(), 90);
 }
 
 /** Feeding an animal: grain thrown, and the animal noticing. */

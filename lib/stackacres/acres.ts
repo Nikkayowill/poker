@@ -155,11 +155,15 @@ export interface AcrePrice {
 /** The first acre's Gold, and what each one after it multiplies by. */
 export const ACRE_BASE_GOLD = 300;
 export const ACRE_GOLD_GROWTH = 1.2;
-/** Wood and Stone start here and rise by a fixed step per acre already owned. */
+/** Wood rises by a fixed step per acre already owned. */
 export const ACRE_BASE_WOOD = 15;
 export const ACRE_WOOD_STEP = 3;
-export const ACRE_BASE_STONE = 8;
-export const ACRE_STONE_STEP = 2;
+/**
+ * Stone rises by one for every few acres owned. The wild land only holds so much boulder (384 Stone
+ * per farm), so the whole ladder has to fit in that with room left for the Silo, Cellar and Smelter.
+ */
+export const ACRE_BASE_STONE = 5;
+export const ACRE_STONE_EVERY = 4;
 
 /** Gold a bought acre costs the farm each UTC day, netted off payouts. Flat per acre. */
 export const ACRE_UPKEEP_GOLD = 40;
@@ -174,7 +178,7 @@ export function acrePrice(owned: number): AcrePrice {
   return {
     gold: Math.round((ACRE_BASE_GOLD * ACRE_GOLD_GROWTH ** count) / 50) * 50,
     wood: ACRE_BASE_WOOD + ACRE_WOOD_STEP * count,
-    stone: ACRE_BASE_STONE + ACRE_STONE_STEP * count,
+    stone: ACRE_BASE_STONE + Math.floor(count / ACRE_STONE_EVERY),
   };
 }
 

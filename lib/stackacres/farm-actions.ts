@@ -74,6 +74,16 @@ export type Action =
   // much meat and how many pelts it gives, is the server's own dice roll --
   // same posture as `catch-fish`.
   | { action: "bag-quarry" }
+  // One swing at a tree (lib/stackacres/wood.ts): fills the shelf with Wood,
+  // same posture as `catch-fish`/`bag-quarry`. `sweet` is the chop
+  // minigame's own timing verdict (lib/stackacres/chop.ts) -- it changes how
+  // much Wood the swing pays, never whether it lands.
+  | { action: "chop-tree"; nodeId: string; sweet: boolean }
+  // One swing at one of the Mine's boulders (lib/stackacres/stone-nodes.ts):
+  // fills the shelf with Stone, same posture as `chop-tree`. `quality` is
+  // the shared swing minigame's own timing verdict (lib/stackacres/chop.ts)
+  // -- it changes how much Stone the swing pays, never whether it lands.
+  | { action: "mine-stone"; nodeId: string; quality: "hit" | "sweet" }
   | { action: "clear"; unitId: string }
   | { action: "buy-feed"; itemId: string; quantity: number }
   // Sells any inventory item -- raw harvest or crafted good -- for Gold, at
@@ -241,6 +251,8 @@ export function intentOf(body: Action): string {
   // sees `place-machine`.
   if ("recipe" in body) return `${body.action}:${body.recipe}`;
   if ("kind" in body) return `${body.action}:${body.kind}`;
+  // Chopping one tree must never dedupe against or block chopping another.
+  if ("nodeId" in body) return `${body.action}:${body.nodeId}`;
   return body.action;
 }
 

@@ -372,6 +372,17 @@ export interface StackAcresWorldProps {
    *  whether one is on offer and with which weapon; the map only reports the
    *  tap. */
   onThicketTap: (at: TapPoint) => void;
+  /** A finger landed on one of the Homestead's own choppable trees (see
+   *  lib/stackacres/tree-nodes.ts). The shell decides whether that id is a
+   *  real, currently-choppable node and opens the chop popup; the map only
+   *  reports the tap, the same split `onThicketTap` already takes. */
+  onTreeTap: (nodeId: string, at: TapPoint) => void;
+  /** A finger landed on one of the Mine's three tagged boulders (see
+   *  lib/stackacres/stone-nodes.ts). The shell decides whether that id is a
+   *  real, currently-mineable node and opens the shared swing popup in mine
+   *  mode; the map only reports the tap, the same split `onTreeTap` already
+   *  takes. */
+  onStoneTap: (nodeId: string, at: TapPoint) => void;
   /** A finger landed on the Greenhouse's own footprint, from OUTSIDE it --
    *  the shell's cue to decide whether to open a build panel or call
    *  `enterGreenhouse` (see the api handle above). */

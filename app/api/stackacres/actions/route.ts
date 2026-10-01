@@ -14,6 +14,8 @@ import { FOOD_ITEMS } from "@/lib/stackacres/energy";
 import { CELLAR_ITEMS } from "@/lib/stackacres/aging";
 import { FARM_KITCHEN_RECIPES } from "@/lib/stackacres/farm-kitchen";
 import { HIDDEN_ZONE_IDS, SECRET_ITEM_IDS } from "@/lib/stackacres/secrets";
+import { WOOD_NODE_IDS } from "@/lib/stackacres/tree-nodes";
+import { STONE_NODE_IDS } from "@/lib/stackacres/stone-nodes";
 import { SYNERGY_ARCHETYPES, SYNERGY_MAX_ACTIVE_SLOTS } from "@/lib/stackacres/synergy-perks";
 import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
 import { ALL_MACHINE_ITEM_IDS, MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
@@ -53,6 +55,8 @@ import {
   waterStackAcresGroup,
   drawStackAcresWater,
   bagStackAcresQuarry,
+  chopStackAcresWoodTree,
+  mineStackAcresStoneNode,
   catchStackAcresFish,
   sowStackAcresWheat,
   placeStackAcresMachine,
@@ -270,6 +274,27 @@ const bodySchema = z.discriminatedUnion("action", [
   // pelt, same as a catch -- moves no Gold. Which quarry it was is the
   // server's own dice roll.
   z.object({ action: z.literal("bag-quarry") }),
+  // One swing at a tree (lib/stackacres/wood.ts). Fills the shelf with Wood,
+  // same as a catch or a bagged stalk -- moves no Gold. `sweet` is the chop
+  // minigame's own client-side timing verdict (lib/stackacres/chop.ts); it
+  // only changes how much Wood the swing pays, never whether it lands.
+  z.object({
+    action: z.literal("chop-tree"),
+    nodeId: z.enum(WOOD_NODE_IDS as unknown as [string, ...string[]]),
+    sweet: z.boolean(),
+  }),
+  // One swing at one of the Mine's Stone nodes. Fills the shelf with Stone,
+  // same as a catch or a bagged stalk -- moves no Gold. `quality` is the
+  // client's own timing grade off the shared chop/mine popup
+  // (lib/stackacres/chop.ts) and only ever changes how much Stone a landed
+  // swing pays out -- never whether it lands, which the node's own
+  // server-owned hit count and regrow window decide
+  // (lib/stackacres/stone-nodes.ts).
+  z.object({
+    action: z.literal("mine-stone"),
+    nodeId: z.enum(STONE_NODE_IDS),
+    quality: z.enum(["hit", "sweet"]),
+  }),
   z.object({ action: z.literal("clear"), unitId: unitIdSchema }),
   z.object({
     action: z.literal("buy-feed"),
@@ -607,6 +632,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return eatStackAcresFoodAction(token, action.item, now);
     case "bag-quarry":
       return bagStackAcresQuarry(token, now);
+    case "chop-tree":
+      return chopStackAcresWoodTree(token, action.nodeId, action.sweet, now);
+    case "mine-stone":
+      return mineStackAcresStoneNode(token, action.nodeId, action.quality, now);
     case "clear":
       return clearStackAcresUnit(token, action.unitId, now);
     case "buy-feed":

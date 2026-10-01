@@ -283,6 +283,10 @@ import {
   wheatPlotFromRow,
   machineFromRow,
   vatManifestFromRow,
+  getOrCreateStackAcresWoodNode,
+  writeStackAcresWoodNodeSwing,
+  listStackAcresWoodNodeStates,
+  type StoredWoodNode,
   type StoredStackAcresUnit,
   type StoredContract,
   type StoredWheatPlot,
@@ -357,6 +361,8 @@ import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/
 import { isFarmKitchenRecipe, planFarmKitchen } from "@/lib/stackacres/farm-kitchen";
 import { isSeedUnlocked, seedLockedMessage } from "@/lib/stackacres/seed-unlocks";
 import { QUARRY_CATALOGUE, pickQuarry, type QuarrySpecies } from "@/lib/stackacres/hunting";
+import { WOOD_NODE_IDS, isWoodNodeId, type WoodNodeId } from "@/lib/stackacres/tree-nodes";
+import { freshWoodNodeState, swingAtWoodNode, woodNodeSnapshot, type WoodNodeSnapshot } from "@/lib/stackacres/wood";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import {
   WHEAT_DURATION_MS,
@@ -752,6 +758,13 @@ export interface StackAcresView {
    *  held. The bubble renders straight off this; a tap never asks the
    *  server what to say. */
   story: StackAcresStoryView;
+  /** Every choppable tree's current chop state (lib/stackacres/wood.ts,
+   *  lib/stackacres/tree-nodes.ts): whether it can be chopped right now, how
+   *  many swings are left in this cycle, and (while regrowing) how far along
+   *  its respawn clock is. One entry per `WOOD_NODE_IDS`, always present --
+   *  the same "every key present" posture `blueprints` above takes for a
+   *  structure nobody has started. */
+  woodNodes: WoodNodeSnapshot[];
   /** How fresh this snapshot is, per lib/server/stackacres-revision-store.ts:
    *  strictly higher than any response for an action that finished earlier,
    *  regardless of which one this browser's fetch happens to see first. The
@@ -977,11 +990,17 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
   // slot does nothing; `listDrones` must never be called a second time here,
   // or every live-Supabase view() pays for a real, wasted extra round trip
   // whose result nothing reads.
-  const [batch, activeSynergies, midnightMerchant, lifetimeGross, fallback] = await Promise.all([
+  const [batch, activeSynergies, midnightMerchant, lifetimeGross, woodNodeStates, fallback] = await Promise.all([
     supabase ? readStackAcresBatch(profile.id, day) : Promise.resolve(null),
     listActiveSynergyArchetypes(profile.id),
     readMidnightMerchantVisit(profile.id, now),
     readStackAcresLifetimeGross(profile.id),
+    // Not part of the big batch RPC (see this file's own header on why the
+    // three reads above aren't either) -- a small, fixed-size table read
+    // (four rows at most; see WOOD_NODE_IDS) run alongside everything else
+    // rather than folded into `read_homestead_batch`, so shipping Wood's
+    // first slice never touches that migration.
+    listStackAcresWoodNodeStates(profile.id),
     supabase
       ? Promise.resolve(null)
       : Promise.all([
@@ -1264,6 +1283,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     // read (see readShopProgress), so a traveler's "Requires: ..." and the
     // shelf's can never disagree.
     story: storyView(storedStory.story, { sectors, influence, greenhouseBuilt, cropFieldsUnlocked }, inventory, { tool }),
+    woodNodes: WOOD_NODE_IDS.map((id) => woodNodeSnapshot(id, woodNodeStates[id] ?? freshWoodNodeState(), now)),
     revision,
   };
 }
@@ -1477,6 +1497,11 @@ export type StackAcresActionResult = StackAcresView & {
    *  other action leaves this undefined. The scope never learns this until
    *  it lands, which is the whole point: it plays a difficulty, not a prize. */
   quarryBagged?: { species: QuarrySpecies; meat: number; pelt: number };
+  /** Set by `chopStackAcresWoodTree` to what THIS swing did -- null when the
+   *  swing missed its tree entirely (already felled by a faster request),
+   *  every other action leaves this undefined. `felled` is true only on the
+   *  swing that actually brought the tree down. */
+  woodChopped?: { nodeId: WoodNodeId; quantity: number; felled: boolean } | null;
   /** Set by `meetStackAcresTraveler`/`turnInStackAcresTravelerQuest` to what
    *  THIS call just did -- never named `story`, which is StackAcresView's
    *  own always-present standing and would collide with it in this
@@ -3669,6 +3694,56 @@ export async function bagStackAcresQuarry(
   return { ...(await view(profile, now)), quarryBagged: { species, meat, pelt } };
 }
 
+/**
+ * One swing at a tree (lib/stackacres/wood.ts): fills the shelf with Wood,
+ * same as a catch or a bagged stalk -- moves no Gold.
+ *
+ * `sweet` is the chop minigame's own verdict on the swing's timing (see
+ * lib/stackacres/chop.ts) -- it never decides whether the swing lands, only
+ * how much Wood it pays, the same "client picks a quality flag, server owns
+ * the real state" shape `catch-fish`'s `bait` boolean already takes.
+ *
+ * VERSION-GUARDED, UNLIKE A STALK. A stalk has no persisted world object to
+ * race over; a tree does (`StoredWoodNode`), so two rapid taps chopping the
+ * same tree race on its row's own version -- see
+ * `writeStackAcresWoodNodeSwing`'s own header for why that closes the
+ * double-collect window a bare read-then-credit would leave open. A lost
+ * race is a quiet no-op here (no Wood, current snapshot back), not an error:
+ * the loser's tap simply arrived a beat after the tree was already felled.
+ */
+export async function chopStackAcresWoodTree(
+  token: string,
+  nodeIdInput: string,
+  sweet: boolean,
+  now = new Date(),
+): Promise<StackAcresActionResult> {
+  if (!isWoodNodeId(nodeIdInput)) throw new StackAcresRequestError("Not a real tree.", 400);
+  const nodeId: WoodNodeId = nodeIdInput;
+  const profile = await ensureProfile(token);
+
+  const current: StoredWoodNode = await getOrCreateStackAcresWoodNode(profile.id, nodeId);
+  const swing = swingAtWoodNode(current, now, sweet);
+  if (!swing) {
+    // Standing but out of reach for this attempt only happens if the tree
+    // was felled between the client's own tap and this request landing --
+    // a quiet no-op, same posture a lost machine-collect race takes.
+    return { ...(await view(profile, now)), woodChopped: null };
+  }
+
+  const written = await writeStackAcresWoodNodeSwing(current, swing.nextState);
+  if (!written) {
+    // Lost the race: someone else's swing (or this same tap, retried) wrote
+    // first. No Wood for this request -- see this function's own header.
+    return { ...(await view(profile, now)), woodChopped: null };
+  }
+
+  await adjustStackAcresInventory(profile.id, "wood", swing.woodGained);
+  return {
+    ...(await view(profile, now)),
+    woodChopped: { nodeId, quantity: swing.woodGained, felled: swing.felled },
+  };
+}
+
 /** Pays the maintenance fee on a mucked unit, clearing it -- see
  *  clearStackAcresMuck in the store for why this removes the row. */
 export async function clearStackAcresUnit(
@@ -4362,10 +4437,25 @@ export async function placeStackAcresMachine(
     });
   }
 
+  // Wood, where the machine asks for it -- debited right after Gold, refunded
+  // alongside it on any failure below. See ./machines.ts's `MachineDef.woodCost`.
+  if (def.woodCost) {
+    const woodLeft = await adjustStackAcresInventory(profile.id, "wood", -def.woodCost);
+    if (woodLeft === null) {
+      await refundGold(profile.id, def.placeCost);
+      throw new StackAcresRequestError(
+        `A ${def.label} also costs ${def.woodCost.toLocaleString()} Wood.`,
+        400,
+        { round: await snapshots(profile.id, now) },
+      );
+    }
+  }
+
   try {
     await createStackAcresMachine(profile.id, kind, now);
   } catch (error) {
     await refundGold(profile.id, def.placeCost);
+    if (def.woodCost) await adjustStackAcresInventory(profile.id, "wood", def.woodCost).catch(() => null);
     throw error;
   }
 

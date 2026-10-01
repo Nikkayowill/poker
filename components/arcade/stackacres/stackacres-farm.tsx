@@ -141,6 +141,8 @@ import { FISHING_BAIT_ITEM, type FishSpecies } from "@/lib/stackacres/fishing";
 import { rollGaugeDifficulty } from "@/lib/stackacres/fishing-gauge";
 import { rollQuarryDifficulty } from "@/lib/stackacres/hunt-proximity";
 import { QUARRY_CATALOGUE, bestWeapon, type QuarrySpecies } from "@/lib/stackacres/hunting";
+import { WOOD_HITS_TO_FELL, type WoodNodeSnapshot } from "@/lib/stackacres/wood";
+import { StackAcresChopPopup } from "./stackacres-chop-popup";
 import {
   ACTION_BATCH_WINDOW_MS,
   actionForUnits,
@@ -495,6 +497,13 @@ interface StackAcresResponse {
   /** Set by a `feed`/`feed-pen` whose serving earned extra eggs (Spinach). */
   fed?: { toast: string };
   quarryBagged?: { species: QuarrySpecies; meat: number; pelt: number };
+  /** Set by a `chop-tree` response to what THIS swing did; null when the
+   *  swing missed (the tree was already felled by a faster request). Every
+   *  other action's answer leaves this undefined. */
+  woodChopped?: { nodeId: string; quantity: number; felled: boolean } | null;
+  /** Every choppable tree's current chop state, always present -- see
+   *  lib/stackacres/wood.ts's `WoodNodeSnapshot`. */
+  woodNodes?: WoodNodeSnapshot[];
   /** Set (to an item id or null) by a `tap-secret-zone` response only --
    *  absent from every other action's answer. */
   discovery?: SecretItemId | null;
@@ -928,6 +937,15 @@ export function StackAcresFarm() {
     | null
   >(null);
   const [fenceUpgradeBusy, setFenceUpgradeBusy] = useState(false);
+  /**
+   * The chop popup: opened by `onWorldTreeTap`, closed by "Not now"/"Close",
+   * or the next world tap (`onViewMoved`). Holds only the tapped node's id
+   * and where to anchor the popup -- its live ready/hits/respawn state is
+   * read straight off `woodNodes` every render, the same "state lives in the
+   * one server-derived list, the popup just names which entry" split
+   * `fencePopup` would take if fence segments were already in one list too.
+   */
+  const [chopPopup, setChopPopup] = useState<{ nodeId: string; at: TapPoint } | null>(null);
   // NPC friendship. Seeded to a fresh player's own answer for every NPC that
   // has one -- the same "fresh player" seed devotion above uses -- rather
   // than an empty object, so a render before the first read lands never has
@@ -1109,6 +1127,10 @@ export function StackAcresFarm() {
   const [showHouse, setShowHouse] = useState(false);
   const [greenhouseBuilt, setGreenhouseBuilt] = useState(false);
   const [cropFieldsUnlocked, setCropFieldsUnlocked] = useState(false);
+  /** Every choppable tree's current chop state -- see lib/stackacres/wood.ts.
+   *  Empty until the first response lands, same "fresh player" posture
+   *  every other server-derived list on this screen starts from. */
+  const [woodNodes, setWoodNodes] = useState<WoodNodeSnapshot[]>([]);
   const [showMerchant, setShowMerchant] = useState(false);
   /** Owns this farm's entire Midnight Merchant render state -- see
    *  lib/stackacres/midnight-merchant.ts's own header. One instance per
@@ -1663,6 +1685,7 @@ export function StackAcresFarm() {
     if (data.friendship) setFriendship(data.friendship);
     if (typeof data.greenhouseBuilt === "boolean") setGreenhouseBuilt(data.greenhouseBuilt);
     if (typeof data.cropFieldsUnlocked === "boolean") setCropFieldsUnlocked(data.cropFieldsUnlocked);
+    if (data.woodNodes) setWoodNodes(data.woodNodes);
     // `!== undefined` on purpose, not a truthiness check: `null` is a real,
     // meaningful answer here ("confirmed no visit"), and treating it like a
     // missing field would mean a visit that just expired could never be
@@ -2418,6 +2441,18 @@ export function StackAcresFarm() {
           });
           if (anchor) world.current?.floatAt(anchor, `+${meatLabel}, +${peltLabel}`, "gain");
         }
+        // A swing pays no Gold either -- it fills the shelf with Wood. A
+        // lost race (someone/something else felled it a beat earlier)
+        // leaves `woodChopped` null: no float, no toast, just the fresh
+        // `woodNodes` state already applied above by `applyResponse`.
+        if (body.action === "chop-tree" && data.woodChopped) {
+          const { quantity, felled } = data.woodChopped;
+          const label = machineItemLabel("wood", quantity);
+          waterSound();
+          setLastCollect({ text: felled ? `Timber! +${label}` : `+${label}`, nonce: Date.now() });
+          if (anchor) world.current?.floatAt(anchor, `+${label}`, "gain");
+          if (felled) setChopPopup(null);
+        }
         // The zone's own optimistic puff already fired on the press (see
         // stackacres-scene.ts's `secretDiscoveryPuff`, called from the
         // dispatch itself). This is the SECOND, more celebratory beat --
@@ -3154,6 +3189,7 @@ export function StackAcresFarm() {
   const onViewMoved = useCallback(() => {
     setMonkDialogue(null);
     setFencePopup(null);
+    setChopPopup(null);
     setGiftDialogue(null);
     story.close();
   }, [story]);
@@ -4131,6 +4167,28 @@ export function StackAcresFarm() {
     [act, shopProgress],
   );
 
+  /**
+   * A finger landed on one of the Homestead's own trees. Opens the chop
+   * popup on whichever node the map named -- its live ready/hits/respawn
+   * state comes off `woodNodes`, read fresh on every render, so a tree
+   * felled a moment ago by this same player (or, once this ships past one
+   * browser, a stale local read) always shows the truth rather than
+   * whatever it looked like the instant the popup opened.
+   */
+  const onWorldTreeTap = useCallback((nodeId: string, at: TapPoint) => {
+    setChopPopup({ nodeId, at });
+  }, []);
+
+  /** The only path that ever sends `chop-tree`. `sweet` is the popup's own
+   *  local verdict on the swing's timing (lib/stackacres/chop.ts) -- it
+   *  never decides whether the swing lands, only how much Wood it pays. */
+  const onChopSwing = useCallback(
+    (nodeId: string, sweet: boolean) => {
+      void act({ action: "chop-tree", nodeId, sweet });
+    },
+    [act],
+  );
+
   // stackacres-scene.ts fires onReady synchronously once the scene is built
   // and the camera framed -- before Phaser's own render loop has actually
   // painted that frame to the canvas. Waiting two rAF ticks closes that gap
@@ -4351,6 +4409,7 @@ export function StackAcresFarm() {
               onWellTap={onWorldWellTap}
               onDockTap={onWorldFishHooked}
               onThicketTap={onWorldThicketTap}
+              onTreeTap={onWorldTreeTap}
               onGreenhouseTap={onWorldGreenhouseTap}
               onGreenhouseSlotTap={onWorldGreenhouseSlotTap}
               onMerchantTap={onWorldMerchantTap}
@@ -4453,6 +4512,27 @@ export function StackAcresFarm() {
               busy={fenceUpgradeBusy}
               onUpgrade={onUpgradeFence}
               onClose={() => setFencePopup(null)}
+            />
+          )}
+
+          {/* The chop popup, same screen-anchored treatment as the
+              fence-upgrade popup above. Missing from `woodNodes` only for the
+              instant before the first response lands; a fresh node reads as
+              standing and full-health, so this never needs a loading state. */}
+          {chopPopup && (
+            <StackAcresChopPopup
+              at={chopPopup.at}
+              node={
+                woodNodes.find((node) => node.nodeId === chopPopup.nodeId) ?? {
+                  nodeId: chopPopup.nodeId,
+                  ready: true,
+                  hitsRemaining: WOOD_HITS_TO_FELL,
+                  respawnProgress: null,
+                }
+              }
+              busy={pendingByPrefix(`chop-tree:${chopPopup.nodeId}`)}
+              onSwing={(sweet) => onChopSwing(chopPopup.nodeId, sweet)}
+              onClose={() => setChopPopup(null)}
             />
           )}
 

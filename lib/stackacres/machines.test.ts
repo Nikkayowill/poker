@@ -1,6 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { canStartMachine, isMachineDone, machineProgress, rollMillDoubleOutput } from "./machines";
+import {
+  MACHINE_CATALOGUE,
+  canStartMachine,
+  isMachineDone,
+  machineProgress,
+  rollMillDoubleOutput,
+} from "./machines";
 import { RECIPE_CATALOGUE, canStartRecipe } from "./recipes";
+
+describe("MACHINE_CATALOGUE wood costs", () => {
+  it("asks the two cheapest, earliest machines for Wood alongside Gold", () => {
+    expect(MACHINE_CATALOGUE.mill.woodCost).toBe(15);
+    expect(MACHINE_CATALOGUE.loom.woodCost).toBe(25);
+  });
+
+  it("leaves every other machine Gold-only, unrepriced", () => {
+    expect(MACHINE_CATALOGUE.dairy.woodCost).toBeUndefined();
+    expect(MACHINE_CATALOGUE.vat.woodCost).toBeUndefined();
+    expect(MACHINE_CATALOGUE.oven.woodCost).toBeUndefined();
+  });
+});
 
 describe("canStartMachine", () => {
   it("requires the mill's full input batch, not just some of it", () => {

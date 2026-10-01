@@ -42,7 +42,7 @@ import { FISH_SPECIES } from "./fishing";
  *  brush brings back: nothing crafted, nothing harvested off a stocked unit
  *  either -- see this file's header. Meat and pelts join the fish for exactly
  *  the same reason they did, and like them nothing consumes either yet. */
-export const MACHINE_RAW_ITEMS = ["wheat", ...FISH_SPECIES, "meat", "pelt"] as const;
+export const MACHINE_RAW_ITEMS = ["wheat", ...FISH_SPECIES, "meat", "pelt", "wood"] as const;
 export const MACHINE_PROCESSED_ITEMS = [
   "flour",
   "cheese",
@@ -150,6 +150,13 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   // `homestead_inventory` rows.
   meat: { label: "Field Notes", plural: "Field Notes", icon: "ico-fieldnotes", sellPrice: 9 },
   pelt: { label: "Trail Photo", plural: "Trail Photos", icon: "ico-trailphoto", sellPrice: 20 },
+  // Chopped off the Homestead's own treeline (./wood.ts). Priced low and
+  // deliberately: Wood's real job is being spent on machine placement
+  // (./machines.ts's `MachineDef.woodCost`), not being sold -- a Sell price
+  // this low means selling surplus Wood is never a better trade than banking
+  // it for the next machine, the same "the material use is the important
+  // door" posture this feature's own design brief states.
+  wood: { label: "Wood", plural: "Wood", icon: "ico-wood", sellPrice: 3 },
   flour: { label: "Flour", plural: "Flour", icon: "ico-flour", sellPrice: 40 },
   cheese: { label: "Cheese", plural: "Cheese", icon: "ico-cheese", sellPrice: 700 },
   cloth: { label: "Cloth", plural: "Cloth", icon: "ico-cloth", sellPrice: 320 },

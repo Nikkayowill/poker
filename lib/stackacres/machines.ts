@@ -13,6 +13,11 @@
  * input and output is inventory (./inventory.ts). The only door from a
  * machine's output back to Gold is a fulfilled Contract (./contracts.ts).
  *
+ * The Mill and the Loom also ask for Wood at placement (`MachineDef.woodCost`,
+ * chopped off the Homestead's own trees -- see ./wood.ts). Debited alongside
+ * Gold, from the same inventory a harvest or a stalk already fills, never
+ * sold back.
+ *
  * Same timer discipline as ./wheat-plot.ts and ./units.ts: `isMachineDone`/
  * `machineProgress` are pure functions of `now`, and the server's own
  * `ready_at` check inside the guarded settlement is the only authority --
@@ -37,6 +42,14 @@ export interface MachineDef {
   /** Gold debited once, when the machine is placed. A sink, same category as
    *  `stackacresCapacityPrice` -- nothing here is ever sold back. */
   placeCost: number;
+  /** Wood debited once, alongside `placeCost`, when the machine is placed.
+   *  Undefined (not zero) for a machine that asks for none -- this is Wood's
+   *  real economic job (see ./wood.ts's own header): a chopped material
+   *  actually gates something a player wants, rather than existing only to
+   *  be sold. Only the two cheapest, earliest machines ask for it, on
+   *  purpose -- the brief this shipped from is explicit that not every
+   *  price in the game needs repricing for a new material to matter. */
+  woodCost?: number;
 }
 
 /**
@@ -47,9 +60,9 @@ export interface MachineDef {
  * most valuable thing on the farm to divert (see `recipeRawGoldValue`).
  */
 export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
-  mill: { label: "Mill", placeCost: 200 },
+  mill: { label: "Mill", placeCost: 200, woodCost: 15 },
   dairy: { label: "Dairy", placeCost: 700 },
-  loom: { label: "Loom", placeCost: 350 },
+  loom: { label: "Loom", placeCost: 350, woodCost: 25 },
   // Dearest of the four, and deliberately so: unlike the other three, the Vat
   // never touches Town Contracts at all -- it is a second, direct door back
   // to Gold (see lib/stackacres/aging.ts), and its placement price sits above

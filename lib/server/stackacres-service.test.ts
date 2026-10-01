@@ -296,6 +296,10 @@ async function funded(
   // predates that gate, so a funded farm starts carrying a deep shelf of
   // every crop rather than making each of those call sites buy seed first.
   for (const crop of STACKACRES_CROPS) await adjustStackAcresSeedStock(profile.id, crop, 1000);
+  // Same "ready to do anything this suite might ask of it" posture as the
+  // seed shelf above -- a funded farm never has to chop a tree first just to
+  // place the Mill or the Loom this file's own tests place freely.
+  await adjustStackAcresInventory(profile.id, "wood", 1000);
   if (beds) {
     // Straight into the store, not through `placeStackAcresSoilTile`: that
     // route spends a bag off Ray's shelf, and nothing here is about bags.
@@ -2174,6 +2178,7 @@ describe("the currency wall", () => {
       "buy-soil",
       "buy-stock",
       "catch-fish",
+      "chop-tree",
       "clear",
       "clear-sector",
       "collect",

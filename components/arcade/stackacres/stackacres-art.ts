@@ -275,7 +275,8 @@ type CorePainterName =
   | "ico-camera"
   | "ico-telephoto"
   | "ico-fieldnotes"
-  | "ico-trailphoto";
+  | "ico-trailphoto"
+  | "ico-wood";
 
 // The drawing shorthands (rr, ell, lin, rad, F, poly, stroke, leaf, painter)
 // and the shared light (litMass) live in ./art-kit.ts, so the per-area art
@@ -2219,6 +2220,20 @@ const DRAWN: Record<PainterName, Painter> = {
     F(c, "#7a5636");
     ell(c, 12.9, 9.3, 0.9, 1.2, -0.15);
     F(c, "#5c3f26");
+  }),
+
+  "ico-wood": painter(24, 24, (c) => {
+    rr(c, 3, 9, 18, 6, 1.4);
+    F(c, lin(c, 3, 9, 3, 15, [[0, "#b98450"], [1, "#8a5c33"]]));
+    stroke(c, "#5c3c22", 1);
+    ell(c, 3.9, 12, 1.4, 2.2);
+    F(c, "#e8c79a");
+    ell(c, 3.9, 12, 0.6, 1);
+    F(c, "#8a5c33");
+    ell(c, 20.1, 12, 1.4, 2.2);
+    F(c, "#e8c79a");
+    ell(c, 20.1, 12, 0.6, 1);
+    F(c, "#8a5c33");
   }),
 
   "ico-bushels": painter(24, 24, (c) => {

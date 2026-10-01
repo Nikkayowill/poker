@@ -22,6 +22,8 @@ import {
 import type { StackAcresInventory } from "@/lib/stackacres/inventory";
 import type { StackAcresWheatPlotRow } from "@/lib/stackacres/wheat-plot";
 import { isMachineKind, type MachineKind, type StackAcresMachineRow } from "@/lib/stackacres/machines";
+import { isWoodNodeId, type WoodNodeId } from "@/lib/stackacres/tree-nodes";
+import { freshWoodNodeState, type WoodNodeState } from "@/lib/stackacres/wood";
 import { isRecipeId, type RecipeId } from "@/lib/stackacres/recipes";
 import type { AgingManifest } from "@/lib/stackacres/aging";
 import {
@@ -107,6 +109,7 @@ declare global {
   var __riverRoomStackAcresWater: Map<string, number> | undefined;
   var __riverRoomStackAcresEnergy: Map<string, StoredStackAcresEnergy> | undefined;
   var __riverRoomStackAcresStory: Map<string, { story: StoredStory; version: number }> | undefined;
+  var __riverRoomStackAcresWoodNodes: Map<string, StoredWoodNode> | undefined;
 }
 
 const memoryUnits = globalThis.__riverRoomStackAcresUnits ?? new Map<string, StoredStackAcresUnit>();
@@ -246,6 +249,12 @@ globalThis.__riverRoomStackAcresDevotion = memoryDevotion;
 const memoryFriendship = globalThis.__riverRoomStackAcresFriendship ?? new Map<string, StoredFriendshipRow>();
 globalThis.__riverRoomStackAcresFriendship = memoryFriendship;
 
+/** Choppable tree nodes (lib/stackacres/wood.ts), keyed `${profileId}:${nodeId}`.
+ *  A missing entry is `freshWoodNodeState()` at version 1, the same "no row
+ *  yet" convention memoryDevotion/memoryFriendship use above. */
+const memoryWoodNodes = globalThis.__riverRoomStackAcresWoodNodes ?? new Map<string, StoredWoodNode>();
+globalThis.__riverRoomStackAcresWoodNodes = memoryWoodNodes;
+
 /** Test seam only: the memory branch is process-global. */
 export function __resetStackAcresForTest(): void {
   memoryUnits.clear();
@@ -269,6 +278,7 @@ export function __resetStackAcresForTest(): void {
   memoryPrestige.clear();
   memoryDevotion.clear();
   memoryFriendship.clear();
+  memoryWoodNodes.clear();
 }
 
 /** Test seam only: what the memory-branch collection ledger recorded. */
@@ -3304,4 +3314,157 @@ export async function eatStackAcresFood(
     throw new Error(`Could not eat that: ${error.message}`);
   }
   return data === "eaten" ? "eaten" : "no-food";
+}
+
+/* ------------------------------------------------------------------ */
+/* Choppable trees (lib/stackacres/wood.ts)                            */
+/* ------------------------------------------------------------------ */
+
+export interface StoredWoodNode extends WoodNodeState {
+  profileId: string;
+  nodeId: WoodNodeId;
+  version: number;
+}
+
+const WOOD_NODE_COLUMNS = "profile_id, node_id, hits_remaining, felled_at, version";
+
+interface WoodNodeDbRow {
+  profile_id: string;
+  node_id: string;
+  hits_remaining: number | string;
+  felled_at: string | null;
+  version: number | string;
+}
+
+function woodNodeFromRow(row: WoodNodeDbRow): StoredWoodNode {
+  return {
+    profileId: String(row.profile_id),
+    nodeId: (isWoodNodeId(row.node_id) ? row.node_id : row.node_id) as WoodNodeId,
+    hitsRemaining: Number(row.hits_remaining),
+    felledAt: row.felled_at ? String(row.felled_at) : null,
+    version: Number(row.version),
+  };
+}
+
+/** Reads one node's state, creating a fresh standing-tree row the first time
+ *  a profile ever taps it -- the same lazy-create-on-first-read shape
+ *  ./secrets.ts's discovery ledger and the Sunlight Forge's tool tier
+ *  already take, rather than seeding every node for every profile up front. */
+export async function getOrCreateStackAcresWoodNode(
+  profileId: string,
+  nodeId: WoodNodeId,
+): Promise<StoredWoodNode> {
+  const supabase = adminClient();
+  const key = `${profileId}:${nodeId}`;
+
+  if (!supabase) {
+    const existing = memoryWoodNodes.get(key);
+    if (existing) return { ...existing };
+    const fresh: StoredWoodNode = { profileId, nodeId, version: 1, ...freshWoodNodeState() };
+    memoryWoodNodes.set(key, { ...fresh });
+    return { ...fresh };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_wood_nodes")
+    .select(WOOD_NODE_COLUMNS)
+    .eq("profile_id", profileId)
+    .eq("node_id", nodeId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not load that tree: ${error.message}`);
+  if (data) return woodNodeFromRow(data as WoodNodeDbRow);
+
+  const seed = freshWoodNodeState();
+  const { data: inserted, error: insertError } = await supabase
+    .from("homestead_wood_nodes")
+    .insert({
+      profile_id: profileId,
+      node_id: nodeId,
+      hits_remaining: seed.hitsRemaining,
+      felled_at: seed.felledAt,
+      version: 1,
+    })
+    .select(WOOD_NODE_COLUMNS)
+    .maybeSingle();
+  if (insertError) {
+    // Lost the race to create the row (two tabs tapping the same fresh tree
+    // at once): whoever won is the truth, read it back.
+    const { data: raced, error: racedError } = await supabase
+      .from("homestead_wood_nodes")
+      .select(WOOD_NODE_COLUMNS)
+      .eq("profile_id", profileId)
+      .eq("node_id", nodeId)
+      .maybeSingle();
+    if (racedError || !raced) throw new Error(`Could not plant that tree: ${insertError.message}`);
+    return woodNodeFromRow(raced as WoodNodeDbRow);
+  }
+  return woodNodeFromRow(inserted as WoodNodeDbRow);
+}
+
+/**
+ * Writes one swing's result, guarded on the row's own version -- the same
+ * compare-and-swap shape `startStackAcresMachine`/`collectStackAcresMachine`
+ * use above (an `.eq("version", ...)` update, not a read-then-write), which
+ * is what stops two rapid taps from both landing the swing that fells (and
+ * both being paid for felling) the same tree: whichever request's write
+ * lands first bumps the version, and the second's own `.eq` matches nothing
+ * and comes back null.
+ */
+export async function writeStackAcresWoodNodeSwing(
+  current: StoredWoodNode,
+  next: WoodNodeState,
+): Promise<StoredWoodNode | null> {
+  const supabase = adminClient();
+  const version = current.version + 1;
+
+  if (!supabase) {
+    const key = `${current.profileId}:${current.nodeId}`;
+    const stored = memoryWoodNodes.get(key);
+    if (!stored || stored.version !== current.version) return null;
+    const updated: StoredWoodNode = { ...stored, ...next, version };
+    memoryWoodNodes.set(key, { ...updated });
+    return { ...updated };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_wood_nodes")
+    .update({ hits_remaining: next.hitsRemaining, felled_at: next.felledAt, version })
+    .eq("profile_id", current.profileId)
+    .eq("node_id", current.nodeId)
+    .eq("version", current.version)
+    .select(WOOD_NODE_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not chop that tree: ${error.message}`);
+  return data ? woodNodeFromRow(data as WoodNodeDbRow) : null;
+}
+
+/** Every node's current state for one profile, keyed by node id -- for the
+ *  view snapshot. Missing nodes (never yet tapped) are reported as fresh,
+ *  standing trees rather than triggering a create -- a read must stay
+ *  write-free (see this repo's CLAUDE.md's "Keep game reads write-free"
+ *  rule), and a never-tapped tree is standing by definition. */
+export async function listStackAcresWoodNodeStates(
+  profileId: string,
+): Promise<Record<WoodNodeId, WoodNodeState>> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const result = {} as Record<WoodNodeId, WoodNodeState>;
+    for (const [key, node] of memoryWoodNodes) {
+      if (!key.startsWith(`${profileId}:`)) continue;
+      result[node.nodeId] = { hitsRemaining: node.hitsRemaining, felledAt: node.felledAt };
+    }
+    return result;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_wood_nodes")
+    .select(WOOD_NODE_COLUMNS)
+    .eq("profile_id", profileId);
+  if (error) throw new Error(`Could not load your trees: ${error.message}`);
+  const result = {} as Record<WoodNodeId, WoodNodeState>;
+  for (const row of (data ?? []) as WoodNodeDbRow[]) {
+    const node = woodNodeFromRow(row);
+    result[node.nodeId] = { hitsRemaining: node.hitsRemaining, felledAt: node.felledAt };
+  }
+  return result;
 }

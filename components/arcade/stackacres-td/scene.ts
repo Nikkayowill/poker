@@ -199,6 +199,11 @@ export interface TopdownCallbacks {
   onWellTap: (at: TapPoint) => void;
   onDockTap: (at: TapPoint) => void;
   onThicketTap: (at: TapPoint) => void;
+  /** A finger landed on one of the Homestead's own choppable trees (see
+   *  lib/stackacres/tree-nodes.ts's `WOOD_NODE_IDS` and area.json's own
+   *  `tag: "tree:<id>"` props). `nodeId` is that id, unvalidated here --
+   *  the shell is what knows the real catalogue. */
+  onTreeTap: (nodeId: string, at: TapPoint) => void;
   onGreenhouseTap: () => void;
   onMerchantTap: () => void;
   onMonkTap: (at: TapPoint) => void;
@@ -1197,6 +1202,8 @@ export class TopdownScene extends Phaser.Scene {
         return this.beginCast();
       case "thicket":
         return cb.onThicketTap(at);
+      case "tree":
+        return cb.onTreeTap(detail ?? "", at);
       case "greenhouse":
         return cb.onGreenhouseTap();
       case "farmhouse":

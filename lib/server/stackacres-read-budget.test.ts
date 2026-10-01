@@ -34,7 +34,7 @@ describe("the StackAcres read budget", () => {
   // latest file is the live definition -- point this at the new file
   // whenever one of them redefines it again.
   const MIGRATION = readFileSync(
-    join(process.cwd(), "supabase/migrations/20261001195736_stackacres_guard_dogs.sql"),
+    join(process.cwd(), "supabase/migrations/20261002000100_stackacres_acres.sql"),
     "utf8",
   );
 
@@ -58,14 +58,14 @@ describe("the StackAcres read budget", () => {
     return body.slice(start, end);
   };
 
-  it("the memory-mode fallback still reads a player's farm in 41 per-profile round trips", () => {
+  it("the memory-mode fallback still reads a player's farm in 42 per-profile round trips", () => {
     // One line per read, so this counts the reads rather than the tables --
     // two of them (the secret ledger, friendship) are nested Promise.all's
     // over a list that is length 1 today and will not stay that way.
     // Meaningless for latency in memory mode (no network round trip exists
     // to save), but this is still the list a new farm table's read has to
     // join, or it silently only reads with a live Supabase configured.
-    expect(fallbackArray().split("(profile.id").length - 1).toBe(41);
+    expect(fallbackArray().split("(profile.id").length - 1).toBe(42);
   });
 
   it("the live-Supabase branch reads the same farm in one batch call plus exactly three exceptions", () => {
@@ -109,16 +109,18 @@ describe("the StackAcres read budget", () => {
     // Far Field migration that redefines it also creates its own tables.
     const batchFn = MIGRATION.slice(MIGRATION.indexOf("create or replace function public.stackacres_read_batch"));
     const keys = batchFn.match(/^\s{4}'[a-z_]+', /gm) ?? [];
-    // 45: the Far Field migration's 42, plus the Daily Farm Board's two
-    // period rows (20261001180411), plus the guard dogs (20261001195736),
-    // which ARE in the fallback array above. The board is NOT in the fallback array
+    // 46: the Far Field migration's 42, plus the Daily Farm Board's two
+    // period rows (20261001180411), plus the guard dogs (20261001195736)
+    // carried forward, plus the farm's acres (20261002000100).
+    // The acres and the dogs ARE in the fallback array above. The board is NOT in the fallback array
     // above, and deliberately: its read is a conditional draw rather than a
     // plain per-table select (it writes a row on the period's first read),
     // so it lives in farmBoardView beside the other exceptions' reasoning.
     // It still belongs in the batch, or a live-Supabase farm would draw a
     // board it then could not see.
-    expect(keys.length).toBe(45);
+    expect(keys.length).toBe(46);
     expect(batchFn).toContain("'guard_dogs'");
+    expect(batchFn).toContain("'acres'");
     expect(batchFn).toContain("'farm_board_daily'");
     expect(batchFn).toContain("'farm_board_weekly'");
   });

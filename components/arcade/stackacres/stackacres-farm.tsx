@@ -307,6 +307,8 @@ import { sendActionWithRetry } from "@/lib/stackacres/action-retry";
 import { EMPTY_EMPIRE, type EmpireSnapshot } from "@/lib/stackacres/empire-buildings";
 import { useEmpireBuild } from "./empire-build";
 import { useHerdPlace } from "./herd-place";
+import { useAcreDeed } from "./acre-deed";
+import { acreGate, acresView, type StackAcresAcresView } from "@/lib/stackacres/acres";
 import { isHerdStock } from "@/lib/stackacres/herd";
 import type { GroceryView } from "@/lib/stackacres/grocery";
 import { useGroceryArrange } from "./grocery-arrange";
@@ -343,6 +345,12 @@ function settleable(): { promise: Promise<void>; settle: () => void } {
 function soilSquareFenceKey(tile: { tx: number; ty: number }): string {
   const { mx, my } = soilToMapTile(tile.tx, tile.ty);
   return fenceKey(mx, my);
+}
+
+/** Whether the farm owns the wild acre under a soil square (lib/stackacres/acres.ts). */
+function acreGateAtSoilTile(tile: { tx: number; ty: number }, owned: ReadonlySet<string>) {
+  const { mx, my } = soilToMapTile(tile.tx, tile.ty);
+  return acreGate(mx, my, owned);
 }
 
 const PROVISIONAL_WAIT_PASSES = 3;
@@ -611,6 +619,8 @@ interface StackAcresResponse {
   landObstacles?: LandObstacleSnapshot[];
   /** Every fence piece this farm has put up, by Homestead map square. */
   fences?: FencePiece[];
+  /** The wild acres this farm owns and what the next one costs. */
+  acres?: StackAcresAcresView;
   /** The guard dogs standing on the Homestead, by map square. */
   guardDogs?: GuardDog[];
   /** Set (to an item id or null) by a `tap-secret-zone` response only --
@@ -1265,6 +1275,9 @@ export function StackAcresFarm() {
    *  (lib/stackacres/land-clearing.ts). */
   const [landObstacles, setLandObstacles] = useState<LandObstacleSnapshot[]>([]);
   const [fences, setFences] = useState<FencePiece[]>([]);
+  /** The wild acres owned. Server answers only: an acre is never guessed. */
+  const [acres, setAcres] = useState<StackAcresAcresView>(() => acresView([]));
+  const ownedAcres = useMemo(() => new Set(acres.owned), [acres]);
   const [guardDogs, setGuardDogs] = useState<GuardDog[]>([]);
   /** Which map squares hold a piece, for the belt's "is there a fence here". */
   const fencedSquares = useMemo(() => new Set(fences.map((piece) => fenceKey(piece.tx, piece.ty))), [fences]);
@@ -1818,6 +1831,7 @@ export function StackAcresFarm() {
     if (data.devotion) setDevotion(data.devotion);
     if (data.friendship) setFriendship(data.friendship);
     if (data.empire) setEmpire(data.empire);
+    if (data.acres) setAcres(data.acres);
     if (data.grocery !== undefined) setGrocery(data.grocery);
     // Fresh arrays on every answer; keeping the old one when nothing moved
     // saves the map a redraw.
@@ -1892,6 +1906,7 @@ export function StackAcresFarm() {
       // under the finger.
       landObstacles,
       fences,
+      ownedAcres: acres.owned,
       inventory: processing.inventory,
       wheatPlots: processing.wheatPlots,
       machines: processing.machines,
@@ -1908,6 +1923,7 @@ export function StackAcresFarm() {
       forageNodes,
       landObstacles,
       fences,
+      acres,
       toolTier,
       axe,
       cutters,
@@ -2967,6 +2983,14 @@ export function StackAcresFarm() {
     farmerTile,
   });
   const herdPlace = useHerdPlace({ active: onHomesteadMap, units: liveUnits, dogs: guardDogs, act });
+  const acreDeed = useAcreDeed({
+    active: onHomesteadMap,
+    acres,
+    gold,
+    unlimitedGold: profile?.unlimitedGold ?? false,
+    inventory: processing.inventory,
+    act,
+  });
   const arrange = useGroceryArrange({
     active: onGroceryMap && grocery?.owned === true,
     grocery,
@@ -3711,6 +3735,7 @@ export function StackAcresFarm() {
             square.tile && armedLift && armedLift.tx === square.tile.tx && armedLift.ty === square.tile.ty,
           ),
           fenced: square.tile ? fencedSquares.has(soilSquareFenceKey(square.tile)) : false,
+          gate: square.tile ? acreGateAtSoilTile(square.tile, ownedAcres) : undefined,
         },
         {
           water,
@@ -3733,6 +3758,12 @@ export function StackAcresFarm() {
         if (square.stroke) return;
         setArmedLift({ tx: action.tx, ty: action.ty });
         world.current?.floatAt(square.at, action.reason, "deny");
+        return;
+      }
+      if (action.kind === "deed") {
+        // A stroke walking a row into unowned ground asks once, on a press, not on every square.
+        if (square.stroke) return;
+        acreDeed.open(action.acreId);
         return;
       }
       if (action.kind === "nothing") {
@@ -3820,7 +3851,7 @@ export function StackAcresFarm() {
         }
       }
     },
-    [act, fencedSquares, belt, feed, gold, liveUnits, nowMs, processing.inventory, onPlaceSoilTile, onSowTile, feedPen, seed, seedStock, onRemoveSoilTile, armedLift, queueSow, tapBatched, soilMapForTiles, triggerCascade, water],
+    [act, acreDeed, fencedSquares, ownedAcres, belt, feed, gold, liveUnits, nowMs, processing.inventory, onPlaceSoilTile, onSowTile, feedPen, seed, seedStock, onRemoveSoilTile, armedLift, queueSow, tapBatched, soilMapForTiles, triggerCascade, water],
   );
 
   const onMoveSoilTileGroup = useCallback(
@@ -4327,6 +4358,7 @@ export function StackAcresFarm() {
       {build.controls}
       {arrange.controls}
       {herdPlace.controls}
+      {acreDeed.controls}
       {desk && grocery && (
         <GroceryDesk
           grocery={grocery}

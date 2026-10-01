@@ -26,6 +26,7 @@ import { tapActionFor } from "./tap-action";
 import type { StackAcresUnitSnapshot } from "./units";
 import type { StackAcresInventory } from "./inventory";
 import { FENCE_NEEDS_WOOD, FENCE_NOT_HERE, FENCE_WOOD_COST } from "./fences";
+import { acreGateMessage, type AcreGate } from "./acres";
 
 /** The belt, in the order it is drawn. `hand` is the resting slot every session starts in. */
 export const BELT_TOOLS = ["hand", "hoe", "can", "seeds", "fence"] as const;
@@ -87,6 +88,8 @@ export interface BeltTarget {
   armed?: boolean;
   /** A fence piece stands on this square. */
   fenced: boolean;
+  /** Whether the farm owns the wild acre under this square (./acres.ts). Missing reads as owned. */
+  gate?: AcreGate;
 }
 
 /** Everything the belt reads off the farm to answer. Display-only, like `tapActionFor`'s own context. */
@@ -119,6 +122,8 @@ export type BeltAction =
   | { kind: "water"; unitId: string }
   | { kind: "clear"; unitId: string }
   | { kind: "till"; tx: number; ty: number }
+  /** Hoe or fence on wild ground the farm does not own: ask whether to buy the acre. */
+  | { kind: "deed"; acreId: string }
   /** The hoe on a bare bed, first press: ask before lifting it. */
   | { kind: "arm-lift"; tx: number; ty: number; reason: string }
   | { kind: "lift"; tx: number; ty: number }
@@ -182,6 +187,8 @@ function fenceAction(target: BeltTarget, ctx: BeltContext): BeltAction {
     return { kind: "arm-unfence", tx, ty, reason: "Press again to take this piece down." };
   }
   if (target.bedded) return blocked("There's a bed here.");
+  const unowned = unownedGround(target);
+  if (unowned) return unowned;
   if (ctx.wood < FENCE_WOOD_COST) return blocked(FENCE_NEEDS_WOOD);
   return { kind: "fence", tx, ty };
 }
@@ -226,7 +233,15 @@ function hoeAction(target: BeltTarget, ctx: BeltContext): BeltAction {
     if (target.armed) return { kind: "lift", tx, ty };
     return { kind: "arm-lift", tx, ty, reason: "Press again to lift this bed." };
   }
-  return { kind: "till", tx, ty };
+  return unownedGround(target) ?? { kind: "till", tx, ty };
+}
+
+/** What the hoe and the fence say on wild ground the farm has not bought, or null when it is theirs. */
+function unownedGround(target: BeltTarget): BeltAction | null {
+  const gate = target.gate;
+  if (!gate || gate.ok) return null;
+  if (gate.reason === "not_owned") return { kind: "deed", acreId: gate.acre.id };
+  return blocked(acreGateMessage(gate));
 }
 
 function seedAction(target: BeltTarget, ctx: BeltContext): BeltAction {

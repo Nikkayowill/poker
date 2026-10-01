@@ -87,6 +87,7 @@ import {
   placeStackAcresFencePiece,
   removeStackAcresFencePiece,
   buyEmpireBuilding,
+  buyStackAcresAcre,
   placeOwnedEmpireBuilding,
   pickUpOwnedEmpireBuilding,
   takeOverStackAcresGrocery,
@@ -503,6 +504,9 @@ const bodySchema = z.discriminatedUnion("action", [
     ty: z.number().int().min(0).max(255),
   }),
   z.object({ action: z.literal("pick-up-building"), id: z.string().uuid() }),
+  // One acre of the wild land (lib/stackacres/acres.ts). SPENDS Gold, Wood and Stone,
+  // priced on the server from how many acres the farm already owns.
+  z.object({ action: z.literal("buy-acre"), acreId: z.string().min(1).max(8) }),
   // The city grocery (lib/stackacres/grocery.ts). Taking it over is free and development-only; hiring and
   // buying fixtures SPEND Gold, priced on the server; emptying the till CREDITS takings less wages; firing,
   // moving and storing move nothing.
@@ -744,6 +748,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return buyEmpireBuilding(token, { kind: action.kind, tx: action.tx, ty: action.ty }, now);
     case "place-building":
       return placeOwnedEmpireBuilding(token, { id: action.id, tx: action.tx, ty: action.ty }, now);
+    case "buy-acre":
+      return buyStackAcresAcre(token, { acreId: action.acreId }, now);
     case "pick-up-building":
       return pickUpOwnedEmpireBuilding(token, { id: action.id }, now);
     case "grocery-take-over":

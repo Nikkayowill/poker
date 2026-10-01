@@ -1342,6 +1342,10 @@ export function StackAcresFarm() {
    * and then fire at once the moment it resumed. The tap-to-play splash is
    * that gesture -- it exists for the music for exactly this reason, and the
    * ambience rides on the same one rather than inventing a second prompt.
+   * The splash's own Play handler builds the context inside its tap
+   * (stackacres-play-screen.tsx); the start here is a no-op after that and a
+   * real start only when the farm mounts some other way. Stopping is this
+   * effect's job either way.
    */
   useEffect(() => {
     if (!hasStarted) return;

@@ -139,7 +139,7 @@ export interface RevealedFish {
  *  its own copy of the rule. */
 export type TravelerUnlocks = Readonly<Record<TravelerId, boolean>>;
 
-export type FarmerAction = "water" | "harvest" | "hoe" | "plant";
+export type FarmerAction = "water" | "harvest" | "hoe" | "plant" | "fence";
 
 /** Who an emote bubble pops up over: the farmer, or a person on the map by their rig name. */
 export type EmoteTarget = "farmer" | "ray" | "pilgrim" | TravelerId;

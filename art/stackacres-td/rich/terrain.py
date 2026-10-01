@@ -53,16 +53,21 @@ def dilate(mask, k):
     return out
 
 
+# A blade is a stroke, not a dot: light tip on the top row, dark root on the bottom one. Rows read
+# downward, so every shape here stands up. Dot clusters read as litter scattered on the ground; only
+# an upright stroke with a root under it reads as something growing out of it.
 GRASS_TUFTS = [
-    ["2.2", "1d1"],
-    [".2.", "212", "d.d"],
-    ["2..", "12.", "d12", ".d."],
-    ["..2", ".21", "21d", "d.."],
-    ["2.2.2", "1d1d1"],
-    ["D.D", ".D."],
-    ["D...D", ".D.D."],
+    ["2", "1", "d"],                        # one upright blade
+    ["2", "d"],                             # a short spike
+    [".2.", "212", "dDd"],                  # three blades off one root
+    ["2.2", "1.1", ".D."],                  # a narrow V
+    ["..2", ".1.", "d.."],                  # leaning right
+    ["2..", ".1.", "..d"],                  # leaning left
+    [".2.2", "21.1", "dD.D"],               # a clump of four
+    ["2.2.2", "1.1.1", ".dDd."],            # a wide fan
+    ["..2", ".21", "d1.", "D.."],           # a tall curved blade
 ]
-DELTA = {"2": 2, "1": 1, "d": -1, "D": -2}
+DELTA = {"2": 2.2, "1": 1.2, "d": -1.6, "D": -2.4}
 PEBBLES = [["65", "43", ".s"], ["5", "s"], ["654", "432", ".ss"], ["56", "4s"]]
 
 
@@ -101,14 +106,18 @@ class Ground:
         path = owner == CODE["path"]
         soil = owner == CODE["soil"]
 
-        # grass: three kinds (lush, meadow, dry) in broad drifts, clustered light patches, and speckle
-        sp = fbm(xs, ys, 70, 5, 2) + (fbm(xs, ys, 4, 6, 2) - 0.5) * 0.14
-        ramp = np.where(sp < 0.37, RID["lush"], np.where(sp > 0.65, RID["dry"], RID["grass"])).astype(np.int16)
-        g = 3.7 + (fbm(xs, ys, 26, 1) - 0.5) * 1.9 + (fbm(xs, ys, 7, 2, 2) - 0.5) * 1.2
-        g = np.clip(np.floor(g * 2) / 2, 2.0, 5.5)
+        # grass: three kinds (lush, meadow, dry) in broad drifts, then blades drawn on a calm base.
+        # The value range belongs to the blades, not to the base. The same amount of variation spread
+        # evenly over every pixel reads as static; gathered into strokes with a dark root and a light
+        # tip it reads as grass, and the calm ground between the clumps is what lets them read at all.
+        sp = fbm(xs, ys, 70, 5, 2) + (fbm(xs, ys, 26, 6, 2) - 0.5) * 0.14
+        # lush and dry are accents, not thirds of the field. They used to cover about seventy per cent
+        # of the grass between them, which at this zoom reads as blotches of three different greens
+        # rather than as one meadow catching the light unevenly.
+        ramp = np.where(sp < 0.24, RID["lush"], np.where(sp > 0.78, RID["dry"], RID["grass"])).astype(np.int16)
+        g = 3.8 + (fbm(xs, ys, 34, 1) - 0.5) * 0.9 + (fbm(xs, ys, 15, 2, 1) - 0.5) * 0.28
+        g = np.clip(g, 3.1, 4.6)
         g += np.where(ramp == RID["dry"], -0.2, 0) - np.where(ramp == RID["lush"], 0.2, 0)
-        speck = hash_np(ix, iy, 2)
-        g = np.where(speck < 0.035, g - 0.8, np.where(speck > 0.975, g + 0.8, g))
         idx = g.astype(np.float64)
 
         def stamp(x, y, level, r=None):
@@ -117,9 +126,9 @@ class Ground:
                     ramp[y, x] = r
                 idx[y, x] = level
 
-        for cy in range(0, H, 5):                                 # small tufts
-            for cx in range(0, W, 5):
-                if hash2(cx, cy, 3) > 0.26:
+        for cy in range(0, H, 4):                                 # small tufts
+            for cx in range(0, W, 4):
+                if hash2(cx, cy, 3) > 0.40:
                     continue
                 shape = GRASS_TUFTS[int(hash2(cx, cy, 4) * len(GRASS_TUFTS))]
                 ox, oy = cx + int(hash2(cx, cy, 5) * 4), cy + int(hash2(cx, cy, 6) * 4)
@@ -130,11 +139,11 @@ class Ground:
                     for i, ch in enumerate(row):
                         if ch != ".":
                             stamp(ox + i, oy + j, min(7, max(0.8, base + DELTA[ch])))
-        for cy in range(0, H, 11):                                # taller clumps that stand up and shade their root
-            for cx in range(0, W, 13):
-                if hash2(cx, cy, 13) > 0.34:
+        for cy in range(0, H, 9):                                 # taller clumps that stand up and shade their root
+            for cx in range(0, W, 10):
+                if hash2(cx, cy, 13) > 0.46:
                     continue
-                ox, oy = cx + int(hash2(cx, cy, 14) * 8), cy + 4 + int(hash2(cx, cy, 15) * 5)
+                ox, oy = cx + int(hash2(cx, cy, 14) * 6), cy + 3 + int(hash2(cx, cy, 15) * 4)
                 if not (0 <= oy < H and 0 <= ox < W):
                     continue
                 base = idx[oy, ox]
@@ -142,11 +151,11 @@ class Ground:
                     x = ox + k * 2 - 2 + (1 if hash2(cx, k, 17) > 0.6 else 0)
                     tall = 3 + int(hash2(cx + k, cy, 18) * 3)
                     lean = -1 if hash2(k, cy, 19) < 0.3 else 1 if hash2(k, cy, 19) > 0.7 else 0
-                    stamp(x, oy, base - 1.6)
-                    stamp(x + 1, oy, base - 1.1)
+                    stamp(x, oy, base - 2.0)
+                    stamp(x + 1, oy, base - 1.3)
                     for j in range(1, tall):
                         xx = x + (lean if j == tall - 1 else 0)
-                        stamp(xx, oy - j, base + 0.2 + j * 1.9 / tall)
+                        stamp(xx, oy - j, base + 0.1 + j * 2.7 / tall)
         for cy in range(0, H, 4):                                 # clover drifts
             for cx in range(0, W, 4):
                 if hash2(cx, cy, 20) > 0.45 or vnoise1(cx, cy, 20, 21) < 0.72:

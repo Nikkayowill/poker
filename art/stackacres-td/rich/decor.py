@@ -355,12 +355,12 @@ def decorate(area):
     trees = [b for b in sp.boxes if b[4] == "tree"]
     for n, (_, _, _, _, _, bx, by, img) in enumerate(trees):
         s = bx * 31 + by * 17
-        if img.size == (40, 44) and hash2(s, 1, 100) < 0.7:          # litter under broadleaf trees
-            for k in range(2):
+        if img.size == (40, 44) and hash2(s, 1, 100) < 0.88:         # litter under broadleaf trees
+            for k in range(4):
                 dx, dy = int((hash2(s, k, 101) - 0.5) * 26), 2 + int(hash2(s, k, 102) * 6)
                 made = twig(s + k) if hash2(s, k, 103) < 0.25 else leaves(s + k)
                 place("leaves/twigs", made, bx + dx, by + dy, False, allow=("tree",))
-        if hash2(s, 2, 104) < 0.45:                                  # mushrooms and ferns at the forest edge
+        if hash2(s, 2, 104) < 0.62:                                  # mushrooms and ferns at the forest edge
             r = hash2(s, 4, 106)
             made = mushrooms(s) if r < 0.35 else fern(s) if r < 0.75 else grass_clump(s)
             side = -1 if hash2(s, 3, 105) < 0.5 else 1
@@ -393,15 +393,17 @@ def decorate(area):
                 place("foundation", made, x + int(hash2(s, k, 123) * 6), y1 + 3 + int(hash2(s, k, 124) * 3), standing)
 
     patches = []
-    for cy in range(20, sp.H - 16, 30):                              # open meadow
-        for cx in range(20, sp.W - 16, 30):
-            if hash2(cx, cy, 130) > 0.62:
+    # A 30px cell left most of the meadow bare. Open ground is where the reference earns its density:
+    # not big set pieces, a lot of small things. Space.fits still keeps them off the paths and doors.
+    for cy in range(16, sp.H - 14, 16):                              # open meadow
+        for cx in range(16, sp.W - 14, 16):
+            if hash2(cx, cy, 130) > 0.72:
                 continue
             kind = ("white", "straw", "pink", "blue")[int(hash2(cx, cy, 133) * 4)]
             r = hash2(cx, cy, 134)
             for attempt in range(3):
-                x = cx + int((hash2(cx, cy + attempt, 131) - 0.5) * 24)
-                y = cy + int((hash2(cx + attempt, cy, 132) - 0.5) * 24)
+                x = cx + int((hash2(cx, cy + attempt, 131) - 0.5) * 13)
+                y = cy + int((hash2(cx + attempt, cy, 132) - 0.5) * 13)
                 if r < 0.5:
                     ok = place("wildflowers", flower_patch(cx + cy, kind), x, y, False)
                     if ok:

@@ -14,9 +14,12 @@ WARM_HUE, COOL_HUE = 55, 255
 
 # name: (hue, saturation, darkest lightness, lightest lightness, warm drift, cool drift, level scale)
 MATERIALS = {
-    "grass":   (104, 0.54, 0.10, 0.62, 34, 38, 7),
-    "lush":    (132, 0.48, 0.09, 0.56, 26, 30, 7),
-    "dry":     (80, 0.46, 0.14, 0.62, 18, 32, 7),
+    # Grass sits at hue 88 and saturation 0.74 on purpose. Measured against the reference, our green
+    # was too pure (hue 107) and too grey (0.59); the lightness was already right. A yellow-green
+    # ground is what lets everything standing on it read, so this is the ground's job, not a filter.
+    "grass":   (88, 0.74, 0.10, 0.64, 34, 38, 7),
+    "lush":    (108, 0.66, 0.09, 0.58, 26, 30, 7),
+    "dry":     (74, 0.68, 0.18, 0.68, 18, 32, 7),
     "leaf":    (108, 0.52, 0.07, 0.60, 38, 44, 7),
     "leaf2":   (86, 0.56, 0.08, 0.64, 28, 44, 7),
     "pine":    (158, 0.44, 0.06, 0.52, 44, 26, 7),

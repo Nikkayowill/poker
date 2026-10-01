@@ -164,6 +164,8 @@ import {
 } from "@/lib/stackacres/irrigation";
 import { PEN_ZONE_IDS, STACKACRES_ZONES, type ZoneId } from "@/lib/stackacres/zones";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { useOnboardingTour } from "@/lib/onboarding/use-onboarding-tour";
+import { STACKACRES_TOUR_STEPS } from "@/lib/onboarding/tour-steps";
 import type { PainterName } from "./stackacres-art";
 import { StackAcresBuySection, StackAcresUnitRows } from "./stackacres-district-panel";
 import { StackAcresIcon } from "./stackacres-icon";
@@ -1166,6 +1168,13 @@ export function StackAcresFarm() {
   // the farm. Read only once `hasStarted` flips true, so it never flashes
   // behind the tap-to-play splash.
   const [showWelcome, setShowWelcome] = useState(false);
+  // True once the localStorage check below has actually run, whichever way it
+  // came out. Needed as its own flag rather than trusting "!showWelcome" alone:
+  // showWelcome starts false and is only set true a tick later (see the effect
+  // below), so a naive "!showWelcome" reads as "no welcome needed" for that one
+  // tick even on a fresh profile, which raced the spotlight tour onto the
+  // screen underneath Ray's own card the first time this shipped.
+  const [rayCheckDone, setRayCheckDone] = useState(false);
   useEffect(() => {
     if (!hasStarted) return;
     // Deferred a tick, same reason install-prompt.tsx defers its own
@@ -1177,6 +1186,7 @@ export function StackAcresFarm() {
       } catch {
         // Private browsing or blocked storage: skip the intro rather than error.
       }
+      setRayCheckDone(true);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [hasStarted]);
@@ -1189,6 +1199,13 @@ export function StackAcresFarm() {
       // Nothing to persist if storage is blocked; it just re-offers next visit.
     }
   }, []);
+
+  // The spotlight tour, same mechanism as the lobby and table halves
+  // (lib/onboarding/use-onboarding-tour.ts): fires once per profile, server
+  // side, across all three screens. Gated on the world actually being loaded
+  // and Ray's hello either dismissed or never owed, so it never races either
+  // splash for the player's attention.
+  useOnboardingTour(profile, STACKACRES_TOUR_STEPS, hasStarted && loaded && rayCheckDone && !showWelcome);
 
   useStackAcresMusic(hasStarted);
 
@@ -4169,7 +4186,13 @@ export function StackAcresFarm() {
   // already ran on mount), so the farm is ready the instant a player taps
   // through rather than waiting on the splash's own fade.
   if (!hasStarted) {
-    return <StackAcresPlayScreen onStart={() => setHasStarted(true)} />;
+    return (
+      <StackAcresPlayScreen
+        onStart={() => setHasStarted(true)}
+        profile={profile}
+        onProfileSaved={setProfile}
+      />
+    );
   }
 
   const district = STACKACRES_ZONES[place];
@@ -4305,7 +4328,7 @@ export function StackAcresFarm() {
               <span>Use radish bait ({radishesHeld})</span>
             </label>
           )}
-          <span className="gold-balance floor-wallet" title="Gold">
+          <span className="gold-balance floor-wallet" data-tour="sa-gold-balance" title="Gold">
             <Coins size={13} aria-hidden="true" />
             {/* A profile that never arrived (the paired land/unit fetch threw,
                 so the whole /api/stackacres response was discarded) is "we
@@ -4325,7 +4348,12 @@ export function StackAcresFarm() {
             give up the drawer's column while it is open -- five signs do not
             fit beside a 320px drawer on a phone, and the one that fell off the
             end was Ray's, which is the only way into the store. */}
-        <div ref={fieldRef} className="sa-field" data-drawer={panelOpen ? "open" : "shut"}>
+        <div
+          ref={fieldRef}
+          className="sa-field"
+          data-drawer={panelOpen ? "open" : "shut"}
+          data-tour="sa-farm-world"
+        >
           {loaded && (
             <StackAcresTopdownWorld
               units={liveUnits}

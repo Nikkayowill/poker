@@ -203,12 +203,20 @@ describe("yard props", () => {
     expect(distanceToPath(signpost.x, signpost.y, fork)).toBeLessThan(48);
   });
 
-  it("stands one windmill left of the seed strip with its hub on the tower", () => {
-    const mills = of("windmill");
-    expect(mills.length).toBe(1);
-    expect(mills[0].x + PROP_SIZE.windmill.w / 2 + 23).toBeLessThan(374);
+  it("places no windmill -- it was pulled from the yard", () => {
+    expect(of("windmill").length).toBe(0);
+    // The kind/size/hub stay real (art-props.ts still paints it, and blades
+    // still pin to this hub) even though nothing places it right now.
     expect(WINDMILL_HUB.y).toBeLessThan(0);
     expect(-WINDMILL_HUB.y).toBeLessThan(PROP_SIZE.windmill.h);
+  });
+
+  it("stands one Factory on the windmill's old spot, left of the seed strip", () => {
+    const factories = of("factory");
+    expect(factories.length).toBe(1);
+    expect(factories[0].x - YARD_DELTA.x).toBe(330);
+    expect(factories[0].y - YARD_DELTA.y).toBe(28);
+    expect(factories[0].x + PROP_SIZE.factory.w / 2 + 23).toBeLessThan(374);
   });
 
   it("breaks the stone wall into three or four short lengths north of the yard", () => {

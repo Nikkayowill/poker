@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { YARD_PROPS, propRect, type PropKind } from "./props";
 import {
   barnHitAt,
+  factoryHitAt,
   growAreaInterior,
   penFeedSpot,
   rayHouseHitAt,
   signpostHitAt,
-  windmillHitAt,
   yardWellHitAt,
 } from "./world";
 import { PEN_ZONE_IDS } from "./zones";
@@ -22,7 +22,7 @@ function centreOf(kind: PropKind): { x: number; y: number } {
 // The Town Board, the Workshop and the well are walked up to in the world
 // now, so each box has to sit on the art it answers for and nowhere else.
 describe("the yard's entryways", () => {
-  const hits = { signpost: signpostHitAt, windmill: windmillHitAt, well: yardWellHitAt } as const;
+  const hits = { signpost: signpostHitAt, factory: factoryHitAt, well: yardWellHitAt } as const;
   const kinds = Object.keys(hits) as (keyof typeof hits)[];
 
   for (const kind of kinds) {

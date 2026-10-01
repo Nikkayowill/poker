@@ -122,6 +122,7 @@ import {
   growthStage,
   MIDNIGHT_MERCHANT_SPOT,
   midnightMerchantHitAt,
+  factoryHitAt,
   penFeedSpot,
   powerOfTwoCeil,
   RAY_HOUSE_FOOTPRINT,
@@ -134,7 +135,6 @@ import {
   stepCritter,
   stockZone,
   stocksInZone,
-  windmillHitAt,
   yardWellHitAt,
   type Critter,
   type SceneryKind,
@@ -428,12 +428,13 @@ export interface StackAcresSceneCallbacks {
    */
   onSignpostTap: () => void;
   /**
-   * A tap that landed on the windmill, the Workshop's entryway. In fiction it
-   * is the Mill the Workshop runs. Same priority as `onBarnTap`.
+   * A tap that landed on the Factory, the Workshop's own building now (it
+   * used to be the windmill doubling for one). Same priority as
+   * `onBarnTap`.
    */
   onWorkshopTap: () => void;
   /** A tap that landed on the yard's well, where the watering can gets
-   *  filled. Same priority as the windmill. */
+   *  filled. Same priority as the Factory. */
   onWellTap: (at: TapPoint) => void;
   /** A tap that landed on the pond's dock, where a line gets cast. Same
    *  priority as the well -- both are fixed utility fixtures, checked right
@@ -5427,8 +5428,9 @@ export class StackAcresScene extends Phaser.Scene {
         this.callbacks.onSignpostTap();
         return;
       }
-      // The windmill, the Workshop's entryway. Same ordering as the signpost.
-      if (windmillHitAt(ground.x, ground.y)) {
+      // The Factory, the Workshop's own entryway now. Same ordering as the
+      // signpost, the slot the windmill used to hold.
+      if (factoryHitAt(ground.x, ground.y)) {
         this.callbacks.onWorkshopTap();
         return;
       }

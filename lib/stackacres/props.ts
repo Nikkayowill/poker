@@ -45,6 +45,7 @@ import { inPondZone } from "./water";
 
 export type PropKind =
   | "windmill"
+  | "factory"
   | "well"
   | "wheelbarrow"
   | "crate"
@@ -84,10 +85,17 @@ export interface PropPlacement extends WorldPoint {
  * building, and twenty-two read as a junk shop.
  */
 export const YARD_PROPS: readonly PropPlacement[] = [
-  // The one tall silhouette in the yard, and the only thing that moves
-  // there: its blades turn (see WINDMILL_HUB). Left of the seed strip
-  // (x >= ~374 at the opening shot) so a new player sees it.
-  { kind: "windmill", ...yardPoint(330, 28) },
+  // The windmill used to stand here, left of the seed strip, and doubled as
+  // the Workshop's own entryway. Pulled per Kayo's call: a real building
+  // (below) now carries that job, and a decorative windmill with no purpose
+  // is worse than no windmill -- "windmill" stays a real PropKind/painter,
+  // just unplaced, so putting it back somewhere is a placement, not a
+  // rebuild.
+
+  // The Factory: the Workshop's own building, on the exact spot the
+  // windmill vacated (WINDMILL_FOOTPRINT in world.ts is kept just so this
+  // reuse is a documented handoff, not a coincidence).
+  { kind: "factory", ...yardPoint(330, 28) },
 
   // Clutter east of the silo and the hay, against the road's north rim.
   // The road's body now starts at y 38 (two and a half tiles wide, centred
@@ -144,6 +152,11 @@ export interface PropSize {
 
 export const PROP_SIZE: Record<PropKind, PropSize> = {
   windmill: { w: 30, h: 70 },
+  // Sized off the generated sprite's own real aspect (28x36 at
+  // ~763x969 cropped), the same "picture box, not an invented one" rule
+  // PROP_SIZE's own header note (below the traveler rows) already holds
+  // every sprite-backed prop to.
+  factory: { w: 28, h: 36 },
   well: { w: 28, h: 32 },
   wheelbarrow: { w: 28, h: 18 },
   crate: { w: 16, h: 14 },
@@ -181,6 +194,7 @@ export const PROP_SIZE: Record<PropKind, PropSize> = {
  */
 export const PROP_SHADOW: Record<PropKind, PropSize> = {
   windmill: { w: 40, h: 14 },
+  factory: { w: 32, h: 11 },
   well: { w: 34, h: 12 },
   wheelbarrow: { w: 32, h: 9 },
   crate: { w: 20, h: 7 },

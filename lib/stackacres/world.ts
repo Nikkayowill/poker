@@ -441,21 +441,23 @@ export function signpostHitAt(x: number, y: number): boolean {
 }
 
 /**
- * The windmill's footprint: the box `PROP_SIZE.windmill` gives (30 wide,
- * 70 tall) at props.ts's `yardPoint(330, 28)`, restated for the same
- * import-cycle reason. In fiction it is the Mill the Workshop runs, so it
- * doubles as the Workshop's entryway instead of a new building.
+ * The Factory's footprint: the box `PROP_SIZE.factory` gives (28 wide, 36
+ * tall) at props.ts's `yardPoint(330, 28)` -- the same spot the windmill
+ * used to stand at, restated here for the same import-cycle reason as
+ * every other structure's footprint in this file. The Factory is the
+ * Workshop's entryway now, a real building rather than the windmill
+ * doubling for one.
  */
-const WINDMILL_FOOTPRINT: WorldRect = yardRect(330 - 30 / 2, 28 - 70, 30, 70);
+const FACTORY_FOOTPRINT: WorldRect = yardRect(330 - 28 / 2, 28 - 36, 28, 36);
 
-/** Whether a tapped ground point lands on the windmill, the Workshop's
+/** Whether a tapped ground point lands on the Factory, the Workshop's
  *  entryway. */
-export function windmillHitAt(x: number, y: number): boolean {
+export function factoryHitAt(x: number, y: number): boolean {
   return (
-    x >= WINDMILL_FOOTPRINT.x &&
-    x <= WINDMILL_FOOTPRINT.x + WINDMILL_FOOTPRINT.width &&
-    y >= WINDMILL_FOOTPRINT.y &&
-    y <= WINDMILL_FOOTPRINT.y + WINDMILL_FOOTPRINT.height
+    x >= FACTORY_FOOTPRINT.x &&
+    x <= FACTORY_FOOTPRINT.x + FACTORY_FOOTPRINT.width &&
+    y >= FACTORY_FOOTPRINT.y &&
+    y <= FACTORY_FOOTPRINT.y + FACTORY_FOOTPRINT.height
   );
 }
 

@@ -25,6 +25,7 @@ import { RAMPS } from "./art-palette";
 export type PropPainterName =
   | "windmill"
   | "windmillBlades"
+  | "factory"
   | "well"
   | "wheelbarrow"
   | "crate"
@@ -328,6 +329,80 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
 
   // A stone drum under a little shingled roof on two posts, with the
   // windlass, its rope and the bucket hanging at the mouth.
+  // The Workshop's own building, now that the windmill no longer doubles for
+  // it (see world.ts's FACTORY_FOOTPRINT comment): a squat stone workshop
+  // under a metal roof, a chimney trailing smoke, and a cog over the door --
+  // the fallback shown only until factory.png loads (see `spriteBacked` in
+  // stackacres-art.ts), boxed to that sprite's own real 28x36.
+  factory: painter(28, 36, (c) => {
+    ell(c, 14, 35.5, 12, 2.4);
+    F(c, "rgba(20,20,25,.22)");
+    const wall = () => rr(c, 2, 14, 24, 21.5, 1.2);
+    wall();
+    F(c, RAMPS.stone.top);
+    wall();
+    c.save();
+    c.clip();
+    c.fillStyle = lin(c, 2, 0, 15, 0, [
+      [0, "rgba(255,255,255,.28)"],
+      [1, "rgba(255,255,255,0)"],
+    ]);
+    c.fillRect(2, 14, 13, 21.5);
+    c.fillStyle = lin(c, 18, 0, 26, 0, [
+      [0, "rgba(0,0,0,0)"],
+      [1, "rgba(20,20,25,.26)"],
+    ]);
+    c.fillRect(18, 14, 8, 21.5);
+    c.restore();
+    wall();
+    stroke(c, "rgba(40,45,50,.4)", 0.5);
+    rr(c, 8.4, 24, 11.2, 11.5, 0.8);
+    F(c, RAMPS.iron.rim);
+    for (const [x, y] of [[9, 24.8], [18.4, 24.8], [9, 34.6], [18.4, 34.6]] as const) {
+      ell(c, x, y, 0.3, 0.3);
+      F(c, "#8a8f96");
+    }
+    rr(c, 8.4, 24, 11.2, 11.5, 0.8);
+    stroke(c, "rgba(20,20,25,.4)", 0.5);
+    for (const x of [3.4, 21.4]) {
+      rr(c, x, 18, 3.2, 4, 0.7);
+      F(c, "#3a3f44");
+      rr(c, x + 0.4, 18.4, 2.4, 3.2, 0.5);
+      F(c, RAMPS.gold.top);
+    }
+    c.save();
+    c.translate(14, 18.6);
+    const teeth = 8;
+    c.beginPath();
+    for (let k = 0; k < teeth; k += 1) {
+      const a0 = (k / teeth) * TAU;
+      const a1 = a0 + TAU / teeth / 2;
+      c.arc(0, 0, 3.2, a0, a1);
+      c.arc(0, 0, 2.2, a1, a0 + TAU / teeth, true);
+    }
+    c.closePath();
+    F(c, RAMPS.iron.top);
+    stroke(c, "rgba(20,20,25,.4)", 0.35);
+    c.restore();
+    rr(c, 0.4, 13, 27.2, 1.3, 0.7);
+    F(c, "#4b4f54");
+    roof(c, 0.7, 27.3, 14, 3.2, RAMPS.metal.top, RAMPS.metal.rim);
+    rr(c, 19.4, 1.4, 3.6, 10.4, 0.6);
+    F(c, "#6b6560");
+    rr(c, 19.4, 1.4, 3.6, 10.4, 0.6);
+    stroke(c, "rgba(20,20,20,.35)", 0.4);
+    rr(c, 18.9, 0.8, 4.6, 1.4, 0.5);
+    F(c, "#4a453f");
+    for (const [dx, dy, r, a] of [
+      [0, 4, 1, 0.32],
+      [1.6, 2, 1.5, 0.22],
+      [3, 0.4, 1.9, 0.14],
+    ] as const) {
+      ell(c, 21.2 + dx, dy, r, r * 0.7);
+      F(c, `rgba(215,215,220,${a})`);
+    }
+  }),
+
   well: painter(28, 32, (c) => {
     for (const x of [4.4, 21]) timber(c, x, 10, 2.6, 15, 1);
     rr(c, 3.4, 11.4, 21.2, 1.8, 0.9);

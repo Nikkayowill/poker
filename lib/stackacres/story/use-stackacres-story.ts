@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { buzz } from "../haptics";
 import { dialogueNodeFor, type StoryChoice, type StoryDialogueNode, type StoryIntent } from "./dialogue";
 import type { StoryEvent } from "./events";
 import { applyEventToView, type StackAcresStoryView } from "./state";
@@ -57,15 +58,6 @@ export interface StackAcresStoryController {
   /** Resolves when the intent (if any) has been posted and answered. */
   choose(choice: StoryChoice): Promise<void>;
   noteEvent(event: StoryEvent): void;
-}
-
-/** A short tick on a phone that has one. Silent everywhere else. */
-function buzz(pattern: readonly number[]): void {
-  try {
-    navigator.vibrate?.([...pattern]);
-  } catch {
-    // Some browsers throw rather than returning false. Either way, nothing happens.
-  }
 }
 
 interface EventBatch {

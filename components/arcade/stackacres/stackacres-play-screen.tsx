@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
+import { startAmbience } from "@/lib/audio/stackacres-ambience";
 import { playStackAcresMusic } from "@/lib/audio/stackacres-music";
 import { tapSound, toggleSound } from "@/lib/audio/ui-sounds";
 import { useAppShell } from "@/components/shell/app-shell";
@@ -35,6 +36,12 @@ export function StackAcresPlayScreen({ onStart, profile, onProfileSaved }: Stack
 
   const handlePlay = async () => {
     tapSound();
+    // The farm's AudioContext is built here, inside the tap, and not in the
+    // farm's own effect 300ms later: iOS hands back a suspended context for
+    // anything built outside a gesture, and the farm then played music with
+    // no footsteps or tool sounds until the next touch. The farm's effect
+    // still owns stopping it; its own start call is a no-op after this one.
+    startAmbience();
     await playStackAcresMusic();
     setIsActive(false);
     // Let the fade finish before the farm takes over.

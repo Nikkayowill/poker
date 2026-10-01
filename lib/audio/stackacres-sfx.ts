@@ -182,10 +182,15 @@ export function floorStepSound(step: number) {
   playFarmSample(names[step % names.length], step % 2 ? 0.38 : 0.45);
 }
 
-/** One footstep outdoors, on grass and dirt: real left/right foot recordings, alternating. */
+/**
+ * One footstep outdoors, on grass and dirt: real left/right foot recordings,
+ * alternating. Only two recordings, so the pitch spread is wider than the
+ * default: at a walk that is four steps a second, and two samples at one
+ * pitch turn into a loop by the third stride.
+ */
 export function grassStepSound(step: number) {
   const names = ["step-grass-l", "step-grass-r"] as const;
-  playFarmSample(names[step % names.length], step % 2 ? 0.4 : 0.5);
+  playFarmSample(names[step % names.length], step % 2 ? 0.4 : 0.5, 0.16);
 }
 
 /** Walking into or out of a building. */

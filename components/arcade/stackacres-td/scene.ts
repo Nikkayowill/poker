@@ -96,6 +96,8 @@ import { bedIsWet, showsSeeds, soilTint } from "@/lib/stackacres/soil-moisture";
 import { cropFrame } from "@/lib/stackacres-td/crop-frames";
 import type { WaterSpec } from "@/lib/stackacres-td/water";
 import { BED_DROP_FROM, BED_DROP_MS, HOE_STRIKE_MS } from "@/lib/stackacres-td/hoe";
+import { CRIT_BUZZ, TOOL_BUZZ, buzz } from "@/lib/stackacres/haptics";
+import { CRIT_SHAKE_DURATION_MS, critFlashLabel } from "@/lib/stackacres/juice";
 import { SWING_STRIKE_MS, swingToolFor, type SwingTool } from "@/lib/stackacres-td/swing";
 import {
   DROP_COLOURS,
@@ -340,7 +342,10 @@ const ACTIONS: Record<FarmerAction, { anim: string; repeat: number }> = {
   harvest: { anim: "harvest", repeat: 0 },
   hoe: { anim: "hoe", repeat: 0 },
   plant: { anim: "chop", repeat: 0 },
+  fence: { anim: "chop", repeat: 0 },
 };
+/** Seed going into the bed: the packet's browns, darker than the hoe's turned earth. */
+const SEED_COLOURS = [0x5a3a1e, 0x8a5a2a, 0x3d2a14] as const;
 
 /** How many chips one swing knocks off. Stardew's is one or two; they are only splinters. */
 const CHIP_PIECES = 2;
@@ -877,9 +882,15 @@ export class TopdownScene extends Phaser.Scene {
     if (this.acting) return;
     const key = `walk_${this.facing}`;
     const timeScale = speed / WALK_TIMED_FOR;
-    if (this.player.anims.currentAnim?.key !== key || !this.player.anims.isPlaying) {
+    const current = this.player.anims.currentAnim;
+    if (current?.key !== key || !this.player.anims.isPlaying) {
+      // A turn mid-stride carries on from the same point in the cycle. Restarting
+      // at the first frame snapped his feet back together on every change of
+      // heading, a hitch you saw on each corner of a tap-walk.
+      const turning = current?.key.startsWith("walk_") && this.player.anims.isPlaying;
+      const startFrame = turning ? (this.player.anims.currentFrame?.index ?? 1) - 1 : 0;
       this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
-      this.player.play({ key, repeat: -1, timeScale });
+      this.player.play({ key, repeat: -1, timeScale, startFrame });
     } else {
       this.player.anims.timeScale = timeScale;
     }
@@ -2120,11 +2131,14 @@ export class TopdownScene extends Phaser.Scene {
    */
   farmerAction(action: FarmerAction, impact?: TapPoint): void {
     if (!this.booted || this.cast) return;
+    buzz(TOOL_BUZZ);
     const { anim, repeat } = ACTIONS[action];
     const key = `${anim}_${this.facing}`;
     const at = impact ? this.cssToMap(impact.x, impact.y) : null;
     // The puff goes up when the blade hits the ground, not when the swing starts.
     if (action === "hoe" && at) this.time.delayedCall(HOE_STRIKE_MS, () => this.hoeImpactAt(at));
+    // Seed scatters on the same beat: the jab is the swing, so it lands on its strike frame.
+    if (action === "plant" && at) this.time.delayedCall(SWING_STRIKE_MS, () => this.dustAt(at, SEED_COLOURS));
     if (action === "water") {
       // A held stroke asks again at every bed. Starting over each time, the can
       // would never get as far as tipping, so it carries on and pours on them all.
@@ -3555,6 +3569,21 @@ export class TopdownScene extends Phaser.Scene {
         }
       });
     });
+  }
+
+  /**
+   * A lucky harvest's extra beat on top of `celebrate`: a one-pixel kick, a
+   * "CRIT! x2" springing off the crop and a second, longer tick in the hand.
+   * The multiplier arrives with the settlement (world-contract.ts), so this
+   * runs a round trip after the pull, never with it.
+   */
+  celebrateCrit(unitId: string, multiplier: number): void {
+    this.celebrate([unitId]);
+    buzz(CRIT_BUZZ);
+    const node = this.unitNodes.get(unitId);
+    if (!node) return;
+    if (!this.reducedMotion) this.shake = { left: 1, ms: CRIT_SHAKE_DURATION_MS };
+    this.floatAt(this.mapToCss({ x: node.sprite.x, y: node.sprite.y - node.sprite.height / 2 - 4 }), critFlashLabel(multiplier), "gain", 1300);
   }
 
   /** Floating text over the map, as a DOM element in the host so it stays crisp at any zoom. */

@@ -402,17 +402,13 @@ export function Lobby({
               tsx has the full reasoning). The route, modules and CSS
               classes were renamed to match in the district-map pass; only
               the database still says "homestead", deliberately -- see
-              stackacres-farm.tsx's doc comment. Locked-by-default: `stackacresAccess` is
-              granted per player from the admin dashboard while the game is
-              still being tried out, and a card nobody can open should say
-              so plainly rather than pretend to be a live door -- so it
-              renders as an inert <div>, not a disabled button dressed as a
-              link. Unadvertised by default beyond that: a player without
-              access sees nothing here at all unless
+              stackacres-farm.tsx's doc comment. A player without access
+              still gets a link, to the door at /games/stackacres: that page
+              shows the price and sells it, or says to ask for access while
+              it is not for sale. Unadvertised by default beyond that: a
+              player without access sees nothing here at all unless
               STACKACRES_TILE_ADVERTISED is on -- see that constant's own
-              header. A locked "Coming soon" card is still advertising the
-              game to the public, which the invite-only tryout doesn't want
-              yet.
+              header.
 
               prefetch={false}: App Router links prefetch on intersection by
               default, which would pull the app's heaviest route for every
@@ -433,16 +429,18 @@ export function Lobby({
             </Link>
           ) : (
             STACKACRES_TILE_ADVERTISED && (
-              <div
-                className="hub-tile hub-tile-stackacres hub-tile-locked"
+              <Link
+                className="hub-tile hub-tile-stackacres"
+                href="/games/stackacres"
                 style={tileIndexStyle(1)}
-                aria-disabled="true"
+                onClick={tapSound}
+                prefetch={false}
               >
                 <span className="hub-tile-body">
                   <StackAcresLogo className="hub-tile-stackacres-logo" />
-                  <small className="hub-tile-soon">Coming soon</small>
+                  <small className="hub-tile-soon">Premium</small>
                 </span>
-              </div>
+              </Link>
             )
           )}
 

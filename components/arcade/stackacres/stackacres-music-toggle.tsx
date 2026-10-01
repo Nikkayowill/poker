@@ -52,6 +52,7 @@ export function StackAcresMusicToggle() {
       title={muted ? "Unmute the farm" : "Mute the farm"}
       aria-label={muted ? "Farm sound muted" : "Farm sound playing"}
       aria-pressed={muted}
+      data-label={muted ? "Sound off" : "Sound on"}
       onClick={handleClick}
     >
       <StackAcresPixelIcon name={muted ? "mute" : "sound"} />

@@ -284,6 +284,7 @@ export function StackAcresJournalChip({ view, onOpen }: { view: JournalView; onO
       className="sa-prestige-badge"
       onClick={onOpen}
       title={label ? `${label}: ${view.now.short}` : "The Journal"}
+      data-label="Journal"
     >
       <StackAcresPixelIcon name="journal" />
       <strong>{chapter ? `${chapter.number}/${view.chapters.length}` : "done"}</strong>

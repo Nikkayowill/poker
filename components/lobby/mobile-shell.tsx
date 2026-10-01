@@ -85,7 +85,6 @@ import { LOBBY_PANE_STORAGE_KEY, TAB_COUNT, TAB_LABELS, TabBar } from "@/compone
 import { SiteFooter } from "@/components/nav/site-footer";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RankUpCard } from "@/components/profile/rank-up-card";
-import { PremiumExpansionModal } from "@/components/arcade/stackacres/premium-expansion-modal";
 import { jumpToSoloWagers } from "@/components/arcade/arcade-floor";
 import { InstallPrompt } from "@/components/install-prompt";
 import { LobbyNotices } from "./lobby-notices";
@@ -474,7 +473,6 @@ function PlayPane({
 }) {
   const wallet = toArcadeWallet(profile);
   const [joinCode, setJoinCode] = useState("");
-  const [showExpansion, setShowExpansion] = useState(false);
 
   const submitJoin = (event: FormEvent) => {
     event.preventDefault();
@@ -516,9 +514,7 @@ function PlayPane({
         sessionReady={sessionReady}
         onOpenBuyIn={onOpenBuyIn}
         featuredDuel={PLAY_RAIL.featuredDuel}
-        onOpenExpansion={() => setShowExpansion(true)}
       />
-      {showExpansion && <PremiumExpansionModal onClose={() => setShowExpansion(false)} />}
 
       <AnteUpRail cards={PLAY_RAIL.cards} total={PLAY_RAIL.total} wallet={wallet} onSeeAll={onSeeArcade} />
 

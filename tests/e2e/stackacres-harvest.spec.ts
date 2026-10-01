@@ -125,13 +125,14 @@ test("StackAcres runs on Gold alone: seeding debits it, and the sell/exchange ac
     expect(after.upkeep.plots).toBe(3);
     expect(after.upkeep.fee).toBe(0);
 
-    // Three of the four districts start under wild growth, so the only kind a
-    // new farm can keep is the Hen Coop at the Farmstead -- which is why every
-    // stocking in this file is a hen.
-    const walled = await api.post("/api/stackacres/actions", {
+    // Cattle no longer wait on cleared land: a cow can be bought on a new
+    // farm and stands unplaced until the player sets it down.
+    const cow = await api.post("/api/stackacres/actions", {
       data: { action: "stock", stock: "cattle" },
     });
-    expect(walled.status()).toBe(409);
+    expect(cow.status()).toBe(200);
+    const cowFarm = (await cow.json()) as { units: { stock: string; mapTx: number | null }[] };
+    expect(cowFarm.units.find((unit) => unit.stock === "cattle")?.mapTx).toBeNull();
 
     // `exchange` was removed with the second currency and is rejected by the
     // schema, not quietly accepted and ignored.

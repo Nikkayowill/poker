@@ -3,6 +3,7 @@ import { markAllNotificationsRead } from "@/lib/server/notifications-store";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
     await markAllNotificationsRead(profile.id);
     return NextResponse.json({ ok: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not update your notifications.";
+    const message = publicErrorMessage(error, "Could not update your notifications.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

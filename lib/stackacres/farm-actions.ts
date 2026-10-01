@@ -30,7 +30,6 @@ import type { TravelerId } from "./story/travelers";
 export type Action =
   | { action: "expand-capacity"; stock: StackAcresStock }
   | { action: "clear-sector"; sector: SectorId }
-  | { action: "unlock-crop-fields" }
   | { action: "build-greenhouse" }
   // `tx`/`ty` name the bed `onRadialSeed` tapped, when the tap named a real
   // bed -- see `predictStackAcresAction`'s "stock" case in
@@ -82,6 +81,11 @@ export type Action =
   // the shared swing minigame's own timing verdict (lib/stackacres/chop.ts)
   // -- it changes how much Stone the swing pays, never whether it lands.
   | { action: "mine-stone"; nodeId: string; quality: "hit" | "sweet" }
+  // One pick at one of the Homestead's forage bushes (lib/stackacres/forage.ts):
+  // fills the SEED shelf, not the inventory, and moves no Gold. No timing
+  // verdict and no crop: the bush's own pick count decides which seed comes
+  // off it, so there is nothing here for a client to name.
+  | { action: "gather-forage"; nodeId: string }
   | { action: "clear"; unitId: string }
   | { action: "buy-feed"; itemId: string; quantity: number }
   // Sells any inventory item -- raw harvest or crafted good -- for Gold, at
@@ -289,8 +293,6 @@ export function purchaseCueText(body: Action): string | null {
       return "Perk unlocked!";
     case "clear-sector":
       return "Clearing the land…";
-    case "unlock-crop-fields":
-      return "Crop Fields unlocked!";
     case "build-greenhouse":
       return "Greenhouse begun!";
     case "forge-enchantment":

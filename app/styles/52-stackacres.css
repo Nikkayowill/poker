@@ -28,7 +28,7 @@
  *   - Nothing reaches for `--brand-*`, `--neon-*` or `--accent-*`. A violet
  *     glow over a cartoon farm is the same mistake as felt green in the lobby.
  * Outside `.sa-theme` this sheet changes nothing, and every shared class it
- * restyles (.floor-bar, .htp-trigger, .gold-balance, .duel-error,
+ * restyles (.floor-bar, .htp-trigger, .gold-balance,
  * .profile-modal) is qualified by `.sa-theme` for exactly that reason.
  *
  * ---- what the chrome is made of -------------------------------------
@@ -170,8 +170,9 @@
 
   /* Sprite colours, not chrome: they exist to agree with artwork the palette
      knows nothing about. --sa-grass matches the grass painter's own fill, so
-     the DOM frame and the canvas background read as one continuous lawn. */
-  --sa-grass: #86c96e;
+     the DOM frame and the canvas background read as one continuous lawn.
+     2026-09-25: darkened/enriched to match grass-tile.webp's own repaint. */
+  --sa-grass: #6dbf50;
   --sa-hungry: var(--sa-carrot-side);
   --sa-muck: var(--sa-choc);
 
@@ -405,8 +406,8 @@
      guess, and guessing wrong still leaves a bare margin on the edge that
      had no notch. The canvas bleeding under a notch it can't see costs
      nothing (it's a picture); every overlay that actually needs protecting
-     -- .floor-bar, .sa-controls, .sa-camera, .sa-destinations, .sa-side,
-     -- .floor-bar, .sa-ground-tools, .sa-side,
+     -- .floor-bar, .sa-controls, .sa-camera, .sa-destinations,
+     -- .floor-bar, .sa-ground-tools,
      .sa-district-panel -- reads
      var(--safe-left)/var(--safe-right) itself instead.
 
@@ -711,11 +712,14 @@
   right: max(22px, calc(var(--safe-right) + 10px));
   bottom: max(18px, calc(var(--safe-bottom) + 8px));
   z-index: 3;
-  width: 116px;
-  height: 116px;
+  width: 100px;
+  height: 100px;
   border: 1px solid var(--sa-glass-line);
   border-radius: 50%;
-  background: var(--sa-glass-fill);
+  /* Same fill tier as every other key on the farm (the belt, the Use key, the
+     header pills) -- this used to be the thin sheet-scrim tier, which read as
+     a washed-out ghost ring rather than a control a thumb rests on all game. */
+  background: var(--sa-glass-fill-open);
   -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
   backdrop-filter: var(--sa-glass-blur-ctl);
   box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
@@ -723,7 +727,7 @@
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  opacity: .78;
+  opacity: .88;
   transition: opacity var(--duration-fast, 120ms);
 }
 
@@ -746,23 +750,13 @@
   pointer-events: none;
 }
 
-.sa-joystick-arrows {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  fill: var(--sa-cream);
-  opacity: .7;
-  pointer-events: none;
-}
-
 .sa-joystick-knob {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 52px;
-  height: 52px;
-  margin: -26px 0 0 -26px;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
   border: 1px solid var(--sa-glass-line);
   border-radius: 50%;
   background: color-mix(in srgb, var(--sa-cream) 82%, transparent);
@@ -784,24 +778,25 @@
 }
 
 /* ---- the Use key ------------------------------------------------------
- * Bottom right, just inboard of the thumb stick, so a right thumb can hold it
- * down and still walk: that pairing is what makes stroking a whole row possible
- * (stackacres-td/use-key.tsx). Shown on a mouse too, unlike the stick, because it
- * is the only way to work the square underfoot without tapping it. It gives way
- * to the district drawer the same way the stick does. */
+ * Bottom left, across from the thumb stick: the right thumb walks while the
+ * left one chops, waters or harvests, and holding it down while walking is
+ * what strokes a whole row (stackacres-td/use-key.tsx). Shown on a mouse too,
+ * unlike the stick, because it is the only way to work the square underfoot
+ * without tapping it. It gives way to the district drawer like the stick does. */
 .sa-use-key {
   position: absolute;
-  right: calc(max(22px, var(--safe-right) + 10px) + 128px);
+  left: max(22px, calc(var(--safe-left) + 10px));
   bottom: max(18px, calc(var(--safe-bottom) + 8px));
   z-index: 3;
   display: grid;
   place-items: center;
-  width: 84px;
-  height: 84px;
+  width: 72px;
+  height: 72px;
   padding: 0;
   border: 1px solid var(--sa-glass-line);
   border-radius: 50%;
-  background: var(--sa-glass-fill);
+  /* Same fill tier as the joystick and the belt -- see the joystick's own note above. */
+  background: var(--sa-glass-fill-open);
   -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
   backdrop-filter: var(--sa-glass-blur-ctl);
   box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
@@ -810,15 +805,15 @@
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   cursor: pointer;
-  opacity: .78;
+  opacity: .88;
   transition: opacity var(--duration-fast, 120ms), transform var(--duration-fast, 120ms);
 }
 
 .sa-field[data-drawer="open"] .sa-use-key { display: none; }
 
 .sa-use-key svg {
-  width: 46px;
-  height: 46px;
+  width: 38px;
+  height: 38px;
   fill: color-mix(in srgb, var(--sa-cream) 82%, transparent);
   pointer-events: none;
 }
@@ -1003,7 +998,12 @@
   height: var(--sa-tap);
   border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-glass-fill-open);
+  /* The head tier, not the control tier -- this column sits over the map's
+     own busiest ground (the stream runs right past it), and the lighter fill
+     let a bright patch of water or path show straight through and turn one
+     slot a different colour from its neighbours. The darker fill keeps all
+     four reading as one belt no matter what's behind them. */
+  background: var(--sa-glass-fill-head);
   -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
   backdrop-filter: var(--sa-glass-blur-ctl);
   box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
@@ -1026,11 +1026,12 @@
 /* How much soil, water or seed the slot has left, in its corner. */
 .sa-belt-count {
   position: absolute;
-  right: 1px;
-  bottom: 0;
-  padding: 0 3px;
+  right: -3px;
+  bottom: -3px;
+  padding: 0 4px;
+  border: 1px solid var(--sa-glass-line);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--sa-ink) 72%, transparent);
+  background: var(--sa-ink-dark);
   color: var(--sa-cream);
   font-size: 10px;
   font-weight: 800;
@@ -1180,38 +1181,47 @@
   100% { opacity: 0; transform: translate(-50%, -20px) scale(.96); }
 }
 
-/* ---- the error line -------------------------------------------------- */
-
-/* Floats over the map's bottom-left, above the toolbelt dock rather than
-   beside it -- the dock is the one thing on this screen a thumb is resting on,
-   and a banner that lands under it is a banner nobody reads. */
-.sa-side {
+/* ---- the refusal notice ----------------------------------------------
+ * Above the farmer, over any open sheet: the HUD's dark glass, darker, with a
+ * barn-red rim so it reads over bright grass. It never takes a tap, so it can't
+ * land on a thumb holding a control, and it fades on its own (NOTICE_MS in
+ * stackacres-farm.tsx). */
+.sa-notice {
   position: absolute;
-  left: max(10px, var(--safe-left));
-  bottom: calc(var(--sa-tap) + 22px);
-  width: min(330px, 52%);
-  pointer-events: none;
-}
-
-.sa-side > * { pointer-events: auto; }
-
-/* The shared error line is a translucent violet wash, tuned for a dark page.
-   Over bright grass it turns to mud and the words go with it; here it is the
-   farm's own glass, tinted with the roof red the world already uses for a
-   painted barn. */
-.sa-theme .duel-error {
+  top: 30%;
+  left: 50%;
+  z-index: 70;
+  width: max-content;
+  max-width: min(420px, calc(100% - 48px));
   margin: 0;
-  padding: 9px 14px;
-  border: 1px solid var(--sa-glass-line);
+  padding: 12px 20px;
+  border: 2px solid var(--sa-lit-roof);
   border-radius: var(--sa-r-block);
-  background: var(--sa-tint-roof);
+  background: rgba(20, 15, 10, .8);
   -webkit-backdrop-filter: var(--sa-glass-blur);
   backdrop-filter: var(--sa-glass-blur);
-  box-shadow: var(--sa-glass-rim), var(--sa-drop);
-  color: var(--sa-lit-roof);
-  font-size: 14px;
-  font-weight: 700;
-  text-wrap: pretty;
+  box-shadow: var(--sa-glass-rim-lit), var(--sa-drop-lg);
+  color: var(--sa-cream);
+  font-family: var(--sa-font);
+  font-size: 17px;
+  font-weight: 800;
+  text-align: center;
+  text-wrap: balance;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: sa-notice 3.2s var(--sa-ease-out) forwards;
+}
+
+@keyframes sa-notice {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.85); }
+  8% { opacity: 1; transform: translate(-50%, -50%) scale(1.04); }
+  14% { transform: translate(-50%, -50%) scale(1); }
+  85% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(.97); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-notice { animation: none; }
 }
 
 /* Springs out of the tap on the same overshoot curve the drawer opens with.
@@ -3502,13 +3512,11 @@
 
 .sa-greenhouse-empty-slot {
   gap: 6px;
-}
-
-.sa-greenhouse-empty-slot {
   opacity: 1;
   border-color: var(--sa-glass-line);
   background: var(--sa-glass-fill-quiet);
 }
+
 .sa-greenhouse-empty-hint {
   max-width: 18ch;
   color: var(--sa-ink-soft);
@@ -4673,14 +4681,15 @@
   font-variant-numeric: tabular-nums;
 }
 
-.sa-workshop-shelf-name { flex: 1; min-width: 0; }
-
 .sa-workshop-shelf-copy {
   display: grid;
   flex: 1;
   min-width: 0;
   gap: 2px;
 }
+
+.sa-workshop-shelf-name { min-width: 0; }
+
 .sa-workshop-shelf-purpose {
   color: var(--sa-ink-soft);
   font-size: 10px;
@@ -5195,6 +5204,23 @@
   .sa-ground-tool { min-width: 44px; min-height: 44px; }
   .sa-ground-tool .sa-ico { width: 20px; height: 20px; }
 
+  /* The stick and the Use key are sized for a full-height phone; at 390-430px
+     tall they read as two oversized blobs eating the corners. They keep their
+     44px touch floor (still true here, just no longer the whole shape) and
+     give up the rest -- the knob and the icon shrink with the ring so nothing
+     looks stranded inside a bigger circle than it needs. */
+  .sa-joystick { width: 84px; height: 84px; }
+  .sa-joystick-knob { width: 36px; height: 36px; margin: -18px 0 0 -18px; }
+  /* Pulled closer to the true bottom-left corner (less padding above the
+     safe-area inset) so it clears the belt's own column above it instead of
+     crowding its last slot on a short screen. */
+  .sa-use-key { width: 60px; height: 60px; bottom: max(10px, calc(var(--safe-bottom) + 4px)); }
+  .sa-use-key svg { width: 30px; height: 30px; }
+
+  /* The belt's own gap, on top of --sa-tap already dropping to 44px above --
+     four 44px slots plus gaps was still over 40% of a 390px-tall screen. */
+  .sa-toolbelt { gap: 5px; }
+
   /* The drawer is the tallest thing on a short landscape phone. It gives back
      padding rather than width: a narrower drawer wraps every buy button onto
      two lines, which costs more height than the padding saved. */
@@ -5703,34 +5729,6 @@
   .sa-kitchen-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
   .sa-kitchen-card h3 { font-size: 14px; }
 }
-
-/* The goal chip beside the Map button, and the goals sheet it opens. */
-.sa-goal {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  min-height: 32px;
-  min-width: 130px;
-  max-width: 240px;
-  padding: 2px 9px;
-  border: 1px solid var(--sa-glass-line);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-glass-fill-open);
-  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
-  backdrop-filter: var(--sa-glass-blur-ctl);
-  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
-  color: var(--sa-ink);
-  font-family: var(--sa-font);
-  text-align: center;
-  cursor: pointer;
-}
-.sa-goal:active { box-shadow: var(--sa-glass-rim-press); }
-.sa-goal-top { font-size: 10px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sa-ink-soft); }
-.sa-goal-line { font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.sa-goal-bar { display: block; width: 100%; height: 4px; border-radius: 2px; background: rgba(0, 0, 0, 0.3); overflow: hidden; }
-.sa-goal-bar > span { display: block; height: 100%; background: var(--sa-tint-corn); }
 
 .sa-place-tag {
   position: fixed;

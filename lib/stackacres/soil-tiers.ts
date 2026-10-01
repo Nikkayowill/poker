@@ -44,9 +44,9 @@ export interface SoilTierDef {
   label: string;
   blurb: string;
   /**
-   * Gold, PER BED. A bed is one tile, one plant now -- see ./soil.ts's own
-   * header on `SOIL_TILE` -- so this is simply what one planting square
-   * costs, with no per-bed multiplier left to apply.
+   * Gold, PER BAG. A bag is `SOIL_PLOTS_PER_BAG` planting squares -- a bed is
+   * one tile, one plant (./soil.ts's own header on `SOIL_TILE`) -- so a single
+   * plot works out at a tenth of this.
    */
   price: number;
   /** Multiplies a crop's own `durationMs` at sow time. Strictly `0 < m <= 1`
@@ -85,8 +85,8 @@ export const SOIL_TIER_DEFS: Readonly<Record<SoilTier, SoilTierDef>> = {
     // names: they are no longer for sale, but a bag or a bed a player
     // already has still needs its own label in the till-bed picker.
     label: "Soil bag",
-    blurb: "One worked planting square, no frills.",
-    price: 167,
+    blurb: "Ten worked planting squares, no frills.",
+    price: 100,
     growthMultiplier: 1,
     selfHydrating: false,
     tint: null,
@@ -94,7 +94,7 @@ export const SOIL_TIER_DEFS: Readonly<Record<SoilTier, SoilTierDef>> = {
   enriched: {
     label: "Enriched Substrate",
     blurb: "Composted through. Crops sown here come up a fifth faster.",
-    price: 667,
+    price: 400,
     growthMultiplier: 0.8,
     selfHydrating: false,
     // Darker and warmer: composted earth reads richer than plain dirt.
@@ -103,7 +103,7 @@ export const SOIL_TIER_DEFS: Readonly<Record<SoilTier, SoilTierDef>> = {
   hydro: {
     label: "Hydro Soil",
     blurb: "Holds its own water. This bed never needs a pipe run to it.",
-    price: 1667,
+    price: 1000,
     growthMultiplier: 0.9,
     selfHydrating: true,
     // Cool and damp. Pulled toward the `water` ramp's own top so a hydro bed
@@ -113,19 +113,27 @@ export const SOIL_TIER_DEFS: Readonly<Record<SoilTier, SoilTierDef>> = {
 };
 
 /**
+ * How many planting squares one bag makes. The shelf counts SQUARES, not bags:
+ * buying a bag adds this many, and every bed the hoe lays spends one. Counting
+ * squares is also what keeps every farm that already held single-square bags
+ * whole -- a stock of 7 is still 7 beds, with no migration -- and it means a
+ * half-used bag is simply a smaller number rather than a state to track.
+ */
+export const SOIL_PLOTS_PER_BAG = 10;
+
+/**
  * The most bags one purchase may buy. A CEILING ON A SINGLE REQUEST, not on
  * how many a player may own: they can buy again. It exists because every
  * money-moving route in this codebase needs an upper bound on the quantity a
  * body can name -- the Ante Up farming fix landed after finding routes whose
- * only bound was the player's own balance. Each bag is one planting square
- * now, not a whole bed, so 20 x the dearest tier is 33,340 Gold -- the
- * ceiling stayed the same count of bags across that repricing, which is why
- * it no longer reads as a huge number the way it did when a bag was a bed.
+ * only bound was the player's own balance. 20 bags is 200 squares and, at the
+ * dearest tier, 20,000 Gold.
  */
 export const SOIL_BAGS_PER_PURCHASE = 20;
 
 /**
- * Bags of each tier a player owns but has not laid down yet.
+ * Planting squares of each tier a player owns but has not laid down yet (a
+ * bag is `SOIL_PLOTS_PER_BAG` of them).
  *
  * Lives HERE rather than beside its table in lib/server, because the shell
  * renders it: that store is `server-only`, and reaching into it even for a

@@ -272,8 +272,8 @@ def barn():
             return 12 + (y - peak) * (32 - 12) / (knee - peak)
         return 32 + (y - knee) * (44 - 32) / (eave - knee)
 
-    boards(c, cx - 44, peak, 89, eave - peak + 1, "barnred", 3.4, seed=30)
     boards(c, cx - 44, eave, 89, bottom - eave, "barnred", 3.4, seed=31, weather=0.35)
+    shingles(c, cx - 44, peak, cx + 44, eave, "slate", 6.4, 2.2, row_h=4, width=6, seed=30, moss=0.08)
     for y in range(peak, eave + 1):
         hw = half(y)
         for x in range(cx - 44, cx + 45):
@@ -281,21 +281,13 @@ def barn():
             if d < 0:
                 c.px[y][x] = None
                 continue
-            if d < 4:                                           # shingled roof edge, lit left, dark right
-                level = (6.2 if x < cx else 3.4) - d * 0.35
-                if (y + x // 3) % 3 == 0:
-                    level -= 0.9
-                if d >= 3:
-                    level = 1.2                                 # its underside
-                c.put(x, y, "slate", level)
-            elif d < 7:
-                p = c.get(x, y)
-                if p and p[0] == "barnred":
-                    c.put(x, y, "barnred", p[1] - (7 - d) * 0.6)  # the edge's shade on the boards
-            if y < peak + 7:
-                p = c.get(x, y)
-                if p and p[0] == "barnred":
-                    c.put(x, y, "barnred", p[1] - 0.8)
+            p = c.get(x, y)
+            if not p:
+                continue
+            if d < 2.2:                                         # dark eave-edge underside
+                c.put(x, y, p[0], p[1] - (2.2 - d) * 1.4)
+            elif y < peak + 6:                                   # ridge-line shade near the top
+                c.put(x, y, p[0], p[1] - 0.7)
     for x in range(cx - 44, cx + 45):                          # eave trim with its shade below
         c.put(x, eave, "white", 6.2)
         c.put(x, eave + 1, "white", 4.2)
@@ -562,11 +554,11 @@ def workshop():
             c.put(x, y, "wood", 0.5 + (y - 34) * 0.018 + (hash2(x // 4, y, 90) - 0.5) * 0.3)
     for x in range(1, L + 1):
         top = 30 + round((L - x) * 9 / (L - 1))
-        for k in range(6):
+        for k in range(11):
             row = k // 2
-            level = 4.8 - row * 0.9 - (0.9 if (x + row * 2) % 4 == 0 else 0) - (1.0 if k % 2 else 0)
+            level = 5.2 - row * 0.7 - (0.9 if (x + row * 2) % 4 == 0 else 0) - (1.0 if k % 2 else 0)
             c.put(x, top + k, "leather", level)
-        c.put(x, top + 6, "coal", 0.8)
+        c.put(x, top + 11, "coal", 0.8)
     for y in range(40, bottom):                                # the lean-to's front post
         c.put(2, y, "wood", 4.8)
         c.put(3, y, "wood", 3.2)
@@ -670,28 +662,21 @@ def workshop():
         c.put(rx + 1, dy0 + 14, "gold", 2.6)
         c.put(rx, dy0 + 15, "gold", 2.0)
 
-    # the gable: steep shingles framing a boarded face with the gear sign
+    # the gable: a full shingled slope from ridge to eave, not just a rim, with the gear sign set into it
     for y in range(peak, eave + 2):
         hw = (y - peak) * ((R - L) / 2 + 5) / (eave - peak)
+        row = (y - peak) // 3
         for x in range(round(mid - hw), round(mid + hw) + 1):
             d = min(x - (mid - hw), (mid + hw) - x)
-            if d < 8:
-                row = (y - peak) // 3
-                level = (5.4 if x < mid else 3.0) - d * 0.2 - (0.8 if (x + row * 3) % 5 == 0 else 0)
-                if (y - peak) % 3 == 2:
-                    level -= 1.1
-                if hash2(x // 5, row, 97) < 0.12 and d < 6:
-                    c.put(x, y, "moss", 2.8 + (1.0 if x < mid else 0))
-                    continue
-                if d >= 7:
-                    level = 0.6                                # the roof edge's underside
-                c.put(x, y, "leather", level)
-            elif y < eave:
-                board = (x - round(mid)) % 3
-                level = 4.2 + (0.8 if board == 0 else -0.7 if board == 2 else 0) + (hash2(x // 3, y, 98) - 0.5) * 0.5
-                if d < 10:
-                    level -= (10 - d) * 0.45                   # the roof's shade on the gable boards
-                c.put(x, y, "tan", level)
+            level = (5.4 if x < mid else 3.0) - d * 0.1 - (0.8 if (x + row * 3) % 5 == 0 else 0)
+            if (y - peak) % 3 == 2:
+                level -= 1.1
+            if hash2(x // 5, row, 97) < 0.12 and d < 6:
+                c.put(x, y, "moss", 2.8 + (1.0 if x < mid else 0))
+                continue
+            if d < 1.5:
+                level = 0.6                                    # the roof edge's underside
+            c.put(x, y, "leather", level)
     for x in range(round(mid) - 2, round(mid) + 3):            # ridge cap
         c.put(x, peak - 1, "leather", 5.4 if x < mid else 3.2)
         c.put(x, peak, "leather", 4.4 if x < mid else 2.6)

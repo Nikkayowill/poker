@@ -1,5 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
+import { publicErrorMessage } from "./public-error";
 
 /**
  * The rejection-and-response layer every arcade service shares.
@@ -54,9 +55,9 @@ export class ArcadeRequestError<TSnapshot, TReason extends string = never> exten
  * lib/server/api-auth.ts already established: every other file under app/api is
  * a route.ts, and a lib/server module may hand back a NextResponse.
  *
- * `fallbackMessage` is the only thing that varies between games, and it is only
- * ever reached by a non-Error throw: "that hand", "that round", "that puzzle"
- * is the whole difference.
+ * `fallbackMessage` is the only thing that varies between games. It is sent
+ * whenever a fault's own text isn't safe for a player to read
+ * (lib/server/public-error.ts).
  */
 export function toArcadeErrorResponse(error: unknown, fallbackMessage: string): NextResponse {
   if (error instanceof ArcadeRequestError) {
@@ -73,7 +74,7 @@ export function toArcadeErrorResponse(error: unknown, fallbackMessage: string): 
   // authority; any balance check before it is only ever a stale read. The
   // free puzzles never spend, so for them this branch is unreachable rather
   // than wrong.
-  const message = error instanceof Error ? error.message : fallbackMessage;
+  const message = publicErrorMessage(error, fallbackMessage);
   const status = message === "Not enough Gold." ? 400 : 500;
   return NextResponse.json({ error: message }, { status });
 }

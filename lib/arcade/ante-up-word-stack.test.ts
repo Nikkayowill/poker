@@ -17,15 +17,15 @@ describe("anteUpWordStackPayout", () => {
   });
 
   // Mirrors WAGER_MULTIPLIER_BY_GUESSES in ante-up-word-stack.ts: 1/2 guesses
-  // -> 4x, 3 -> 2.5x, 4 -> 1.6x, 5 -> 1.1x, 6 -> 0.7x. The last rung is below
-  // 1x on purpose; see that table's own comment.
+  // -> 4x, 3 -> 2.5x, 4 -> 1.8x, 5 -> 1.4x, 6 -> 1.15x. Every rung is above
+  // 1x; see that table's own comment.
   it.each([
     [1, 4],
     [2, 4],
     [3, 2.5],
-    [4, 1.6],
-    [5, 1.1],
-    [6, 0.7],
+    [4, 1.8],
+    [5, 1.4],
+    [6, 1.15],
   ])("pays wager * the tier for a %i-guess win", (guessCount, multiplier) => {
     expect(anteUpWordStackPayout({ wager: 1000, word: round("won", guessCount) })).toBe(Math.round(1000 * multiplier));
   });
@@ -35,11 +35,10 @@ describe("anteUpWordStackPayout", () => {
     expect(anteUpWordStackPayout({ wager: 333, word: round("won", 1) })).toBe(Math.round(333 * 4));
   });
 
-  it("returns less than the wager for a win on the last legal guess", () => {
-    // The rung that used to pay 1.5x. Scraping it on guess 6 is the outcome
-    // closest to losing, so it must cost the player something -- a table where
-    // every win profits is what made the wager risk-free.
-    expect(anteUpWordStackPayout({ wager: 1000, word: round("won", 6) })).toBeLessThan(1000);
+  it("returns more than the wager for a win on the last legal guess, but less than a 2-guess win", () => {
+    const sixth = anteUpWordStackPayout({ wager: 1000, word: round("won", 6) });
+    expect(sixth).toBeGreaterThan(1000);
+    expect(sixth).toBeLessThan(anteUpWordStackPayout({ wager: 1000, word: round("won", 2) }));
   });
 });
 

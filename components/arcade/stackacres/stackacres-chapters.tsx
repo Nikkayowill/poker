@@ -1,11 +1,10 @@
 "use client";
 
-import { Check, X } from "lucide-react";
+import { Check, Flag, X } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 import {
   limitingNeed,
   nextStep,
-  stepReadiness,
   type Chapter,
   type ChapterView,
   type Need,
@@ -15,21 +14,34 @@ import { seedsOpenedBy } from "@/lib/stackacres/seed-unlocks";
 
 const needText = (need: Need) => `${need.label} ${need.have.toLocaleString()} / ${need.need.toLocaleString()}`;
 
-/** The top-left goal: which chapter you're on and how close the next building is. */
-export function StackAcresGoalChip({ view, onOpen }: { view: ChapterView; onOpen: () => void }) {
+/**
+ * The goal indicator: which chapter you're on, out of how many. Same standing
+ * badge posture as the Forge and Crossbreeding Bed entries next to it in the
+ * HUD (`.sa-prestige-badge`) -- worth a glance, not a permanent sentence of
+ * text over the map. The chapter name, the next building and how close it is
+ * were all on-screen at all times before this; they're one tap away now, in
+ * the same Farm goals sheet this button already opened.
+ */
+export function StackAcresGoalChip({
+  view,
+  totalChapters,
+  onOpen,
+}: {
+  view: ChapterView;
+  totalChapters: number;
+  onOpen: () => void;
+}) {
   const step = nextStep(view);
   if (!step) return null;
   return (
-    <button type="button" className="sa-goal" onClick={onOpen} title="Your farm goals">
-      <span className="sa-goal-top">
-        Chapter {view.chapter.number} &middot; {view.chapter.title}
-      </span>
-      <span className="sa-goal-line">
-        {step.name} &middot; {needText(limitingNeed(step))}
-      </span>
-      <span className="sa-goal-bar" aria-hidden="true">
-        <span style={{ width: `${stepReadiness(step) * 100}%` }} />
-      </span>
+    <button
+      type="button"
+      className="sa-prestige-badge"
+      onClick={onOpen}
+      title={`Chapter ${view.chapter.number} · ${view.chapter.title}: ${step.name} · ${needText(limitingNeed(step))}`}
+    >
+      <Flag size={13} aria-hidden="true" />
+      <strong>{view.chapter.number}/{totalChapters}</strong>
     </button>
   );
 }

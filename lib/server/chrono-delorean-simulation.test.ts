@@ -25,14 +25,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  *     pig scenario uses `pig` (hunger 2h, duration 4h, `spoils: false`)
  *     to demonstrate the ordinary freeze-until-fed mechanic instead, which
  *     genuinely goes hungry mid-cycle without voiding anything.
- *   * `clearStackAcresSector` (Wallow, Ox Fields) and `unlockStackAcresCropFields`
- *     (the Crop Fields' own standalone gate, since the 2026-09-08 merge into
- *     the Farmstead) both refuse until the player already has enough
- *     working-or-mucked units elsewhere (`requiresUnits`,
- *     lib/stackacres/sectors.ts and lib/stackacres/crop-fields.ts) -- the Crop
- *     Fields need 2, Wallow needs 4 of its own (no longer gated on the Crop
- *     Fields being unlocked first). Both scenarios below stock cheap units
- *     first to satisfy this before attempting to clear or unlock land.
+ *   * `clearStackAcresSector` (Wallow, Ox Fields) refuses until the player
+ *     already has enough working-or-mucked units elsewhere (`requiresUnits`,
+ *     lib/stackacres/sectors.ts). Crop Fields are now represented by the
+ *     player's first broken-ground action, so the scenario records that
+ *     milestone directly before clearing Wallow.
  *
  * WHY EVERYTHING IS LOADED THROUGH ONE DYNAMIC IMPORT. `chrono-delorean.ts`'s
  * `CHRONO_DELOREAN_ENABLED` is a top-level const requiring
@@ -121,18 +118,11 @@ async function jumpTo(
  * this whole test exists to demonstrate, which is why this helper exists
  * rather than being a shortcut around it.
  *
- * ONE FEED IS NOT ENOUGH EITHER, and this is the more surprising half: pig's
- * durationMs is EXACTLY 2x hungerMs, so a single feed always lands the NEXT
- * hungryAt exactly on top of the pushed-forward readyAt (hungryAt =
- * feedMoment + hungerMs; readyAt = oldReadyAt + (feedMoment - oldHungryAt);
- * the two are equal precisely when durationMs = 2 * hungerMs, independent of
- * when the feed happens) -- the pig would go hungry again at the exact
- * instant it would otherwise become ready, and the hungry guard is checked
- * first (see isStackAcresUnitReady). A second, early feed clears the
- * collision: feedStackAcres never refuses feeding a not-yet-hungry unit --
- * unlike watering, it is not a top-up (see its own doc comment) -- so
- * feeding again well before that instant resets the hunger clock at zero
- * readyAt cost (starvedMs floors at 0).
+ * ONE FEED IS NOT ENOUGH EITHER: pig's durationMs is exactly 2x hungerMs, so
+ * after the first feed it reaches hunger again before its pushed-forward
+ * readyAt. The second feed must happen once that next hunger window opens;
+ * feeding early is correctly refused by the service, just like watering a
+ * crop that is not thirsty yet.
  */
 async function growPigToReady(
   service: Awaited<ReturnType<typeof loadSimulation>>["service"],
@@ -153,9 +143,11 @@ async function growPigToReady(
   const fedView = await service.feedStackAcres(token, pigId, hungryNow);
   const fed = fedView.units.find((u) => u.id === pigId)!;
 
-  await service.feedStackAcres(token, pigId, new Date(Date.parse(fed.readyAt) - 60_000));
+  const hungryAgain = new Date(Date.parse(fed.hungryAt!) + 1000);
+  const refedView = await service.feedStackAcres(token, pigId, hungryAgain);
+  const refed = refedView.units.find((u) => u.id === pigId)!;
 
-  const readyNow = await jumpTo(chrono, token, new Date(Date.parse(fed.readyAt) + 1000));
+  const readyNow = await jumpTo(chrono, token, new Date(Date.parse(refed.readyAt) + 1000));
   return { pigId, readyNow, wasHungryBeforeFeeding };
 }
 
@@ -273,17 +265,13 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     const t0 = await jumpTo(chrono, token, new Date("2026-09-10T12:00:00.000Z"));
     const day0 = exchange.stackacresExchangeDay(t0);
 
-    // The Crop Fields require 2 units already going, unlocked through their
-    // own standalone flag now rather than a sector clear (2026-09-08 merge
-    // into the Farmstead -- see lib/stackacres/crop-fields.ts). Wallow needs
-    // 4 units of its own but no longer needs the Crop Fields cleared first
-    // (see SECTOR_LADDER's own header on why `wallow.requires` is null now).
-    // Two hens satisfy the Crop Fields' own unit gate; two carrots (which
-    // need the Crop Fields unlocked to sow at all) bring the running total to
-    // four for Wallow.
+    // The Crop Fields are not bought any more -- breaking ground out there
+    // is what records the flag (see `placeStackAcresSoilTile`) -- so this
+    // records it directly rather than walking a purchase that no longer
+    // exists. Wallow needs 4 units of its own: two hens and two carrots.
     await service.stockStackAcres(token, { stock: "hen" }, t0);
     await service.stockStackAcres(token, { stock: "hen" }, t0);
-    await service.unlockStackAcresCropFields(token, t0);
+    await store.recordStackAcresCropFieldsUnlocked(profile.id, t0);
     await service.stockStackAcres(token, { stock: "carrot" }, t0);
     await service.stockStackAcres(token, { stock: "carrot" }, t0);
     const afterWallow = await service.clearStackAcresSector(token, "wallow", t0);
@@ -297,10 +285,10 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     const plots = sectors.unlockedPlotCount(unlocked, capacity, cropFieldsUnlocked);
     const expectedFee = upkeep.stackacresUpkeepFee(plots);
     console.log("Chrono-DeLorean simulation: plots after Crop Fields+Wallow ->", plots, "fee ->", expectedFee);
-    // Hen Haven(hen) + the Crop Fields(all 16 Gr8FarmPack crops, inside the
-    // Farmstead) + Wallow(pig) = 18 stock kinds x 3 free slots each = 54
-    // plots, 51 chargeable past the free base.
-    expect(plots).toBe(54);
+    // Crop Fields contributes one fixed three-slot footprint, while Hen Haven
+    // and Wallow each contribute their own three-slot capacity. The crop
+    // catalogue must not change land maintenance by itself.
+    expect(plots).toBe(sectors.CROP_FIELDS_UPKEEP_PLOTS + 6);
     expect(expectedFee).toBeGreaterThan(0);
     expect(afterWallow.upkeep.fee).toBe(expectedFee);
 

@@ -4,6 +4,7 @@ import { getProfileBadges } from "@/lib/server/badge-store";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
     const payload: ProfileBadgesPayload = { badges };
     return NextResponse.json(payload);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not load your badges.";
+    const message = publicErrorMessage(error, "Could not load your badges.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

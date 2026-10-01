@@ -9,6 +9,7 @@ import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
 import { getPendingTableInvites, TABLE_INVITE_TTL_MS } from "@/lib/server/table-invite-store";
 import { HUB_SECTIONS, type HubPayload, type HubSection } from "@/lib/hub/types";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -105,7 +106,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(payload);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not load your lobby.";
+    const message = publicErrorMessage(error, "Could not load your lobby.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

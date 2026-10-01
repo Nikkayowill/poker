@@ -25,6 +25,7 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SOURCE = os.path.join(HERE, "source")
+RETOUCH = os.path.join(HERE, "retouch")
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 OUT = os.path.join(REPO, "public", "stackacres-td", "characters")
 
@@ -92,7 +93,16 @@ CURRENT = None  # (name, ramp, top) for the character being built, so load() can
 
 
 def load(path):
-    img = Image.open(path).convert("RGBA")
+    """Open a source image, or the hand-retouched version of it if there is one.
+
+    `source/` stays exactly as PixelLab delivered it. Fixes drawn by hand live at
+    the same relative path under `retouch/`, so what was generated and what was
+    corrected stay separate and a retouch can be dropped by deleting one file.
+    Retouches are drawn in source colours, before `brown()` runs, so a character
+    whose skin gets recoloured keeps that recolouring.
+    """
+    fixed = os.path.join(RETOUCH, os.path.relpath(path, SOURCE))
+    img = Image.open(fixed if os.path.exists(fixed) else path).convert("RGBA")
     return brown(img, *CURRENT[1:]) if CURRENT else img
 
 

@@ -5,6 +5,7 @@ import { ensureProfile } from "@/lib/server/profile-store";
 import { recordAcceptance } from "@/lib/server/legal-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withSessionCookie } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest) {
 
     return withSessionCookie(NextResponse.json({ ok: true }), token);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not record acceptance.";
+    const message = publicErrorMessage(error, "Could not record acceptance.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

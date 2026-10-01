@@ -15,7 +15,7 @@ import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { connectionsShareText, puzzleShareTitle } from "@/lib/arcade/puzzles/share";
-import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { clearSound, comboSound, selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { useAppShell } from "@/components/shell/app-shell";
 import {
@@ -273,6 +273,7 @@ export function ConnectionsBoard({ day, onExit }: { day?: string; onExit?: () =>
   const submit = () => {
     if (!round || !playable || picked.length !== CONNECTIONS_GROUP_SIZE) return;
     const guess = [...picked];
+    const solvedBefore = round.revealed.filter((group) => group.solved).length;
     void (async () => {
       const next = await send("/api/arcade/connections/actions", {
         day: round.day,
@@ -284,6 +285,10 @@ export function ConnectionsBoard({ day, onExit }: { day?: string; onExit?: () =>
       // rebuild it.
       if (!next) return;
       setSelection([]);
+      const solvedAfter = next.revealed.filter((group) => group.solved).length;
+      if (solvedAfter > solvedBefore) {
+        if (solvedAfter >= next.revealed.length) comboSound(); else clearSound();
+      }
       // The one hint a wrong guess is allowed to give, announced by the guess
       // that earned it.
       if (next.status === "active" && next.lastVerdict === "one-away") flash("One away…");
@@ -370,8 +375,7 @@ export function ConnectionsBoard({ day, onExit }: { day?: string; onExit?: () =>
           <p>
             It&apos;s one shared puzzle a day for everyone, so there&apos;s exactly one wagered
             attempt allowed — choose your wager, or play free, before it opens. A clean solve
-            with no mistakes pays the most; scraping it on your last life pays back less than you
-            staked, and running out of mistakes loses the wager outright. Whatever you wager, the
+            with no mistakes pays the most, and any win pays back more than you staked. Running out of mistakes loses the wager outright. Whatever you wager, the
             payout it can earn is locked in the moment the round opens.
           </p>
         </HowToPlayModal>
@@ -412,7 +416,7 @@ export function ConnectionsBoard({ day, onExit }: { day?: string; onExit?: () =>
                 ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
                 : overCeiling
                   ? `Connections caps at ${ceiling.toLocaleString()} Gold a wager.`
-                  : "A clean solve pays out the most. Solving on your last life pays back less than you staked, and running out of mistakes loses the wager outright."}
+                  : "A clean solve pays out the most. Any win pays back more than you staked, and running out of mistakes loses the wager outright."}
           </p>
           <button
             type="button"

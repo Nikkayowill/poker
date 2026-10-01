@@ -2,8 +2,9 @@
 
 import { REGROW_MS as STONE_REGROW_MS, type StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
 import { WOOD_RESPAWN_MS, type WoodNodeSnapshot } from "@/lib/stackacres/wood";
+import { FORAGE_REGROW_MS, type ForageNodeSnapshot } from "@/lib/stackacres/forage";
 
-export type GatherKind = "tree" | "stone";
+export type GatherKind = "tree" | "stone" | "forage";
 
 /** A spent node, named by its map tag (`tree:homestead-1`, `stone:mine-1`). */
 export interface SpentNode {
@@ -38,10 +39,16 @@ export function spentStones(nodes: readonly StoneNodeSnapshot[], nowMs: number):
   return spent(nodes, nowMs, STONE_REGROW_MS, (id) => id);
 }
 
+/** Every bush that can't be picked yet is a picked-over stub. */
+export function spentForage(nodes: readonly ForageNodeSnapshot[], nowMs: number): SpentNode[] {
+  return spent(nodes, nowMs, FORAGE_REGROW_MS, (id) => `forage:${id}`);
+}
+
 /** What a prop tag names on the map, or null for any other tag. */
 export function gatherKindOfTag(tag: string | undefined): GatherKind | null {
   if (tag?.startsWith("tree:") && tag.length > "tree:".length) return "tree";
   if (tag?.startsWith("stone:") && tag.length > "stone:".length) return "stone";
+  if (tag?.startsWith("forage:") && tag.length > "forage:".length) return "forage";
   return null;
 }
 
@@ -85,4 +92,29 @@ export const RUBBLE_ART: NodeArt = {
   ],
 };
 
-export const NODE_ART: Readonly<Record<GatherKind, NodeArt>> = { tree: STUMP_ART, stone: RUBBLE_ART };
+/** A bush picked back to its base: the same greens the Homestead's own
+ *  bushes are drawn in (sampled from `p130_0` in
+ *  public/stackacres-td/areas/homestead/props.png), with three bare stems
+ *  left standing where the seed heads were. Hand-drawn rather than swapped
+ *  for one of the atlas's berry-less bush frames: those are drawn from
+ *  different seeds, so swapping one in would change the bush's silhouette
+ *  as well as its berries. */
+export const PICKED_ART: NodeArt = {
+  texture: "picked",
+  colors: { O: "#112e1d", l: "#1f6c1f", m: "#449328", h: "#5ba52f", d: "#74b437", c: "#b8c94c" },
+  rows: [
+    "...c...c...c..",
+    "...O...O...O..",
+    ".OOlmmllmmlOO.",
+    "OlmmhhddhhmmlO",
+    "OlmhddddddhmlO",
+    "OllmmhhhhmmllO",
+    ".OOOOOOOOOOOO.",
+  ],
+};
+
+export const NODE_ART: Readonly<Record<GatherKind, NodeArt>> = {
+  tree: STUMP_ART,
+  stone: RUBBLE_ART,
+  forage: PICKED_ART,
+};

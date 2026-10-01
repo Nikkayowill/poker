@@ -4,6 +4,7 @@ import { markNotificationRead } from "@/lib/server/notifications-store";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -30,7 +31,7 @@ export async function POST(
     const ok = await markNotificationRead(profile.id, parsedParams.data.id);
     return NextResponse.json({ ok });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not update that notification.";
+    const message = publicErrorMessage(error, "Could not update that notification.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

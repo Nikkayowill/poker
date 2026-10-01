@@ -3,8 +3,8 @@
 import { useEffect, useRef } from "react";
 
 /**
- * The Use key, beside the thumb stick: work the square under the farmer's feet
- * with whatever the belt is holding (components/arcade/stackacres/stackacres-toolbelt.tsx).
+ * The Use key, bottom left across from the thumb stick: work the square under the
+ * farmer's feet with whatever the belt is holding (components/arcade/stackacres/stackacres-toolbelt.tsx).
  *
  * Press it and the one square he is standing on is worked. HOLD it and walk,
  * and every bed he steps onto is worked as he reaches it, which is how a row

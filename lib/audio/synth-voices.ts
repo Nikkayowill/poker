@@ -239,6 +239,8 @@ export type SynthVoice =
   | "scythe-swish"
   | "post-hammer"
   | "travel-steps"
+  | "footstep-grass"
+  | "footstep-floor"
   | "refuse"
   | "panel-slide"
   | "tool-tap"
@@ -305,6 +307,11 @@ const VOICE_TRIM: Record<SynthVoice, number> = {
   "dirt-pat": 1.6,
   "leaf-snip": 3.4,
   "prestige-chime": 0.4,
+  // Estimated against `travel-steps`, the closest measured shape: each is one
+  // footfall from that recipe rather than four stacked, so it reads about as
+  // loud heard alone as one hit does buried in the four-footfall burst.
+  "footstep-grass": 2.4,
+  "footstep-floor": 2,
 };
 
 /**
@@ -600,19 +607,54 @@ export function playVoice(
     }
     case "travel-steps": {
       // Four footfalls with uneven spacing. Even spacing is a drum machine.
+      // A grass footfall is a dull press, not a whistle: a bandpass sweep at
+      // this Q rings, which is what made the old version read as a synth
+      // hiss instead of a boot in turf. A wide lowpass burst has no ring.
       let t = at;
       for (let i = 0; i < 4; i++) {
         parts.push(
           noiseBurst(ctx, t, {
-            freq: rand(700, 1300),
-            sweepTo: rand(300, 500),
-            q: 1.1,
-            env: { attack: 0.004, decay: rand(0.07, 0.12), peak: rand(0.09, 0.15) },
+            freq: rand(500, 800),
+            sweepTo: rand(140, 240),
+            q: 0.45,
+            type: "lowpass",
+            env: { attack: 0.006, decay: rand(0.09, 0.14), peak: rand(0.11, 0.17) },
           }),
         );
-        parts.push(tone(ctx, t, { freq: rand(90, 130), env: { attack: 0.002, decay: 0.06, peak: 0.07 } }));
+        parts.push(tone(ctx, t, { freq: rand(75, 105), env: { attack: 0.002, decay: rand(0.06, 0.09), peak: rand(0.05, 0.08) } }));
         t += rand(0.15, 0.23);
       }
+      break;
+    }
+    case "footstep-grass": {
+      // One footfall of `travel-steps`, fired per contact frame of the
+      // farmer's own walk cycle rather than as a four-hit burst.
+      parts.push(
+        noiseBurst(ctx, at, {
+          freq: rand(500, 800),
+          sweepTo: rand(140, 240),
+          q: 0.45,
+          type: "lowpass",
+          env: { attack: 0.006, decay: rand(0.09, 0.14), peak: rand(0.11, 0.17) },
+        }),
+      );
+      parts.push(tone(ctx, at, { freq: rand(75, 105), env: { attack: 0.002, decay: rand(0.06, 0.09), peak: rand(0.05, 0.08) } }));
+      break;
+    }
+    case "footstep-floor": {
+      // A boot on a floorboard has a hollow knock a grass press doesn't: a
+      // touch more resonance in the burst and a short, higher "tock" instead
+      // of the grass voice's low, damped thump.
+      parts.push(
+        noiseBurst(ctx, at, {
+          freq: rand(900, 1300),
+          sweepTo: rand(350, 500),
+          q: 0.9,
+          type: "bandpass",
+          env: { attack: 0.003, decay: rand(0.05, 0.08), peak: rand(0.1, 0.15) },
+        }),
+      );
+      parts.push(tone(ctx, at, { freq: rand(170, 220), env: { attack: 0.001, decay: rand(0.04, 0.06), peak: rand(0.06, 0.09) } }));
       break;
     }
     case "refuse": {

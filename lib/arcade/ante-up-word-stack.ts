@@ -29,19 +29,18 @@ export const MIN_ANTE_UP_WAGER = 500;
  * Win-only payout multiplier, keyed by how many guesses the win took.
  * Starting numbers, easy to retune here.
  *
- * A 6-guess win pays below 1x on purpose. Scraping the answer on the last
- * legal guess is the outcome closest to not winning at all, and paying a
- * premium for it (it used to pay 1.5x) meant any win was profitable and the
- * wager carried almost no risk. The top rung came down too: a 1-guess win is
- * luck rather than skill, and at 8x it was the single largest per-attempt
- * payout anywhere in the app.
+ * Every win pays back more than the stake, even on the 6th guess. A player
+ * who solves the word should never end up down Gold. The rungs still slope
+ * hard, so a 6-guess win pays far less than a 2-guess win. The top rung is
+ * capped at 4x: a 1-guess win is luck rather than skill, and at 8x it was the
+ * single largest per-attempt payout anywhere in the app.
  */
 export const WAGER_MULTIPLIER_BY_GUESSES: WagerLadder = {
-  1: 4, 2: 4, 3: 2.5, 4: 1.6, 5: 1.1, 6: 0.7,
+  1: 4, 2: 4, 3: 2.5, 4: 1.8, 5: 1.4, 6: 1.15,
 };
 
 /** The lowest rung, and so the payout for a guess count the ladder does not name. */
-export const WORD_STACK_LADDER_FLOOR = 0.7;
+export const WORD_STACK_LADDER_FLOOR = 1.15;
 
 /** Always-pays multiplier for the shared daily board's completion bonus. A loss still floors at 1.0x. */
 const DAILY_BONUS_MULTIPLIER_BY_GUESSES: Readonly<Record<number, number>> = {

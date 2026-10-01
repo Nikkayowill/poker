@@ -78,13 +78,14 @@ export function isStackAcresQuestFlag(value: unknown): value is StackAcresQuestF
  * ./zones.ts's own labels (there is a test holding these two in step).
  *
  * `crop_fields_unlocked` was `cleared_meadow` before the 2026-09-08 map
- * restructure merged that district into the Farmstead -- see
- * ./crop-fields.ts's own header. Renamed along with the flag itself: "clear
- * the Grand Farm" stopped being an accurate instruction the day the Grand
- * Farm stopped being a place you clear.
+ * restructure merged that district into the Farmstead, and it was "Unlock
+ * the Crop Fields" while that land was still bought for 15,000 Gold. It is
+ * neither now: the Crop Fields are overgrown ground the player walks onto
+ * and breaks with the hoe, and the flag is recorded off the first bed tilled
+ * out there, so the instruction has to name the act rather than a purchase.
  */
 export const STACKACRES_QUEST_LABELS: Readonly<Record<StackAcresQuestFlag, string>> = {
-  crop_fields_unlocked: "Unlock the Crop Fields",
+  crop_fields_unlocked: "Break ground in the Crop Fields",
   town_trusted: "Fill an order for the town",
   cleared_wallow: "Clear the Fold",
   greenhouse_raised: "Raise the Greenhouse",

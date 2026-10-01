@@ -8,6 +8,7 @@ import { creditGold, spendGold } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
 import { findPendingTableInvite, respondToTableInvite } from "@/lib/server/table-invite-store";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -133,7 +134,7 @@ export async function POST(
           return profile;
         });
       }
-      const message = claimError instanceof Error ? claimError.message : "Could not take that seat.";
+      const message = publicErrorMessage(claimError, "Could not take that seat.");
       return NextResponse.json({ error: message }, { status: 409 });
     }
 
@@ -144,7 +145,7 @@ export async function POST(
       profile,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not answer that invite.";
+    const message = publicErrorMessage(error, "Could not answer that invite.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

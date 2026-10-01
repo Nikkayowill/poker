@@ -13,6 +13,7 @@ import {
 } from "@/lib/server/stripe";
 import { fulfillStripePayment, syncSubscriptionState } from "@/lib/server/stripe-store";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -98,7 +99,7 @@ export async function GET(request: NextRequest) {
     if (!paid) return NextResponse.json({ paid: false, profile, membership });
     return NextResponse.json({ paid: true, profile: await ensureProfile(ownerToken), membership });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not verify Stripe payment.";
+    const message = publicErrorMessage(error, "Could not verify Stripe payment.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

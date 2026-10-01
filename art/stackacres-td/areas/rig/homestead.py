@@ -93,8 +93,11 @@ def build(for_game=False):
     a.add(kit.fence(44, vertical=True), 643, 414)
     a.add(kit.coop(), 520, 334, (14, 3), tag="pen:henhaven")
     a.zone("pen:henhaven", 470, 290, 172, 124)
-    for tx0, ty0, tx1, ty1 in (WEST_BED, EAST_BED):   # where the game lets a player break ground near the house
-        a.zone("homebeds", tx0 * T - 8, ty0 * T - 8, (tx1 - tx0 + 1) * T, (ty1 - ty0 + 1) * T)
+    # The two grass paddocks where the hoe breaks a bed. The zone is exactly the paddock, so a tap
+    # anywhere on it reaches the hoe; lib/stackacres/soil.ts's HOME_PLOTS is the same rectangle in
+    # soil tiles, and lib/stackacres-td/field.test.ts holds the two together.
+    for tx0, ty0, tx1, ty1 in (WEST_BED, EAST_BED):
+        a.zone("homebeds", tx0 * T, ty0 * T, (tx1 - tx0 + 1) * T, (ty1 - ty0 + 1) * T)
     if for_game:                                       # the game draws the player's real hens and crops itself
         a.zone("hen-spots", 500, 330, 130, 70)
     else:
@@ -135,9 +138,17 @@ def build(for_game=False):
     for x, y, k in ((88, 230, "Y"), (416, 236, "R"), (300, 340, "W"), (40, 350, "Y"),
                     (620, 240, "W"), (470, 452, "R"), (150, 470, "Y")):
         a.add(kit.flowers(k), x, y, ground=True)
+    # The four berried bushes are the farm's forage nodes: picking one gives
+    # crop seed (lib/stackacres/forage.ts, FORAGE_NODE_IDS), which is where
+    # seed comes from before there is Gold to buy any. They are numbered in
+    # the order they are placed here. The berry-less four stay scenery, so
+    # "this one has something on it" is readable off the drawing.
+    forage = 0
     for x, y, b in ((208, 132, True), (452, 250, True), (26, 300, False), (650, 440, True), (360, 440, False),
                     (620, 120, False), (104, 232, False), (36, 500, True)):
-        a.add(kit.bush(berries=b), x, y, (7, 2))
+        if b:
+            forage += 1
+        a.add(kit.bush(berries=b), x, y, (7, 2), tag=f"forage:homestead-{forage}" if b else None)
     for x, y, big in ((126, 348, True), (400, 360, False), (520, 240, False), (630, 460, True), (176, 470, False),
                       (48, 120, False), (14, 260, False)):
         a.add(kit.rock(big), x, y, (5, 2))

@@ -24,6 +24,12 @@ import type { StackAcresWheatPlotRow } from "@/lib/stackacres/wheat-plot";
 import { isMachineKind, type MachineKind, type StackAcresMachineRow } from "@/lib/stackacres/machines";
 import { isWoodNodeId, type WoodNodeId } from "@/lib/stackacres/tree-nodes";
 import { freshWoodNodeState, type WoodNodeState } from "@/lib/stackacres/wood";
+import {
+  freshForageNodeState,
+  isForageNodeId,
+  type ForageNodeId,
+  type ForageNodeState,
+} from "@/lib/stackacres/forage";
 import { isRecipeId, type RecipeId } from "@/lib/stackacres/recipes";
 import type { AgingManifest } from "@/lib/stackacres/aging";
 import {
@@ -110,6 +116,7 @@ declare global {
   var __riverRoomStackAcresEnergy: Map<string, StoredStackAcresEnergy> | undefined;
   var __riverRoomStackAcresStory: Map<string, { story: StoredStory; version: number }> | undefined;
   var __riverRoomStackAcresWoodNodes: Map<string, StoredWoodNode> | undefined;
+  var __riverRoomStackAcresForageNodes: Map<string, StoredForageNode> | undefined;
 }
 
 const memoryUnits = globalThis.__riverRoomStackAcresUnits ?? new Map<string, StoredStackAcresUnit>();
@@ -255,6 +262,11 @@ globalThis.__riverRoomStackAcresFriendship = memoryFriendship;
 const memoryWoodNodes = globalThis.__riverRoomStackAcresWoodNodes ?? new Map<string, StoredWoodNode>();
 globalThis.__riverRoomStackAcresWoodNodes = memoryWoodNodes;
 
+/** Forageable bushes (lib/stackacres/forage.ts), keyed the same way. */
+const memoryForageNodes =
+  globalThis.__riverRoomStackAcresForageNodes ?? new Map<string, StoredForageNode>();
+globalThis.__riverRoomStackAcresForageNodes = memoryForageNodes;
+
 /** Test seam only: the memory branch is process-global. */
 export function __resetStackAcresForTest(): void {
   memoryUnits.clear();
@@ -279,6 +291,7 @@ export function __resetStackAcresForTest(): void {
   memoryDevotion.clear();
   memoryFriendship.clear();
   memoryWoodNodes.clear();
+  memoryForageNodes.clear();
 }
 
 /** Test seam only: what the memory-branch collection ledger recorded. */
@@ -823,7 +836,7 @@ export async function retireStackAcresUnit(current: StoredStackAcresUnit): Promi
  * guarded. No refund: see `removeStackAcresSoilTile` in
  * stackacres-service.ts, the only caller. Lifting the bed a crop stands on
  * takes the crop with it, the same spent-sink rule the bed itself already
- * follows (see `SOIL_TILE_PRICE_GOLD`'s own doc comment on soil.ts). A lost
+ * follows (see `SOIL_BAG_PRICE_GOLD`'s own doc comment on soil.ts). A lost
  * race -- the unit already moved on, harvested or cleared or retired out
  * from under this -- returns null rather than throwing, the same contract
  * `retireStackAcresUnit`/`clearStackAcresMuck` above already keep.
@@ -3469,6 +3482,162 @@ export async function listStackAcresWoodNodeStates(
   for (const row of (data ?? []) as WoodNodeDbRow[]) {
     const node = woodNodeFromRow(row);
     result[node.nodeId] = { hitsRemaining: node.hitsRemaining, felledAt: node.felledAt };
+  }
+  return result;
+}
+
+/* ------------------------------------------------------------------ */
+/* Forageable bushes (lib/stackacres/forage.ts)                        */
+/* ------------------------------------------------------------------ */
+
+export interface StoredForageNode extends ForageNodeState {
+  profileId: string;
+  nodeId: ForageNodeId;
+  version: number;
+}
+
+const FORAGE_NODE_COLUMNS = "profile_id, node_id, picks, picked_at, version";
+
+interface ForageNodeDbRow {
+  profile_id: string;
+  node_id: string;
+  picks: number | string;
+  picked_at: string | null;
+  version: number | string;
+}
+
+function forageNodeFromRow(row: ForageNodeDbRow): StoredForageNode {
+  return {
+    profileId: String(row.profile_id),
+    // Cast rather than refuse: an id this build does not know is a row from
+    // a newer deploy, and dropping it here would silently reset that bush.
+    nodeId: row.node_id as ForageNodeId,
+    picks: Number(row.picks),
+    pickedAt: row.picked_at ? String(row.picked_at) : null,
+    version: Number(row.version),
+  };
+}
+
+/** Reads one bush, creating an untouched row the first time a profile picks
+ *  it -- the same lazy-create `getOrCreateStackAcresWoodNode` does, and for
+ *  the same reason: seeding four rows for every profile that has never
+ *  walked the yard is four rows of nothing. */
+export async function getOrCreateStackAcresForageNode(
+  profileId: string,
+  nodeId: ForageNodeId,
+): Promise<StoredForageNode> {
+  const supabase = adminClient();
+  const key = `${profileId}:${nodeId}`;
+
+  if (!supabase) {
+    const existing = memoryForageNodes.get(key);
+    if (existing) return { ...existing };
+    const fresh: StoredForageNode = { profileId, nodeId, version: 1, ...freshForageNodeState() };
+    memoryForageNodes.set(key, { ...fresh });
+    return { ...fresh };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_forage_nodes")
+    .select(FORAGE_NODE_COLUMNS)
+    .eq("profile_id", profileId)
+    .eq("node_id", nodeId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not load that bush: ${error.message}`);
+  if (data) return forageNodeFromRow(data as ForageNodeDbRow);
+
+  const seed = freshForageNodeState();
+  const { data: inserted, error: insertError } = await supabase
+    .from("homestead_forage_nodes")
+    .insert({
+      profile_id: profileId,
+      node_id: nodeId,
+      picks: seed.picks,
+      picked_at: seed.pickedAt,
+      version: 1,
+    })
+    .select(FORAGE_NODE_COLUMNS)
+    .maybeSingle();
+  if (insertError) {
+    // Lost the race to create the row (two tabs on the same fresh bush):
+    // whoever won is the truth, read it back.
+    const { data: raced, error: racedError } = await supabase
+      .from("homestead_forage_nodes")
+      .select(FORAGE_NODE_COLUMNS)
+      .eq("profile_id", profileId)
+      .eq("node_id", nodeId)
+      .maybeSingle();
+    if (racedError || !raced) throw new Error(`Could not find that bush: ${insertError.message}`);
+    return forageNodeFromRow(raced as ForageNodeDbRow);
+  }
+  return forageNodeFromRow(inserted as ForageNodeDbRow);
+}
+
+/**
+ * Writes one pick, guarded on the row's own version -- the identical
+ * compare-and-swap `writeStackAcresWoodNodeSwing` uses, and load-bearing for
+ * the same reason: a double-tap (or a retried request) must not pay seed
+ * twice off one bush. The second write's `.eq("version", ...)` matches
+ * nothing and comes back null, and the caller pays nothing.
+ */
+export async function writeStackAcresForagePick(
+  current: StoredForageNode,
+  next: ForageNodeState,
+): Promise<StoredForageNode | null> {
+  const supabase = adminClient();
+  const version = current.version + 1;
+
+  if (!supabase) {
+    const key = `${current.profileId}:${current.nodeId}`;
+    const stored = memoryForageNodes.get(key);
+    if (!stored || stored.version !== current.version) return null;
+    const updated: StoredForageNode = { ...stored, ...next, version };
+    memoryForageNodes.set(key, { ...updated });
+    return { ...updated };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_forage_nodes")
+    .update({ picks: next.picks, picked_at: next.pickedAt, version })
+    .eq("profile_id", current.profileId)
+    .eq("node_id", current.nodeId)
+    .eq("version", current.version)
+    .select(FORAGE_NODE_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not pick that bush: ${error.message}`);
+  return data ? forageNodeFromRow(data as ForageNodeDbRow) : null;
+}
+
+/** Every bush's state for one profile, for the view snapshot. A bush with no
+ *  row has never been picked, which is exactly `freshForageNodeState()`, so
+ *  this read stays write-free (see this repo's "keep game reads write-free"
+ *  rule) and leaves the create to the first actual pick. */
+export async function listStackAcresForageNodeStates(
+  profileId: string,
+): Promise<Partial<Record<ForageNodeId, ForageNodeState>>> {
+  const supabase = adminClient();
+  const result: Partial<Record<ForageNodeId, ForageNodeState>> = {};
+
+  if (!supabase) {
+    for (const [key, node] of memoryForageNodes) {
+      if (!key.startsWith(`${profileId}:`)) continue;
+      result[node.nodeId] = { picks: node.picks, pickedAt: node.pickedAt };
+    }
+    return result;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_forage_nodes")
+    .select(FORAGE_NODE_COLUMNS)
+    .eq("profile_id", profileId);
+  if (error) throw new Error(`Could not load your bushes: ${error.message}`);
+  for (const row of (data ?? []) as ForageNodeDbRow[]) {
+    // Here a stale id IS dropped, unlike the single-node read above: this
+    // feeds a snapshot keyed by the ids this build knows, and an unknown key
+    // would render nothing anyway.
+    if (!isForageNodeId(String(row.node_id))) continue;
+    const node = forageNodeFromRow(row);
+    result[node.nodeId] = { picks: node.picks, pickedAt: node.pickedAt };
   }
   return result;
 }

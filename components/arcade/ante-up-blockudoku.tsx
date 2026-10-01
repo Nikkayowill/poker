@@ -12,7 +12,7 @@ import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
-import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { clearSound, comboSound, selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   ANTE_UP_BLOCKUDOKU_TIERS,
   MIN_ANTE_UP_WAGER,
@@ -47,8 +47,8 @@ const POLL_MS = 3000;
 /** Fallback pause on a 429 with no usable Retry-After header. */
 const DEFAULT_RETRY_AFTER_SECONDS = 5;
 
-/** How long cleared lines flash before the board shows them empty. */
-const CLEAR_FLASH_MS = 480;
+/** How long cleared lines animate before the board shows them empty. */
+const CLEAR_FLASH_MS = 560;
 
 /** Under this much time left the clock turns red. */
 const LOW_TIME_MS = 30_000;
@@ -216,7 +216,11 @@ export function AnteUpBlockudoku() {
   const [dragging, setDragging] = useState(false);
   // Painted over the board while a placement is in flight, then replaced by the server's answer.
   const [pending, setPending] = useState<readonly number[]>([]);
-  const [clearing, setClearing] = useState<ReadonlySet<number>>(() => new Set());
+  // Order matters: built by an ascending scan of the board, so a cleared
+  // row/column/box's cells are already in the order a wipe should animate
+  // them, and each cell's index in this array becomes its stagger delay.
+  const [clearing, setClearing] = useState<readonly number[]>([]);
+  const [combo, setCombo] = useState(false);
   const [gain, setGain] = useState<{ points: number; key: number } | null>(null);
 
   const play = useArcadeSound({ gameSounds: true });
@@ -392,20 +396,28 @@ export function AnteUpBlockudoku() {
     setPending([]);
     if (!next) return;
 
-    // Whatever was filled a moment ago and is empty now is what the placement cleared.
-    const cleared = new Set<number>();
+    // Whatever was filled a moment ago and is empty now is what the placement
+    // cleared, in ascending board order -- see the `clearing` state's comment.
+    const cleared: number[] = [];
     for (let index = 0; index < GRID_CELLS; index += 1) {
-      if (before[index] === 1 && next.board.board[index] === 0) cleared.add(index);
+      if (before[index] === 1 && next.board.board[index] === 0) cleared.push(index);
     }
     const points = next.board.score - scoreBefore;
     if (points > 0) setGain({ points, key: next.version });
-    if (cleared.size > 0) {
-      tapSound();
+    if (cleared.length > 0) {
+      // More than one row/column/box worth of cells means two or more groups
+      // cleared on the same drop -- the rarer, bigger moment gets its own cue.
+      const isCombo = cleared.length > GRID_SIDE;
+      if (isCombo) comboSound(); else clearSound();
       setClearing(cleared);
+      setCombo(isCombo);
       if (clearTimer.current !== null) window.clearTimeout(clearTimer.current);
       clearTimer.current = window.setTimeout(() => {
         clearTimer.current = null;
-        if (mounted.current) setClearing(new Set());
+        if (mounted.current) {
+          setClearing([]);
+          setCombo(false);
+        }
       }, CLEAR_FLASH_MS);
     }
   };
@@ -694,7 +706,7 @@ export function AnteUpBlockudoku() {
           <div className="bk-play">
             <div
               ref={gridRef}
-              className={clsx("bk-grid", dragging && "bk-grid-dragging")}
+              className={clsx("bk-grid", dragging && "bk-grid-dragging", combo && "bk-grid-combo")}
               role="grid"
               aria-label="Blockudoku board"
               onPointerLeave={(event) => {
@@ -703,6 +715,7 @@ export function AnteUpBlockudoku() {
             >
               {(board ?? []).map((cell, index) => {
                 const inGhost = ghost?.cells.has(index) ?? false;
+                const clearOrder = clearing.indexOf(index);
                 return (
                   <button
                     key={index}
@@ -715,8 +728,9 @@ export function AnteUpBlockudoku() {
                       pendingSet.has(index) && "bk-cell-pending",
                       inGhost && (ghost?.legal ? "bk-cell-ghost" : "bk-cell-ghost-bad"),
                       ghost?.legal && ghost.completes.has(index) && "bk-cell-will-clear",
-                      clearing.has(index) && "bk-cell-clearing",
+                      clearOrder !== -1 && "bk-cell-clearing",
                     )}
+                    style={clearOrder !== -1 ? ({ "--bk-clear-i": clearOrder } as React.CSSProperties) : undefined}
                     disabled={!active}
                     aria-label={`Row ${Math.floor(index / GRID_SIDE) + 1}, column ${(index % GRID_SIDE) + 1}, ${cell === 1 ? "filled" : "empty"}`}
                     onPointerEnter={(event) => hoverCell(index, event.pointerType)}

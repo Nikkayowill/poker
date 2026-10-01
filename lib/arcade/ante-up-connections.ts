@@ -19,18 +19,16 @@ export const MIN_ANTE_UP_WAGER = 500;
  * Win-only payout multiplier, keyed by mistakes made. Starting numbers, easy
  * to retune here.
  *
- * A 3-mistake win pays below 1x on purpose, for the same reason Word Stack's
- * 6-guess rung does: solving on the last life left is the outcome closest to
- * losing, and paying a premium for it made every win profitable and the wager
- * close to risk-free. A clean 4-for-4 grid is still the point of the game, so
- * it keeps the largest multiple by a wide margin.
+ * Every win pays back more than the stake, even a 3-mistake solve, for the
+ * same reason as Word Stack's 6-guess rung. A clean 4-for-4 grid is still the
+ * point of the game, so it keeps the largest multiple by a wide margin.
  */
 export const WAGER_MULTIPLIER_BY_MISTAKES: WagerLadder = {
-  0: 4, 1: 2.2, 2: 1.2, 3: 0.6,
+  0: 4, 1: 2.2, 2: 1.5, 3: 1.15,
 };
 
 /** The lowest rung, and so the payout for a mistake count the ladder does not name. */
-export const CONNECTIONS_LADDER_FLOOR = 0.6;
+export const CONNECTIONS_LADDER_FLOOR = 1.15;
 
 /** Always-pays multiplier for the shared daily board's completion bonus. A loss still floors at 1.0x. */
 const DAILY_BONUS_MULTIPLIER_BY_MISTAKES: Readonly<Record<number, number>> = {

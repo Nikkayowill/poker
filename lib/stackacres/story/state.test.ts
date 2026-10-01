@@ -322,7 +322,7 @@ describe("storyView", () => {
       ready: false,
     });
     expect(view.travelers.pierre.unlocked).toBe(false);
-    expect(view.travelers.pierre.hint).toBe("Unlock the Crop Fields");
+    expect(view.travelers.pierre.hint).toBe("Break ground in the Crop Fields");
     expect(view.travelers.pierre.quest).toBeNull();
     expect(view.travelers.leo.hint).toBe("Send every other traveler home");
   });

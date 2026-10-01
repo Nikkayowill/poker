@@ -387,6 +387,15 @@ def walk(ch, direction):
     return frames
 
 
+def idle(ch, direction):
+    """A small breathing loop used by NPCs while they are standing around."""
+    if direction == "right":
+        return [posed(ch, direction, duration, bob, "together")
+                for duration, bob in ((700, 0), (500, 0), (700, 1), (500, 1))]
+    return [posed(ch, direction, duration, bob, 0)
+            for duration, bob in ((700, 0), (500, 0), (700, 1), (500, 1))]
+
+
 def harvest(ch, d):
     # Arms stay about as long as the walking arm (9px); the old 13px reach read as a sash.
     if d in ("down", "up"):
@@ -533,7 +542,7 @@ def shoot(ch, d):
     ]
 
 
-ANIMATIONS = [("walk", walk), ("harvest", harvest), ("water", water), ("chop", chop), ("fish", fish), ("shoot", shoot)]
+ANIMATIONS = [("walk", walk), ("idle", idle), ("harvest", harvest), ("water", water), ("chop", chop), ("fish", fish), ("shoot", shoot)]
 DIRECTIONS = ["down", "up", "left", "right"]
 
 

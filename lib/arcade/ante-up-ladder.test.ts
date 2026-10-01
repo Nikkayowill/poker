@@ -56,9 +56,9 @@ describe("ladderMultiplier", () => {
 
 describe("anteUpWordStackPayout", () => {
   it("pays a pre-retune round at the rate it was opened under", () => {
-    // 6-guess win: 1.5x then, 0.7x now. Profit or loss on the same board.
+    // 6-guess win: 1.5x then, 1.15x now.
     expect(anteUpWordStackPayout({ wager: 1000, word: word("won", 6), ladder: OLD_WORD_STACK })).toBe(1500);
-    expect(anteUpWordStackPayout({ wager: 1000, word: word("won", 6) })).toBe(700);
+    expect(anteUpWordStackPayout({ wager: 1000, word: word("won", 6) })).toBe(1150);
   });
 
   it("pays a round with no stored ladder at today's rate", () => {
@@ -79,9 +79,9 @@ describe("anteUpWordStackPayout", () => {
 
 describe("anteUpConnectionsPayout", () => {
   it("pays a pre-retune round at the rate it was opened under", () => {
-    // 3-mistake win: 1.5x then, 0.6x now.
+    // 3-mistake win: 1.5x then, 1.15x now.
     expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 3), ladder: OLD_CONNECTIONS })).toBe(1500);
-    expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 3) })).toBe(600);
+    expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 3) })).toBe(1150);
   });
 
   it("pays a round with no stored ladder at today's rate", () => {

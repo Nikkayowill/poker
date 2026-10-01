@@ -23,7 +23,9 @@ export type SoundEffect =
   | "win-modest"
   | "lose"
   | "timeout"
-  | "your-turn";
+  | "your-turn"
+  | "clear"
+  | "combo";
 
 export const SOUND_FILES: Record<SoundEffect, string | null> = {
   // Three chrome cues, split by what the press actually did rather than which
@@ -88,6 +90,13 @@ export const SOUND_FILES: Record<SoundEffect, string | null> = {
   "your-turn": "/sounds/Your_Turn.mp3",
   lose: null,
   timeout: "/sounds/TimeBank.mp3",
+  // The puzzle-game payoff cues (Blockudoku line clears, a Connections group,
+  // a correct Brain Streak answer): the same two chime/cascade files the
+  // table already had reasons to trust, reused at a foreground gain instead
+  // of the chrome/table one, since the moment they mark is the point of the
+  // press, not housekeeping around it.
+  clear: "/sounds/Ante_Select.mp3",
+  combo: "/sounds/bigsoundbank-poker-chips-4-0945.mp3",
 };
 
 /**
@@ -184,6 +193,12 @@ const EFFECT_TARGET_DB: Record<SoundEffect, number> = {
   // The clock. Sits under the betting cues: running out of time is
   // information, not a moment, and it arrives while the table is already busy.
   timeout: -30,
+  // Near the file's own level -- a puzzle payoff is the moment on that
+  // screen, with nothing else in the mix to sit under -- but a hair under it,
+  // same as every other entry here; `flop` is the one deliberate exception
+  // the mix test checks for.
+  clear: -24,
+  combo: -22,
 };
 
 /**

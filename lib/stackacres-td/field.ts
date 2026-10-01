@@ -26,12 +26,7 @@
  * Anything else has no place on the playable maps yet and maps to null.
  */
 
-import {
-  HOME_STARTER_COLS,
-  HOME_STARTER_ORIGIN,
-  HOME_STARTER_TILE_COUNT,
-  SOIL_TILE,
-} from "@/lib/stackacres/soil";
+import { HOME_STARTER_ORIGIN, SOIL_TILE, isHomePlotTile } from "@/lib/stackacres/soil";
 import { FISHING_SPOT } from "@/lib/stackacres/water";
 import { CROP_FIELD_BEDS, penFeedSpot, type WorldPoint } from "@/lib/stackacres/world";
 
@@ -104,15 +99,16 @@ export function soilTileToMap(tx: number, ty: number): { x: number; y: number } 
 }
 
 /**
- * The free Homestead starter beds (lib/stackacres/soil.ts's
- * `homeStarterSoilTiles`), pinned onto the Homestead map itself rather than
- * the Old Fields -- these are not Crop Fields ground, so they get their own
- * small origin instead of `FIELD_ORIGIN`.
+ * The Homestead's grass paddocks (lib/stackacres/soil.ts's `HOME_PLOTS`, which
+ * hold the six free starter beds in the west one), pinned onto the Homestead
+ * map itself rather than the Old Fields -- this is not Crop Fields ground, so it
+ * gets its own origin instead of `FIELD_ORIGIN`.
  *
- * `HOME_BEDS_ORIGIN` is the same corner the Homestead's own decorative
- * "homebeds" zones already sit on (public/stackacres-td/areas/homestead/
- * area.json), a few pixels in from that zone's own edge so the lattice reads
- * as sitting inside the drawn dirt patch rather than overhanging it.
+ * `HOME_BEDS_ORIGIN` is the map pixel of soil tile `HOME_STARTER_ORIGIN`, the
+ * west paddock's top-left square: map tile (4, 15), the same corner the rig's
+ * WEST_BED starts on (art/stackacres-td/areas/rig/homestead.py). The east
+ * paddock is on the same lattice, so it needs no origin of its own -- it is
+ * simply further along.
  */
 const HOME_BEDS_ORIGIN = { x: 64, y: 240 } as const;
 
@@ -121,31 +117,23 @@ const HOME_BEDS_ORIGIN = { x: 64, y: 240 } as const;
  *  moving that lattice in soil.ts moves where it draws too. */
 const HOME_BEDS_WORLD_ORIGIN = { x: HOME_STARTER_ORIGIN.tx * SOIL_TILE, y: HOME_STARTER_ORIGIN.ty * SOIL_TILE };
 
-const HOME_BEDS_ROWS = Math.ceil(HOME_STARTER_TILE_COUNT / HOME_STARTER_COLS);
-const HOME_BEDS_SIZE = { width: HOME_STARTER_COLS * SOIL_TILE, height: HOME_BEDS_ROWS * SOIL_TILE };
-
-/** Whether a world point falls inside the starter lattice's own small patch. */
-export function inHomeStarterBeds(world: WorldPoint): boolean {
-  return (
-    world.x >= HOME_BEDS_WORLD_ORIGIN.x &&
-    world.y >= HOME_BEDS_WORLD_ORIGIN.y &&
-    world.x < HOME_BEDS_WORLD_ORIGIN.x + HOME_BEDS_SIZE.width &&
-    world.y < HOME_BEDS_WORLD_ORIGIN.y + HOME_BEDS_SIZE.height
-  );
+/** Whether a world point falls on one of the Homestead's grass paddocks. */
+export function inHomePlots(world: WorldPoint): boolean {
+  return isHomePlotTile(Math.floor(world.x / SOIL_TILE), Math.floor(world.y / SOIL_TILE));
 }
 
-/** A starter-bed world point, in Homestead map pixels. */
+/** A paddock world point, in Homestead map pixels. */
 export function homeBedsWorldToMap(world: WorldPoint): { x: number; y: number } {
   return { x: world.x - HOME_BEDS_WORLD_ORIGIN.x + HOME_BEDS_ORIGIN.x, y: world.y - HOME_BEDS_WORLD_ORIGIN.y + HOME_BEDS_ORIGIN.y };
 }
 
-/** A Homestead map pixel, as a starter-bed world point, or null when it is off the lattice. */
+/** A Homestead map pixel, as a paddock world point, or null when it is off the grass paddocks. */
 export function homeBedsMapToWorld(map: { x: number; y: number }): WorldPoint | null {
   const world = { x: map.x - HOME_BEDS_ORIGIN.x + HOME_BEDS_WORLD_ORIGIN.x, y: map.y - HOME_BEDS_ORIGIN.y + HOME_BEDS_WORLD_ORIGIN.y };
-  return inHomeStarterBeds(world) ? world : null;
+  return inHomePlots(world) ? world : null;
 }
 
-/** A starter bed's top-left corner in Homestead map pixels. */
-export function homeStarterTileToMap(tx: number, ty: number): { x: number; y: number } {
+/** A paddock square's top-left corner in Homestead map pixels. */
+export function homePlotTileToMap(tx: number, ty: number): { x: number; y: number } {
   return homeBedsWorldToMap({ x: tx * SOIL_TILE, y: ty * SOIL_TILE });
 }

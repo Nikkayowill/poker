@@ -137,6 +137,12 @@ export function travelSound() {
   playFarmVoice("travel-steps", 0.7);
 }
 
+/** One footfall of the farmer's own walk, fired per stride from the scene. Alternates gain so left/right don't sound identical. */
+export function footstepSound(stride: number, indoor: boolean) {
+  const voice = indoor ? "footstep-floor" : "footstep-grass";
+  playFarmVoice(voice, stride % 2 ? 0.55 : 0.7);
+}
+
 /**
  * A refused action.
  *

@@ -11,7 +11,7 @@ import {
   soilTierPrice,
   toSoilTier,
 } from "./soil-tiers";
-import { SOIL_TILE_PRICE_GOLD } from "./soil";
+import { SOIL_BAG_PRICE_GOLD } from "./soil";
 
 describe("soil tiers", () => {
   it("defines every tier in the union, and nothing else", () => {
@@ -33,7 +33,7 @@ describe("soil tiers", () => {
   // the shop silently reprices the one every existing player knows.
   it("prices the default tier at the historical flat bed price", () => {
     expect(SOIL_DEFAULT_TIER).toBe("dirt");
-    expect(soilTierPrice(SOIL_DEFAULT_TIER)).toBe(SOIL_TILE_PRICE_GOLD);
+    expect(soilTierPrice(SOIL_DEFAULT_TIER)).toBe(SOIL_BAG_PRICE_GOLD);
     expect(soilGrowthMultiplier(SOIL_DEFAULT_TIER)).toBe(1);
     expect(soilSelfHydrates(SOIL_DEFAULT_TIER)).toBe(false);
   });

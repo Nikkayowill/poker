@@ -283,13 +283,33 @@ Switching should feel lightweight and intentional (`StackChips ↔ StackAcres`),
 
 Two complementary loops, not two unrelated games.
 
-## 17. Not a Stardew Valley copy
+## 17. A Stardew-style farming RPG with a chef RPG on top
 
-Stardew is useful inspiration for satisfying farming, world interaction, crop progression,
-production, exploration and player attachment. StackAcres doesn't need its whole structure. Its
-strongest differentiator is **a persistent farming/investment game connected to a broader
-game-based Gold economy**. Don't add features just because Stardew has them. Ask: *does this make
-StackAcres more fun, more strategic, more economically interesting, or more itself?*
+Updated 2026-09-28. StackAcres is a Stardew Valley style farming RPG and a chef RPG, sitting on the
+Gold economy above. Stardew is the quality bar for the farm, the world and the feel. Cooking is the
+second half of the game, not a side machine. It is still not a Stardew clone: don't add features
+just because Stardew has them. Ask: *does this make StackAcres more fun, more strategic, more
+economically interesting, or more itself?*
+
+The chef half has two parts, and both are wanted:
+
+1. **A restaurant you run.** Customers, a menu you set, orders to fill, a reputation that grows.
+   The restaurant is a Gold investment (build, upgrade, staff) that also earns Gold, so it follows
+   sections 3 to 5 like any other farm asset.
+2. **Cooking as a skill you play.** Cooking is something the player does by hand and gets better
+   at: timing, dish quality tiers, recipes that improve with practice. Quality changes what a dish
+   sells for and who wants it.
+
+The two feed each other. Farm crops and animal products are the ingredients, hand-cooking sets the
+quality, and the restaurant is where quality turns into Gold and reputation.
+
+What exists today is the production side only: recipes at the oven, stew pot and counter, and the
+Farm Kitchen that cooks a standing order while the player is away. Keep those. The Farm Kitchen
+stays the late-game automation from section 20 and must not replace hand-cooking. Section 19 still
+applies: a cooking minigame must be a decision or a skill test, not extra clicks.
+
+Polish and detail are still the biggest gap to the Stardew bar. Treat them as first-class work
+alongside the chef features, not as something left until later.
 
 ## 18. Keep the crop design rich
 
@@ -410,7 +430,7 @@ Don't let the latest feature request redefine what StackAcres is.
 > passive production, and a shared Gold economy with StackChips.**
 
 It is not merely a farming minigame, an idle game, a Gold generator, a Gold sink, a Stardew clone,
-or a collection of farming mechanics. It's the combination: fun enough that players want to spend
+or a collection of farming and cooking mechanics. It's the combination: fun enough that players want to spend
 time there, economically meaningful enough that investing matters, and connected enough to
 StackChips that the two strengthen each other.
 

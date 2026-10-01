@@ -1,0 +1,76 @@
+{
+  "project": "StackAcres",
+  "project_id": "561f8577-033e-46c6-b82f-e41397982523",
+  "model": "gpt-image-2",
+  "quality": "low",
+  "smart_crop": false,
+  "view_reference": "a7b010d2-8c59-42c6-8390-afc6f6f31a97",
+  "assets": [
+    {
+      "file": "source/barn.png",
+      "asset_id": "f5876d3f-932d-425c-8602-7b3552c1eb8f",
+      "sha12": "43c084417b3b",
+      "label": "Barn (store), flat front"
+    },
+    {
+      "file": "source/clutter-flat.png",
+      "asset_id": "28ec104e-ba09-4311-8874-63547b0230fd",
+      "sha12": "2d92b118f812",
+      "label": "Clutter redraw: crate, woodpile, trough"
+    },
+    {
+      "file": "source/clutter.png",
+      "asset_id": "5ffdc9ce-4f50-4584-9c2b-0dbbb4b95860",
+      "sha12": "01d91b4d6530",
+      "label": "Clutter sheet: barrel, hay bale, sack"
+    },
+    {
+      "file": "source/farmer-idle.png",
+      "asset_id": "97b25a03-d750-44ea-8cf1-1cd034b256f2",
+      "label": "Farmer idle, flat top-down front view, 38x38",
+      "sha12": "cf13b45cf103"
+    },
+    {
+      "file": "source/farmer-view-reference.png",
+      "asset_id": "f3bd42c4-8581-4263-914b-170fc2f7fd4d",
+      "label": "Farmer top-down view reference, from the rig's farmer sheet (uploaded)",
+      "sha12": "0dc55654dc02"
+    },
+    {
+      "file": "source/farmhouse.png",
+      "asset_id": "4d0b13d7-8f64-48e2-89ef-e9c366b3c71c",
+      "sha12": "f0413954e28e",
+      "label": "Farmhouse, flat front"
+    },
+    {
+      "file": "source/nature.png",
+      "asset_id": "a3644e22-3066-4e07-9c26-414bdbabbd12",
+      "sha12": "b1746be20e14",
+      "label": "Nature sheet: bushes, rocks, stump, flowers"
+    },
+    {
+      "file": "source/structures.png",
+      "asset_id": "09301d68-7f8f-47ad-a25a-57237686d17a",
+      "sha12": "1619e569ea2a",
+      "label": "Well, coop, signpost, flat front"
+    },
+    {
+      "file": "source/trees.png",
+      "asset_id": "bb9b2f53-4736-440b-b130-764670a3d929",
+      "sha12": "27d7a91c965c",
+      "label": "Tree sheet"
+    },
+    {
+      "file": "source/view-reference.png",
+      "asset_id": "a7b010d2-8c59-42c6-8390-afc6f6f31a97",
+      "sha12": "0d657be7fa76",
+      "label": "Flat top-down view reference, from the rig's art (uploaded)"
+    },
+    {
+      "file": "source/workshop.png",
+      "asset_id": "4e6b66ea-aadf-440a-83f5-d76eb520cea9",
+      "sha12": "d39ec23e29cc",
+      "label": "Workshop, flat front"
+    }
+  ]
+}

@@ -33,14 +33,14 @@ import type { TopdownScene } from "./scene";
  *
  * Pixel art at a whole-number zoom: the canvas is the host at full device
  * resolution, and the camera zooms by the largest whole number that still
- * shows 16 tiles across and 10 down. Rendering at device resolution rather
+ * shows 20 tiles across and 13 down. Rendering at device resolution rather
  * than one canvas pixel per art pixel is what lets the farmer and the camera
  * glide a device pixel at a time; at art resolution every step was a 4px jump
  * and the farmer shook against the ground (see scene.ts's `placeCamera`).
  */
 
-export const MIN_TILES_ACROSS = 16;
-export const MIN_TILES_DOWN = 10;
+export const MIN_TILES_ACROSS = 20;
+export const MIN_TILES_DOWN = 13;
 
 /** Device pixels per CSS pixel, capped so a 3x screen does not bake a canvas
  *  nobody can afford. Read in one place so every layer drawn on this canvas
@@ -70,7 +70,8 @@ function toSceneUnits(units: StackAcresUnitSnapshot[]): StackAcresSceneUnit[] {
 }
 
 export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
-  const { units, celebrate, sectors, cropFieldsUnlocked, soilTiles, woodNodes, stoneNodes, api } = props;
+  const { units, celebrate, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, api } =
+    props;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<TopdownScene | null>(null);
   /** The live game, held so a layer can be added over the map after boot --
@@ -97,9 +98,9 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   });
 
   const sceneUnits = useMemo(() => toSceneUnits(units), [units]);
-  const latest = useRef({ sceneUnits, sectors, cropFieldsUnlocked, soilTiles, woodNodes, stoneNodes });
+  const latest = useRef({ sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes });
   useEffect(() => {
-    latest.current = { sceneUnits, sectors, cropFieldsUnlocked, soilTiles, woodNodes, stoneNodes };
+    latest.current = { sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes };
   });
 
   useEffect(() => {
@@ -133,6 +134,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onThicketTap: (at) => p().onThicketTap(at),
           onTreeTap: (nodeId, at) => p().onTreeTap(nodeId, at),
           onStoneTap: (nodeId, at) => p().onStoneTap(nodeId, at),
+          onForageTap: (nodeId, at) => p().onForageTap(nodeId, at),
           onGreenhouseTap: () => p().onGreenhouseTap(),
           onMonkTap: (at) => p().onMonkTap(at),
           onRayTap: (at) => p().onRayTap(at),
@@ -140,7 +142,6 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onTravelerTap: (traveler, at) => p().onTravelerTap(traveler, at),
           onSecretZoneTap: (zoneId, at) => p().onSecretZoneTap(zoneId, at),
           onLockedSectorTap: (zone, at) => p().onLockedSectorTap(zone, at),
-          onCropFieldsLockedTap: (at) => p().onCropFieldsLockedTap(at),
           onViewMoved: () => p().onViewMoved(),
           onPlaceEntered: (name) => p().onPlaceEntered(name),
           onInputLocked: setCastLocked,
@@ -177,10 +178,10 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       const now = latest.current;
       scene.setUnits(now.sceneUnits);
       scene.setSectors(now.sectors);
-      scene.setCropFieldsUnlocked(now.cropFieldsUnlocked);
       scene.setSoil(now.soilTiles);
       scene.setWoodNodes(now.woodNodes);
       scene.setStoneNodes(now.stoneNodes);
+      scene.setForageNodes(now.forageNodes);
 
       const fit = () => {
         if (!instance.isBooted) return;
@@ -348,10 +349,6 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   }, [sectors]);
 
   useLayoutEffect(() => {
-    sceneRef.current?.setCropFieldsUnlocked(cropFieldsUnlocked);
-  }, [cropFieldsUnlocked]);
-
-  useLayoutEffect(() => {
     sceneRef.current?.setSoil(soilTiles);
   }, [soilTiles]);
 
@@ -362,6 +359,10 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   useLayoutEffect(() => {
     sceneRef.current?.setStoneNodes(stoneNodes);
   }, [stoneNodes]);
+
+  useEffect(() => {
+    sceneRef.current?.setForageNodes(forageNodes);
+  }, [forageNodes]);
 
   useLayoutEffect(() => {
     if (celebrate) sceneRef.current?.celebrate([celebrate.unitId]);

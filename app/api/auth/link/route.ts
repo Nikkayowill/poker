@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { linkAuthenticatedUser, linkResultResponse } from "@/lib/server/link-account";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest) {
     const result = await linkAuthenticatedUser(data.user.id, request);
     return linkResultResponse(request, result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not save your progress.";
+    const message = publicErrorMessage(error, "Could not save your progress.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

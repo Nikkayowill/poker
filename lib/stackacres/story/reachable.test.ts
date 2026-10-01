@@ -7,9 +7,10 @@ import { isCounterObjective, type StoryObjective } from "./quests";
  * A quest may only ask for something the live farm can actually do.
  *
  * Two ways that broke before. Ray's first quest wanted new soil beds, which
- * the server refuses until the Crop Fields are bought, so his line could never
- * start. Barnaby and Leo wanted irrigation pipes, which no control in the
- * top-down farm can place at all, so the finale behind them was unreachable.
+ * the server refused while the Crop Fields still had to be bought, so his
+ * line could never start. Barnaby and Leo wanted irrigation pipes, which no
+ * control in the top-down farm can place at all, so the finale behind them
+ * was unreachable.
  *
  * Both are the same mistake: an objective whose verb has no button. This test
  * is the list of verbs a player can actually perform. Adding a kind here is a

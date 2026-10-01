@@ -3,6 +3,7 @@ import { getAchievementsView } from "@/lib/server/achievement-store";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(achievements);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not load your achievements.";
+    const message = publicErrorMessage(error, "Could not load your achievements.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

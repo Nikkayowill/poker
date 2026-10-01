@@ -4,6 +4,7 @@ import { equipCosmetic } from "@/lib/server/cosmetics-store";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest) {
     const equipped = await equipCosmetic(token, profile, parsed.data.cosmeticId);
     return withRequestSessionCookie(request, NextResponse.json({ equipped }), token);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not equip that item.";
+    const message = publicErrorMessage(error, "Could not equip that item.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

@@ -168,7 +168,8 @@ export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>
     // Ray teaches the opening loop in the order a new player can actually do
     // it, on the six free starter beds: water, mill, harvest, sell to the
     // town. His old first quest asked for three NEW beds, which the server
-    // refuses until the Crop Fields are bought, so his line could never start.
+    // refused back when the Crop Fields had to be bought first, so his line
+    // could never start.
     {
       id: "ray.q1",
       title: "First Furrows",

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireRegisteredProfile } from "@/lib/server/api-auth";
 import { redeemFriendInviteCode } from "@/lib/server/friends-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not add that friend.";
+    const message = publicErrorMessage(error, "Could not add that friend.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

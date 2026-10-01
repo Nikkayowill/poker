@@ -74,7 +74,6 @@ import {
 import { stackacresStockOwnableOutright, stackacresStockPrice } from "./market";
 import type { StackAcresContractRow } from "./contracts";
 import { sectorClearCheck, type SectorId } from "./sectors";
-import { cropFieldsUnlockCheck } from "./crop-fields";
 import { decrementHeldSecret, nextUpkeepPaidAfterDiceTrade, type SecretItemId } from "./secrets";
 import {
   SYNERGY_MAX_ACTIVE_SLOTS,
@@ -87,6 +86,7 @@ import { nextToolTier, toolUpgradePrice, type StackAcresToolTier } from "./equip
 import { ownedStackAcresCutters, stackacresCutterDef, type StackAcresCutter } from "./cutters";
 import { applyInfluenceDiscount } from "./influence-tiers";
 import type { StackAcresUpkeepState } from "./upkeep";
+import { FORAGE_SEEDS_PER_PICK, nextForageCrop, type ForageNodeSnapshot } from "./forage";
 import {
   createSoilMap,
   moveSoilTileGroup,
@@ -176,6 +176,11 @@ export interface FarmPredictContext {
    *  `place-soil-tile` spends one of -- see ./soil-tiers.ts's own header on
    *  why a bag and Gold are never the same debit. */
   soilStock: SoilStock;
+  /** The forage bushes, straight off the component's own state. What
+   *  `gather-forage` reads to know which seed a bush is carrying -- the crop
+   *  is in the snapshot precisely so this guess is the real answer rather
+   *  than a placeholder (./forage.ts's header). */
+  forageNodes: readonly ForageNodeSnapshot[];
   /** The processing track, straight off the component's own `processing`
    *  state. Always patched together with `contract` (see `processingPatch`)
    *  because the component applies the four as one unit. */
@@ -207,6 +212,7 @@ export interface FarmStatePatch {
   cropFieldsUnlocked?: boolean;
   soilTiles?: SoilTile[];
   soilStock?: SoilStock;
+  forageNodes?: ForageNodeSnapshot[];
   contract?: StackAcresContractRow | null;
   inventory?: StackAcresInventory;
   wheatPlots?: StackAcresWheatPlotSnapshot[];
@@ -624,16 +630,6 @@ export function predictStackAcresAction(
       if (!profile) return null;
       return { sectors: [...ctx.sectors, body.sector], profile };
     }
-    case "unlock-crop-fields": {
-      const check = cropFieldsUnlockCheck({
-        unlocked: ctx.cropFieldsUnlocked,
-        unitCount: ctx.units.length,
-      });
-      if (check.alreadyOpen || !check.ok) return null;
-      const profile = debited(ctx, check.cost);
-      if (!profile) return null;
-      return { cropFieldsUnlocked: true, profile };
-    }
     case "unlock-synergy-perk": {
       if (ctx.synergyUnlocked.includes(body.archetype)) return null;
       const profile = debited(ctx, SYNERGY_PERKS[body.archetype].unlockCostGold);
@@ -703,13 +699,20 @@ export function predictStackAcresAction(
       return {
         soilTiles: [...ctx.soilTiles, result.tile],
         soilStock: { ...ctx.soilStock, [tier]: held - 1 },
+        // Breaking ground in the Crop Fields IS clearing them, and the server
+        // records the flag off this same placement -- so the browser predicts
+        // it rather than waiting a round trip to find out the land is his.
+        // `soilTileInCropFieldBeds` is the same rect the server confines a
+        // bed to, so a Homestead bed never claims the Crop Fields by mistake.
+        cropFieldsUnlocked:
+          ctx.cropFieldsUnlocked || soilTileInCropFieldBeds(body.tx, body.ty),
       };
     }
     case "remove-soil-tile": {
       const existing = ctx.soilTiles.find((t) => t.tx === body.tx && t.ty === body.ty);
       if (!existing) return null;
       // No bag comes back -- a placed tile is a spent sink, not a refundable
-      // one (see soil.ts's own `SOIL_TILE_PRICE_GOLD` doc comment).
+      // one (see soil.ts's own `SOIL_BAG_PRICE_GOLD` doc comment).
       const soilTiles = ctx.soilTiles.filter((t) => t.tx !== body.tx || t.ty !== body.ty);
       // A crop standing on the lifted bed goes with it -- the same
       // `soilSlotOnTile` question stackacres-service.ts asks server-side
@@ -832,6 +835,33 @@ export function predictStackAcresAction(
       if (!body.bait) return { energy };
       const inventory = removeFromInventory(ctx.inventory, FISHING_BAIT_ITEM, 1);
       return inventory ? { energy, ...processingPatch(ctx, { inventory }) } : null;
+    }
+    case "gather-forage": {
+      // Fully predicted, which almost nothing that yields something else is.
+      // It earns that because nothing is rolled: the bush's snapshot already
+      // names the seed it is carrying, so the count this puts on the shelf
+      // is the count the server will write, not a placeholder that corrects
+      // itself a moment later.
+      const bush = ctx.forageNodes.find((node) => node.nodeId === body.nodeId);
+      if (!bush || !bush.ready) return null;
+      const held = ctx.seedStock[bush.crop] ?? 0;
+      return {
+        seedStock: { ...ctx.seedStock, [bush.crop]: held + FORAGE_SEEDS_PER_PICK },
+        // Picked over right away, so the bush changes under the finger. The
+        // crop advances with it, the same walk `forageCrop` takes on the
+        // server, so a rolled-back guess and a real answer agree on what the
+        // bush will be carrying when it comes back.
+        forageNodes: ctx.forageNodes.map((node) =>
+          node.nodeId === body.nodeId
+            ? {
+                ...node,
+                ready: false,
+                crop: nextForageCrop(node.crop),
+                respawnProgress: 0,
+              }
+            : node,
+        ),
+      };
     }
     case "sell": {
       // Known-insufficient is a real refusal, not a guess -- refuse locally

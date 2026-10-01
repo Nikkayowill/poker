@@ -16,6 +16,7 @@ import { FARM_KITCHEN_RECIPES } from "@/lib/stackacres/farm-kitchen";
 import { HIDDEN_ZONE_IDS, SECRET_ITEM_IDS } from "@/lib/stackacres/secrets";
 import { WOOD_NODE_IDS } from "@/lib/stackacres/tree-nodes";
 import { STONE_NODE_IDS } from "@/lib/stackacres/stone-nodes";
+import { FORAGE_NODE_IDS } from "@/lib/stackacres/forage";
 import { SYNERGY_ARCHETYPES, SYNERGY_MAX_ACTIVE_SLOTS } from "@/lib/stackacres/synergy-perks";
 import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
 import { ALL_MACHINE_ITEM_IDS, MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
@@ -31,7 +32,6 @@ import {
   buyStackAcresStock,
   clearStackAcresSector,
   clearStackAcresUnit,
-  unlockStackAcresCropFields,
   consumeStackAcresSecretItem,
   donateStackAcresSecretItem,
   expandStackAcresCapacity,
@@ -54,6 +54,7 @@ import {
   drawStackAcresWater,
   bagStackAcresQuarry,
   chopStackAcresWoodTree,
+  gatherStackAcresForage,
   mineStackAcresStoneNode,
   catchStackAcresFish,
   placeStackAcresMachine,
@@ -105,7 +106,7 @@ export const runtime = "nodejs";
  * `collect` (harvest) MOVES NO GOLD AT ALL any more -- it always credits
  * inventory, for every item, not just wheat/milk/wool. FIFTEEN ACTIONS SPEND
  * GOLD and exactly THREE PAY IT OUT, and that asymmetry is what keeps this
- * safe. `expand-capacity`, `clear-sector`, `unlock-crop-fields`, `stock`,
+ * safe. `expand-capacity`, `clear-sector`, `stock`,
  * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `buy-cutter`,
  * `place-machine`, `unlock-synergy-perk` and `place-soil-tile` all spend; `sell`, `fulfill-contract`
  * and `collect-vat` pay, all three under the SAME flat per-player daily
@@ -193,10 +194,6 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("clear-sector"),
     sector: z.enum(ZONE_IDS as unknown as [string, ...string[]]),
   }),
-  // No field, unlike `clear-sector`: there is only one such flag, not one
-  // per district. Gold, once, permanent -- see unlockStackAcresCropFields's
-  // own header on why this is not a `clear-sector` variant.
-  z.object({ action: z.literal("unlock-crop-fields") }),
   // No field: the ladder is walked one rung at a time from whatever the
   // SERVER says is held, so a request cannot name a rung and skip one.
   z.object({ action: z.literal("upgrade-tool") }),
@@ -281,6 +278,15 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("mine-stone"),
     nodeId: z.enum(STONE_NODE_IDS),
     quality: z.enum(["hit", "sweet"]),
+  }),
+  // One pick at one of the Homestead's forage bushes. Fills the SEED shelf,
+  // not the inventory, and moves no Gold. There is no `quality` here and no
+  // crop either: which seed a bush carries is a pure function of its own
+  // stored pick count (lib/stackacres/forage.ts), so the client never gets
+  // to name the prize.
+  z.object({
+    action: z.literal("gather-forage"),
+    nodeId: z.enum(FORAGE_NODE_IDS),
   }),
   z.object({ action: z.literal("clear"), unitId: unitIdSchema }),
   z.object({
@@ -531,8 +537,6 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return expandStackAcresCapacity(token, action.stock, now);
     case "clear-sector":
       return clearStackAcresSector(token, action.sector, now);
-    case "unlock-crop-fields":
-      return unlockStackAcresCropFields(token, now);
     case "upgrade-tool":
       return upgradeStackAcresTool(token, now);
     case "buy-cutter":
@@ -575,6 +579,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return bagStackAcresQuarry(token, now);
     case "chop-tree":
       return chopStackAcresWoodTree(token, action.nodeId, action.sweet, now);
+    case "gather-forage":
+      return gatherStackAcresForage(token, action.nodeId, now);
     case "mine-stone":
       return mineStackAcresStoneNode(token, action.nodeId, action.quality, now);
     case "clear":

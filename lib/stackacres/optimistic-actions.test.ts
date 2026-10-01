@@ -11,6 +11,8 @@ import { RECIPE_CATALOGUE } from "./recipes";
 import { STACKACRES_FEED } from "./catalogue";
 import { toolUpgradePrice } from "./equipment";
 import { applyInfluenceDiscount } from "./influence-tiers";
+import { HOME_STARTER_ORIGIN, SOIL_TILE, soilTileAt } from "./soil";
+import { CROP_FIELD_BEDS } from "./world";
 import {
   createsStackAcresUnit,
   isOptimisticUnitId,
@@ -77,6 +79,7 @@ function ctx(overrides: Partial<FarmPredictContext> = {}): FarmPredictContext {
     cropFieldsUnlocked: false,
     soilTiles: [],
     soilStock: {},
+    forageNodes: [],
     inventory: {},
     wheatPlots: [],
     machines: [],
@@ -553,6 +556,40 @@ describe("predictStackAcresAction: buying and selling stock", () => {
     const sown = unit({ id: "s1", permanent: false, state: "working" });
     const patch = predictStackAcresAction({ action: "retire", unitId: sown.id }, ctx({ units: [sown] }));
     expect(patch).toBeNull();
+  });
+});
+
+describe("predictStackAcresAction: laying a soil tile", () => {
+  const inFields = soilTileAt(CROP_FIELD_BEDS.x + SOIL_TILE, CROP_FIELD_BEDS.y + SOIL_TILE);
+
+  it("lays the bed, spends the bag, and clears the Crop Fields with it", () => {
+    const patch = predictStackAcresAction(
+      { action: "place-soil-tile", tx: inFields.tx, ty: inFields.ty },
+      ctx({ soilStock: { dirt: 2 } }),
+    );
+    expect(patch?.soilTiles).toHaveLength(1);
+    expect(patch?.soilStock).toEqual({ dirt: 1 });
+    // Breaking the first ground out there IS the unlock, so the browser shows
+    // it straight away rather than waiting for the round trip.
+    expect(patch?.cropFieldsUnlocked).toBe(true);
+  });
+
+  it("does not claim the Crop Fields for a bed laid on the Homestead", () => {
+    const patch = predictStackAcresAction(
+      { action: "place-soil-tile", tx: HOME_STARTER_ORIGIN.tx, ty: HOME_STARTER_ORIGIN.ty },
+      ctx({ soilStock: { dirt: 1 } }),
+    );
+    expect(patch?.soilTiles).toHaveLength(1);
+    expect(patch?.cropFieldsUnlocked).toBe(false);
+  });
+
+  it("refuses with no bag of that tier on the shelf", () => {
+    expect(
+      predictStackAcresAction(
+        { action: "place-soil-tile", tx: inFields.tx, ty: inFields.ty },
+        ctx({ soilStock: {} }),
+      ),
+    ).toBeNull();
   });
 });
 

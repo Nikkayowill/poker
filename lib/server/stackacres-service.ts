@@ -55,7 +55,6 @@ import {
   unlockedSectors,
   type SectorId,
 } from "@/lib/stackacres/sectors";
-import { CROP_FIELDS_UNLOCK_COST_GOLD, cropFieldsUnlockCheck } from "@/lib/stackacres/crop-fields";
 import { PEN_ZONE_IDS, ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import {
   CROP_FIELD_BEDS,
@@ -90,7 +89,7 @@ import { readStackAcresBatch } from "./stackacres-read-batch";
 import {
   createSoilMap,
   homeStarterSoilTiles,
-  isHomeStarterSoilTile,
+  isHomePlotTile,
   nextFreeSoilSlot,
   planSoilGroupRelocation,
   soilSlotForTile,
@@ -106,6 +105,7 @@ import {
 } from "@/lib/stackacres/soil";
 import {
   SOIL_BAGS_PER_PURCHASE,
+  SOIL_PLOTS_PER_BAG,
   soilGrowthMultiplier,
   soilSelfHydrates,
   soilTierDef,
@@ -285,6 +285,10 @@ import {
   getOrCreateStackAcresWoodNode,
   writeStackAcresWoodNodeSwing,
   listStackAcresWoodNodeStates,
+  getOrCreateStackAcresForageNode,
+  writeStackAcresForagePick,
+  listStackAcresForageNodeStates,
+  type StoredForageNode,
   type StoredWoodNode,
   type StoredStackAcresUnit,
   type StoredContract,
@@ -355,6 +359,15 @@ import { isSeedUnlocked, seedLockedMessage } from "@/lib/stackacres/seed-unlocks
 import { QUARRY_CATALOGUE, pickQuarry, type QuarrySpecies } from "@/lib/stackacres/hunting";
 import { WOOD_NODE_IDS, isWoodNodeId, type WoodNodeId } from "@/lib/stackacres/tree-nodes";
 import { freshWoodNodeState, swingAtWoodNode, woodNodeSnapshot, type WoodNodeSnapshot } from "@/lib/stackacres/wood";
+import {
+  FORAGE_NODE_IDS,
+  forageNodeSnapshot,
+  freshForageNodeState,
+  isForageNodeId,
+  pickForageNode,
+  type ForageNodeId,
+  type ForageNodeSnapshot,
+} from "@/lib/stackacres/forage";
 import {
   isStoneNodeId,
   stoneNodeSnapshot,
@@ -747,6 +760,13 @@ export interface StackAcresView {
    *  `STONE_NODE_IDS`, global rather than per-profile (see
    *  lib/server/stone-node-store.ts's own header). */
   stoneNodes: StoneNodeSnapshot[];
+  /** Every forageable bush's current state (lib/stackacres/forage.ts):
+   *  whether it can be picked right now, WHICH SEED it is carrying, and
+   *  (while regrowing) how far along its clock is. Same "every key present"
+   *  posture as `woodNodes` above -- one entry per `FORAGE_NODE_IDS`. The
+   *  crop is in the snapshot rather than only in the pick's answer so the
+   *  client can name the seed before it is picked. */
+  forageNodes: ForageNodeSnapshot[];
   /** How fresh this snapshot is, per lib/server/stackacres-revision-store.ts:
    *  strictly higher than any response for an action that finished earlier,
    *  regardless of which one this browser's fetch happens to see first. The
@@ -978,8 +998,15 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
   // slot does nothing; `listDrones` must never be called a second time here,
   // or every live-Supabase view() pays for a real, wasted extra round trip
   // whose result nothing reads.
-  const [batch, activeSynergies, lifetimeGross, woodNodeStates, stoneNodeRows, fallback] =
-    await Promise.all([
+  const [
+    batch,
+    activeSynergies,
+    lifetimeGross,
+    woodNodeStates,
+    stoneNodeRows,
+    forageNodeStates,
+    fallback,
+  ] = await Promise.all([
     supabase ? readStackAcresBatch(profile.id, day) : Promise.resolve(null),
     listActiveSynergyArchetypes(profile.id),
     readStackAcresLifetimeGross(profile.id),
@@ -993,6 +1020,10 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     // lib/server/stone-node-store.ts's own header) -- read alongside
     // everything else here rather than folded into the batch RPC.
     readAllStoneNodes(now),
+    // And the same again for the four forage bushes: a fixed-size table read
+    // (see FORAGE_NODE_IDS) run alongside the rest rather than folded into
+    // `read_homestead_batch`.
+    listStackAcresForageNodeStates(profile.id),
     supabase
       ? Promise.resolve(null)
       : Promise.all([
@@ -1267,6 +1298,9 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     }),
     woodNodes: WOOD_NODE_IDS.map((id) => woodNodeSnapshot(id, woodNodeStates[id] ?? freshWoodNodeState(), now)),
     stoneNodes: stoneNodeRows.map((row) => stoneNodeSnapshot(row, now)),
+    forageNodes: FORAGE_NODE_IDS.map((id) =>
+      forageNodeSnapshot(id, forageNodeStates[id] ?? freshForageNodeState(), now),
+    ),
     revision,
   };
 }
@@ -1475,6 +1509,10 @@ export type StackAcresActionResult = StackAcresView & {
    *  other action leaves this undefined. `landed: false` means the node was
    *  already broken and had not yet regrown, so nothing was mined. */
   stoneMined?: { landed: boolean; broke: boolean; amount: number };
+  /** Set by `gatherStackAcresForage` to what THIS pick took -- null when the
+   *  bush was bare (picked by a faster request), and undefined for every
+   *  other action. */
+  foraged?: { nodeId: ForageNodeId; crop: StackAcresCrop; quantity: number } | null;
   /** Set by `meetStackAcresTraveler`/`turnInStackAcresTravelerQuest` to what
    *  THIS call just did -- never named `story`, which is StackAcresView's
    *  own always-present standing and would collide with it in this
@@ -1869,70 +1907,6 @@ export async function clearStackAcresSector(
 }
 
 /**
- * Unlocks the Crop Fields, exactly once: the same shape as
- * `clearStackAcresSector` immediately above (Gold leaves first, the
- * permanent row is recorded, a lost race refunds), but against
- * lib/stackacres/crop-fields.ts's standalone flag rather than a sector --
- * see that module's own header on why the Crop Fields could not stay a
- * `homestead_sectors` row once they merged into the Farmstead district.
- */
-export async function unlockStackAcresCropFields(
-  token: string,
-  now = new Date(),
-): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
-
-  const [unlocked, units] = await Promise.all([
-    readStackAcresCropFieldsUnlocked(profile.id),
-    listStackAcresUnits(profile.id),
-  ]);
-  const check = cropFieldsUnlockCheck({ unlocked, unitCount: units.length });
-  if (check.alreadyOpen) {
-    throw new StackAcresRequestError("The Crop Fields are already yours.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  if (!check.ok) {
-    // The first thing still missing, worded exactly as the modal's own
-    // checklist words it -- both read the same `cropFieldsUnlockCheck`.
-    const missing = check.requirements.find((requirement) => !requirement.met);
-    throw new StackAcresRequestError(missing?.label ?? "Not yet.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-
-  // Rule 1: the Gold leaves first. Null is "cannot afford", not an error --
-  // spendGoldByProfile is the authority.
-  const debited = await spendGoldByProfile(profile.id, CROP_FIELDS_UNLOCK_COST_GOLD);
-  if (!debited) {
-    throw new StackAcresRequestError(
-      `Unlocking the Crop Fields costs ${CROP_FIELDS_UNLOCK_COST_GOLD.toLocaleString()} Gold.`,
-      400,
-      { round: await snapshots(profile.id, now) },
-    );
-  }
-
-  let recorded: boolean;
-  try {
-    recorded = await recordStackAcresCropFieldsUnlocked(profile.id, now);
-  } catch (error) {
-    await refundGold(profile.id, CROP_FIELDS_UNLOCK_COST_GOLD);
-    throw error;
-  }
-  if (!recorded) {
-    // Another tab unlocked it between the check above and now. The Crop
-    // Fields are theirs either way; this request must not have been charged
-    // for it.
-    await refundGold(profile.id, CROP_FIELDS_UNLOCK_COST_GOLD);
-    throw new StackAcresRequestError("The Crop Fields are already yours.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-
-  return view(debited, now);
-}
-
-/**
  * Builds the Greenhouse, exactly once: debits `GREENHOUSE_BUILD_COST`
  * (lib/stackacres/greenhouse.ts) out of the processing-track inventory and
  * records the permanent row, both inside `buildStackAcresGreenhouseRow`'s own
@@ -2305,13 +2279,14 @@ export async function plantStackAcresCrossbreedBed(
   const def = STACKACRES_CATALOGUE[stock];
   const profile = await ensureProfile(token);
 
-  // The same land gates an open-air sow passes: the zone livestock lives in
-  // has to be cleared, and a crop needs the Crop Fields unlocked.
+  // The zone livestock lives in has to be cleared, and a crop cell still
+  // wants the Crop Fields milestone -- which is now "this farm has broken
+  // ground out there", not "this farm bought the land".
   const land = await readLand(profile.id);
   requireOpenSector(land.sectors, stockZone(stock), `${def.label}s`);
   if (!isLivestock(stock) && !(await readStackAcresCropFieldsUnlocked(profile.id))) {
     throw new StackAcresRequestError(
-      "The Crop Fields are still under wild growth. Unlock them before you sow anything there.",
+      "Break some ground in the Crop Fields before the bed will take a crop.",
       409,
       { round: await snapshots(profile.id, now) },
     );
@@ -2555,26 +2530,11 @@ export async function stockStackAcres(
   // The Farmstead itself is a HOME sector -- always open -- so
   // `requireOpenSector` above passes trivially for every crop (they are all
   // zoned there since the 2026-09-08 district merge; see stockZone's own
-  // header). Their real gate is the standalone Crop Fields unlock
-  // (lib/stackacres/crop-fields.ts), checked here instead -- except inside
-  // the Greenhouse, which is its own separate, separately-gated growing
-  // space (`greenhouseBuilt`, checked below) that never touches
-  // `CROP_FIELD_BEDS` at all, and except a tap naming one of the free
-  // Homestead starter beds (`isHomeStarterSoilTile`), which was never part
-  // of the Crop Fields' own ground and is not behind that unlock either.
-  const sowingStarterBed = tile !== null && isHomeStarterSoilTile(tile.tx, tile.ty);
-  if (
-    zone === "farmstead" &&
-    !inGreenhouse &&
-    !sowingStarterBed &&
-    !(await readStackAcresCropFieldsUnlocked(profile.id))
-  ) {
-    throw new StackAcresRequestError(
-      "The Crop Fields are still under wild growth. Unlock them before you sow anything there.",
-      409,
-      { round: await snapshots(profile.id, now) },
-    );
-  }
+  // header). There is no second gate behind it any more: the Crop Fields
+  // stopped being land you buy and became land you break yourself
+  // (`placeStackAcresSoilTile`), so the only thing a crop out there needs is
+  // a bed to go in, and a bed out there is itself the proof the ground was
+  // cleared.
 
   if (inGreenhouse && !isGreenhouseStock(stock)) {
     throw new StackAcresRequestError("The Greenhouse only houses crops.", 400, {
@@ -2785,13 +2745,8 @@ export async function stockStackAcresGroup(
   const land = await readLand(profile.id);
   const zone = stockZone(stock);
   requireOpenSector(land.sectors, zone, `${def.label}s`);
-  // Same standalone Crop Fields gate `stockStackAcres` checks, and with the
-  // same starter-bed exemption it makes: the free Homestead beds were never
-  // the Crop Fields' ground and are sowable from the first minute. Applied
-  // per tile below rather than as one blanket refusal, which is what used to
-  // stop a new player walking a row across their own starter patch.
-  const cropFieldsUnlocked =
-    zone === "farmstead" ? await readStackAcresCropFieldsUnlocked(profile.id) : true;
+  // No Crop Fields gate here either -- see `stockStackAcres`. A row of beds
+  // is a row of ground this farm already broke.
 
   const [purchased, units] = await Promise.all([
     listStackAcresSoilTiles(profile.id),
@@ -2810,8 +2765,6 @@ export async function stockStackAcresGroup(
     const tileKey = soilTileKey(tile.tx, tile.ty);
     if (seenTiles.has(tileKey)) continue;
     seenTiles.add(tileKey);
-
-    if (!cropFieldsUnlocked && !isHomeStarterSoilTile(tile.tx, tile.ty)) continue;
 
     const slot = soilSlotForTile(soil, tile.tx, tile.ty);
     if (slot === null || takenSlots.has(slot)) continue;
@@ -2859,12 +2812,8 @@ export async function stockStackAcresGroup(
   }
 
   if (plantedCount === 0) {
-    // Nothing landed. Say which of the two reasons it was, rather than
-    // blaming a race for a locked field.
     throw new StackAcresRequestError(
-      cropFieldsUnlocked
-        ? `${def.label}'s bed just filled. Try tapping bare ground again.`
-        : "The Crop Fields are still under wild growth. Unlock them before you sow anything there.",
+      `${def.label}'s bed just filled. Try tapping bare ground again.`,
       409,
       { round: await snapshots(profile.id, now) },
     );
@@ -3705,6 +3654,68 @@ export async function mineStackAcresStoneNode(
   return {
     ...(await view(profile, now)),
     stoneMined: { landed: true, broke: outcome.broke, amount: outcome.yield },
+  };
+}
+
+/**
+ * One pick at one of the Homestead's four forage bushes.
+ *
+ * WHAT MAKES THIS SAFE TO RETRY is not an intent key but the same
+ * version-guarded write a chop uses: `writeStackAcresForagePick` bumps the
+ * row's version, so a duplicated request finds nothing to update and pays no
+ * seed. It needs no dice of its own either -- which crop a bush carries is a
+ * pure function of its stored pick count (lib/stackacres/forage.ts's
+ * `forageCrop`), so a replay could only ever have produced the same seed.
+ *
+ * NO LADDER CHECK, deliberately. `isSeedUnlocked` gates what Ray SELLS; it
+ * does not gate what the land gives, which is the whole point of foraging
+ * (see lib/stackacres/forage.ts's header). Planting spends off the seed
+ * shelf without re-checking the ladder, so a foraged Radish seed goes in the
+ * ground with no Kitchen Counter built.
+ *
+ * Free to attempt, like a chop: there is no Gold in this transaction at all,
+ * in either direction, so there is nothing to refund when a bush turns out
+ * to be bare. If the seed credit itself fails, the pick is put back rather
+ * than spending the bush for nothing.
+ */
+export async function gatherStackAcresForage(
+  token: string,
+  nodeIdInput: string,
+  now = new Date(),
+): Promise<StackAcresActionResult> {
+  if (!isForageNodeId(nodeIdInput)) {
+    throw new StackAcresRequestError("There is nothing to pick there.", 400);
+  }
+  const nodeId: ForageNodeId = nodeIdInput;
+  const profile = await ensureProfile(token);
+
+  const current: StoredForageNode = await getOrCreateStackAcresForageNode(profile.id, nodeId);
+  const picked = pickForageNode(nodeId, current, now);
+  if (!picked) {
+    // Bare right now: the bush was picked between the tap and this request
+    // landing. A quiet no-op, the same posture a lost chop race takes.
+    return { ...(await view(profile, now)), foraged: null };
+  }
+
+  const written = await writeStackAcresForagePick(current, picked.nextState);
+  if (!written) {
+    // Lost the race: another request (or this one, retried) picked first.
+    return { ...(await view(profile, now)), foraged: null };
+  }
+
+  const held = await adjustStackAcresSeedStock(profile.id, picked.crop, picked.quantity);
+  if (held === null) {
+    // A credit cannot go negative, so null means the shelf row moved under
+    // us. Put the bush back rather than charging a pick for seed that never
+    // arrived -- guarded on the row this call just wrote, so a pick that
+    // landed in between is left where it is.
+    await writeStackAcresForagePick(written, current).catch(() => null);
+    return { ...(await view(profile, now)), foraged: null };
+  }
+
+  return {
+    ...(await view(profile, now)),
+    foraged: { nodeId, crop: picked.crop, quantity: picked.quantity },
   };
 }
 
@@ -5389,15 +5400,14 @@ async function recomputeIrrigation(
  * (`stockStackAcres`), and hydration is resolved by `recomputeIrrigation`.
  * That split is why this function still moves nothing but a bag and one row.
  *
- * Bounded to the Crop Fields' own ground (`CROP_FIELD_BEDS`) -- never trust
- * the client's tapped coordinate blindly, the same posture `place-pipe`'s
- * tile-lattice bounds take one layer up (there the bound is a generous
- * rectangle around the whole map; here it is the one patch of ground a bed
- * can ever mean anything in). Also refused while the Crop Fields themselves
- * are not yet unlocked (lib/stackacres/crop-fields.ts) -- the field's own
- * ground sits inside the Farmstead now (a HOME sector, always walkable), so
- * the bounds check alone can no longer be the whole gate the way it could
- * when `meadow` was still its own locked sector.
+ * Bounded to the two places a bed can mean anything -- the Crop Fields
+ * (`CROP_FIELD_BEDS`) and the Homestead's two grass paddocks (`HOME_PLOTS`) --
+ * never trusting the client's tapped coordinate blindly, the same posture
+ * `place-pipe`'s tile-lattice bounds take one layer up (there the bound is a
+ * generous rectangle around the whole map). That bound is the WHOLE check:
+ * neither place is bought, so there is no unlock to refuse against. Breaking
+ * the first bed in the Crop Fields is what records that milestone; a bed on
+ * the Homestead's grass does not, since it is not Crop Fields ground.
  */
 export async function placeStackAcresSoilTile(
   token: string,
@@ -5409,11 +5419,6 @@ export async function placeStackAcresSoilTile(
   const ty = Math.trunc(input.ty);
   const tier = toSoilTier(input.tier);
 
-  const cropFieldsUnlocked = await readStackAcresCropFieldsUnlocked(profile.id);
-  if (!cropFieldsUnlocked) {
-    throw new StackAcresRequestError("Unlock the Crop Fields first.", 400);
-  }
-
   const area = CROP_FIELD_BEDS;
   const rect = soilTileRect(tx, ty);
   const inMeadow =
@@ -5421,8 +5426,12 @@ export async function placeStackAcresSoilTile(
     rect.y >= area.y &&
     rect.x + rect.width <= area.x + area.width &&
     rect.y + rect.height <= area.y + area.height;
-  if (!inMeadow) {
-    throw new StackAcresRequestError("A bed can only be tilled in the Crop Fields.", 400);
+  const inPaddock = isHomePlotTile(tx, ty);
+  if (!inMeadow && !inPaddock) {
+    throw new StackAcresRequestError(
+      "A bed can only be tilled on the grass by the house or in the Crop Fields.",
+      400,
+    );
   }
 
   // Rule 1, in bags rather than Gold: the thing being spent leaves before the
@@ -5453,6 +5462,18 @@ export async function placeStackAcresSoilTile(
     throw error;
   }
   if (outcome.kind === "created") {
+    // Breaking ground in the Crop Fields IS clearing them -- there is no
+    // gate, no price and no modal any more, so the milestone the rest of the
+    // game hangs off (travellers arriving, the tool tiers, the crossbreeding
+    // shelf) is recorded off the first bed rather than off a purchase. Once
+    // set it never unsets, the same as every other permanent row, so lifting
+    // that bed again does not take the Crop Fields back. A bed on the
+    // Homestead's grass is not Crop Fields ground and records nothing.
+    //
+    // Run without a read first: the writer is an ignore-duplicates upsert
+    // (one round trip, idempotent), where "is it set already?" would cost a
+    // read and still race the other tab.
+    if (inMeadow) await recordStackAcresCropFieldsUnlocked(profile.id, now);
     await recordStoryEvents(profile.id, [{ kind: "soil-placed", count: 1 }]);
     return view(profile, now);
   }
@@ -5498,11 +5519,8 @@ export async function moveStackAcresSoilTileGroup(
   const toTx = Math.trunc(input.toTx);
   const toTy = Math.trunc(input.toTy);
 
-  const cropFieldsUnlocked = await readStackAcresCropFieldsUnlocked(profile.id);
-  if (!cropFieldsUnlocked) {
-    throw new StackAcresRequestError("Unlock the Crop Fields first.", 400);
-  }
-
+  // No unlock check: a bed can only be here because this farm broke the
+  // ground itself, which is what records the flag in the first place.
   const purchased = await listStackAcresSoilTiles(profile.id);
   const soil = soilMapFor(purchased);
   const plan = planSoilGroupRelocation(soil, tx, ty, toTx, toTy, soilTileInCropFieldBeds);
@@ -5541,8 +5559,13 @@ export async function moveStackAcresSoilTileGroup(
  * Buys bags of one soil tier at Ray's supply store. Rule 1: the Gold leaves
  * before the bags exist, and a failed credit refunds it.
  *
- * THE SHOP NEVER TOUCHES THE MAP. It sells a bag; `placeStackAcresSoilTile`
- * decides where one goes and spends it. That split is why this function has no
+ * A BAG IS `SOIL_PLOTS_PER_BAG` SQUARES, and the shelf counts squares: the
+ * price is per bag, the stock that lands is `quantity * SOIL_PLOTS_PER_BAG`,
+ * and `placeStackAcresSoilTile` spends one square at a time. Farms that
+ * bought single-square bags before this keep exactly the beds they paid for.
+ *
+ * THE SHOP NEVER TOUCHES THE MAP. It sells soil; `placeStackAcresSoilTile`
+ * decides where a square goes and spends it. That split is why this function has no
  * coordinate and no district check, and why a bought bag is never lost by
  * tapping the wrong ground -- a refused placement returns the bag to the shelf.
  *
@@ -5576,7 +5599,7 @@ export async function buyStackAcresSoil(
   }
 
   try {
-    const held = await adjustStackAcresSoilStock(profile.id, tier, quantity);
+    const held = await adjustStackAcresSoilStock(profile.id, tier, quantity * SOIL_PLOTS_PER_BAG);
     // A credit cannot go negative, so null here means the row moved under us
     // rather than "not enough" -- either way no bags landed, so the Gold goes
     // back.
@@ -5589,7 +5612,7 @@ export async function buyStackAcresSoil(
   return view(debited, now);
 }
 
-/** Puts one bag back after a placement that could not land. Never throws, for
+/** Puts one square of soil back after a placement that could not land. Never throws, for
  *  the same reason `refundGold` never does: this IS the failure path, and a
  *  second failure here would hide the first. */
 async function refundSoilBag(profileId: string, tier: SoilTier): Promise<void> {

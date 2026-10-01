@@ -82,6 +82,8 @@ import {
   placeStackAcresSoilTile,
   placeStackAcresAnimal,
   pickUpStackAcresAnimal,
+  buyStackAcresGuardDog,
+  moveStackAcresGuardDog,
   placeStackAcresFencePiece,
   removeStackAcresFencePiece,
   buyEmpireBuilding,
@@ -476,6 +478,15 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("remove-fence"), tx: z.number().int().min(0).max(255), ty: z.number().int().min(0).max(255) }),
   z.object({ action: z.literal("place-animal"), unitId: z.string().uuid(), tx: z.number().int().min(0).max(255), ty: z.number().int().min(0).max(255) }),
   z.object({ action: z.literal("pick-up-animal"), unitId: z.string().uuid() }),
+  // The guard dog (lib/stackacres/guard-dog.ts), by Homestead map square. Buying SPENDS Gold, priced on
+  // the server; moving one you own moves nothing.
+  z.object({ action: z.literal("buy-dog"), tx: z.number().int().min(0).max(255), ty: z.number().int().min(0).max(255) }),
+  z.object({
+    action: z.literal("move-dog"),
+    id: z.string().uuid(),
+    tx: z.number().int().min(0).max(255),
+    ty: z.number().int().min(0).max(255),
+  }),
   // Far Field buildings, by the top-left map square of their plan
   // (lib/stackacres/empire-buildings.ts). Buying SPENDS Gold, Wood and Metal,
   // priced on the server; placing an owned one and picking it up move nothing.
@@ -725,6 +736,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return placeStackAcresAnimal(token, { unitId: action.unitId, tx: action.tx, ty: action.ty }, now);
     case "pick-up-animal":
       return pickUpStackAcresAnimal(token, { unitId: action.unitId }, now);
+    case "buy-dog":
+      return buyStackAcresGuardDog(token, { tx: action.tx, ty: action.ty }, now);
+    case "move-dog":
+      return moveStackAcresGuardDog(token, { id: action.id, tx: action.tx, ty: action.ty }, now);
     case "buy-building":
       return buyEmpireBuilding(token, { kind: action.kind, tx: action.tx, ty: action.ty }, now);
     case "place-building":

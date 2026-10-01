@@ -120,6 +120,7 @@ import { addToInventory, removeFromInventory, type StackAcresInventory } from ".
 import { isHoeableSoilTile, isWildSoilTile, mapToSoilTile, soilToMapTile } from "./hoeable";
 import { herdKey, herdPlacementProblem, herdSquares, isHerdStock } from "./herd";
 import { FENCE_CAP, FENCE_WOOD_COST, isFenceableMapTile, type FencePiece } from "./fences";
+import type { GuardDog } from "./guard-dog";
 import { overgrownSoilTile } from "./crop-field-obstacles";
 import {
   LAND_SWING_ENERGY,
@@ -240,6 +241,7 @@ export interface FarmStatePatch {
   forageNodes?: ForageNodeSnapshot[];
   landObstacles?: LandObstacleSnapshot[];
   fences?: FencePiece[];
+  guardDogs?: GuardDog[];
   contract?: StackAcresContractRow | null;
   inventory?: StackAcresInventory;
   wheatPlots?: StackAcresWheatPlotSnapshot[];

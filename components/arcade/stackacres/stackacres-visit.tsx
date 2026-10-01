@@ -225,6 +225,7 @@ export function StackAcresVisit({ profileId }: { profileId: string }) {
               forageNodes={showcase.world.forageNodes}
               landObstacles={showcase.world.landObstacles}
               fences={showcase.world.fences}
+              guardDogs={showcase.world.guardDogs}
               empireBuildings={showcase.world.empireBuildings}
               grocery={showcase.world.grocery}
               clockHour={clock.hour}

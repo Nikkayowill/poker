@@ -1,6 +1,7 @@
 import type { AvatarPreset } from "@/lib/profile/types";
 import { STACKACRES_CATALOGUE, type StackAcresStock } from "./catalogue";
 import type { FencePiece } from "./fences";
+import type { GuardDog } from "./guard-dog";
 import type { PlacedEmpireBuilding } from "./empire-buildings";
 import type { ForageNodeSnapshot } from "./forage";
 import type { GroceryPlacement } from "./grocery-layout";
@@ -167,6 +168,7 @@ export interface ShowcaseWorld {
   units: StackAcresUnitSnapshot[];
   soilTiles: SoilTile[];
   fences: FencePiece[];
+  guardDogs: GuardDog[];
   empireBuildings: PlacedEmpireBuilding[];
   woodNodes: WoodNodeSnapshot[];
   stoneNodes: StoneNodeSnapshot[];

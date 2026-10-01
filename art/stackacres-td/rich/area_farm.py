@@ -67,6 +67,49 @@ def sheep(facing_left=False):
     return c.image(), (8, 9)
 
 
+def dog(facing_left=False):
+    """A farm dog, side on: tan coat with a white chest and blaze, pricked dark ears, a dark nose and a curled tail."""
+    rows = [
+        "..........EE..",
+        ".o........ooo.",
+        ".oo......ooooo",
+        "..ooooooooooWW",
+        "..oooooooooWWW",
+        "..oooooooWWW..",
+        "...oooooWW....",
+        "...oo..oo.....",
+        "...oo..oo.....",
+    ]
+    c = Canvas(16, 11)
+    body = [(x + 1, y + 1) for y, r in enumerate(rows) for x, k in enumerate(r) if k in "oW" and 2 <= x <= 13 and 1 <= y <= 6]
+    x0, x1 = min(p[0] for p in body), max(p[0] for p in body)
+    y0, y1 = min(p[1] for p in body), max(p[1] for p in body)
+    for y, row in enumerate(rows):
+        for x, k in enumerate(row):
+            px, py = x + 1, y + 1
+            if k in "oW":
+                tail = x <= 2 and y <= 2
+                lit = _body_light(px, py, x0, x1, y0, y1)
+                if y >= 7:                                          # legs: lit front edge, shaded back
+                    lit = 0.5 if x in (3, 7) else 0.15
+                if tail:
+                    lit = 0.6
+                level = 1.9 + lit * 3.0 + (hash2(px, py, 7) - 0.5) * 0.4
+                if k == "W":
+                    c.put(px, py, "linen", 2.8 + lit * 3.0)
+                else:
+                    c.put(px, py, "tan", level)
+            elif k == "E":
+                c.put(px, py, "leather", 2.2 if x == 10 else 1.4)   # pricked ears
+    c.put(12, 4, "coal", 0.2)                                       # eye
+    c.put(14, 4, "coal", 0.1)                                       # nose
+    c.put(11, 5, "leather", 2.4)                                    # the mouth line under the eye
+    c.outline(rim_amount=0.4, lit_bonus=0.05)
+    if facing_left:
+        _mirror(c)
+    return c.image(), (8, 10)
+
+
 def cattle(facing_left=False, patches=True):
     """A brown cow (with white patches unless `patches` is off): hide shading, a pale muzzle, horn tips, hooves."""
     rows = [

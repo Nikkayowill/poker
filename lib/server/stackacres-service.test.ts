@@ -8,6 +8,8 @@ import {
   buyStackAcresFeed,
   buyStackAcresStock,
   placeStackAcresAnimal,
+  buyStackAcresGuardDog,
+  moveStackAcresGuardDog,
   placeStackAcresFencePiece,
   pickUpStackAcresAnimal,
   workStackAcresLand,
@@ -131,6 +133,7 @@ import { CROP_FIELD_BEDS } from "@/lib/stackacres/world";
 import { SOIL_TILE, soilTileAt } from "@/lib/stackacres/soil";
 import { herdKey, isHerdMapTile } from "@/lib/stackacres/herd";
 import { HERD_AWAY_MESSAGES, herdAway } from "@/lib/stackacres/herd-risk";
+import { GUARD_DOG_CAP, GUARD_DOG_GOLD, GUARD_DOG_RANGE } from "@/lib/stackacres/guard-dog";
 import { isHoeableMapTile, isWildMapTile, mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
 import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "@/lib/stackacres/homestead-ground";
 
@@ -2247,6 +2250,8 @@ describe("the currency wall", () => {
       // Spends Gold (plus Wood and Metal) on a Far Field building, refunded if it can't go down.
       "buy-building",
       "buy-cutter",
+      // Spends Gold on a guard dog, refunded if it can't be set down.
+      "buy-dog",
       "buy-feed",
       "buy-seed",
       "buy-stock",
@@ -2298,6 +2303,8 @@ describe("the currency wall", () => {
       "grocery-take-over",
       "harvest-crossbreed",
       "mine-stone",
+      // Moves no Gold either way: a dog the player owns, moved to another square.
+      "move-dog",
       "move-soil-tile-group",
       // Moves no Gold either way: turning an order down and drawing another
       // is the release valve on a one-slot board, capped at one a UTC day.
@@ -5675,5 +5682,107 @@ describe("the herd stands where the player puts it", () => {
         expect(view.units.find((u) => u.id === unit.id)?.away ?? null).toBeNull();
       }
     });
+  });
+});
+
+describe("the guard dog", () => {
+  const FUNDED_ORIGIN = soilTileAt(CROP_FIELD_BEDS.x + SOIL_TILE, CROP_FIELD_BEDS.y + SOIL_TILE);
+
+  /** Open yard squares holding no funded bed, in map order. */
+  function yardSquares(count: number): { tx: number; ty: number }[] {
+    const found: { tx: number; ty: number }[] = [];
+    for (let ty = 0; ty < HOMESTEAD_MAP_HEIGHT && found.length < count; ty += 1) {
+      for (let tx = 0; tx < HOMESTEAD_MAP_WIDTH && found.length < count; tx += 1) {
+        if (!isHerdMapTile(tx, ty)) continue;
+        const bed = mapToSoilTile(tx, ty);
+        const inFundedBeds =
+          bed.tx >= FUNDED_ORIGIN.tx &&
+          bed.tx < FUNDED_ORIGIN.tx + FUNDED_BED_ROW &&
+          bed.ty >= FUNDED_ORIGIN.ty &&
+          bed.ty < FUNDED_ORIGIN.ty + FUNDED_BEDS / FUNDED_BED_ROW;
+        if (!inFundedBeds) found.push({ tx, ty });
+      }
+    }
+    return found;
+  }
+
+  it("costs its price once, stands where it was bought, and moves for free", async () => {
+    const { token } = await funded(500_000, { land: [] });
+    const [a, b] = yardSquares(2);
+    const before = await balance(token);
+
+    const bought = await buyStackAcresGuardDog(token, { tx: a.tx, ty: a.ty }, T0);
+    expect(bought.guardDogs).toHaveLength(1);
+    expect(bought.guardDogs[0]).toMatchObject({ tx: a.tx, ty: a.ty });
+    expect(await balance(token)).toBe(before - GUARD_DOG_GOLD);
+
+    const moved = await moveStackAcresGuardDog(token, { id: bought.guardDogs[0].id, tx: b.tx, ty: b.ty }, T0);
+    expect(moved.guardDogs[0]).toMatchObject({ id: bought.guardDogs[0].id, tx: b.tx, ty: b.ty });
+    expect(await balance(token)).toBe(before - GUARD_DOG_GOLD);
+  });
+
+  it("spends nothing on a refused square, a full kennel, or an empty purse", async () => {
+    const { token } = await funded(GUARD_DOG_GOLD * GUARD_DOG_CAP + 1_000, { land: [] });
+    const squares = yardSquares(GUARD_DOG_CAP + 2);
+    await expect(buyStackAcresGuardDog(token, { tx: -1, ty: 0 }, T0)).rejects.toMatchObject({ status: 400 });
+    for (let i = 0; i < GUARD_DOG_CAP; i += 1) await buyStackAcresGuardDog(token, { tx: squares[i].tx, ty: squares[i].ty }, T0);
+    const spent = await balance(token);
+    expect(spent).toBe(1_000);
+
+    const extra = squares[GUARD_DOG_CAP];
+    await expect(buyStackAcresGuardDog(token, { tx: extra.tx, ty: extra.ty }, T0)).rejects.toMatchObject({ status: 409 });
+    await expect(buyStackAcresGuardDog(token, { tx: squares[0].tx, ty: squares[0].ty }, T0)).rejects.toMatchObject({ status: 409 });
+    expect(await balance(token)).toBe(spent);
+
+    const poor = await funded(GUARD_DOG_GOLD - 1, { land: [] });
+    await expect(buyStackAcresGuardDog(poor.token, { tx: squares[0].tx, ty: squares[0].ty }, T0)).rejects.toMatchObject({
+      status: 400,
+    });
+    expect(await balance(poor.token)).toBe(GUARD_DOG_GOLD - 1);
+  });
+
+  it("keeps a dog and an animal off each other's square, and only moves the caller's own dog", async () => {
+    const mine = await funded(500_000, { land: [] });
+    const theirs = await funded(500_000, { land: [] });
+    const [a, b, c] = yardSquares(3);
+    const sheep = unitOf(await buyStackAcresStock(mine.token, { stock: "pig" }, T0), "pig");
+    await placeStackAcresAnimal(mine.token, { unitId: sheep.id, tx: a.tx, ty: a.ty }, T0);
+
+    await expect(buyStackAcresGuardDog(mine.token, { tx: a.tx, ty: a.ty }, T0)).rejects.toMatchObject({ status: 409 });
+    const dog = (await buyStackAcresGuardDog(mine.token, { tx: b.tx, ty: b.ty }, T0)).guardDogs[0];
+    await expect(placeStackAcresAnimal(mine.token, { unitId: sheep.id, tx: b.tx, ty: b.ty }, T0)).rejects.toMatchObject({
+      status: 409,
+    });
+    await expect(moveStackAcresGuardDog(mine.token, { id: dog.id, tx: a.tx, ty: a.ty }, T0)).rejects.toMatchObject({ status: 409 });
+    await expect(moveStackAcresGuardDog(theirs.token, { id: dog.id, tx: c.tx, ty: c.ty }, T0)).rejects.toMatchObject({ status: 404 });
+    // A dog may be set back down on its own square.
+    await expect(moveStackAcresGuardDog(mine.token, { id: dog.id, tx: b.tx, ty: b.ty }, T0)).resolves.toBeDefined();
+  });
+
+  it("keeps a sheep in the open home on a night it would have been lost", async () => {
+    const DAY = 86_400_000;
+    const { token } = await funded(500_000, { land: [] });
+    const [square, ...rest] = yardSquares(80);
+    const kennel = rest.find(
+      (candidate) => Math.abs(candidate.tx - square.tx) <= GUARD_DOG_RANGE && Math.abs(candidate.ty - square.ty) <= GUARD_DOG_RANGE,
+    );
+    if (!kennel) throw new Error("no yard square within a dog's reach of the first");
+    const sheep = unitOf(await buyStackAcresStock(token, { stock: "pig" }, T0), "pig");
+    await placeStackAcresAnimal(token, { unitId: sheep.id, tx: square.tx, ty: square.ty }, T0);
+
+    // A night this sheep, loose, would be away.
+    let night = T0;
+    for (let i = 0; i < 400; i += 1) {
+      const at = new Date(T0.getTime() + i * DAY);
+      if (herdAway([{ id: sheep.id, stock: "pig", mapTx: square.tx, mapTy: square.ty }], new Set(), at.getTime()).size) {
+        night = at;
+        break;
+      }
+    }
+    expect(night).not.toBe(T0);
+    expect(unitOf(await readStackAcres(token, night), "pig").away ?? null).not.toBeNull();
+
+    await buyStackAcresGuardDog(token, { tx: kennel.tx, ty: kennel.ty }, night);
+    expect(unitOf(await readStackAcres(token, night), "pig").away ?? null).toBeNull();
   });
 });

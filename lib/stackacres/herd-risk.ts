@@ -25,6 +25,10 @@
  * loses the odd one: the crowding risk below. A pen with one animal is never
  * crowded.
  *
+ * GUARDED. An animal in the open with a dog within GUARD_DOG_RANGE squares
+ * (./guard-dog.ts) stays home like a fenced one. A dog does not fix a crowded
+ * pen: the pen is the problem there, not the night.
+ *
  * Crop trampling from the herd plan is not here: it needs the crops to be
  * damaged, which is a separate write. Hens in Hen Haven are not herd animals
  * and are never at risk.
@@ -33,6 +37,7 @@
  */
 
 import { herdKey, isPlaced, type HerdUnit } from "./herd";
+import { isGuarded, type Square } from "./guard-dog";
 
 /** How a night went wrong for an animal. */
 export type HerdAway = "wandered" | "predator";
@@ -49,7 +54,7 @@ export const CROWDED_RISK = 0.1;
 /** Of the nights an animal is lost, the share it was a predator rather than a wander. */
 export const PREDATOR_SHARE = 0.4;
 
-export type HerdShelter = "open" | "pen" | "crowded";
+export type HerdShelter = "open" | "pen" | "crowded" | "guarded";
 
 const DAY_MS = 86_400_000;
 
@@ -107,15 +112,16 @@ export function penOf(tx: number, ty: number, fences: ReadonlySet<string>): Set<
   return seen;
 }
 
-/** How exposed one placed animal is, from the fences and the animals around it. */
+/** How exposed one placed animal is, from the fences, the dogs and the animals around it. */
 export function herdShelter(
   unit: HerdUnit,
   fences: ReadonlySet<string>,
   placed: readonly HerdUnit[],
+  dogs: readonly Square[] = [],
 ): HerdShelter {
   if (!isPlaced(unit)) return "pen";
   const pen = penOf(unit.mapTx as number, unit.mapTy as number, fences);
-  if (!pen) return "open";
+  if (!pen) return isGuarded(unit.mapTx as number, unit.mapTy as number, dogs) ? "guarded" : "open";
   let animals = 0;
   for (const other of placed) {
     if (isPlaced(other) && pen.has(herdKey(other.mapTx as number, other.mapTy as number))) animals += 1;
@@ -138,13 +144,14 @@ export function herdAway(
   units: readonly HerdUnit[],
   fences: ReadonlySet<string>,
   nowMs: number,
+  dogs: readonly Square[] = [],
 ): Map<string, HerdAway> {
   const away = new Map<string, HerdAway>();
   const placed = units.filter(isPlaced);
   if (placed.length === 0) return away;
   const night = herdNight(nowMs);
   for (const unit of placed) {
-    const risk = herdRisk(herdShelter(unit, fences, placed));
+    const risk = herdRisk(herdShelter(unit, fences, placed, dogs));
     if (risk === 0) continue;
     const roll = herdNightRoll(unit.id, night);
     if (roll.loss < risk) away.set(unit.id, roll.kind);

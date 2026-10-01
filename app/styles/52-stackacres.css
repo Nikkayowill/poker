@@ -5757,3 +5757,194 @@
   .sa-use-key { width: 60px; height: 60px; bottom: max(10px, calc(var(--safe-bottom) + 4px)); }
   .sa-use-key svg { width: 32px; height: 32px; }
 }
+
+/* ---------------------------------------------------------------------- */
+/* ---- the Farm Planner ------------------------------------------------ */
+/* ---------------------------------------------------------------------- */
+/* One objective, pinned under the clock on the right (components/arcade/
+   stackacres/stackacres-next-action.tsx). Barn paint like every other board
+   on this screen: the `panel` 9-slice at 2x, ink text on whitewash, and the
+   `sa-cta` sprout-green button for the one action. It gives way to nothing --
+   the right column under the clock is otherwise empty -- but it does step
+   aside on a short landscape phone, where the belt and the stick already own
+   both bottom corners. */
+
+.sa-next {
+  position: absolute;
+  top: calc(var(--sa-header-h) + 48px);
+  right: max(10px, var(--safe-right));
+  z-index: 3;
+  display: grid;
+  gap: 5px;
+  width: min(272px, 42%);
+  padding: 2px;
+  border: 16px solid transparent;
+  border-image: var(--sa-9-panel) 10 fill / 20px / 4px stretch;
+  border-radius: 0;
+  background: none;
+  color: var(--sa-ink);
+  font-family: var(--sa-font);
+  image-rendering: pixelated;
+}
+
+.sa-next-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.sa-next-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--sa-ink-soft);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* The one control on the panel that is not the action. Small, unpainted and
+   ink-on-nothing: a second 9-slice button beside the green one would read as
+   two equal choices, and hiding the panel is not one. */
+.sa-next-dismiss {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sa-ink-soft);
+  cursor: pointer;
+}
+
+.sa-next-dismiss:active { transform: translateY(1px); }
+
+/* Nothing in the way: the kicker goes leaf-green, so a glance says this one
+   is a press away rather than a shopping list. */
+.sa-next.is-ready .sa-next-kicker { color: var(--sa-lit-leaf); }
+
+.sa-next-title {
+  margin: 0;
+  font-family: var(--sa-font-pixel);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.sa-next-why {
+  margin: 0;
+  color: var(--sa-ink-soft);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+/* The same meter the energy bar wears, so a bar on this screen always means
+   the same thing. Relative box, absolutely-positioned fill, exactly as
+   `.sa-energy-bar` does it -- a block child inside a `border-image` box
+   leaves the fill sitting under the meter's own art. */
+.sa-next-meter {
+  position: relative;
+  display: block;
+  height: 10px;
+  border: 3px solid transparent;
+  border-image: var(--sa-9-meter) 3 fill / 6px stretch;
+  border-radius: 0;
+  box-sizing: content-box;
+  overflow: hidden;
+}
+
+.sa-next-meter > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(var(--sa-sprout-hi) 0 2px, var(--sa-sprout) 2px 6px, var(--sa-sprout-3) 6px);
+  transition: width var(--duration-fast, 120ms) var(--sa-ease-out);
+}
+
+.sa-next-missing {
+  margin: 0;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-next-missing strong { font-weight: 800; }
+.sa-next-missing.is-met { color: var(--sa-lit-leaf); font-weight: 700; }
+
+.sa-next-reqs {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11.5px;
+}
+
+.sa-next-reqs > li {
+  display: grid;
+  gap: 1px;
+  padding: 3px 5px;
+  background: var(--sa-trim);
+}
+
+.sa-next-reqs > li.is-met { color: var(--sa-ink-soft); background: var(--sa-tint-leaf); }
+
+.sa-next-req-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sa-next-req-label { font-weight: 800; }
+
+.sa-next-req-count {
+  font-family: var(--sa-font-pixel);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Where the short thing comes from. The one line on this panel a player acts
+   on without pressing anything, so it keeps full contrast rather than the
+   soft ink the "why" line uses. */
+.sa-next-req-source { font-size: 11px; line-height: 1.3; }
+
+.sa-next-go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 38px;
+  padding: 0 6px 2px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* Where the panel was, once it has been hidden. Paints as one of the top
+   bar's own tags (`sa-prestige-badge`), so it reads as a control rather than
+   as a shrunken panel. */
+.sa-next-reopen {
+  position: absolute;
+  top: calc(var(--sa-header-h) + 48px);
+  right: max(10px, var(--safe-right));
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* A short landscape phone has the clock, the belt and the stick to fit; the
+   panel narrows and drops its "why" line rather than covering half the map. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .sa-next {
+    top: calc(var(--sa-header-h) + 42px);
+    width: min(232px, 38%);
+    gap: 4px;
+  }
+  .sa-next-why { display: none; }
+  .sa-next-reopen { top: calc(var(--sa-header-h) + 42px); }
+}

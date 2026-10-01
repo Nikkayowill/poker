@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { navigateWithOrb } from "@/lib/loading/orb-transition";
-import { Check, Copy, RotateCw, Send, Spade, UserMinus, UserPlus, X } from "lucide-react";
+import { Check, Copy, RotateCw, Send, Spade, Sprout, UserMinus, UserPlus, X } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { useClipboardCopy } from "@/components/use-clipboard-copy";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
@@ -1029,6 +1029,23 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
                       }}
                     >
                       <Spade size={13} aria-hidden="true" />Heads-Up
+                    </button>
+                    {/* Their farm, read-only (Visitor Mode). Offered to every
+                        friend rather than only the ones who have opened their
+                        farm: whether this one is open is the server's answer
+                        and nobody else's, and the drawer asking each friend's
+                        setting would be one request per row. A closed farm
+                        says so on the other side. */}
+                    <button
+                      type="button"
+                      className="friend-invite"
+                      aria-label={`Visit ${person.displayName}'s farm`}
+                      onClick={() => {
+                        selectSound();
+                        navigateWithOrb(() => router.push(`/games/stackacres/visit/${person.profileId}`));
+                      }}
+                    >
+                      <Sprout size={13} aria-hidden="true" />Farm
                     </button>
                     <button
                       type="button"

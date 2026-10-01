@@ -292,6 +292,17 @@ export interface GroceryScene {
 }
 
 export interface StackAcresWorldProps {
+  /**
+   * This map belongs to somebody else and is being looked at, not played
+   * (Visitor Mode -- components/arcade/stackacres/stackacres-visit.tsx).
+   *
+   * The world hides the thumb stick and the Use key, and the scene refuses
+   * every tap and every stick push, so the only thing a visitor can do is pan
+   * and pinch. The callbacks below are still required: a visitor screen passes
+   * no-ops, and leaving them optional would mean the owner's farm could ship a
+   * missing handler and nobody would notice until a finger landed on it.
+   */
+  visitor?: boolean;
   units: StackAcresUnitSnapshot[];
   /** The choppable trees, so a felled one shows as a stump until it regrows. */
   woodNodes: readonly WoodNodeSnapshot[];

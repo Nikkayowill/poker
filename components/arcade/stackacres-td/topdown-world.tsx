@@ -73,6 +73,7 @@ function toSceneUnits(units: StackAcresUnitSnapshot[]): StackAcresSceneUnit[] {
 
 export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   const {
+    visitor,
     units,
     celebrate,
     soilTiles,
@@ -199,6 +200,12 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onStaffTap: (name, at) => p().onStaffTap(name, at),
         },
         host,
+        // Fixed at boot, not read through `p()`: the scene keeps it for its
+        // lifetime. It is in this effect's deps, so the one case where it did
+        // change would rebuild the scene rather than leave a live map running
+        // under the wrong rules -- a farm never changes hands mid-scene, so
+        // that rebuild never actually happens.
+        { visitor: visitor === true },
       );
       const size = () => {
         const dpr = canvasDpr();
@@ -270,7 +277,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
         delete (window as unknown as { __stackacres?: unknown }).__stackacres;
       }
     };
-  }, []);
+  }, [visitor]);
 
   useImperativeHandle(
     api,
@@ -462,8 +469,12 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   return (
     <>
       <div ref={hostRef} className="sa-world sa-world-topdown" aria-hidden="true" />
-      <StackAcresJoystick onStick={onStick} hidden={castLocked} />
-      <StackAcresUseKey onHeld={onUseHeld} label={props.useKeyLabel} hidden={castLocked} />
+      {/* Visitor Mode gets neither control. They are not disabled-looking
+          versions of themselves: a lit stick that walks nobody reads as the
+          game having frozen, which is what the cast lock's `hidden` already
+          exists to avoid. */}
+      {!visitor && <StackAcresJoystick onStick={onStick} hidden={castLocked} />}
+      {!visitor && <StackAcresUseKey onHeld={onUseHeld} label={props.useKeyLabel} hidden={castLocked} />}
     </>
   );
 }

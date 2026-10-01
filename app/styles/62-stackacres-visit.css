@@ -1,0 +1,297 @@
+/* ======================================================================
+   62 · StackAcres Visitor Mode
+   Somebody else's farm, read-only. Layout only -- every surface here
+   borrows 52-stackacres.css's own tokens (--sa-*) and its .sa-cta,
+   .sa-field, .sa-main and .sa-loading rules, so a visitor's screen cannot
+   drift away from the farm's own look.
+   ====================================================================== */
+
+/* The visitor shell is the farm's shell plus two bands: a header strip over
+   the map and a reaction strip under it. Both are real rows in the column
+   rather than chrome floating over the canvas -- the map is not being played
+   here, so there is no reason to hide the screen's own furniture under it.
+
+   Landscape-only like the farm itself, and for the same reason: it is the
+   same canvas at the same 20x13 tile minimum. Nothing here sets a portrait
+   layout, so the farm's own rotate card still covers that case. */
+.sa-visit {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.sa-visit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  /* The notch sits on a side edge in landscape, which is exactly where this
+     row's two ends are -- see .sa-shell's own comment on why the shell
+     itself takes no blanket inset and each overlay reads these instead. */
+  padding: .4rem max(.7rem, var(--safe-right)) .4rem max(.7rem, var(--safe-left));
+  flex: 0 0 auto;
+}
+
+.sa-visit-back {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .35rem .7rem;
+  /* The farm's own chip radius, not a pill: every control on this game is
+     painted the same chunky way (see .sa-prestige-badge). */
+  border-radius: var(--sa-r-chip);
+  font: 600 .82rem/1 var(--sa-font);
+  color: var(--sa-ink);
+  background: var(--sa-paint-fill-open);
+  border: 2px solid var(--sa-paint-line);
+  box-shadow: var(--sa-paint-rim-sm), var(--sa-drop);
+  text-decoration: none;
+}
+
+.sa-visit-back:active { transform: translateY(1px); }
+
+.sa-visit-mark {
+  height: 1.6rem;
+  width: auto;
+  opacity: .85;
+}
+
+/* Offline is a band, not a modal: the farm on screen is still worth looking
+   at, it just stopped being live. */
+.sa-visit-offline {
+  flex: 0 0 auto;
+  margin: 0 max(.7rem, var(--safe-right)) .4rem max(.7rem, var(--safe-left));
+  padding: .4rem .7rem;
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paint-fill-open);
+  border: 2px solid var(--sa-paint-line);
+  box-shadow: var(--sa-paint-rim-sm), var(--sa-drop);
+  font: 500 .78rem/1.3 var(--sa-font);
+  color: var(--sa-ink-soft);
+}
+
+/* ---- the header card ------------------------------------------------- */
+
+.sa-visit-card {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem 1rem;
+  margin: 0 max(.7rem, var(--safe-right)) .5rem max(.7rem, var(--safe-left));
+  padding: .55rem .8rem;
+  border-radius: var(--sa-r-panel);
+  background: var(--sa-paint-fill-open);
+  border: 2px solid var(--sa-paint-line);
+  box-shadow: var(--sa-paint-rim-sm), var(--sa-drop);
+}
+
+.sa-visit-who {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  min-width: 0;
+}
+
+.sa-visit-who h1 {
+  margin: 0;
+  font: 700 1rem/1.15 var(--sa-font);
+  color: var(--sa-ink);
+  /* A long display name shortens rather than pushing the stats off the row. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sa-visit-who p {
+  margin: .1rem 0 0;
+  font: 500 .74rem/1.2 var(--sa-font);
+  opacity: .75;
+}
+
+.sa-visit-avatar {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  font: 700 .78rem/1 var(--sa-font);
+  /* The accent is a player's own colour and can be any hue, so the initials
+     on top of it are the one ink that does not come from the farm palette. */
+  color: #150a2b;
+}
+
+.sa-visit-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem .9rem;
+  margin: 0;
+}
+
+.sa-visit-stats div { min-width: 4.5rem; }
+
+.sa-visit-stats dt {
+  font: 600 .64rem/1 var(--sa-font);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  opacity: .6;
+}
+
+.sa-visit-stats dd {
+  margin: .15rem 0 0;
+  font: 700 .86rem/1 var(--sa-font);
+}
+
+/* ---- the map --------------------------------------------------------- */
+
+/* The map keeps .sa-field's absolute fill inside .sa-main; the only thing
+   this adds is the grab cursor being wrong here. A visitor pans and pinches,
+   which .sa-world already allows, so the cursor stays -- what changes is
+   that there is no stick and no Use key drawn over it
+   (topdown-world.tsx). */
+.sa-visit-field { border-radius: 0; }
+
+/* ---- reactions ------------------------------------------------------- */
+
+.sa-visit-react {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .4rem;
+  padding: .5rem max(.7rem, var(--safe-right)) max(.5rem, var(--safe-bottom)) max(.7rem, var(--safe-left));
+}
+
+.sa-visit-reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: .78rem;
+}
+
+.sa-visit-reaction strong {
+  padding: 0 .35rem;
+  border-radius: 999px;
+  background: rgb(0 0 0 / .18);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A reaction already left reads as spent rather than as broken: it keeps its
+   count and loses its pull, which is the honest picture of "you've said
+   this". .sa-cta:disabled already dims it; this is the tick. */
+.sa-visit-reaction.is-sent { opacity: .75; }
+
+.sa-visit-thanks {
+  margin: 0;
+  font: 500 .76rem/1.3 var(--sa-font);
+  opacity: .8;
+}
+
+/* ---- the owner's own setting sheet ----------------------------------- */
+
+.sa-showcase {
+  display: flex;
+  flex-direction: column;
+  gap: .8rem;
+}
+
+.sa-showcase-error {
+  margin: 0;
+  color: var(--brand-red);
+  font: 600 .8rem/1.3 var(--sa-font);
+}
+
+.sa-showcase-choices {
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.sa-showcase-choices legend {
+  padding: 0;
+  margin-bottom: .35rem;
+  font: 600 .7rem/1 var(--sa-font);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  opacity: .65;
+}
+
+.sa-showcase-choice {
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+  align-items: flex-start;
+  text-align: left;
+  padding: .55rem .7rem;
+  border: 0;
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paint-fill-open);
+  border: 2px solid var(--sa-paint-line);
+  box-shadow: var(--sa-paint-rim-sm), var(--sa-drop);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sa-showcase-choice strong {
+  font: 700 .9rem/1.1 var(--sa-font);
+}
+
+.sa-showcase-choice span {
+  font: 500 .76rem/1.25 var(--sa-font);
+  opacity: .75;
+}
+
+/* The chosen rung, marked with the inset ring the chrome uses instead of a
+   hairline border (app/styles/CLAUDE.md's first rule). */
+.sa-showcase-choice.is-on {
+  box-shadow: var(--sa-paint-rim-lit);
+}
+
+.sa-showcase-choice:disabled { cursor: default; opacity: .7; }
+
+.sa-showcase-note {
+  margin: 0;
+  font: 500 .78rem/1.35 var(--sa-font);
+  opacity: .78;
+}
+
+.sa-showcase-tally h3 {
+  margin: 0 0 .35rem;
+  font: 600 .7rem/1 var(--sa-font);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  opacity: .65;
+}
+
+.sa-showcase-tally ul {
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sa-showcase-tally li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font: 500 .82rem/1.4 var(--sa-font);
+}
+
+.sa-showcase-tally strong { font-variant-numeric: tabular-nums; }
+
+.sa-showcase-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  text-decoration: none;
+  font-size: .82rem;
+}

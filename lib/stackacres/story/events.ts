@@ -37,6 +37,7 @@ export type StoryEvent =
   | { readonly kind: "harvested"; readonly stock: StackAcresStock; readonly count: number }
   | { readonly kind: "watered"; readonly count: number }
   | { readonly kind: "fed"; readonly count: number }
+  | { readonly kind: "cared"; readonly count: number }
   | { readonly kind: "feed-bought"; readonly servings: number }
   | { readonly kind: "processed"; readonly recipe: RecipeId; readonly count: number }
   | { readonly kind: "fish-caught"; readonly species: FishSpecies }

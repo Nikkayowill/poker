@@ -33,9 +33,18 @@ describe("RECIPE_CATALOGUE", () => {
   });
 
   it("gives every recipe-driven machine kind at least one recipe, and every recipe one machine", () => {
-    // The Vat is not recipe-driven; see aging.ts. Nor is the Feed Silo.
+    // The Vat is not recipe-driven; see aging.ts. Nor is the Feed Silo, and
+    // nor is the Barn -- it buys comfort and room, not throughput (barn.ts).
     for (const kind of MACHINE_KINDS) {
-      if (kind === "vat" || kind === "feed_silo" || kind === "cellar" || kind === "farm_kitchen") continue;
+      if (
+        kind === "vat" ||
+        kind === "feed_silo" ||
+        kind === "cellar" ||
+        kind === "farm_kitchen" ||
+        kind === "barn"
+      ) {
+        continue;
+      }
       expect(recipesForMachine(kind).length).toBeGreaterThan(0);
     }
     expect(recipesForMachine("dairy")).toEqual(["cheese", "cake"]);

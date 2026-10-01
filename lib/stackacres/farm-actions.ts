@@ -52,6 +52,7 @@ export type Action =
   // Harvest key sends. A single id is what tapping one unit sends.
   | { action: "collect"; unitIds?: string[] }
   | { action: "feed"; unitId: string }
+  | { action: "care"; unitId: string }
   // Feeds the hungry animals in one pen, a serving each, as far as the feed
   // goes. What dropping the feed scoop on a trough sends.
   | { action: "feed-pen"; zone: ZoneId }

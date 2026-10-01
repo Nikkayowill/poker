@@ -6068,3 +6068,206 @@
   .sa-next-why { display: none; }
   .sa-next-reopen { top: calc(var(--sa-header-h) + 42px); }
 }
+
+
+/* ---- the barn: who lives here -------------------------------------------
+   The HUD badge and the panel behind it. Every colour is the barn-paint
+   palette above; nothing here reaches for a shared token. The badge only
+   ever shows when there are animals, so it has no empty state.            */
+
+.sa-barn-badge.is-waiting {
+  /* Something wants a meal or today's tend. Harvest gold is the palette's
+     "look here", and it is the same weight the upkeep pill uses when a bill
+     is actually owed -- a standing badge should only shout when it has
+     something to say. */
+  border-color: var(--sa-harvest-2);
+  background: var(--sa-harvest);
+}
+
+.sa-barn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  /* The sheet is read on a phone held sideways, ~390px tall, so a barn with
+     a dozen animals in it scrolls rather than pushing the footer off. */
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.sa-barn-card {
+  display: grid;
+  grid-template-columns: minmax(84px, 1fr) minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 2px solid var(--sa-paint-line-soft);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paint-fill-ctl);
+  box-shadow: var(--sa-paint-rim-sm);
+  font-family: var(--sa-font);
+  color: var(--sa-ink);
+}
+
+/* A hungry animal is the only state that is actually costing the player
+   something right now, so it is the only one that gets a coloured edge. */
+.sa-barn-card.is-hungry {
+  border-color: var(--sa-barn-2);
+}
+
+.sa-barn-card.is-producing {
+  border-color: var(--sa-sprout-3);
+}
+
+.sa-barn-who {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sa-barn-who strong {
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sa-barn-kind {
+  color: var(--sa-ink-soft);
+  font-size: 11px;
+  line-height: 1.1;
+}
+
+.sa-barn-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  font-size: 11px;
+}
+
+.sa-barn-status {
+  font-weight: 800;
+}
+
+.sa-barn-status.is-hungry { color: var(--sa-barn-2); }
+.sa-barn-status.is-producing { color: var(--sa-sprout-3); }
+.sa-barn-status.is-needs-attention { color: var(--sa-harvest-2); }
+.sa-barn-status.is-content { color: var(--sa-ink-soft); }
+
+.sa-barn-mood,
+.sa-barn-feed {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--sa-ink-soft);
+}
+
+.sa-barn-care {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: end;
+}
+
+.sa-barn-streak,
+.sa-barn-bonus {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sa-barn-streak { color: var(--sa-ink-soft); }
+.sa-barn-bonus { color: var(--sa-sprout-3); font-weight: 800; }
+
+.sa-barn-tend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 2px solid var(--sa-paint-line);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-sprout);
+  box-shadow: var(--sa-paint-rim-sm), var(--sa-drop);
+  color: var(--sa-ink-dark);
+  font-family: var(--sa-font);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sa-barn-tend:active:not(:disabled) {
+  box-shadow: var(--sa-paint-rim-press);
+}
+
+/* Already tended reads as done, not as broken: the button stays legible and
+   keeps its shape, it just stops being the bright thing on the row. */
+.sa-barn-tend:disabled {
+  border-color: var(--sa-paint-line-soft);
+  background: var(--sa-paint-fill-quiet);
+  box-shadow: none;
+  color: var(--sa-ink-soft);
+  cursor: default;
+}
+
+/* Landscape phones: the three-column row has nowhere to go at this height,
+   so the state line folds under the name and the button keeps its own
+   column. */
+@media (max-height: 500px) {
+  .sa-barn-list { max-height: 40vh; }
+  .sa-barn-card { grid-template-columns: minmax(0, 1fr) auto; }
+  .sa-barn-state { grid-column: 1 / -1; }
+}
+
+/* Ray's own line, when a care streak earns one of his three gifts
+   (lib/stackacres/barn.ts). A quotation, not a number: quieter than
+   .sa-toast, and it holds long enough to actually be read. It fires three
+   times in a farm's whole life, so it is allowed to take the room. */
+
+.sa-ray-line {
+  position: absolute;
+  top: calc(var(--sa-header-h) + 14px);
+  left: 50%;
+  z-index: 4;
+  transform: translateX(-50%);
+  max-width: min(560px, calc(100% - 32px));
+  margin: 0;
+  padding: 9px 16px;
+  border: 2px solid var(--sa-paint-line);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paint-fill-ctl);
+  box-shadow: var(--sa-paint-rim), var(--sa-drop-lg);
+  color: var(--sa-ink);
+  font-family: var(--sa-font);
+  font-size: 14px;
+  font-style: italic;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+  animation: sa-ray-line 6s var(--sa-ease-out) forwards;
+}
+
+.sa-ray-line-who {
+  display: block;
+  color: var(--sa-barn-2);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+@keyframes sa-ray-line {
+  0% { opacity: 0; transform: translate(-50%, -6px); }
+  6% { opacity: 1; transform: translate(-50%, 0); }
+  88% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -6px); }
+}

@@ -221,6 +221,7 @@ const MACHINE_DESTINATION: Readonly<Record<MachineKind, GuideDestinationId>> = {
   vat: "workshop",
   smelter: "workshop",
   feed_silo: "workshop",
+  barn: "workshop",
   oven: "house",
   stew_pot: "house",
   counter: "house",

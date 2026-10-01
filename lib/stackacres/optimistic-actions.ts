@@ -102,7 +102,9 @@ import {
 } from "./soil";
 import { enrichesSoil, isSoilTileEnriched } from "./soil-enrich";
 import { SOIL_DEFAULT_TIER } from "./soil-tiers";
+import { stackacresExchangeDay } from "./exchange";
 import {
+  optimisticallyCaredUnit,
   optimisticallyFedUnit,
   optimisticallyRestartedUnit,
   optimisticallyStockedUnit,
@@ -430,6 +432,19 @@ export function predictStackAcresAction(
         units: ctx.units.map((u) => (u.id === unit.id ? optimisticallyFedUnit(u, ctx.nowMs) : u)),
         feed: ctx.feed - plan.feedUsed,
         ...shelfSpentPatch(ctx, plan),
+      };
+    }
+    case "care": {
+      // A tend spends nothing and moves no clock, so the whole patch is the
+      // animal's own care row -- the most honestly predictable action on the
+      // farm. A second tend on the same day is refused client-side here for
+      // the same reason the server refuses it: there is nothing to guess.
+      const unit = ctx.units.find((u) => u.id === body.unitId);
+      if (!unit || !isLivestock(unit.stock) || unit.state === "mucked") return null;
+      const today = stackacresExchangeDay(new Date(ctx.nowMs));
+      if (unit.caredOn === today) return null;
+      return {
+        units: ctx.units.map((u) => (u.id === unit.id ? optimisticallyCaredUnit(u, today) : u)),
       };
     }
     case "feed-pen": {

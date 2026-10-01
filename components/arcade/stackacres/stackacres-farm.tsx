@@ -103,7 +103,8 @@ import {
   type SoilTile,
 } from "@/lib/stackacres/soil";
 
-import type { StackAcresContractRow } from "@/lib/stackacres/contracts";
+import { pinnedContract, type ContractItem, type StackAcresContractRow } from "@/lib/stackacres/contracts";
+import { isCrossbreedItem } from "@/lib/stackacres/crossbreed-items";
 import { emptyInventory, inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import type { MachineKind, StackAcresMachineSnapshot } from "@/lib/stackacres/machines";
 import type { StackAcresWheatPlotSnapshot } from "@/lib/stackacres/wheat-plot";
@@ -163,6 +164,7 @@ import { StackAcresIcon } from "./stackacres-icon";
 import { StackAcresPixelIcon } from "./stackacres-pixel-icon";
 import { StackAcresGreenhousePanel } from "./stackacres-greenhouse-panel";
 import { TownContractsModal, type ContractActionResult } from "./TownContractsModal";
+import { StackAcresPinnedOrderChip } from "./pinned-order-chip";
 import { WorkshopModal, type WorkshopActionResult } from "./WorkshopModal";
 import { FermentingVatModal, type VatActionResult } from "./FermentingVatModal";
 import {
@@ -438,7 +440,7 @@ const TRAVELER_GIFT_LINES: Partial<Record<TravelerId, readonly string[]>> = { pi
  *  snapshot (with the server's `canStart`), not the farmhand planner's
  *  narrower Pick: the Workshop sheet draws timers and ids off these rows. */
 interface FarmProcessing {
-  contract: StackAcresContractRow | null;
+  contracts: StackAcresContractRow[];
   inventory: StackAcresInventory;
   machines: MachineView[];
   wheatPlots: StackAcresWheatPlotSnapshot[];
@@ -512,7 +514,7 @@ interface StackAcresResponse {
   wheatPlots?: StackAcresWheatPlotSnapshot[];
   machines?: (StackAcresMachineSnapshot & { canStart: boolean })[];
   inventory?: StackAcresInventory;
-  contract?: StackAcresContractRow | null;
+  contracts?: StackAcresContractRow[];
   /** Standing earned to date, for the town board's own header. Optional on the
    *  same terms as the four above. */
   influence?: number;
@@ -878,8 +880,8 @@ function farmFieldsOf(data: Partial<StackAcresResponse>): Partial<FarmFields> {
   // All four move together or not at all: a response either carries the
   // processing track or predates it, and a half-applied one would show a
   // contract next to inventory numbers from a different moment.
-  if (data.inventory && data.wheatPlots && data.machines) {
-    fields.contract = data.contract ?? null;
+  if (data.inventory && data.wheatPlots && data.machines && data.contracts) {
+    fields.contracts = data.contracts;
     fields.inventory = data.inventory;
     fields.machines = data.machines;
     fields.wheatPlots = data.wheatPlots;
@@ -1088,7 +1090,7 @@ export function StackAcresFarm() {
    * stackacres-scene.ts); this state stays for the UI's own sake.
    */
   const [processing, setProcessing] = useState<FarmProcessing>(() => ({
-    contract: null,
+    contracts: [],
     inventory: emptyInventory(),
     machines: [],
     wheatPlots: [],
@@ -1711,17 +1713,17 @@ export function StackAcresFarm() {
       setFarmhandSpeedMultiplier(synergy.farmhandSpeedMultiplier);
     }
     // Four fields in one atom.
-    const { contract, inventory, machines, wheatPlots } = fields;
-    if (contract !== undefined || inventory || machines || wheatPlots) {
+    const { contracts, inventory, machines, wheatPlots } = fields;
+    if (contracts || inventory || machines || wheatPlots) {
       setProcessing((prev) => {
         const next: FarmProcessing = {
-          contract: contract === undefined ? prev.contract : layFarmField("contract", prev.contract, contract, mode),
+          contracts: contracts ? layFarmField("contracts", prev.contracts, contracts, mode) : prev.contracts,
           inventory: inventory ? layFarmField("inventory", prev.inventory, inventory, mode) : prev.inventory,
           machines: machines ? layFarmField("machines", prev.machines, machines, mode) : prev.machines,
           wheatPlots: wheatPlots ? layFarmField("wheatPlots", prev.wheatPlots, wheatPlots, mode) : prev.wheatPlots,
         };
         const same =
-          next.contract === prev.contract &&
+          next.contracts === prev.contracts &&
           next.inventory === prev.inventory &&
           next.machines === prev.machines &&
           next.wheatPlots === prev.wheatPlots;
@@ -1822,7 +1824,7 @@ export function StackAcresFarm() {
       sectors,
       upkeep,
       influence,
-      contract: processing.contract,
+      contracts: processing.contracts,
       synergyUnlocked,
       synergyActive,
       farmhandSpeedMultiplier,
@@ -3288,7 +3290,7 @@ export function StackAcresFarm() {
    * it answers at all.
    */
   const onSettleContract = useCallback(
-    () => act({ action: "fulfill-contract" }),
+    (contractId: string) => act({ action: "fulfill-contract", contractId }),
     [act],
   );
 
@@ -3297,8 +3299,12 @@ export function StackAcresFarm() {
     [act],
   );
 
-  const onPassContract = useCallback(
-    () => act({ action: "pass-contract" }),
+  const onPinContract = useCallback(
+    (contractId: string | null) => act({ action: "pin-contract", contractId }),
+    [act],
+  );
+  const onReplaceContract = useCallback(
+    (contractId: string) => act({ action: "replace-contract", contractId }),
     [act],
   );
 
@@ -3766,6 +3772,15 @@ export function StackAcresFarm() {
    * has already moved off dry is off the "gone dry" line at the same instant
    * the bed on screen darkens. Nothing here is fetched and nothing is stored.
    */
+  /** The pinned town order and the shelf it is measured against, for the
+   *  HUD chip. Hybrids live on their own shelf. */
+  const pinnedOrder = useMemo(() => pinnedContract(processing.contracts), [processing.contracts]);
+  const heldForContract = useCallback(
+    (item: ContractItem) =>
+      isCrossbreedItem(item) ? (crossbreed.inventory[item] ?? 0) : (processing.inventory[item] ?? 0),
+    [crossbreed.inventory, processing.inventory],
+  );
+
   const journal = useMemo(
     () =>
       journalView({
@@ -3773,7 +3788,7 @@ export function StackAcresFarm() {
         inventory: processing.inventory,
         built: builtKinds,
         units: liveUnits,
-        contract: processing.contract,
+        contracts: processing.contracts,
         vat,
         cellar,
         story: storyView,
@@ -3787,7 +3802,7 @@ export function StackAcresFarm() {
     [
       gold,
       processing.inventory,
-      processing.contract,
+      processing.contracts,
       processing.machines,
       builtKinds,
       liveUnits,
@@ -4196,6 +4211,16 @@ export function StackAcresFarm() {
               <input type="checkbox" checked={useBait} onChange={(event) => setUseBait(event.target.checked)} />
               <span>Use radish bait ({radishesHeld})</span>
             </label>
+          )}
+          {/* The pinned town order stays in the main row, never the overflow
+              drawer: keeping it in view while working is the whole point of
+              pinning it. Absent until an order is pinned. */}
+          {pinnedOrder && (
+            <StackAcresPinnedOrderChip
+              contract={pinnedOrder}
+              heldOf={heldForContract}
+              onOpen={() => { panelSound(); setShowContracts(true); }}
+            />
           )}
           <span className="gold-balance floor-wallet" data-tour="sa-gold-balance" title="Gold">
             <StackAcresPixelIcon name="coin" />
@@ -4946,12 +4971,14 @@ export function StackAcresFarm() {
       {showContracts && (
         <TownContractsModal
           inventory={processing.inventory}
-          contract={processing.contract}
+          hybrids={crossbreed.inventory}
+          contracts={processing.contracts}
           influence={influence}
-          busy={isPending("fulfill-contract") || isPending("request-contract") || isPending("pass-contract")}
+          busy={pendingByPrefix("fulfill-contract") || isPending("request-contract") || pendingByPrefix("pin-contract") || pendingByPrefix("replace-contract")}
           onSettle={onSettleContract}
           onRequest={onRequestContract}
-          onPass={onPassContract}
+          onPin={onPinContract}
+          onReplace={onReplaceContract}
           onClose={() => { panelSound(); setShowContracts(false); }}
         />
       )}

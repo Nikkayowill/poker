@@ -271,6 +271,8 @@ import {
   retireStackAcresUnit,
   waterStackAcresUnit,
   createStackAcresContract,
+  listStackAcresOpenContracts,
+  pinStackAcresContract as pinStoredContract,
   createStackAcresMachine,
   createStackAcresWheatPlot,
   createStackAcresVatManifest,
@@ -319,7 +321,7 @@ import {
   stackAcresMuseumFromBatchRows,
   stackAcresToolTierFromBatchRow,
   stackAcresInventoryFromBatchRows,
-  stackAcresOpenContractFromBatchRow,
+  stackAcresOpenContractsFromBatchRows,
   stackAcresInfluenceFromBatchRow,
   stackAcresSecretLedgerQtyFromBatchRows,
   stackAcresGreenhouseFromBatchRow,
@@ -548,6 +550,7 @@ import {
 } from "./stackacres-crossbreeding-service";
 import {
   listStackAcresCrossbreedPlots,
+  adjustStackAcresCrossbreedInventory,
   readStackAcresCrossbreedInventory,
   stackAcresCrossbreedInventoryFromBatchRows,
   stackAcresCrossbreedPlotFromBatchRow,
@@ -561,12 +564,17 @@ import {
 } from "@/lib/stackacres/crossbreeding";
 import type { CrossbreedItem } from "@/lib/stackacres/crossbreed-items";
 import {
+  CONTRACT_BOARD_SIZE,
   canFulfillContract,
-  contractPassSpent,
+  contractItemLabel,
+  contractReplacementSpent,
   contractableItems,
+  drawBoard,
   drawContract,
+  type ContractItem,
   type StackAcresContractRow,
 } from "@/lib/stackacres/contracts";
+import { isCrossbreedItem } from "@/lib/stackacres/crossbreed-items";
 import {
   RECIPE_CATALOGUE,
   isInstantRecipe,
@@ -775,8 +783,8 @@ export interface StackAcresView {
   machines: (StackAcresMachineSnapshot & { canStart: boolean })[];
   /** What a wheat plot's harvest and a Mill's output sit as. */
   inventory: StackAcresInventory;
-  /** The town's one open request, or null when there is not one. */
-  contract: StackAcresContractRow | null;
+  /** The town board: every open order, oldest first. */
+  contracts: StackAcresContractRow[];
   /** Town Influence earned to date, total. */
   influence: number;
   /** Hidden secrets: how many of each secret item this player currently
@@ -1059,11 +1067,12 @@ function secretItemDonations(donated: readonly string[]): Record<SecretItemId, b
 function toContractView(contract: StoredContract): StackAcresContractRow {
   return {
     id: contract.id,
-    item: contract.item,
-    quantity: contract.quantity,
+    title: contract.title,
+    requirements: contract.requirements,
     goldReward: contract.goldReward,
     influenceReward: contract.influenceReward,
     status: contract.status,
+    pinned: contract.pinned,
     createdAt: contract.createdAt,
   };
 }
@@ -1160,7 +1169,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
           listStackAcresWheatPlots(profile.id),
           listStackAcresMachines(profile.id),
           readStackAcresInventory(profile.id),
-          readStackAcresOpenContract(profile.id),
+          listStackAcresOpenContracts(profile.id),
           readStackAcresInfluence(profile.id),
           readStackAcresSecretLedgerQty(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY),
           // One nested Promise.all rather than spreading SECRET_ITEM_IDS.map(...)
@@ -1213,7 +1222,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   let wheatRows: StoredWheatPlot[];
   let machineRows: StoredMachine[];
   let inventory: StackAcresInventory;
-  let contract: StoredContract | null;
+  let contracts: StoredContract[];
   let influence: number;
   let boostArmedQty: number;
   let heldQtys: number[];
@@ -1255,7 +1264,11 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     wheatRows = (batch.wheat_plots as unknown as WheatPlotDbRow[]).map(wheatPlotFromRow);
     machineRows = (batch.machines as unknown as MachineDbRow[]).map(machineFromRow);
     inventory = stackAcresInventoryFromBatchRows(batch.inventory as { item: string; quantity: number | string }[]);
-    contract = stackAcresOpenContractFromBatchRow(batch.contract as ContractDbRow | null);
+    // No key at all means the database is still on the one-slot board: the
+    // contract board migration (20260930160000) has not been applied. Loud,
+    // not an empty board, so the drift is found on the first load.
+    if (!batch.contracts) throw new Error("stackacres_read_batch predates the town board; apply 20260930160000_stackacres_contract_board.sql");
+    contracts = stackAcresOpenContractsFromBatchRows(batch.contracts as unknown as ContractDbRow[]);
     influence = stackAcresInfluenceFromBatchRow(batch.influence as { influence: number | string } | null);
     const secretLedgerRows = batch.secret_ledger as { item_id: string; quantity: number | string }[];
     boostArmedQty = stackAcresSecretLedgerQtyFromBatchRows(secretLedgerRows, STACKACRES_DICE_BOOST_ARMED_KEY);
@@ -1331,7 +1344,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       wheatRows,
       machineRows,
       inventory,
-      contract,
+      contracts,
       influence,
       boostArmedQty,
       heldQtys,
@@ -1362,7 +1375,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       groceryState,
     ] = fallback as [
       StoredStackAcresUnit[], number, number, Partial<Record<StackAcresStock, number>>, SectorId[], number,
-      string[], StackAcresToolTier, StoredWheatPlot[], StoredMachine[], StackAcresInventory, StoredContract | null,
+      string[], StackAcresToolTier, StoredWheatPlot[], StoredMachine[], StackAcresInventory, StoredContract[],
       number, number, number[], SynergyArchetype[], boolean, boolean, Record<BlueprintId, BlueprintView>,
       StackAcresPrestigeState, string[], StoredCrossbreedPlot[], Partial<Record<CrossbreedItem, number>>,
       StoredPipe[], StoredSoilTile[], SeedStock, StoredDevotionRow, StoredFriendshipRow[],
@@ -1421,7 +1434,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       canStart: row.status === "idle" && canStartMachine(inventory, row.kind),
     })),
     inventory,
-    contract: contract ? toContractView(contract) : null,
+    contracts: contracts.map(toContractView),
     influence,
     secrets: { held, boostArmed: boostArmedQty >= 1 },
     secretDonations,
@@ -5904,91 +5917,129 @@ export async function processStackAcresRecipeAction(
   return { ...(await view(profile, now)), processed };
 }
 
-/** The goods a contract may ask this farm for: a machine for them and every input within reach
- *  (lib/stackacres/contracts.ts's `contractableItems`). */
+/** What the town may ask this farm for (lib/stackacres/contracts.ts's
+ *  `contractableItems`): the seed on sale, the animals kept, the machines
+ *  standing, and what is already on the shelf or bred. */
 async function contractableFor(profileId: string) {
-  const [machines, units, inventory] = await Promise.all([
+  const [machines, units, inventory, hybrids] = await Promise.all([
     listStackAcresMachines(profileId),
     listStackAcresUnits(profileId),
     readStackAcresInventory(profileId),
+    readStackAcresCrossbreedInventory(profileId),
   ]);
   return contractableItems({
     machineKinds: machines.map((machine) => machine.kind),
     ownedStocks: units.map((unit) => unit.stock),
     inventory,
+    hybrids,
   });
 }
 
-/** Posts a new open Town Contract, if this player does not already have one.
- *  Spends and moves nothing -- see lib/stackacres/contracts.ts's header for
- *  why there is ever only one. */
+/** Draws into every empty slot on the board. Returns how many were posted.
+ *  A slot that loses its race to another tab simply stays as that tab left
+ *  it; the view afterwards shows whichever orders won. */
+async function fillStackAcresBoard(profileId: string): Promise<number> {
+  const [open, reachable] = await Promise.all([listStackAcresOpenContracts(profileId), contractableFor(profileId)]);
+  const drawn = drawBoard(
+    reachable,
+    open.map((contract) => contractKeyOf(contract)),
+    Math.random,
+  );
+  let posted = 0;
+  for (const def of drawn) {
+    if (await createStackAcresContract(profileId, def)) posted += 1;
+  }
+  return posted;
+}
+
+function contractKeyOf(contract: Pick<StoredContract, "requirements">): string {
+  return [...contract.requirements]
+    .map((line) => `${line.item}:${line.quantity}`)
+    .sort()
+    .join("|");
+}
+
+/** Moves one order line's goods, on whichever shelf that item lives. */
+async function adjustContractLine(profileId: string, item: ContractItem, delta: number): Promise<number | null> {
+  if (isCrossbreedItem(item)) return adjustStackAcresCrossbreedInventory(profileId, item, delta);
+  return adjustStackAcresInventory(profileId, item, delta);
+}
+
+/**
+ * Fills the town board's empty slots. Spends and moves nothing. Refused
+ * when the board is already full, or when the farm can make nothing the
+ * town wants yet (see lib/stackacres/contracts.ts's header).
+ */
 export async function requestStackAcresContract(
   token: string,
   now = new Date(),
 ): Promise<StackAcresView> {
   const profile = await ensureProfile(token);
 
-  const existing = await readStackAcresOpenContract(profile.id);
-  if (existing) {
-    throw new StackAcresRequestError("The town already has a contract open for you.", 409, {
+  const open = await listStackAcresOpenContracts(profile.id);
+  if (open.length >= CONTRACT_BOARD_SIZE) {
+    throw new StackAcresRequestError("The town board is full. Deliver an order to make room.", 409, {
       round: await snapshots(profile.id, now),
     });
   }
-
-  // Only ever ask for goods this farm has a machine for. With one open
-  // contract at a time and no way to cancel one, an unfulfillable contract is
-  // not a bad draw -- it is a permanent block on every future one. See
-  // lib/stackacres/contracts.ts's header.
-  const producible = await contractableFor(profile.id);
-  const def = drawContract(producible, Math.random);
-  if (!def) {
+  const posted = await fillStackAcresBoard(profile.id);
+  if (posted === 0 && open.length === 0) {
     throw new StackAcresRequestError(
-      "The town has nothing to ask for yet. Place a machine first.",
+      "The town has nothing to ask for yet. Plant something or place a machine first.",
       409,
       { round: await snapshots(profile.id, now) },
     );
   }
-  // A null here means a concurrent tab posted one first -- not an error, the
-  // view below simply shows whichever one won.
-  await createStackAcresContract(profile.id, def);
-
   return view(profile, now);
 }
 
 /**
- * Passes on the open contract and draws another, at most once per UTC day.
- *
- * MOVES NOTHING. No Gold, no goods, no Influence -- a pass is the release
- * valve on a board that is one slot wide and has no cancel (see
- * lib/stackacres/contracts.ts's header), so it is the one contract path with
- * no money ordering to get right.
- *
- * THE DAY LIMIT IS READ OFF THE ROWS, not stored as a counter: the newest
- * passed contract's `resolved_at` is when the last pass was spent. Same
- * "derive it from a permanent fact" posture as the milestone flags, and it
- * means there is no counter to reset at midnight.
- *
- * The status guard on the write is what makes a double-tapped pass spend one
- * day rather than two: the second request finds the row already passed and
- * is refused before it can draw anything.
+ * Pins one open order so the farm HUD keeps it in view, or clears the pin
+ * for null. Moves nothing. At most one is pinned, held by the database's
+ * own partial unique index however many tabs race.
  */
-export async function passStackAcresContract(
+export async function pinStackAcresContract(
   token: string,
+  contractId: string | null,
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const pinned = await pinStoredContract(profile.id, contractId);
+  if (!pinned) {
+    throw new StackAcresRequestError("That order is no longer on the board.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  return view(profile, now);
+}
+
+/**
+ * Swaps one order out and draws another into its slot, at most once per UTC
+ * day. MOVES NOTHING: no Gold, no goods, no Influence.
+ *
+ * The day limit is read off the rows, not a counter: the newest swapped
+ * order's `resolved_at` is when the last swap was spent, so there is nothing
+ * to reset at midnight. The status guard on the write is what makes a
+ * double-tapped swap spend one day rather than two.
+ */
+export async function replaceStackAcresContract(
+  token: string,
+  contractId: string,
   now = new Date(),
 ): Promise<StackAcresView> {
   const profile = await ensureProfile(token);
 
-  const existing = await readStackAcresOpenContract(profile.id);
+  const existing = await readStackAcresOpenContract(profile.id, contractId);
   if (!existing) {
-    throw new StackAcresRequestError("There is no contract to pass on.", 409, {
+    throw new StackAcresRequestError("That order is no longer on the board.", 409, {
       round: await snapshots(profile.id, now),
     });
   }
 
   const today = stackacresExchangeDay(now);
-  if (contractPassSpent(await readStackAcresLastContractPassDay(profile.id), today)) {
+  if (contractReplacementSpent(await readStackAcresLastContractPassDay(profile.id), today)) {
     throw new StackAcresRequestError(
-      "You have already passed on an order today. The town will hold this one until tomorrow.",
+      "You have already swapped an order today. The town will hold this one until tomorrow.",
       409,
       { round: await snapshots(profile.id, now) },
     );
@@ -5996,81 +6047,96 @@ export async function passStackAcresContract(
 
   const passed = await passStoredContract(existing, now);
   if (!passed) {
-    // Another tab resolved it first -- filled or passed. Either way this
-    // request must not also spend the day.
-    throw new StackAcresRequestError("That contract is already settled.", 409, {
+    throw new StackAcresRequestError("That order is already settled.", 409, {
       round: await snapshots(profile.id, now),
     });
   }
 
-  // Draw the replacement the same way `requestStackAcresContract` does, off
-  // what this farm can actually make. A farm with no machine left to make
-  // anything simply ends up with an empty board, exactly as it would after
-  // filling one.
-  const producible = await contractableFor(profile.id);
-  const def = drawContract(producible, Math.random);
+  // Draw the replacement the same way the board fills, off what this farm
+  // can actually make, skipping what is still posted. A farm with nothing
+  // left to make simply ends up one order shorter.
+  const [open, reachable] = await Promise.all([listStackAcresOpenContracts(profile.id), contractableFor(profile.id)]);
+  const def = drawContract(reachable, open.map(contractKeyOf), Math.random);
   if (def) await createStackAcresContract(profile.id, def);
 
   return view(profile, now);
 }
 
 /**
- * Trades a fulfilled contract's processed goods for Gold and Town Influence.
- * THE SECOND (and only other) GOLD PAYER IN THIS FILE -- see the module
- * header. Ordered the same way as every other spend-then-settle action here:
+ * Trades one order's goods for Gold and Town Influence. A GOLD PAYER -- see
+ * the module header. Ordered the same way as every other spend-then-settle
+ * action here:
  *
- *   1. The goods leave inventory first (rule 1, applied to items instead of
- *      Gold, exactly as `harvestStackAcres` applies it to Gold before the
- *      write it pays for).
- *   2. The contract is marked fulfilled under a guard that can settle it at
- *      most once. Losing that race refunds the goods -- nothing here can pay
- *      out for a contract someone else already collected.
- *   3. Gold has today's Land Maintenance netted off the top
- *      (`netUpkeepFromPayout`), and Gold plus Influence are credited only
- *      once step 2 is durable.
+ *   1. The goods leave first, one line at a time (rule 1, applied to items
+ *      instead of Gold). A line that cannot be covered puts back every line
+ *      already taken and refuses.
+ *   2. The order is marked fulfilled under a guard that can settle it at most
+ *      once. Losing that race refunds the goods -- nothing here can pay out
+ *      for an order someone else already collected.
+ *   3. Gold has today's Land Maintenance netted off the top, and Gold plus
+ *      Influence are credited only once step 2 is durable. The freed slot is
+ *      refilled last; it moves nothing.
  */
 export async function fulfillStackAcresTownContract(
   token: string,
+  contractId: string,
   now = new Date(),
 ): Promise<StackAcresView & { contractReward: { gold: number; influence: number } }> {
   const profile = await ensureProfile(token);
 
-  const contract = await readStackAcresOpenContract(profile.id);
+  const contract = await readStackAcresOpenContract(profile.id, contractId);
   if (!contract) {
-    throw new StackAcresRequestError("There is no contract open right now.", 404, {
+    throw new StackAcresRequestError("That order is no longer on the board.", 404, {
       round: await snapshots(profile.id, now),
     });
   }
 
-  const inventory = await readStackAcresInventory(profile.id);
-  if (!canFulfillContract(inventoryQuantity(inventory, contract.item), contract)) {
+  const [inventory, hybrids] = await Promise.all([
+    readStackAcresInventory(profile.id),
+    readStackAcresCrossbreedInventory(profile.id),
+  ]);
+  const held = (item: ContractItem) => (isCrossbreedItem(item) ? (hybrids[item] ?? 0) : inventoryQuantity(inventory, item));
+  if (!canFulfillContract(held, contract)) {
+    const short = contract.requirements.find((line) => held(line.item) < line.quantity)!;
     throw new StackAcresRequestError(
-      `This contract needs ${machineItemLabel(contract.item, contract.quantity)}.`,
+      `This order needs ${contractItemLabel(short.item, short.quantity)}.`,
       409,
       { round: await snapshots(profile.id, now) },
     );
   }
 
-  // Step 1: the goods leave first.
-  const afterDeduct = await adjustStackAcresInventory(profile.id, contract.item, -contract.quantity);
-  if (afterDeduct === null) {
-    throw new StackAcresRequestError("Not enough on hand.", 409, {
-      round: await snapshots(profile.id, now),
-    });
+  // Step 1: the goods leave first, line by line. Unwound in reverse on any
+  // shortfall, so "taken" and "put back" are the same list read backwards.
+  const taken: ContractItem[] = [];
+  const refund = async () => {
+    for (let i = taken.length - 1; i >= 0; i -= 1) {
+      const line = contract.requirements.find((candidate) => candidate.item === taken[i])!;
+      await adjustContractLine(profile.id, line.item, line.quantity).catch(() => null);
+    }
+  };
+  for (const line of contract.requirements) {
+    const after = await adjustContractLine(profile.id, line.item, -line.quantity);
+    if (after === null) {
+      await refund();
+      throw new StackAcresRequestError("Not enough on hand.", 409, {
+        round: await snapshots(profile.id, now),
+      });
+    }
+    taken.push(line.item);
   }
 
-  // Step 2: settle the contract itself, exactly once.
+  // Step 2: settle the order itself, exactly once.
   const settled = await settleStackAcresContract(contract);
   if (!settled) {
-    await adjustStackAcresInventory(profile.id, contract.item, contract.quantity).catch(() => null);
-    throw new StackAcresRequestError("That contract was already settled.", 409, {
+    await refund();
+    throw new StackAcresRequestError("That order was already settled.", 409, {
       round: await snapshots(profile.id, now),
     });
   }
 
   // Step 3: net Land Maintenance off the top, then pay -- only now that
-  // step 2 is durable. `contractReward.gold` below stays the contract's
-  // full reward; netUpkeepFromPayout only changes what actually lands.
+  // step 2 is durable. `contractReward.gold` below stays the order's full
+  // reward; netUpkeepFromPayout only changes what actually lands.
   if (contract.goldReward > 0) {
     const netGold = await netUpkeepFromPayout(profile.id, now, contract.goldReward);
     await payOutGold(profile.id, netGold, `stackacres-contract:${contract.id}`, "stackacres_contract");
@@ -6087,6 +6153,9 @@ export async function fulfillStackAcresTownContract(
   }
 
   await recordStoryEvents(profile.id, [{ kind: "contract-fulfilled" }]);
+  // The freed slot is refilled after the money has moved: a draw is not
+  // part of the settlement and must not be able to fail it.
+  await fillStackAcresBoard(profile.id);
   return {
     ...(await view(await ensureProfile(token), now)),
     contractReward: { gold: contract.goldReward, influence: contract.influenceReward },

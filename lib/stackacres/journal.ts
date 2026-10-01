@@ -34,10 +34,10 @@
 import { CHAPTERS } from "./chapters";
 import { buildCost, buildPlace, costLines, costSummary, type BuildCost, type BuildPlace } from "./build-cost";
 import { STACKACRES_CATALOGUE, isLivestock } from "./catalogue";
-import { canFulfillContract, type StackAcresContractRow } from "./contracts";
+import { canFulfillContract, contractItemLabel, type StackAcresContractRow } from "./contracts";
 import { STACKACRES_TOOL_TIERS, STACKACRES_TOOL_TIER_DEFS } from "./equipment";
 import { inventoryQuantity, type StackAcresInventory } from "./inventory";
-import { machineItemLabel } from "./machine-items";
+import { isMachineItem } from "./machine-items";
 import type { MachineKind, StackAcresMachineSnapshot } from "./machines";
 import { buildingCues, finishedRunCount, roomHasMachines } from "./building-cues";
 import { FARM_KITCHEN_BANK, farmKitchenBanked } from "./farm-kitchen";
@@ -211,7 +211,8 @@ export interface JournalInput {
   readonly inventory: StackAcresInventory;
   readonly built: ReadonlySet<MachineKind>;
   readonly units: readonly StackAcresUnitSnapshot[];
-  readonly contract: StackAcresContractRow | null;
+  /** The open town board. Empty when nothing is posted. */
+  readonly contracts: readonly StackAcresContractRow[];
   readonly vat: VatContainer | null;
   readonly cellar: VatContainer | null;
   /** Null until the first snapshot lands. The journal still renders. */
@@ -493,11 +494,20 @@ function candidateCues(input: JournalInput, chapters: readonly JournalChapter[])
   // hanging over that door (./building-cues.ts).
   for (const waiting of buildingCues(input)) cues.push(cue("collect", waiting.line, waiting.where));
 
-  const contract = input.contract;
-  if (contract && canFulfillContract(inventoryQuantity(input.inventory, contract.item), contract)) {
-    cues.push(
-      cue("contract", `You've got the ${machineItemLabel(contract.item, contract.quantity)} the town asked for.`, "Town Board"),
-    );
+  // The pinned order first, then the rest of the board in posting order, so
+  // the line names the one the player chose to track whenever it is ready.
+  // Hybrids are not on this shelf, so a hybrid line reads as not yet held.
+  const board = [...input.contracts].sort((a, b) => Number(b.pinned) - Number(a.pinned));
+  const held = (item: StackAcresContractRow["requirements"][number]["item"]) =>
+    isMachineItem(item) ? inventoryQuantity(input.inventory, item) : 0;
+  const deliverable = board.find((contract) => canFulfillContract(held, contract));
+  if (deliverable) {
+    const first = deliverable.requirements[0];
+    const goods =
+      deliverable.requirements.length === 1
+        ? contractItemLabel(first.item, first.quantity)
+        : `${contractItemLabel(first.item, first.quantity)} and more`;
+    cues.push(cue("contract", `You've got the ${goods} the town asked for.`, "Town Board"));
   }
 
   const ready = input.units.filter((unit) => unit.state === "ready").length;

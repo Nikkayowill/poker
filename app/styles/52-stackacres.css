@@ -5731,3 +5731,55 @@
   .sa-use-key { width: 60px; height: 60px; bottom: max(10px, calc(var(--safe-bottom) + 4px)); }
   .sa-use-key svg { width: 32px; height: 32px; }
 }
+
+/* ---- the town board as a board -------------------------------------
+   Several open orders, each with one or two lines, a source hint under each
+   line, the reward's breakdown, and three buttons. The pinned order keeps
+   the corn edge the single posted order used to carry. */
+.sa-contract-line + .sa-contract-line { margin-top: 4px; }
+
+.sa-contract-hint {
+  margin: 4px 0 0 30px;
+  color: var(--sa-ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.sa-contract-breakdown {
+  margin: 8px 0 0;
+  color: var(--sa-ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sa-contract-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sa-contract-actions .sa-cta { margin-top: 0; flex: 1 1 auto; }
+.sa-contract-actions .sa-cta.is-ghost { flex: 0 1 auto; }
+
+.sa-contract.is-ready:not(.is-posted) {
+  box-shadow: inset 0 0 0 1px var(--sa-leaf), inset 0 1px 0 rgba(255, 255, 255, .3);
+}
+
+/* The pinned order on the HUD: the Journal chip's tag with one held/needed
+   pair per line. Turns leaf-green once every line is on the shelf. */
+.sa-pinned-order { gap: 6px; }
+
+.sa-pinned-order-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.sa-pinned-order-line .sa-ico { width: 18px; height: 18px; }
+
+.sa-pinned-order.is-ready {
+  background: var(--sa-tint-leaf);
+  color: var(--sa-lit-leaf);
+}

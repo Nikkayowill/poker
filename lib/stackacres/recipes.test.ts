@@ -8,7 +8,7 @@ import {
   recipeRawGoldValue,
   recipesForMachine,
 } from "./recipes";
-import { CONTRACT_RUNGS } from "./contracts";
+import { CONTRACT_PREMIUM, buildContract, contractQuantityLadder } from "./contracts";
 import { MACHINE_KINDS } from "./machines";
 import { isMachineItem, isMachineProcessedItem, machineItemSellPrice } from "./machine-items";
 
@@ -95,39 +95,39 @@ describe("recipeRawGoldValue", () => {
 });
 
 describe("contract pricing", () => {
-  it("pays a uniform premium over the raw inputs, on every rung", () => {
-    // A rung under 1.0x makes the machine a sink; one far above the others
-    // turns the single open contract into a reroll puzzle. Narrow band.
-    const priced = CONTRACT_RUNGS.map((rung) => {
-      const recipe = recipeForOutput(rung.item);
-      if (!recipe) return null;
-      return rung.goldReward / (recipeRawGoldValue(recipe) * rung.quantity);
-    }).filter((ratio): ratio is number => ratio !== null);
+  const goods = RECIPE_IDS.map((id) => RECIPE_CATALOGUE[id].output.item).filter(
+    (item) => item !== "cattle_feed" && item !== "metal",
+  );
 
-    expect(priced.length).toBeGreaterThan(0);
-    for (const rung of CONTRACT_RUNGS) {
-      if (rung.item === "flour") continue; // priced off seed, see contracts.ts
-      const recipe = recipeForOutput(rung.item)!;
-      const ratio = rung.goldReward / (recipeRawGoldValue(recipe) * rung.quantity);
-      expect(ratio).toBeGreaterThan(1.25);
-      expect(ratio).toBeLessThan(1.35);
+  it("pays a uniform premium over the goods' Sell value, on every machine good", () => {
+    // Under 1.0x makes the machine a sink; a good paid far above the others
+    // turns the board into an arbitrage puzzle. One flat number, pinned.
+    for (const item of goods) {
+      for (const quantity of contractQuantityLadder(item)) {
+        const order = buildContract([{ item, quantity }]);
+        const ratio = order.goldReward / (machineItemSellPrice(item) * quantity);
+        expect(ratio).toBeGreaterThan(CONTRACT_PREMIUM - 0.05);
+        expect(ratio).toBeLessThan(CONTRACT_PREMIUM + 0.05);
+      }
     }
   });
 
-  it("still pays more per unit than Sell does, for every good a contract asks for", () => {
-    for (const rung of CONTRACT_RUNGS) {
-      expect(rung.goldReward / rung.quantity).toBeGreaterThan(machineItemSellPrice(rung.item));
+  it("still clears what the raw inputs would have sold for, so no machine is a sink", () => {
+    for (const item of goods) {
+      const recipe = recipeForOutput(item)!;
+      const order = buildContract([{ item, quantity: 1 }]);
+      expect(order.goldReward).toBeGreaterThan(recipeRawGoldValue(recipe));
     }
   });
 
   it("pays more Gold and more Influence the more it asks for, within a good", () => {
-    for (const item of new Set(CONTRACT_RUNGS.map((rung) => rung.item))) {
-      const rungs = CONTRACT_RUNGS.filter((rung) => rung.item === item).sort(
-        (a, b) => a.quantity - b.quantity,
-      );
-      for (let i = 1; i < rungs.length; i += 1) {
-        expect(rungs[i].goldReward).toBeGreaterThan(rungs[i - 1].goldReward);
-        expect(rungs[i].influenceReward).toBeGreaterThan(rungs[i - 1].influenceReward);
+    for (const item of goods) {
+      const ladder = contractQuantityLadder(item);
+      for (let i = 1; i < ladder.length; i += 1) {
+        const smaller = buildContract([{ item, quantity: ladder[i - 1] }]);
+        const larger = buildContract([{ item, quantity: ladder[i] }]);
+        expect(larger.goldReward).toBeGreaterThan(smaller.goldReward);
+        expect(larger.influenceReward).toBeGreaterThanOrEqual(smaller.influenceReward);
       }
     }
   });

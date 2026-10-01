@@ -64,7 +64,8 @@ import {
   placeStackAcresMachine,
   workStackAcres,
   requestStackAcresContract,
-  passStackAcresContract,
+  pinStackAcresContract,
+  replaceStackAcresContract,
   fulfillStackAcresTownContract,
   sellStackAcresItem,
   processStackAcresRecipeAction,
@@ -341,10 +342,14 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("process"),
     recipe: z.enum(RECIPE_IDS as unknown as [string, ...string[]]),
   }),
+  // The town board (lib/stackacres/contracts.ts). `request-contract` fills
+  // the empty slots, `pin-contract` moves the pin (null clears it) and
+  // `replace-contract` swaps one order out, once a UTC day. None move Gold.
+  // `fulfill-contract` pays, for the one order named.
   z.object({ action: z.literal("request-contract") }),
-  z.object({ action: z.literal("fulfill-contract") }),
-  // One a UTC day, and it moves nothing. See passStackAcresContract.
-  z.object({ action: z.literal("pass-contract") }),
+  z.object({ action: z.literal("fulfill-contract"), contractId: z.string().uuid() }),
+  z.object({ action: z.literal("pin-contract"), contractId: z.string().uuid().nullable() }),
+  z.object({ action: z.literal("replace-contract"), contractId: z.string().uuid() }),
   // The Fermenting Vat. `seal-vat` spends Cheese (never Gold) and locks it
   // inside the vat's own manifest; `collect-vat` is the one action here that
   // pays -- through the same daily ceiling `fulfill-contract` does. See
@@ -662,9 +667,11 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "request-contract":
       return requestStackAcresContract(token, now);
     case "fulfill-contract":
-      return fulfillStackAcresTownContract(token, now);
-    case "pass-contract":
-      return passStackAcresContract(token, now);
+      return fulfillStackAcresTownContract(token, action.contractId, now);
+    case "pin-contract":
+      return pinStackAcresContract(token, action.contractId, now);
+    case "replace-contract":
+      return replaceStackAcresContract(token, action.contractId, now);
     case "seal-vat":
       return sealStackAcresVat(token, now);
     case "collect-vat":

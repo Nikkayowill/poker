@@ -24,7 +24,10 @@ export interface StackAcresReadBatch {
   wheat_plots: Record<string, unknown>[];
   machines: Record<string, unknown>[];
   inventory: Record<string, unknown>[];
-  contract: Record<string, unknown> | null;
+  /** The open board, oldest first. Was one `contract` object before the
+   *  contract board migration (20260930160000); a batch from before it has
+   *  no `contracts` key at all. */
+  contracts?: Record<string, unknown>[];
   influence: Record<string, unknown> | null;
   secret_ledger: Record<string, unknown>[];
   greenhouse: Record<string, unknown> | null;

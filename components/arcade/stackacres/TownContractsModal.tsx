@@ -2,25 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import clsx from "clsx";
-import { Check, Coins, Lock, ScrollText, Sparkles } from "lucide-react";
+import { Check, Coins, Pin, PinOff, RefreshCw, ScrollText, Sparkles } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 import {
-  CONTRACT_RUNGS,
+  CONTRACT_BOARD_SIZE,
+  CONTRACT_PREMIUM,
+  contractItemIcon,
+  contractItemLabel,
   contractProgress,
-  isPostedRung,
-  type ContractDef,
+  contractRawValue,
+  contractSourceHint,
+  type ContractItem,
+  type ContractRequirement,
   type StackAcresContractRow,
 } from "@/lib/stackacres/contracts";
-import {
-  inventoryQuantity,
-  removeFromInventory,
-  type StackAcresInventory,
-} from "@/lib/stackacres/inventory";
-import {
-  machineItemIcon,
-  machineItemLabel,
-  type MachineItemId,
-} from "@/lib/stackacres/machine-items";
+import { isCrossbreedItem, type CrossbreedItem } from "@/lib/stackacres/crossbreed-items";
+import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import {
   crossedInfluenceTier,
   influenceTier,
@@ -33,156 +30,73 @@ import { StackAcresIcon } from "./stackacres-icon";
 import type { PainterName } from "./stackacres-art";
 
 /**
- * The town board: what the town is asking the farm for, what is on the shelf
- * toward it, and the one button that trades one for the other.
+ * The town board: up to four open orders, what is on the shelf toward each,
+ * and the buttons that deliver, pin or swap one.
  *
- * ------------------------------------------------------------------------
- * WHY THIS DRAWS THREE ROWS AND SETTLES ONLY ONE
+ * Every order on the board is a real open row and every one can be
+ * delivered; the pinned one is the one the farm HUD keeps in view. See
+ * lib/stackacres/contracts.ts's header for the rules (flat premium, one swap
+ * a day, orders only for what the farm can make).
  *
- * `homestead_contracts` has a partial unique index on `(profile_id) where
- * status = 'open'`, and lib/stackacres/contracts.ts's header says why in
- * full: a board of several simultaneously-open contracts would let a player
- * bank processed goods against whichever paid best, which is arbitrage, not
- * the loop this feature is. That index holds against two racing tabs and is
- * not a thing a component may talk its way around.
+ * SETTLEMENT GOES THROUGH A ROUTE, NOT THE RPC. `adjust_homestead_
+ * processing_inventory` is security definer, takes the profile id as a
+ * parameter and is revoked from every browser role, so a browser cannot
+ * call it. `onSettle` posts `fulfill-contract` and the server runs the money
+ * ordering: goods leave first, the order settles under a once-only guard,
+ * Gold and Influence land last, with a refund on every failure. What lives
+ * here is the client half of that: the optimistic debit is applied before
+ * the request goes out and rolled back line by line the moment the server
+ * refuses, so the shelf on screen never shows goods the server has already
+ * taken, nor keeps showing them gone after a refusal handed them back.
  *
- * So the three rows here are the three RUNGS the town draws from
- * (`CONTRACT_RUNGS`), not three open contracts. Exactly one of them is
- * POSTED at a time -- the one the server actually rolled -- and only that one
- * has a live Deliver button. The other two still carry their own progress
- * bar, because that is the genuinely useful thing this screen can say: it is
- * how a player knows whether to keep the Mill running past the rung in front
- * of them.
- *
- * ------------------------------------------------------------------------
- * WHY THE SETTLEMENT GOES THROUGH A ROUTE AND NOT THROUGH THE RPC
- *
- * `adjust_homestead_inventory(profile_id, item_id, delta)` IS the mutation
- * primitive -- row-locking, never a read-then-write, and the only place a
- * quantity moves. It is also `security definer`, takes the profile id as a
- * PARAMETER rather than reading the caller's session, and is deliberately
- * revoked from `public`, `anon` and `authenticated` (see
- * supabase/migrations/20260901193100_homestead_inventory.sql, which spells
- * out that a browser that could reach it could mint another player's
- * currency outright). A browser therefore cannot call it, and must not be
- * given a way to.
- *
- * `onSettle` posts `fulfill-contract` to /api/stackacres/actions instead, and
- * the server runs the money ordering on the far side of that -- see
- * `fulfillStackAcresTownContract`, which does exactly the four steps in
- * order: goods leave inventory FIRST (through that RPC, with a negative
- * delta), Gold is reserved against the flat daily ceiling SECOND, the
- * contract is settled under a once-only guard THIRD, and Gold and Influence
- * are credited only FOURTH -- with a refund of the goods on every one of
- * those failures. What lives in this file is the CLIENT half of that same
- * ordering: the optimistic debit below is applied before the request goes
- * out and rolled back line by line the moment the server refuses, so the
- * shelf on screen never shows goods the server has already taken, nor keeps
- * showing them gone after a refusal handed them back.
- *
- * ------------------------------------------------------------------------
- * POINTER CONTAINMENT
- *
- * Every handler here is wrapped in `contain`, which stops propagation before
- * doing anything else, so no press in this sheet reaches the map underneath.
- * Worth knowing what that does and does not buy: the StackAcres scene runs
- * with PHASER INPUT OFF ENTIRELY and reads raw pointer events off its host
- * element (see `unitAt` in stackacres-scene.ts), so containment here is the
- * whole story only because this sheet renders outside that host. The trap in
- * a scene that uses Phaser's own input is different and `stopPropagation`
- * does not fix it -- Phaser listens on `window`, so the guard has to be in
- * the game object's handler, rejecting a release whose DOM target is not the
- * canvas. Do not delete these wrappers on the grounds that the map "does not
- * seem to react": that is this file working.
+ * POINTER CONTAINMENT. Every handler is wrapped in `contain`, which stops
+ * propagation first, so no press in this sheet reaches the map underneath.
+ * The scene reads raw pointer events off its host element and this sheet
+ * renders outside that host, so containment here is the whole story.
  */
 
-/** One line of what a contract asks for, with the shelf measured against it.
- *  `held` is what the player can actually deliver RIGHT NOW -- it already has
- *  any in-flight optimistic debit taken out of it, so the bar and the button
- *  can never disagree. */
-export interface ContractRequirement {
-  readonly item: MachineItemId;
-  readonly required: number;
-  readonly held: number;
-}
-
-/** One line of what fulfilling it pays. Gold is currency and passes through
- *  the farm's flat daily ceiling; Influence is progression, spends nowhere,
- *  and is uncapped (lib/stackacres/contracts.ts's header). Kept as separate
- *  entries rather than two number fields so a reward the ladder does not have
- *  yet is a new `kind`, not a new column on every contract. */
-export interface ContractReward {
-  readonly kind: "gold" | "influence";
-  readonly amount: number;
-}
-
-/**
- * `posted` is the one contract the town has actually opened -- at most one,
- * ever. `offered` is a rung on the board that is not currently being asked
- * for: shown, measured, never settleable.
- */
-export type ContractStatus = "posted" | "offered";
-
-export interface Contract {
-  /** The row id for the posted contract, and a stable rung key otherwise.
-   *  Never sent anywhere: the route derives the contract from the session, so
-   *  a client cannot name which one it is settling. */
-  readonly id: string;
-  readonly title: string;
-  readonly status: ContractStatus;
-  readonly requirements: readonly ContractRequirement[];
-  readonly rewards: readonly ContractReward[];
-  /** Every requirement met. Only ever true on a `posted` contract. */
-  readonly ready: boolean;
-}
+/** A message the sheet is showing about its own last action. The page's error
+ *  banner sits behind the scrim, so a refusal raised in here is answered here. */
+type Note = { readonly tone: "paid" | "refused" | "pending"; readonly text: string };
 
 /** What a settle or a request came back as. A refusal carries the server's
- *  own wording, which is the wording a player should see -- this component
- *  never invents an explanation for something the server declined. */
+ *  own wording, which is the wording a player should see. Shared by every
+ *  sheet that posts through the farm's `act`. */
 export type ContractActionResult =
   | {
       readonly ok: true;
       readonly reward?: { readonly gold: number; readonly influence: number };
-      /** Only on a settled `grocery-collect`: the Gold it actually paid (lib/stackacres/grocery-economy.ts). */
+      /** Only on a settled `grocery-collect`: the Gold it actually paid. */
       readonly groceryPaid?: number;
     }
   | { readonly ok: false; readonly message: string };
 
 export interface TownContractsModalProps {
   /** The shelf, straight off the last server response. Authoritative: the
-   *  optimistic overlay below is layered on top of it and never replaces it. */
+   *  optimistic overlay is layered on top and never replaces it. */
   inventory: StackAcresInventory;
-  /** The town's one open request, or null when there is not one. */
-  contract: StackAcresContractRow | null;
+  /** Hybrids bred at the Crossbreeding Bed, on their own shelf. */
+  hybrids: Partial<Record<CrossbreedItem, number>>;
+  /** The open board, oldest first. */
+  contracts: readonly StackAcresContractRow[];
   /** Town Influence earned to date. */
   influence: number;
   /** Something else on the page is already talking to the server. */
   busy: boolean;
-  /** Posts `fulfill-contract`. Resolves once this browser knows the outcome. */
-  onSettle: () => Promise<ContractActionResult>;
-  /** Posts `request-contract`. Moves nothing; asks the town to post one. */
+  /** Posts `fulfill-contract` for one order. */
+  onSettle: (contractId: string) => Promise<ContractActionResult>;
+  /** Posts `request-contract`: fills the board's empty slots. Moves nothing. */
   onRequest: () => Promise<ContractActionResult>;
-  /** Posts `pass-contract`: turns this order down and draws another. Moves
-   *  nothing either, and the server allows one a UTC day. */
-  onPass: () => Promise<ContractActionResult>;
+  /** Posts `pin-contract`. Null clears the pin. Moves nothing. */
+  onPin: (contractId: string | null) => Promise<ContractActionResult>;
+  /** Posts `replace-contract`: swaps one order out for a fresh draw. Moves
+   *  nothing, and the server allows one a UTC day. */
+  onReplace: (contractId: string) => Promise<ContractActionResult>;
   onClose: () => void;
 }
 
-/** A message the sheet is showing about its own last action. The page's error
- *  banner sits behind the scrim, so a refusal raised in here has to be
- *  answered in here -- the same rule the supply store follows. */
-type Note = { readonly tone: "paid" | "refused" | "pending"; readonly text: string };
-
-/**
- * A delivery that has actually paid, and which row it paid from.
- *
- * Held next to `note` rather than derived from it: the note is prose and gets
- * overwritten by the next thing the sheet has to say, while this is the effect
- * itself and is keyed by `nonce` so a second delivery replays rather than
- * showing a ticker that has already finished counting. Only ever set from a
- * confirmed `{ ok: true }` carrying a reward -- see `ContractPayout`'s own
- * header on why this fires nothing optimistically.
- */
+/** A delivery that has paid, and which row it paid from. Keyed by `nonce`
+ *  so a second delivery replays rather than showing a finished ticker. */
 type Payout = {
   readonly contractId: string;
   readonly gold: number;
@@ -190,32 +104,15 @@ type Payout = {
   readonly nonce: number;
 };
 
-/**
- * A rung the settlement just reached, held long enough to read and then
- * dropped.
- *
- * Its own state rather than a field on `Payout`, because the two have
- * different lifetimes: the payout ticker is anchored to one contract row and
- * dies with it, while this is a fact about the whole farm and stays put at the
- * top of the sheet. Keyed by `nonce` for the same reason `Payout` is -- a
- * second rung-up should replay rather than sit there already finished.
- */
+/** A rung the settlement just reached, held long enough to read. */
 type RungUp = {
   readonly tier: InfluenceTierDef;
   readonly nonce: number;
 };
 
-/** How long a rung-up banner holds before it clears itself. Long enough to
- *  read the sentence twice without becoming furniture the player scrolls past
- *  on their next delivery. */
 const RUNG_UP_HOLD_MS = 6_000;
 
-/**
- * Wraps a handler so the press is consumed here rather than travelling on.
- * Applied to every pointer entry point on the scrim and the sheet, including
- * the ones with nothing else to do -- a bare `stopPropagation` handler is the
- * point, not an oversight.
- */
+/** Wraps a handler so the press is consumed here rather than travelling on. */
 function contain<E extends SyntheticEvent>(handler?: (event: E) => void) {
   return (event: E) => {
     event.stopPropagation();
@@ -223,42 +120,23 @@ function contain<E extends SyntheticEvent>(handler?: (event: E) => void) {
   };
 }
 
-function rungKey(def: ContractDef): string {
-  return `${def.item}-${def.quantity}`;
-}
-
-/** "2 Flour for the town" -- built from the requirement rather than stored, so
- *  a retune of the ladder cannot leave a title describing the old rung. */
-function rungTitle(def: ContractDef): string {
-  return `${machineItemLabel(def.item, def.quantity)} for the town`;
-}
-
-function rewardsOf(def: ContractDef): readonly ContractReward[] {
-  const rewards: ContractReward[] = [];
-  if (def.goldReward > 0) rewards.push({ kind: "gold", amount: def.goldReward });
-  if (def.influenceReward > 0) rewards.push({ kind: "influence", amount: def.influenceReward });
-  return rewards;
-}
-
 export function TownContractsModal({
   inventory,
-  contract,
+  hybrids,
+  contracts,
   influence,
   busy,
   onSettle,
   onRequest,
-  onPass,
+  onPin,
+  onReplace,
   onClose,
 }: TownContractsModalProps) {
   /**
-   * The optimistic debit, as the individual requirement lines it was applied
-   * from rather than as a merged inventory.
-   *
-   * Kept this way on purpose: rolling back is then removing the exact lines
-   * that were applied, in reverse, and a rollback can never overshoot into
-   * stock that arrived from somewhere else while the request was out (a Mill
-   * finishing on another tab, say). A merged snapshot restored wholesale
-   * would silently throw that away.
+   * The optimistic debit, as the requirement lines it was applied from.
+   * Rolling back is then removing exactly those lines, newest first, and a
+   * rollback can never overshoot into stock that arrived from somewhere
+   * else while the request was out.
    */
   const [pending, setPending] = useState<readonly ContractRequirement[]>([]);
   const [settling, setSettling] = useState(false);
@@ -272,45 +150,26 @@ export function TownContractsModal({
   /** The shelf as the player should see it: what the server last said, less
    *  anything currently out on an unanswered request. */
   const heldOf = useCallback(
-    (item: MachineItemId): number => {
-      const owed = pending.reduce(
-        (total, line) => (line.item === item ? total + line.required : total),
-        0,
-      );
-      return Math.max(0, inventoryQuantity(inventory, item) - owed);
+    (item: ContractItem): number => {
+      const owed = pending.reduce((total, line) => (line.item === item ? total + line.quantity : total), 0);
+      const stocked = isCrossbreedItem(item) ? (hybrids[item] ?? 0) : inventoryQuantity(inventory, item);
+      return Math.max(0, stocked - owed);
     },
-    [inventory, pending],
+    [inventory, hybrids, pending],
   );
 
-  const board = useMemo<readonly Contract[]>(
+  const board = useMemo(
     () =>
-      CONTRACT_RUNGS.map((def) => {
-        const posted = isPostedRung(contract, def);
-        const requirements: readonly ContractRequirement[] = [
-          { item: def.item, required: def.quantity, held: heldOf(def.item) },
-        ];
-        return {
-          id: posted && contract ? contract.id : rungKey(def),
-          title: rungTitle(def),
-          status: posted ? "posted" : "offered",
-          requirements,
-          rewards: rewardsOf(def),
-          ready: posted && requirements.every((line) => line.held >= line.required),
-        } satisfies Contract;
-      }),
-    [contract, heldOf],
+      contracts
+        .filter((contract) => contract.status === "open")
+        .map((contract) => ({
+          contract,
+          ready: contract.requirements.every((line) => heldOf(line.item) >= line.quantity),
+          rawValue: contractRawValue(contract.requirements),
+        })),
+    [contracts, heldOf],
   );
 
-  /**
-   * Puts back exactly the lines that were taken, newest first.
-   *
-   * Reverse order mirrors the server's own refund path and matters for the
-   * same reason it does there: if a later line is what failed, the earlier
-   * ones are the ones still standing, and unwinding from the far end is what
-   * makes "applied" and "rolled back" the same list read backwards. Splices
-   * one occurrence per line rather than filtering by item, so two contracts
-   * asking for the same item cannot cancel each other's overlay.
-   */
   const rollback = useCallback((applied: readonly ContractRequirement[]) => {
     if (applied.length === 0) return;
     setPending((current) => {
@@ -324,50 +183,32 @@ export function TownContractsModal({
   }, []);
 
   /**
-   * Debit first, ask second, put it back on any refusal.
-   *
-   * The three exits below are the whole safety property, and all three end in
-   * the same rollback:
-   *   1. The shelf is short. Refused here, nothing sent -- the cheapest
-   *      refusal is the one that never leaves.
-   *   2. The server refused. Its wording is shown; the goods come back.
-   *   3. The request threw or never came back. Same treatment: this browser
-   *      does not know what happened, so it must not keep showing goods as
-   *      spent. The server is authoritative either way, and the next response
-   *      overwrites `inventory` wholesale.
-   * A success also clears the overlay, because by then `inventory` has been
-   * replaced by the response the settlement returned and the overlay would be
-   * double-counting a debit the server has already made.
+   * Debit first, ask second, put it back on any refusal. Three exits, all
+   * ending in the same rollback: the shelf is short (refused here, nothing
+   * sent), the server refused (its wording is shown), or the request never
+   * came back (this browser does not know what happened, so it must not keep
+   * showing goods as spent). A success also clears the overlay, because by
+   * then `inventory` has been replaced by the settlement's own response.
    */
-  const handleSettleContract = useCallback(
-    async (target: Contract): Promise<void> => {
-      if (busy || settling || target.status !== "posted") return;
-
+  const handleSettle = useCallback(
+    async (contract: StackAcresContractRow): Promise<void> => {
+      if (busy || settling) return;
       setNote(null);
       setPayout(null);
       setSettling(true);
       const applied: ContractRequirement[] = [];
       try {
-        // Step 1, the client half: the goods leave the shelf before the
-        // request goes out, one requirement line at a time, exactly as the
-        // server takes them.
-        let working: StackAcresInventory = inventory;
-        for (const requirement of target.requirements) {
-          const next = removeFromInventory(working, requirement.item, requirement.required);
-          if (next === null) {
+        for (const line of contract.requirements) {
+          if (heldOf(line.item) < line.quantity) {
             rollback(applied);
-            setNote({
-              tone: "refused",
-              text: `This contract needs ${machineItemLabel(requirement.item, requirement.required)}.`,
-            });
+            setNote({ tone: "refused", text: `This order needs ${contractItemLabel(line.item, line.quantity)}.` });
             return;
           }
-          working = next;
-          applied.push(requirement);
-          setPending((current) => [...current, requirement]);
+          applied.push(line);
+          setPending((current) => [...current, line]);
         }
 
-        const result = await onSettle();
+        const result = await onSettle(contract.id);
         rollback(applied);
         if (!result.ok) {
           setNote({ tone: "refused", text: result.message });
@@ -380,20 +221,10 @@ export function TownContractsModal({
             ? `Delivered. ${reward.gold.toLocaleString()} Gold and ${reward.influence.toLocaleString()} Influence.`
             : "Delivered.",
         });
-        // The row's own answer, on top of the wording above. Anchored to the
-        // contract that was filled rather than to the sheet, so the burst rises
-        // out of the thing the player pressed.
         if (reward) {
-          setPayout({
-            contractId: target.id,
-            gold: reward.gold,
-            influence: reward.influence,
-            nonce: Date.now(),
-          });
-          // `influence` here is the total from before this settlement -- the
-          // parent refetches the view, so the prop has not moved yet at the
-          // point this closure was built. Adding the reward to it is the
-          // after-total without waiting on that round trip.
+          setPayout({ contractId: contract.id, gold: reward.gold, influence: reward.influence, nonce: Date.now() });
+          // `influence` is the total from before this settlement; the parent
+          // refetches, so the prop has not moved yet in this closure.
           const reached = crossedInfluenceTier(influence, influence + reward.influence);
           if (reached) {
             townFavorSound();
@@ -407,58 +238,37 @@ export function TownContractsModal({
         setSettling(false);
       }
     },
-    [busy, settling, influence, inventory, onSettle, rollback],
+    [busy, settling, influence, heldOf, onSettle, rollback],
   );
 
-  /** The rung-up banner clears itself so it cannot become furniture. Keyed on
-   *  the whole `rungUp` object, so a second rung-up restarts the hold rather
-   *  than inheriting what was left of the first one's. */
   useEffect(() => {
     if (!rungUp) return;
     const timer = window.setTimeout(() => setRungUp(null), RUNG_UP_HOLD_MS);
     return () => window.clearTimeout(timer);
   }, [rungUp]);
 
-  /** Asks the town to post one. Moves no goods and no Gold, so there is
-   *  nothing to debit optimistically and nothing to roll back. */
-  const handleRequestContract = useCallback(async (): Promise<void> => {
-    if (busy || settling) return;
-    // Nothing here moves any goods or Gold, so there's no guess to apply --
-    // but the press still deserves an instant answer instead of a silent
-    // wait, so say the honest, contentless part right away and let the
-    // response overwrite it with the drawn contract (or a refusal) below.
-    setNote({ tone: "pending", text: "Asking the town…" });
-    setSettling(true);
-    try {
-      const result = await onRequest();
-      if (!result.ok) setNote({ tone: "refused", text: result.message });
-      else setNote(null);
-    } catch {
-      setNote({ tone: "refused", text: "The town did not answer. Try again in a moment." });
-    } finally {
-      setSettling(false);
-    }
-  }, [busy, settling, onRequest]);
-
-  /** Turns the open order down. Same shape as asking for one: nothing moves,
-   *  so there is nothing to guess and nothing to roll back. The day limit is
-   *  the server's to enforce, and its refusal is what says so. */
-  const handlePassContract = useCallback(async (): Promise<void> => {
-    if (busy || settling) return;
-    setNote({ tone: "pending", text: "Sending it back…" });
-    setSettling(true);
-    try {
-      const result = await onPass();
-      if (!result.ok) setNote({ tone: "refused", text: result.message });
-      else setNote(null);
-    } catch {
-      setNote({ tone: "refused", text: "The town did not answer. Try again in a moment." });
-    } finally {
-      setSettling(false);
-    }
-  }, [busy, settling, onPass]);
+  /** The three actions that move nothing share one shape: say the honest,
+   *  contentless part right away, let the response overwrite it. */
+  const moveNothing = useCallback(
+    async (pendingText: string, request: () => Promise<ContractActionResult>): Promise<void> => {
+      if (busy || settling) return;
+      setNote({ tone: "pending", text: pendingText });
+      setSettling(true);
+      try {
+        const result = await request();
+        if (!result.ok) setNote({ tone: "refused", text: result.message });
+        else setNote(null);
+      } catch {
+        setNote({ tone: "refused", text: "The town did not answer. Try again in a moment." });
+      } finally {
+        setSettling(false);
+      }
+    },
+    [busy, settling],
+  );
 
   const working = busy || settling;
+  const openSlots = CONTRACT_BOARD_SIZE - board.length;
 
   return (
     <div
@@ -489,20 +299,14 @@ export function TownContractsModal({
             </p>
             <h2 id="sa-contracts-title">What the town wants</h2>
           </div>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            className="sa-sheet-close"
-            onClick={contain(closeAll)}
-          >
+          <button ref={closeButtonRef} type="button" className="sa-sheet-close" onClick={contain(closeAll)}>
             Done
           </button>
         </header>
 
         <p className="sa-sheet-note">
-          The town posts one order at a time. Fill it and it pays in Gold and in standing —
-          the other two are what it is likely to ask for next, so you know whether to keep the
-          mill turning.
+          Up to {CONTRACT_BOARD_SIZE} orders at a time. Deliver any of them for Gold and standing. Pin one to keep it on
+          your HUD while you work toward it.
         </p>
 
         <p className="sa-contracts-standing">
@@ -511,11 +315,6 @@ export function TownContractsModal({
           <span>Town Influence earned</span>
         </p>
 
-        {/* Town Favor: what cumulative Influence is actually for. A discount
-            rung, once reached, never regresses (see
-            lib/stackacres/influence-tiers.ts), so this is a status readout,
-            not a warning -- it always names something the farm has already
-            banked plus what's next, never something it could lose. */}
         {(() => {
           const tier = influenceTier(influence);
           const next = nextInfluenceTier(influence);
@@ -526,123 +325,117 @@ export function TownContractsModal({
                 {tier.discountBps > 0
                   ? `${tier.discountBps / 100}% off tools, cutters and feed at Ray's`
                   : "no discount at Ray's shop yet"}
-                {next &&
-                  ` — ${(next.threshold - influence).toLocaleString()} Influence to ${next.label}`}
+                {next && ` — ${(next.threshold - influence).toLocaleString()} Influence to ${next.label}`}
               </span>
             </p>
           );
         })()}
 
-        {/* The moment the ladder above just moved. Sits with the standing
-            readout rather than over the contract row, because a rung is a fact
-            about the farm, not about the delivery that happened to earn it --
-            and because it names the discount in the same place the discount is
-            explained. */}
         {rungUp && (
           <p key={rungUp.nonce} className="sa-rung-up" role="status">
             <Sparkles size={16} aria-hidden="true" />
             <strong>{rungUp.tier.label}</strong>
-            {/* Names the three shelves the discount actually reaches rather
-                than "everything at Ray's". `applyInfluenceDiscount` is called
-                on exactly three purchases server-side (upgradeStackAcresTool,
-                buyStackAcresCutter, buyStackAcresFeed) -- seeds, soil and
-                livestock are charged at list. A banner promising more than
-                the till honours is worse than no banner. */}
             <span>
-              Tools, cutters and feed at Ray&apos;s are now{" "}
-              {rungUp.tier.discountBps / 100}% off.
+              Tools, cutters and feed at Ray&apos;s are now {rungUp.tier.discountBps / 100}% off.
             </span>
           </p>
         )}
 
         {note && (
-          <p
-            className={clsx("sa-contracts-note", `is-${note.tone}`)}
-            role={note.tone === "refused" ? "alert" : "status"}
-          >
+          <p className={clsx("sa-contracts-note", `is-${note.tone}`)} role={note.tone === "refused" ? "alert" : "status"}>
             {note.text}
           </p>
         )}
 
+        {board.length === 0 && (
+          <p className="sa-contracts-note is-pending" role="status">
+            The board is empty. Ask the town for orders below.
+          </p>
+        )}
+
         <ul className="sa-contracts-board">
-          {board.map((entry) => (
+          {board.map(({ contract, ready, rawValue }) => (
             <li
-              key={entry.id}
+              key={contract.id}
               className={clsx("sa-contract", {
-                "is-posted": entry.status === "posted",
-                "is-ready": entry.ready,
-                "is-paid": payout?.contractId === entry.id,
+                "is-posted": contract.pinned,
+                "is-ready": ready,
+                "is-paid": payout?.contractId === contract.id,
               })}
+              data-contract-id={contract.id}
             >
-              {/* Keyed on the nonce, so a second delivery is a fresh instance
-                  rather than a live one asked to replay -- see
-                  ContractPayout's own header. */}
-              {payout?.contractId === entry.id && (
-                <ContractPayout
-                  key={payout.nonce}
-                  gold={payout.gold}
-                  influence={payout.influence}
-                />
+              {payout?.contractId === contract.id && (
+                <ContractPayout key={payout.nonce} gold={payout.gold} influence={payout.influence} />
               )}
               <div className="sa-contract-head">
-                <h3>{entry.title}</h3>
+                <h3>{contract.title}</h3>
                 <span className="sa-contract-tag">
-                  {entry.status === "posted" ? (
-                    "Asked for now"
-                  ) : (
+                  {contract.pinned ? (
                     <>
-                      <Lock size={11} aria-hidden="true" /> Not asked for yet
+                      <Pin size={11} aria-hidden="true" /> Pinned
                     </>
+                  ) : ready ? (
+                    "Ready to deliver"
+                  ) : (
+                    "Open"
                   )}
                 </span>
               </div>
 
-              {entry.requirements.map((requirement) => {
-                const filled = contractProgress(requirement.held, requirement.required);
+              {contract.requirements.map((line) => {
+                const held = heldOf(line.item);
+                const filled = contractProgress(held, line.quantity);
                 return (
-                  <div className="sa-contract-req" key={`${entry.id}-${requirement.item}`}>
-                    <StackAcresIcon
-                      name={machineItemIcon(requirement.item) as PainterName}
-                      size={22}
-                    />
-                    <span className="sa-contract-bar" aria-hidden="true">
-                      <span style={{ transform: `scaleX(${filled})` }} />
-                    </span>
-                    <span className="sa-contract-count">
-                      <strong>{requirement.held.toLocaleString()}</strong>
-                      {" / "}
-                      {requirement.required.toLocaleString()}
-                    </span>
-                    <span className="sa-sr">
-                      {machineItemLabel(requirement.item, requirement.required)} needed,{" "}
-                      {requirement.held.toLocaleString()} on the shelf
-                    </span>
+                  <div className="sa-contract-line" key={`${contract.id}-${line.item}`}>
+                    <div className="sa-contract-req">
+                      <StackAcresIcon name={contractItemIcon(line.item) as PainterName} size={22} />
+                      <span className="sa-contract-bar" aria-hidden="true">
+                        <span style={{ transform: `scaleX(${filled})` }} />
+                      </span>
+                      <span className="sa-contract-count">
+                        <strong>{held.toLocaleString()}</strong>
+                        {" / "}
+                        {line.quantity.toLocaleString()}
+                      </span>
+                      <span className="sa-sr">
+                        {contractItemLabel(line.item, line.quantity)} needed, {held.toLocaleString()} on the shelf
+                      </span>
+                    </div>
+                    <p className="sa-contract-hint">
+                      {contractItemLabel(line.item, line.quantity)} · {contractSourceHint(line.item)}
+                    </p>
                   </div>
                 );
               })}
 
               <ul className="sa-contract-rewards">
-                {entry.rewards.map((reward) => (
-                  <li key={reward.kind} className={`is-${reward.kind}`}>
-                    {reward.kind === "gold" ? (
-                      <Coins size={13} aria-hidden="true" />
-                    ) : (
-                      <Sparkles size={13} aria-hidden="true" />
-                    )}
-                    <strong>{reward.amount.toLocaleString()}</strong>
-                    <span>{reward.kind === "gold" ? "Gold" : "Influence"}</span>
-                  </li>
-                ))}
+                <li className="is-gold">
+                  <Coins size={13} aria-hidden="true" />
+                  <strong>{contract.goldReward.toLocaleString()}</strong>
+                  <span>Gold</span>
+                </li>
+                <li className="is-influence">
+                  <Sparkles size={13} aria-hidden="true" />
+                  <strong>{contract.influenceReward.toLocaleString()}</strong>
+                  <span>Influence</span>
+                </li>
               </ul>
+              {/* Where the number comes from: the goods' Sell value and the
+                  town's flat premium on top. The same 1.3x on every order, so
+                  no order is secretly the one to hoard for. */}
+              <p className="sa-contract-breakdown">
+                Sells for {rawValue.toLocaleString()} Gold; the town pays {Math.round((CONTRACT_PREMIUM - 1) * 100)}% over
+                that.
+              </p>
 
-              {entry.status === "posted" && (
+              <div className="sa-contract-actions">
                 <button
                   type="button"
                   className="sa-cta"
-                  disabled={working || !entry.ready}
-                  onClick={contain(() => void handleSettleContract(entry))}
+                  disabled={working || !ready}
+                  onClick={contain(() => void handleSettle(contract))}
                 >
-                  {entry.ready ? (
+                  {ready ? (
                     <>
                       <Check size={16} aria-hidden="true" /> Deliver it
                     </>
@@ -650,41 +443,55 @@ export function TownContractsModal({
                     "Not enough yet"
                   )}
                 </button>
-              )}
+                <button
+                  type="button"
+                  className="sa-cta is-ghost"
+                  disabled={working}
+                  aria-pressed={contract.pinned}
+                  onClick={contain(() =>
+                    void moveNothing(contract.pinned ? "Unpinning…" : "Pinning…", () =>
+                      onPin(contract.pinned ? null : contract.id),
+                    ),
+                  )}
+                >
+                  {contract.pinned ? (
+                    <>
+                      <PinOff size={14} aria-hidden="true" /> Unpin
+                    </>
+                  ) : (
+                    <>
+                      <Pin size={14} aria-hidden="true" /> Pin
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="sa-cta is-ghost"
+                  disabled={working}
+                  onClick={contain(() => void moveNothing("Swapping it out…", () => onReplace(contract.id)))}
+                >
+                  <RefreshCw size={14} aria-hidden="true" /> Swap out
+                </button>
+              </div>
             </li>
           ))}
         </ul>
 
-        {contract === null && (
+        {openSlots > 0 && (
           <button
             type="button"
             className="sa-cta sa-contracts-ask"
             disabled={working}
-            onClick={contain(() => void handleRequestContract())}
+            onClick={contain(() => void moveNothing("Asking the town…", onRequest))}
           >
-            Ask the town for an order
-          </button>
-        )}
-
-        {/* The release valve on a one-slot board. Always offered while an
-            order is open: whether today's pass is still going is the
-            server's answer, and asking for it is how you find out -- the
-            same posture every Gold-priced button here takes. */}
-        {contract !== null && (
-          <button
-            type="button"
-            className="sa-cta is-ghost sa-contracts-pass"
-            disabled={working}
-            onClick={contain(() => void handlePassContract())}
-          >
-            Pass on this one
+            {board.length === 0 ? "Ask the town for orders" : `Ask for ${openSlots} more`}
           </button>
         )}
 
         <p className="sa-sheet-note">
-          A delivery pays in Gold and earns Town Influence, which lowers Ray&apos;s prices on tools,
-          cutters and feed. One order is open at a time, and it keeps until you fill it. You can
-          pass on one order a day.
+          A delivery pays in Gold and earns Town Influence, which lowers Ray&apos;s prices on tools, cutters and
+          feed. An order keeps until you fill it. You can swap one order out a day; nothing else on this board
+          costs anything.
         </p>
       </section>
     </div>

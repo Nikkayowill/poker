@@ -21,7 +21,11 @@ import {
   type MachineProcessedItem,
 } from "@/lib/stackacres/machine-items";
 import {
+  CONTRACT_BOARD_SIZE,
   isStackAcresContractStatus,
+  parseContractRequirements,
+  type ContractDef,
+  type ContractRequirement,
   type StackAcresContractStatus,
 } from "@/lib/stackacres/contracts";
 import { stackacresExchangeDay } from "@/lib/stackacres/exchange";
@@ -2608,11 +2612,12 @@ export async function collectStackAcresVatManifest(
 export interface StoredContract {
   id: string;
   profileId: string;
-  item: MachineProcessedItem;
-  quantity: number;
+  title: string;
+  requirements: readonly ContractRequirement[];
   goldReward: number;
   influenceReward: number;
   status: StackAcresContractStatus;
+  pinned: boolean;
   createdAt: string;
   /** When it stopped being open, for either terminal status. Null while
    *  open, and null on every row that predates the column. */
@@ -2620,89 +2625,111 @@ export interface StoredContract {
 }
 
 const CONTRACT_COLUMNS =
-  "id, profile_id, item, quantity, gold_reward, influence_reward, status, created_at, resolved_at";
+  "id, profile_id, title, requirements, gold_reward, influence_reward, status, pinned, created_at, resolved_at";
 
 export interface ContractDbRow {
   id: string;
   profile_id: string;
-  item: string;
-  quantity: number | string;
+  title: string;
+  requirements: unknown;
   gold_reward: number | string;
   influence_reward: number | string;
   status: string;
+  pinned: boolean;
   created_at: string;
   resolved_at?: string | null;
 }
 
+/** A row that does not parse is a broken row and throws, never a default:
+ *  every open order in the table was written by `createStackAcresContract`
+ *  from lines `buildContract` already validated. */
 export function contractFromRow(row: ContractDbRow): StoredContract {
+  const status = row.status;
+  if (!isStackAcresContractStatus(status)) throw new Error(`Unknown contract status ${status}`);
   return {
     id: String(row.id),
     profileId: String(row.profile_id),
-    item: (isMachineProcessedItem(row.item) ? row.item : "flour") as MachineProcessedItem,
-    quantity: Number(row.quantity),
+    title: String(row.title),
+    requirements: parseContractRequirements(row.requirements),
     goldReward: Number(row.gold_reward),
     influenceReward: Number(row.influence_reward),
-    status: isStackAcresContractStatus(row.status) ? row.status : "open",
+    status,
+    pinned: Boolean(row.pinned),
     createdAt: String(row.created_at),
     resolvedAt: row.resolved_at ? String(row.resolved_at) : null,
   };
 }
 
-/** This player's OPEN contract, or null when there is not one -- the board
- *  is one slot, never a list; see lib/stackacres/contracts.ts's header. */
-/** `contractFromRow` above already does the parsing; this is just its
- *  "missing row" wrapper, pulled out so the batch RPC path (which already
- *  filtered to `status = 'open'` in SQL, same as this reader's own
- *  `.eq("status", "open")`) shares it. */
-export function stackAcresOpenContractFromBatchRow(row: ContractDbRow | null): StoredContract | null {
-  return row ? contractFromRow(row) : null;
+/** The batch RPC already filtered to `status = 'open'` and ordered by
+ *  `created_at`, same as `listStackAcresOpenContracts`'s own query. */
+export function stackAcresOpenContractsFromBatchRows(rows: readonly ContractDbRow[]): StoredContract[] {
+  return rows.map(contractFromRow);
 }
 
-export async function readStackAcresOpenContract(profileId: string): Promise<StoredContract | null> {
+function memoryOpenContracts(profileId: string): StoredContract[] {
+  return [...memoryContracts.values()]
+    .filter((contract) => contract.profileId === profileId && contract.status === "open")
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+    .map((contract) => ({ ...contract }));
+}
+
+/** This player's open board, oldest first. */
+export async function listStackAcresOpenContracts(profileId: string): Promise<StoredContract[]> {
   const supabase = adminClient();
-  if (!supabase) {
-    for (const contract of memoryContracts.values()) {
-      if (contract.profileId === profileId && contract.status === "open") return { ...contract };
-    }
-    return null;
-  }
+  if (!supabase) return memoryOpenContracts(profileId);
 
   const { data, error } = await supabase
     .from("homestead_contracts")
     .select(CONTRACT_COLUMNS)
     .eq("profile_id", profileId)
     .eq("status", "open")
-    .maybeSingle();
+    .order("created_at", { ascending: true });
   if (error) throw new Error(`Could not read the town board: ${error.message}`);
-  return stackAcresOpenContractFromBatchRow(data as ContractDbRow | null);
+  return stackAcresOpenContractsFromBatchRows((data ?? []) as ContractDbRow[]);
+}
+
+/** One open order of this player's by id, or null when it is not open or
+ *  not theirs. The lookup every per-order action starts from, so a client
+ *  can only ever name an order the session actually owns. */
+export async function readStackAcresOpenContract(profileId: string, contractId: string): Promise<StoredContract | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const contract = memoryContracts.get(contractId);
+    return contract && contract.profileId === profileId && contract.status === "open" ? { ...contract } : null;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_contracts")
+    .select(CONTRACT_COLUMNS)
+    .eq("id", contractId)
+    .eq("profile_id", profileId)
+    .eq("status", "open")
+    .maybeSingle();
+  if (error) throw new Error(`Could not read that order: ${error.message}`);
+  return data ? contractFromRow(data as ContractDbRow) : null;
 }
 
 /**
- * Posts a new open contract. Returns null when this player already has one
- * open -- the database's own partial unique index on `(profile_id) where
- * status = 'open'` is the real guard against two racing tabs both posting
- * one; this is treated exactly like a lost race, never an error.
+ * Posts one open order. Returns null when the board is already full: the
+ * database's own BEFORE INSERT trigger (under a per-profile advisory lock)
+ * is the real cap against two racing tabs, and its check_violation is
+ * treated exactly like a lost race, never an error.
  */
-export async function createStackAcresContract(
-  profileId: string,
-  def: { item: MachineProcessedItem; quantity: number; goldReward: number; influenceReward: number },
-): Promise<StoredContract | null> {
+export async function createStackAcresContract(profileId: string, def: ContractDef): Promise<StoredContract | null> {
   const supabase = adminClient();
   const now = new Date().toISOString();
 
   if (!supabase) {
-    const existing = [...memoryContracts.values()].some(
-      (contract) => contract.profileId === profileId && contract.status === "open",
-    );
-    if (existing) return null;
+    if (memoryOpenContracts(profileId).length >= CONTRACT_BOARD_SIZE) return null;
     const contract: StoredContract = {
       id: randomUUID(),
       profileId,
-      item: def.item,
-      quantity: def.quantity,
+      title: def.title,
+      requirements: def.requirements.map((line) => ({ ...line })),
       goldReward: def.goldReward,
       influenceReward: def.influenceReward,
       status: "open",
+      pinned: false,
       createdAt: now,
       resolvedAt: null,
     };
@@ -2710,46 +2737,72 @@ export async function createStackAcresContract(
     return { ...contract };
   }
 
+  const [first] = def.requirements;
   const { data, error } = await supabase
     .from("homestead_contracts")
     .insert({
       profile_id: profileId,
-      item: def.item,
-      quantity: def.quantity,
+      title: def.title,
+      requirements: def.requirements,
+      // The first line, kept beside the list so history reads the same as
+      // the rows from before the board.
+      item: first.item,
+      quantity: first.quantity,
       gold_reward: def.goldReward,
       influence_reward: def.influenceReward,
       status: "open",
+      pinned: false,
     })
     .select(CONTRACT_COLUMNS);
   if (error) {
-    // 23505: the partial unique index refused a second open contract for
-    // this profile. Not an error -- the caller treats it exactly like a
-    // lost race.
-    if (error.code === "23505") return null;
-    throw new Error(`Could not post that contract: ${error.message}`);
+    if (error.code === "23514") return null;
+    throw new Error(`Could not post that order: ${error.message}`);
   }
   return data && data.length > 0 ? contractFromRow(data[0] as ContractDbRow) : null;
 }
 
 /**
- * Marks a contract fulfilled, exactly once. Guarded on `status = 'open'`, so
- * a double-tapped fulfil (or two tabs racing the same contract) settles
- * once -- the caller deducts inventory and reserves Gold BEFORE this call
- * (rule 1) and refunds both if this returns null.
+ * Moves this player's one pin to `contractId`, or clears it for null. One
+ * statement on the database side (`pin_homestead_contract`), so two tabs
+ * pinning different orders cannot leave two pinned. False when the target
+ * is not an open order of this player's.
+ */
+export async function pinStackAcresContract(profileId: string, contractId: string | null): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const target = contractId === null ? null : memoryContracts.get(contractId);
+    if (contractId !== null && (!target || target.profileId !== profileId || target.status !== "open")) return false;
+    for (const contract of memoryContracts.values()) {
+      if (contract.profileId === profileId && contract.status === "open") {
+        memoryContracts.set(contract.id, { ...contract, pinned: contract.id === contractId });
+      }
+    }
+    return true;
+  }
+
+  const { data, error } = await supabase.rpc("pin_homestead_contract", {
+    p_profile_id: profileId,
+    p_contract_id: contractId,
+  });
+  if (error) throw new Error(`Could not pin that order: ${error.message}`);
+  return Boolean(data);
+}
+
+/**
+ * Marks an order fulfilled, exactly once. Guarded on `status = 'open'`, so
+ * a double-tapped deliver (or two tabs racing the same order) settles once.
+ * The caller takes the goods BEFORE this call and refunds them if this
+ * returns null.
  */
 export async function fulfillStackAcresContract(current: StoredContract): Promise<StoredContract | null> {
-  const supabase = adminClient();
-
   return resolveStackAcresContract(current, "fulfilled", new Date(), "settle");
 }
 
 /**
- * Marks a contract passed, exactly once, and frees the board.
- *
- * Same status guard as fulfilling, and for the same reason: two tabs racing
- * the same contract must resolve it once. Nothing is spent and nothing is
- * paid -- a pass is the release valve on a one-slot board, rate-limited to
- * one a UTC day by the service (see `contractPassSpent`), never by this.
+ * Marks an order swapped out, exactly once, and frees its slot. Nothing is
+ * spent and nothing is paid. Rate-limited to one a UTC day by the service
+ * (`contractReplacementSpent`), never here. The status value stays
+ * `passed`, what the one-slot board's pass wrote.
  */
 export async function passStackAcresContract(
   current: StoredContract,

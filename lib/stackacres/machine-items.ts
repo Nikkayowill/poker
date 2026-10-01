@@ -126,9 +126,9 @@ export interface MachineItemDef {
   /**
    * What one sells for, in Gold, through the Sell action.
    *
-   * PRICED BELOW WHAT A CONTRACT PAYS, DELIBERATELY, for every crafted good a
-   * contract can also ask for (Flour/Cheese/Cloth) -- see ./contracts.ts's
-   * `CONTRACT_RUNGS`, still the better outlet. Wheat is priced low enough
+   * PRICED BELOW WHAT A CONTRACT PAYS, DELIBERATELY: a town order pays a flat
+   * premium over this number for anything it asks for (./contracts.ts's
+   * `CONTRACT_PREMIUM`), so an order is always the better outlet. Wheat is priced low enough
    * that milling it into Flour and selling THAT stays strictly better per
    * unit of wheat than selling it raw, so Sell never undercuts the Mill loop:
    *

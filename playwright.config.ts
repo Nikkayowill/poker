@@ -67,6 +67,11 @@ export default defineConfig({
       // tested (lib/server/rate-limit.test.ts) and the flag cannot take
       // effect in a production build -- see limitsLifted in rate-limit.ts.
       RIVER_DISABLE_RATE_LIMITS: "1",
+      // The dev time-shift route (app/api/dev/chrono-delorean) stays a 404
+      // unless this is set, and it only ever answers an admin session. A
+      // spec that needs a crop ripe in seconds moves its own farm clock with
+      // it instead of waiting the real minutes out.
+      CHRONO_DELOREAN_MODE: "1",
     },
   },
 });

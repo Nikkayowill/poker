@@ -274,6 +274,41 @@ export async function harvestStackAcresCrossbreedPlot(
   };
 }
 
+/**
+ * Moves one hybrid's quantity by `delta`, refusing to go negative. Returns the
+ * new quantity, or null when there was not enough to spend. The hybrids' twin
+ * of `adjustStackAcresInventory`, and the first thing that ever debits a
+ * hybrid: a delivered town order (lib/server/stackacres-service.ts).
+ */
+export async function adjustStackAcresCrossbreedInventory(
+  profileId: string,
+  item: CrossbreedItem,
+  delta: number,
+): Promise<number | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${profileId}:${item}`;
+    const current = memoryInventory.get(key) ?? 0;
+    const next = current + delta;
+    if (next < 0) return null;
+    memoryInventory.set(key, next);
+    return next;
+  }
+
+  const { data, error } = await supabase.rpc("adjust_stackacres_crossbreed_inventory", {
+    p_profile_id: profileId,
+    p_item: item,
+    p_delta: delta,
+  });
+  if (error) {
+    // A spend the shelf cannot cover is a check violation: a refusal. A
+    // credit cannot overdraw, so a check violation there is a broken setup.
+    if (error.code === "23514" && delta < 0) return null;
+    throw new Error(`Could not update your hybrids: ${error.message}`);
+  }
+  return data === null ? null : Number(data);
+}
+
 /** Wipes both in-process maps between tests. No-op against real Supabase --
  *  memory-mode-only, same contract every other store's own
  *  `__resetStackAcresForTest` carries. */

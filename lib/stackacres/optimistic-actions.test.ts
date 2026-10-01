@@ -77,7 +77,7 @@ function ctx(overrides: Partial<FarmPredictContext> = {}): FarmPredictContext {
     sectors: [HOME_SECTOR],
     upkeep: { plots: 0, fee: 0, paidToday: 0, due: 0 },
     influence: 0,
-    contract: null,
+    contracts: [],
     synergyUnlocked: [],
     synergyActive: [],
     farmhandSpeedMultiplier: 1,
@@ -118,16 +118,16 @@ function machine(overrides: Partial<MachineView> = {}): MachineView {
 
 describe("predictStackAcresAction: the processing track", () => {
   it("places a machine: debits its price, adds an idle row, keeps the open contract", () => {
-    const contract = { id: "c1", status: "open" } as FarmPredictContext["contract"];
+    const contract = { id: "c1", status: "open" } as FarmPredictContext["contracts"][number];
     const patch = predictStackAcresAction(
       { action: "place-machine", kind: "dairy" },
-      ctx({ profile: profile({ goldBalance: 1000 }), contract, inventory: { milk: 3 } }),
+      ctx({ profile: profile({ goldBalance: 1000 }), contracts: [contract], inventory: { milk: 3 } }),
     );
     expect(patch?.profile?.goldBalance).toBe(1000 - MACHINE_CATALOGUE.dairy.placeCost);
     expect(patch?.machines?.map((m) => m.kind)).toEqual(["dairy"]);
     // Re-derived off the shelf: three Milk is one Cheese batch.
     expect(patch?.machines?.[0].canStart).toBe(true);
-    expect(patch?.contract).toBe(contract);
+    expect(patch?.contracts).toEqual([contract]);
   });
 
   it("refuses a second machine of the same kind", () => {
@@ -178,15 +178,15 @@ describe("predictStackAcresAction: the processing track", () => {
   });
 
   it("sells: the goods leave the shelf at once, the Gold waits for the server", () => {
-    const contract = { id: "c1", status: "open" } as FarmPredictContext["contract"];
+    const contract = { id: "c1", status: "open" } as FarmPredictContext["contracts"][number];
     const patch = predictStackAcresAction(
       { action: "sell", item: "eggs", quantity: 3 },
-      ctx({ inventory: { eggs: 5, milk: 2 }, contract }),
+      ctx({ inventory: { eggs: 5, milk: 2 }, contracts: [contract] }),
     );
     expect(patch?.inventory).toEqual({ eggs: 2, milk: 2 });
     expect(patch?.profile).toBeUndefined();
     // Goes through the processing patch, so the open contract is kept.
-    expect(patch?.contract).toBe(contract);
+    expect(patch?.contracts).toEqual([contract]);
   });
 
   it("refuses to sell more than the shelf holds", () => {

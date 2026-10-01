@@ -180,7 +180,7 @@ export interface FarmPredictContext {
   sectors: SectorId[];
   upkeep: StackAcresUpkeepState;
   influence: number;
-  contract: StackAcresContractRow | null;
+  contracts: readonly StackAcresContractRow[];
   synergyUnlocked: SynergyArchetype[];
   synergyActive: SynergyArchetype[];
   farmhandSpeedMultiplier: number;
@@ -238,7 +238,7 @@ export interface FarmStatePatch {
   forageNodes?: ForageNodeSnapshot[];
   landObstacles?: LandObstacleSnapshot[];
   fences?: FencePiece[];
-  contract?: StackAcresContractRow | null;
+  contracts?: StackAcresContractRow[];
   inventory?: StackAcresInventory;
   wheatPlots?: StackAcresWheatPlotSnapshot[];
   machines?: MachineView[];
@@ -362,11 +362,11 @@ export function withResolvedUnitIds(
 function processingPatch(
   ctx: FarmPredictContext,
   next: { inventory?: StackAcresInventory; wheatPlots?: StackAcresWheatPlotSnapshot[]; machines?: MachineView[] },
-): Pick<FarmStatePatch, "contract" | "inventory" | "wheatPlots" | "machines"> {
+): Pick<FarmStatePatch, "contracts" | "inventory" | "wheatPlots" | "machines"> {
   const inventory = next.inventory ?? ctx.inventory;
   const machines = next.machines ?? [...ctx.machines];
   return {
-    contract: ctx.contract,
+    contracts: [...ctx.contracts],
     inventory,
     wheatPlots: next.wheatPlots ?? [...ctx.wheatPlots],
     // `canStart` is the server's read of the shelf; re-derive it here so a
@@ -999,16 +999,26 @@ export function predictStackAcresAction(
       return processingPatch(ctx, { inventory });
     }
     case "fulfill-contract": {
-      if (!ctx.contract || ctx.contract.status !== "open") return null;
+      const contract = ctx.contracts.find((row) => row.id === body.contractId);
+      if (!contract || contract.status !== "open") return null;
       if (!ctx.profile) return null;
       const profile = ctx.profile.unlimitedGold
         ? ctx.profile
-        : { ...ctx.profile, goldBalance: ctx.profile.goldBalance + ctx.contract.goldReward };
+        : { ...ctx.profile, goldBalance: ctx.profile.goldBalance + contract.goldReward };
+      // The delivered order leaves the board; the slot the server refills
+      // is a dice roll this browser cannot guess, so it waits for the answer.
       return {
         profile,
-        influence: ctx.influence + ctx.contract.influenceReward,
-        contract: null,
+        influence: ctx.influence + contract.influenceReward,
+        contracts: ctx.contracts.filter((row) => row.id !== contract.id),
       };
+    }
+    case "pin-contract": {
+      // Moves nothing but the pin, and the pin is plain to guess.
+      if (body.contractId !== null && !ctx.contracts.some((row) => row.id === body.contractId && row.status === "open")) {
+        return null;
+      }
+      return { contracts: ctx.contracts.map((row) => ({ ...row, pinned: row.id === body.contractId })) };
     }
     // The rest are dice rolls this browser cannot honestly guess (`collect`'s
     // own Gold, `tap-secret-zone`, `request-contract`, `work`), await their

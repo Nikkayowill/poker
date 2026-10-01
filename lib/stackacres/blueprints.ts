@@ -48,7 +48,7 @@ export interface BlueprintRequirement {
  * One donation milestone. `requirements` is a list rather than a
  * `Partial<Record<MachineItemId, number>>` map so the display order the
  * dashboard renders is exactly the order this file declares -- the same
- * reason ./contracts.ts's `CONTRACT_RUNGS` is an array, not a keyed lookup.
+ * reason ./contracts.ts's `contractQuantityLadder` is a list, not a keyed lookup.
  *
  * `spritePhase` keys the canvas construction-phase painter
  * (components/arcade/stackacres/mythic-blueprint-art.ts) the same plain-

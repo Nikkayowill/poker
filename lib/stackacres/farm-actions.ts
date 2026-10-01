@@ -109,12 +109,15 @@ export type Action =
   // has become startable or finished. Moves no Gold. The Workshop sheet
   // fires it when something is due and on its own "work the farm" key.
   | { action: "work" }
-  // Asks the town to post an order. Moves nothing either. `fulfill-contract`
-  // below is the one that pays, and it reserves against the same flat daily
-  // ceiling a harvest does. See lib/server/stackacres-service.ts's header.
+  // The town board (lib/stackacres/contracts.ts). `request-contract` fills
+  // the board's empty slots, `pin-contract` moves the pin (null clears it)
+  // and `replace-contract` swaps one order out, once a day. None of those
+  // move anything. `fulfill-contract` is the one that pays, for the order
+  // named. See lib/server/stackacres-service.ts's header.
   | { action: "request-contract" }
-  | { action: "pass-contract" }
-  | { action: "fulfill-contract" }
+  | { action: "pin-contract"; contractId: string | null }
+  | { action: "replace-contract"; contractId: string }
+  | { action: "fulfill-contract"; contractId: string }
   | { action: "tap-secret-zone"; zoneId: HiddenZoneId }
   | { action: "donate-secret-item"; itemId: SecretItemId }
   | { action: "consume-secret-item"; itemId: SecretItemId }
@@ -264,6 +267,9 @@ export function intentOf(body: Action): string {
   // which would otherwise collapse every crop's buy onto one shared
   // "buy-seed" intent.
   if ("crop" in body) return `${body.action}:${body.crop}`;
+  // One order at a time: delivering two different orders is two intents, and
+  // clearing the pin is its own.
+  if ("contractId" in body) return `${body.action}:${body.contractId === null ? "clear" : body.contractId}`;
   // One building at a time is moved or picked up; two different ones are two intents.
   if (body.action === "place-building" || body.action === "pick-up-building") return `building:${body.id}`;
   // Likewise one piece of the grocery's floor, and one person at a time hired or let go. Keyed on kind as

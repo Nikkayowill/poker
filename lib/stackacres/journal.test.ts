@@ -23,7 +23,7 @@ const FRESH: JournalInput = {
   inventory: emptyInventory(),
   built: new Set<MachineKind>(),
   units: [],
-  contract: null,
+  contracts: [],
   vat: null,
   cellar: null,
   story: null,
@@ -67,13 +67,14 @@ const container = (status: VatContainer["status"]): VatContainer => ({
   maxGoldValue: 0,
 });
 
-const order = (item: StackAcresContractRow["item"], quantity: number): StackAcresContractRow => ({
+const order = (item: StackAcresContractRow["requirements"][number]["item"], quantity: number): StackAcresContractRow => ({
   id: "c1",
-  item,
-  quantity,
+  title: `${quantity} ${item} for the town`,
+  requirements: [{ item, quantity }],
   goldReward: 140,
   influenceReward: 10,
   status: "open",
+  pinned: false,
   createdAt: "2026-09-21T00:00:00.000Z",
 });
 
@@ -138,18 +139,18 @@ describe("the one line", () => {
 
   it("puts a finished cellar above a fillable order", () => {
     expect(
-      cueFor({ cellar: container("collectible"), contract: order("flour", 2), inventory: holding("flour", 4) }),
+      cueFor({ cellar: container("collectible"), contracts: [order("flour", 2)], inventory: holding("flour", 4) }),
     ).toBe("collect");
   });
 
   it("puts a fillable order above a ready harvest", () => {
-    expect(cueFor({ contract: order("flour", 2), inventory: holding("flour", 2), units: [unit("ready")] })).toBe(
+    expect(cueFor({ contracts: [order("flour", 2)], inventory: holding("flour", 2), units: [unit("ready")] })).toBe(
       "contract",
     );
   });
 
   it("stays quiet about an order that cannot be filled yet", () => {
-    expect(cueFor({ contract: order("flour", 4), inventory: holding("flour", 3) })).not.toBe("contract");
+    expect(cueFor({ contracts: [order("flour", 4)], inventory: holding("flour", 3) })).not.toBe("contract");
   });
 
   it("counts the beds that have gone dry", () => {
@@ -205,7 +206,7 @@ describe("the one line", () => {
       { units: [unit("hungry", "hen")] },
       { cellar: container("collectible") },
       { vat: container("collectible") },
-      { contract: order("flour", 2), inventory: holding("flour", 2) },
+      { contracts: [order("flour", 2)], inventory: holding("flour", 2) },
       { units: [unit("ready")] },
       { units: [unit("dry")] },
       { gold: 200, inventory: holding("wood", 15) },

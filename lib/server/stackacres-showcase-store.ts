@@ -15,7 +15,7 @@ import { adminClient } from "./supabase-admin";
 /**
  * Persistence for Visitor Mode: the one setting, and the compliments left on
  * a farm (`homestead_farm_showcase` / `homestead_farm_reactions`,
- * 20261001010000_stackacres_farm_showcase.sql).
+ * 20261001180253_stackacres_farm_showcase.sql).
  *
  * Nothing in here is version-guarded and nothing needs to be. The setting is
  * a last-write-wins single value the owner alone can change, and a reaction

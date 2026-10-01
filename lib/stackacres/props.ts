@@ -88,6 +88,29 @@ export type PropKind =
   | "barbStraight1"
   | "barbStraight2"
   | "barbCorner"
+  // Farmstead garden ornamentals (2026-09-15), off nine separate isometric
+  // plant packs -- see scripts/prepare-stackacres-ornamental-plants.py for
+  // why a second, differently-styled source pack becomes PropKind clutter
+  // rather than joining the closed wild-flora SceneryKind roster in
+  // lib/stackacres/world.ts.
+  | "agapanthus"
+  | "bamboo"
+  | "flax1"
+  | "flax2"
+  | "flax3"
+  | "howea"
+  | "fern1"
+  | "fern2"
+  | "hibiscusBlue"
+  | "hibiscusRed"
+  | "hibiscusViolet"
+  | "hibiscusYellow"
+  | "mushroomBlueCap"
+  | "mushroomPurpleCap"
+  | "mushroomRedCap"
+  | "mushroomYellowCap"
+  | "toadstool1"
+  | "toadstool2"
   // The eleven story travelers (see ./story/placement.ts) -- static,
   // tappable, and placed by TRAVELER_PROPS there rather than here: the kind
   // lives where the rest of a prop's shape lives, the placement beside its
@@ -240,6 +263,27 @@ export const PROP_SIZE: Record<PropKind, PropSize> = {
   barbStraight1: { w: 31, h: 31 },
   barbStraight2: { w: 31, h: 31 },
   barbCorner: { w: 18, h: 18 },
+  // Farmstead garden ornamentals, off
+  // scripts/prepare-stackacres-ornamental-plants.py's own printed table
+  // (art units, alpha-bbox trimmed, same convention as the clutter above).
+  agapanthus: { w: 19, h: 20 },
+  bamboo: { w: 16, h: 24 },
+  flax1: { w: 20, h: 18 },
+  flax2: { w: 20, h: 18 },
+  flax3: { w: 20, h: 18 },
+  howea: { w: 16, h: 15 },
+  fern1: { w: 21, h: 16 },
+  fern2: { w: 21, h: 17 },
+  hibiscusBlue: { w: 14, h: 14 },
+  hibiscusRed: { w: 14, h: 14 },
+  hibiscusViolet: { w: 14, h: 14 },
+  hibiscusYellow: { w: 14, h: 14 },
+  mushroomBlueCap: { w: 13, h: 14 },
+  mushroomPurpleCap: { w: 13, h: 14 },
+  mushroomRedCap: { w: 13, h: 14 },
+  mushroomYellowCap: { w: 13, h: 14 },
+  toadstool1: { w: 11, h: 17 },
+  toadstool2: { w: 16, h: 16 },
   // Sized off each traveler's own real PNG aspect (width/288 tall, Ray's
   // width/320) at a world height picked for their read: the adults at 38 (a
   // standing adult's height at this zoom -- see STANDING_CHARACTER_SHADOW
@@ -296,6 +340,24 @@ export const PROP_SHADOW: Record<PropKind, PropSize> = {
   barbStraight1: { w: 33, h: 6 },
   barbStraight2: { w: 33, h: 6 },
   barbCorner: { w: 19, h: 4 },
+  agapanthus: { w: 20, h: 6 },
+  bamboo: { w: 13, h: 4 },
+  flax1: { w: 20, h: 6 },
+  flax2: { w: 20, h: 6 },
+  flax3: { w: 20, h: 6 },
+  howea: { w: 17, h: 5 },
+  fern1: { w: 20, h: 6 },
+  fern2: { w: 20, h: 6 },
+  hibiscusBlue: { w: 15, h: 5 },
+  hibiscusRed: { w: 15, h: 5 },
+  hibiscusViolet: { w: 15, h: 5 },
+  hibiscusYellow: { w: 15, h: 5 },
+  mushroomBlueCap: { w: 12, h: 4 },
+  mushroomPurpleCap: { w: 12, h: 4 },
+  mushroomRedCap: { w: 12, h: 4 },
+  mushroomYellowCap: { w: 12, h: 4 },
+  toadstool1: { w: 10, h: 4 },
+  toadstool2: { w: 15, h: 5 },
   travelerRay: { w: 22, h: 7 },
   travelerPierre: { w: 22, h: 7 },
   travelerMiles: { w: 20, h: 7 },
@@ -386,6 +448,29 @@ export const CLUTTER_KINDS: readonly PropKind[] = [
   "flowerBush2",
   "flowerSprig1",
   "flowerSprig2",
+  // The garden ornamentals (2026-09-15) -- see
+  // scripts/prepare-stackacres-ornamental-plants.py. Adds variety to the
+  // scatter's existing rolls rather than more of them: the band's own fill
+  // chance and cell grid are unchanged, so a wider pool just means two
+  // instances are less likely to repeat one plant.
+  "agapanthus",
+  "bamboo",
+  "flax1",
+  "flax2",
+  "flax3",
+  "howea",
+  "fern1",
+  "fern2",
+  "hibiscusBlue",
+  "hibiscusRed",
+  "hibiscusViolet",
+  "hibiscusYellow",
+  "mushroomBlueCap",
+  "mushroomPurpleCap",
+  "mushroomRedCap",
+  "mushroomYellowCap",
+  "toadstool1",
+  "toadstool2",
 ];
 
 /**

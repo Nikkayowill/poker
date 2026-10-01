@@ -359,6 +359,29 @@ export const SPRITE_ART = {
   // (`setFlipX`/`setFlipY` on the live sprite) rather than baking four
   // rotations of one picture.
   barbCorner: "/stackacres/sprites/barbCorner.webp",
+  // The Farmstead garden ornamentals (2026-09-15), off nine separate
+  // isometric plant packs -- see
+  // scripts/prepare-stackacres-ornamental-plants.py. Same "second pack,
+  // different style, becomes clutter rather than joining the closed
+  // wild-flora roster" reasoning the Gr8FarmPack batch above documents.
+  agapanthus: "/stackacres/sprites/agapanthus.webp",
+  bamboo: "/stackacres/sprites/bamboo.webp",
+  flax1: "/stackacres/sprites/flax1.webp",
+  flax2: "/stackacres/sprites/flax2.webp",
+  flax3: "/stackacres/sprites/flax3.webp",
+  howea: "/stackacres/sprites/howea.webp",
+  fern1: "/stackacres/sprites/fern1.webp",
+  fern2: "/stackacres/sprites/fern2.webp",
+  hibiscusBlue: "/stackacres/sprites/hibiscusBlue.webp",
+  hibiscusRed: "/stackacres/sprites/hibiscusRed.webp",
+  hibiscusViolet: "/stackacres/sprites/hibiscusViolet.webp",
+  hibiscusYellow: "/stackacres/sprites/hibiscusYellow.webp",
+  mushroomBlueCap: "/stackacres/sprites/mushroomBlueCap.webp",
+  mushroomPurpleCap: "/stackacres/sprites/mushroomPurpleCap.webp",
+  mushroomRedCap: "/stackacres/sprites/mushroomRedCap.webp",
+  mushroomYellowCap: "/stackacres/sprites/mushroomYellowCap.webp",
+  toadstool1: "/stackacres/sprites/toadstool1.webp",
+  toadstool2: "/stackacres/sprites/toadstool2.webp",
   // Not an environment prop: a standing NPC, so pixel-art STYLE matching the
   // travelers above rather than the organic-isometric prop contract.
   midnightMerchant: "/stackacres/sprites/midnight-merchant.webp",

@@ -1,7 +1,7 @@
 // No Phaser here at all, not even a type: these are plain Canvas2D painters
 // (see the note at the top of stackacres-art.ts).
-import { blob, canopy, ell, F, isoBox, leaf, lin, painter, poly, rad, rr, stroke, type Ctx, type Painter } from "./art-kit";
-import { RAMPS } from "./art-palette";
+import { blades, blob, canopy, ell, F, isoBox, leaf, lin, painter, poly, rad, rr, stroke, type Ctx, type Painter } from "./art-kit";
+import { RAMPS, type Ramp } from "./art-palette";
 
 /**
  * The farm's props: the windmill and its blades, the well, the clutter by
@@ -58,6 +58,24 @@ export type PropPainterName =
   | "barbStraight1"
   | "barbStraight2"
   | "barbCorner"
+  | "agapanthus"
+  | "bamboo"
+  | "flax1"
+  | "flax2"
+  | "flax3"
+  | "howea"
+  | "fern1"
+  | "fern2"
+  | "hibiscusBlue"
+  | "hibiscusRed"
+  | "hibiscusViolet"
+  | "hibiscusYellow"
+  | "mushroomBlueCap"
+  | "mushroomPurpleCap"
+  | "mushroomRedCap"
+  | "mushroomYellowCap"
+  | "toadstool1"
+  | "toadstool2"
   | "travelerRay"
   // Ray's own second frame -- a wave, shown for as long as his own dialogue
   // bubble is open. Not a placed prop of its own (see props.ts's `PropKind`,
@@ -144,6 +162,34 @@ function bloom(c: Ctx, x: number, y: number, r: number, petal: string, centre: s
   F(c, centre);
   ell(c, x - r * 0.55, y - r * 0.6, r * 0.5, r * 0.3, -0.7);
   F(c, "rgba(255,255,255,.35)");
+}
+
+/**
+ * A single toadstool, cap and spots parametrized -- the garden ornamentals'
+ * mushroom fallbacks (mushroomBlueCap etc., toadstool1/2) share this rather
+ * than each hand-drawing a stem, same shape family as the woodland `mushroom`
+ * painter below, just one specimen instead of three and its own colour.
+ */
+function toadstool(w: number, h: number, cap: string, spot: string): Painter {
+  return painter(w, h, (c) => {
+    const r = w * 0.42;
+    const tall = h * 0.62;
+    const x = w / 2;
+    rr(c, x - r * 0.36, h - tall, r * 0.72, tall, r * 0.26);
+    F(c, RAMPS.path.top);
+    const cy = h - tall + r * 0.12;
+    ell(c, x, cy, r, r * 0.62);
+    F(c, cap);
+    for (const [dx, dy, dr] of [
+      [-0.4, -0.15, 0.2],
+      [0.3, -0.35, 0.18],
+      [0.5, 0.15, 0.15],
+      [-0.15, 0.3, 0.16],
+    ] as const) {
+      ell(c, x + dx * r, cy + dy * r, dr * r, dr * r * 0.8);
+      F(c, spot);
+    }
+  });
 }
 
 type TravelerShape = "blob" | "robot" | "bug" | "shell" | "crystal" | "human";
@@ -1121,6 +1167,102 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
       bloom(c, x, 1.8, 1.8, RAMPS.gold.top, RAMPS.wild.top);
     }
   }),
+
+  /* ---- Farmstead garden ornamentals (2026-09-15), lib/stackacres/props.ts's
+   * CLUTTER_KINDS -- see scripts/prepare-stackacres-ornamental-plants.py.
+   * Minimal fallbacks, same posture the Gr8FarmPack clutter's own comment
+   * gives: the real pack sprite is what actually ships, these only cover the
+   * gap before it loads. */
+  agapanthus: painter(19, 20, (c) => {
+    canopy(
+      c,
+      [
+        [6.5, 15.5, 6],
+        [13, 16, 6.2],
+      ],
+      RAMPS.leaf,
+    );
+    for (const [x, y] of [[4, 5], [8, 3.4], [12, 4.2], [15.5, 6]] as const) {
+      bloom(c, x, y, 1.5, "#8a6fd6", "#f2c230");
+    }
+  }),
+  bamboo: painter(16, 24, (c) => {
+    blades(c, 4, 24, 20, RAMPS.leaf, 1.1);
+    blades(c, 8, 24, 23, RAMPS.leaf, 1.2);
+    blades(c, 12, 24, 19, RAMPS.leaf, 1.1);
+  }),
+  flax1: painter(20, 18, (c) => {
+    blades(c, 5, 18, 15, RAMPS.leaf, 1.3);
+    blades(c, 10, 18, 17, RAMPS.leaf, 1.4);
+    blades(c, 15, 18, 14, RAMPS.leaf, 1.3);
+  }),
+  // A bronze/copper colourway -- one of the real pack's three Flax plates,
+  // not a recolour of flax1's ramp (see the module's `Ramp` import).
+  flax2: painter(20, 18, (c) => {
+    const mat: Ramp = { top: "#c98a4a", side: "#8a5a2c", rim: "#5c3a1c" };
+    blades(c, 5, 18, 15, mat, 1.3);
+    blades(c, 10, 18, 17, mat, 1.4);
+    blades(c, 15, 18, 14, mat, 1.3);
+  }),
+  flax3: painter(20, 18, (c) => {
+    const mat: Ramp = { top: "#d7d35a", side: "#9a9a3a", rim: "#5f5f22" };
+    blades(c, 5, 18, 15, mat, 1.3);
+    blades(c, 10, 18, 17, mat, 1.4);
+    blades(c, 15, 18, 14, mat, 1.3);
+  }),
+  howea: painter(16, 15, (c) => {
+    blades(c, 4, 15, 11, RAMPS.grass, 1.2);
+    blades(c, 8, 15, 13, RAMPS.grass, 1.3);
+    blades(c, 12, 15, 10, RAMPS.grass, 1.2);
+  }),
+  fern1: painter(21, 16, (c) => {
+    canopy(
+      c,
+      [
+        [7, 13, 6],
+        [14, 13.4, 6.2],
+      ],
+      RAMPS.leaf,
+    );
+    blades(c, 10.5, 16, 6, RAMPS.leaf, 1);
+  }),
+  fern2: painter(21, 17, (c) => {
+    canopy(
+      c,
+      [
+        [7, 14, 6.2],
+        [14, 14.4, 6.4],
+      ],
+      RAMPS.leaf,
+    );
+    blades(c, 10.5, 17, 7, RAMPS.leaf, 1);
+  }),
+  hibiscusBlue: painter(14, 14, (c) => {
+    canopy(c, [[7, 11, 5]], RAMPS.leaf);
+    bloom(c, 5, 5, 1.8, "#3a6fe0", "#f2c230");
+    bloom(c, 9.5, 4.2, 1.6, "#3a6fe0", "#f2c230");
+  }),
+  hibiscusRed: painter(14, 14, (c) => {
+    canopy(c, [[7, 11, 5]], RAMPS.leaf);
+    bloom(c, 5, 5, 1.8, "#d93a3a", "#f2c230");
+    bloom(c, 9.5, 4.2, 1.6, "#d93a3a", "#f2c230");
+  }),
+  hibiscusViolet: painter(14, 14, (c) => {
+    canopy(c, [[7, 11, 5]], RAMPS.leaf);
+    bloom(c, 5, 5, 1.8, "#a445c9", "#f2c230");
+    bloom(c, 9.5, 4.2, 1.6, "#a445c9", "#f2c230");
+  }),
+  hibiscusYellow: painter(14, 14, (c) => {
+    canopy(c, [[7, 11, 5]], RAMPS.leaf);
+    bloom(c, 5, 5, 1.8, "#f2c230", "#8a5a10");
+    bloom(c, 9.5, 4.2, 1.6, "#f2c230", "#8a5a10");
+  }),
+  mushroomBlueCap: toadstool(13, 14, "#3fb6e0", "#ffffff"),
+  mushroomPurpleCap: toadstool(13, 14, "#a445c9", "#ffffff"),
+  mushroomRedCap: toadstool(13, 14, "#d93a3a", "#ffffff"),
+  mushroomYellowCap: toadstool(13, 14, "#f2c230", "#ffffff"),
+  toadstool1: toadstool(11, 17, "#a05a2c", "#f2e0b0"),
+  toadstool2: toadstool(16, 16, "#6b4a30", "#c9a86a"),
 
   // The Factory's own back fence (2026-09-12) -- simple stand-ins for the
   // pack's real barbed-wire plates (see props.ts's own PropKind comment on

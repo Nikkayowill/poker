@@ -32,7 +32,7 @@ import { siloFeedsLeft } from "./feed-silo";
 import type { MaterialCost } from "./machine-items";
 import { stackacresExchangeDay } from "./exchange";
 
-export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat", "oven", "stew_pot", "counter", "feed_silo", "cellar", "farm_kitchen", "smelter"] as const;
+export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat", "oven", "stew_pot", "counter", "feed_silo", "cellar", "farm_kitchen", "smelter", "barn"] as const;
 export type MachineKind = (typeof MACHINE_KINDS)[number];
 
 export function isMachineKind(value: string): value is MachineKind {
@@ -111,6 +111,15 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
   // Far Field's buildings cannot be raised without. Built of stone like the
   // Silo and Cellar, and priced as a mid-game step, not a late one.
   smelter: { label: "Smelter", placeCost: 3_000, materials: [{ item: "stone", quantity: 25 }] },
+  // The Barn. Runs no recipe and adds no production rate at all -- it buys
+  // COMFORT and ROOM (lib/stackacres/barn.ts): every animal's hunger window
+  // widens by BARN_COMFORT_MULTIPLIER, and every livestock kind gets
+  // BARN_CAPACITY_BONUS free slots on top of anything bought. Timber-framed
+  // like the Mill and the Loom, and the largest timber bill on the farm,
+  // because that is what a barn is. Priced between the Silo and the Cellar:
+  // it is the step a player takes when a handful of animals has become a
+  // herd, before automating the feeding of it.
+  barn: { label: "Barn", placeCost: 18_000, materials: [{ item: "wood", quantity: 40 }] },
 };
 
 /** Flat total, and deliberately equal to the number of kinds: with the
@@ -124,9 +133,9 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
  *  any one kind needed more room. Raised 4 -> 5 with the Oven
  *  and 5 -> 6 with the Stew Pot, 6 -> 7 with the Kitchen
  *  Counter, 7 -> 8 with the Feed Silo and 8 -> 9 with the Preserves
- *  Cellar, 9 -> 10 with the Farm Kitchen and 10 -> 11 with the Smelter, same
- *  reason. */
-export const MACHINE_CAP = 11;
+ *  Cellar, 9 -> 10 with the Farm Kitchen, 10 -> 11 with the Smelter and
+ *  11 -> 12 with the Barn, same reason. */
+export const MACHINE_CAP = 12;
 
 export type MachineStatus = "idle" | "working";
 

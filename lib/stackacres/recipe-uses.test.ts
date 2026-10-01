@@ -174,8 +174,10 @@ describe("feasts (Chapter 6)", () => {
     expect(FOOD_ENERGY.bean_casserole).toBe(40);
   });
 
-  it("adds the Farm Kitchen at 60,000 Gold, one of eleven", () => {
+  it("adds the Farm Kitchen at 60,000 Gold, one of twelve", () => {
     expect(MACHINE_CATALOGUE.farm_kitchen.placeCost).toBe(60_000);
-    expect(MACHINE_CAP).toBe(11);
+    // Twelve since the Barn (lib/stackacres/barn.ts). The cap is still "one
+    // of each kind" -- it grows with the roster, never for a second of one.
+    expect(MACHINE_CAP).toBe(12);
   });
 });

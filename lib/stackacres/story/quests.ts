@@ -34,6 +34,7 @@ export type StoryObjective =
   | { readonly kind: "collect-livestock"; readonly target: number }
   | { readonly kind: "water"; readonly target: number }
   | { readonly kind: "feed"; readonly target: number }
+  | { readonly kind: "care"; readonly target: number }
   | { readonly kind: "buy-feed"; readonly target: number }
   | { readonly kind: "process"; readonly recipe: RecipeId; readonly target: number }
   | { readonly kind: "fish"; readonly target: number }
@@ -94,6 +95,8 @@ export function objectiveAdvance(objective: StoryObjective, event: StoryEvent): 
       return event.kind === "watered" ? event.count : 0;
     case "feed":
       return event.kind === "fed" ? event.count : 0;
+    case "care":
+      return event.kind === "cared" ? event.count : 0;
     case "buy-feed":
       return event.kind === "feed-bought" ? event.servings : 0;
     case "process":
@@ -150,6 +153,10 @@ export function objectiveLabel(objective: StoryObjective): string {
       return `Water ${objective.target} crops`;
     case "feed":
       return `Feed your animals ${objective.target} times`;
+    case "care":
+      return objective.target === 1
+        ? "Spend time with one of your animals"
+        : `Spend time with your animals ${objective.target} times`;
     case "buy-feed":
       return `Buy ${objective.target} servings of feed`;
     case "process":

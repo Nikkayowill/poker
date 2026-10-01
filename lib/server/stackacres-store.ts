@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "crypto";
 import { AXE_LEVELS, STARTING_AXE_LEVEL, isAxeLevel, type AxeLevel } from "@/lib/stackacres/axe";
 import type { StackAcresUnitRow } from "@/lib/stackacres/units";
+import { freshAnimalCare, type AnimalCare } from "@/lib/stackacres/barn";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
 import type { SectorId } from "@/lib/stackacres/sectors";
 import {
@@ -324,7 +325,7 @@ export function __stackacresHarvestsForTest(): readonly StackAcresHarvestEntry[]
 }
 
 const UNIT_COLUMNS =
-  "id, profile_id, stock, status, stake, yield_quantity, started_at, ready_at, last_fed_at, last_watered_at, muck_fee, permanent, version, created_at, housed_in, soil_slot, feed_bonus, map_tx, map_ty";
+  "id, profile_id, stock, status, stake, yield_quantity, started_at, ready_at, last_fed_at, last_watered_at, muck_fee, permanent, version, created_at, housed_in, soil_slot, feed_bonus, map_tx, map_ty, cared_on, care_streak, care_bonus";
 
 export interface UnitDbRow {
   id: string;
@@ -346,6 +347,12 @@ export interface UnitDbRow {
   feed_bonus: number | string;
   map_tx?: number | string | null;
   map_ty?: number | string | null;
+  /** Optional for the same reason map_tx/map_ty are: a row read back by a
+   *  path that predates the barn-routine migration has no such key, and
+   *  `?? null` / `?? 0` below is the whole backfill. */
+  cared_on?: string | null;
+  care_streak?: number | string | null;
+  care_bonus?: number | string | null;
 }
 
 /** Same parser `listStackAcresUnits`/`getStackAcresUnit`/etc. already call as
@@ -377,6 +384,13 @@ function fromRow(row: UnitDbRow): StoredStackAcresUnit {
     feedBonus: Number(row.feed_bonus),
     mapTx: row.map_tx === null || row.map_tx === undefined ? null : Number(row.map_tx),
     mapTy: row.map_ty === null || row.map_ty === undefined ? null : Number(row.map_ty),
+    // A `date` column comes back as `YYYY-MM-DD`, which is already exactly
+    // the care day `stackacresExchangeDay` produces -- sliced anyway so a
+    // driver that ever hands back a full timestamp cannot quietly make
+    // every day comparison false.
+    caredOn: row.cared_on ? String(row.cared_on).slice(0, 10) : null,
+    careStreak: row.care_streak === null || row.care_streak === undefined ? 0 : Number(row.care_streak),
+    careBonus: row.care_bonus === null || row.care_bonus === undefined ? 0 : Number(row.care_bonus),
   };
 }
 
@@ -543,6 +557,7 @@ export async function createStackAcresUnit(
       feedBonus: 0,
       mapTx: null,
       mapTy: null,
+      ...freshAnimalCare(),
     };
     memoryUnits.set(unit.id, clone(unit));
     return clone(unit);
@@ -677,6 +692,70 @@ export async function feedStackAcresUnit(
 }
 
 /**
+ * Tends one animal: writes the day, the streak and the clamped care bonus.
+ *
+ * DELIBERATELY THE SAME SHAPE AS `feedStackAcresUnit` -- same version and
+ * status guard, same null-means-lost-race contract -- because it is the same
+ * kind of write. It differs in two ways, both upstream: tending spends
+ * nothing, so a null needs no refund, and it moves no clock, so there is no
+ * `ready_at` here at all.
+ *
+ * THE DUPLICATE GUARD IS `.neq("cared_on", today)`, IN THE WHERE CLAUSE, not
+ * a check the service does before calling. The service checks too, for the
+ * error message; this is what makes it true. Two taps that both read an
+ * untended row will both compute the same next streak, but only the first
+ * update matches -- the second finds `cared_on` already equal to today and
+ * comes back null, which the service reports as "already tended today"
+ * rather than silently advancing the streak twice.
+ *
+ * `.is("cared_on", null)` has to be OR'd in because Postgres `<>` is null
+ * for a null left side, so a never-tended row would not match `neq` at all.
+ * Supabase spells that as `.or(...)`, which is why the guard reads the way
+ * it does rather than as one `.neq`.
+ */
+export async function careStackAcresUnit(
+  current: StoredStackAcresUnit,
+  care: AnimalCare,
+): Promise<StoredStackAcresUnit | null> {
+  const supabase = adminClient();
+  const version = current.version + 1;
+  const today = care.caredOn;
+  if (today === null) throw new Error("A tend must name the day it happened.");
+
+  if (!supabase) {
+    const stored = memoryUnits.get(current.id);
+    if (
+      !stored ||
+      stored.status !== "working" ||
+      stored.version !== current.version ||
+      stored.caredOn === today
+    ) {
+      return null;
+    }
+    const updated: StoredStackAcresUnit = { ...stored, ...care, version };
+    memoryUnits.set(current.id, clone(updated));
+    return clone(updated);
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_units")
+    .update({
+      cared_on: today,
+      care_streak: care.careStreak,
+      care_bonus: care.careBonus,
+      version,
+    })
+    .eq("id", current.id)
+    .eq("version", current.version)
+    .eq("status", "working")
+    .or(`cared_on.is.null,cared_on.neq.${today}`)
+    .select(UNIT_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not tend that: ${error.message}`);
+  return data ? fromRow(data as UnitDbRow) : null;
+}
+
+/**
  * Waters a dry crop: pushes ready_at forward by however long the soil stood
  * dry, so the clock genuinely stopped. Deliberately the same shape as
  * `feedStackAcresUnit` -- same version/status guard, same null-means-lost-race
@@ -776,6 +855,11 @@ export async function collectStackAcresUnit(
       lastWateredAt: restart.wateredAt === null ? null : restart.wateredAt.toISOString(),
       muckFee: null,
       feedBonus: 0,
+      // The care bonus belonged to the batch just collected. The STREAK and
+      // `caredOn` are untouched: they are facts about the player's habit,
+      // not about this cycle's produce, and resetting them would punish a
+      // player for collecting.
+      careBonus: 0,
       version,
     };
     if (!supabase) {
@@ -800,6 +884,7 @@ export async function collectStackAcresUnit(
         last_watered_at: next.lastWateredAt,
         muck_fee: null,
         feed_bonus: 0,
+        care_bonus: 0,
         version,
       })
       .eq("id", current.id)

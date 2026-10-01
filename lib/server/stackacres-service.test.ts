@@ -2248,6 +2248,11 @@ describe("the currency wall", () => {
       "buy-feed",
       "buy-seed",
       "buy-stock",
+      // Moves no money at all, in either direction: the daily barn tend
+      // spends no Gold, no feed and no energy, and what it pays is capped
+      // extra PRODUCE on the animal's current batch (lib/stackacres/barn.ts).
+      // Ray's care gift is feed servings, never Gold.
+      "care",
       "catch-fish",
       "chop-tree",
       // PAYS Gold and Town Influence: one finished Daily Farm Board line,

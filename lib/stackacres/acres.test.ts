@@ -78,7 +78,7 @@ describe("the acre list", () => {
 });
 
 describe("the migration's copy of the map", () => {
-  const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261002000100_stackacres_acres.sql"), "utf8");
+  const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261001204826_stackacres_acres.sql"), "utf8");
 
   it("holds the same acre rectangles", () => {
     const rects = [...sql.matchAll(/\('([A-Z]\d+)', (\d+), (\d+), (\d+), (\d+)\)/g)].map((m) => ({

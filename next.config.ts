@@ -96,7 +96,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: false,
   poweredByHeader: false,
   // CRITICAL FIX: Unified allowedDevOrigins configuration into the primary NextConfig object structure.
-  allowedDevOrigins: ["192.168.2.144:3000", "192.168.2.144"],
+  allowedDevOrigins: ["192.168.2.144:3000", "192.168.2.144", "127.0.0.1", "localhost"],
   outputFileTracingExcludes: {
     "**": [...sharpFiles, ...ogFiles],
   },

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { canStartMachine, isMachineDone, machineProgress, rollMillDoubleOutput } from "./machines";
+import {
+  MACHINE_CATALOGUE,
+  canStartMachine,
+  isMachineDone,
+  machineProgress,
+  rollMillDoubleOutput,
+} from "./machines";
 import { RECIPE_CATALOGUE, canStartRecipe } from "./recipes";
 
 describe("canStartMachine", () => {
@@ -81,5 +87,15 @@ describe("rollMillDoubleOutput", () => {
   it("hits below the chance and misses at or above it", () => {
     expect(rollMillDoubleOutput(0.1, () => 0.099)).toBe(true);
     expect(rollMillDoubleOutput(0.1, () => 0.1)).toBe(false);
+  });
+});
+
+describe("MACHINE_CATALOGUE materials", () => {
+  it("gates the Feed Silo and Preserves Cellar on Stone, and nothing else", () => {
+    expect(MACHINE_CATALOGUE.feed_silo.materials).toEqual([{ item: "stone", quantity: 20 }]);
+    expect(MACHINE_CATALOGUE.cellar.materials).toEqual([{ item: "stone", quantity: 30 }]);
+    for (const kind of ["mill", "dairy", "loom", "vat", "oven", "stew_pot", "counter", "farm_kitchen"] as const) {
+      expect(MACHINE_CATALOGUE[kind].materials).toBeUndefined();
+    }
   });
 });

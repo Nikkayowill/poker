@@ -337,7 +337,12 @@ import {
   type StackAcresBuyableCutter,
   type StackAcresCutter,
 } from "@/lib/stackacres/cutters";
-import { MACHINE_ITEM_CATALOGUE, machineItemLabel, machineItemNoun } from "@/lib/stackacres/machine-items";
+import {
+  MACHINE_ITEM_CATALOGUE,
+  machineItemLabel,
+  machineItemNoun,
+  type MachineRawItem,
+} from "@/lib/stackacres/machine-items";
 import { FISHING_BAIT_ITEM, pickCaughtFish, type FishSpecies } from "@/lib/stackacres/fishing";
 import {
   ENERGY_MAX,
@@ -357,6 +362,8 @@ import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/
 import { isFarmKitchenRecipe, planFarmKitchen } from "@/lib/stackacres/farm-kitchen";
 import { isSeedUnlocked, seedLockedMessage } from "@/lib/stackacres/seed-unlocks";
 import { QUARRY_CATALOGUE, pickQuarry, type QuarrySpecies } from "@/lib/stackacres/hunting";
+import { isStoneNodeId, type StoneNodeId, type SwingQuality } from "@/lib/stackacres/stone-nodes";
+import { mineStoneNode } from "./stone-node-store";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import {
   WHEAT_DURATION_MS,
@@ -1477,6 +1484,10 @@ export type StackAcresActionResult = StackAcresView & {
    *  other action leaves this undefined. The scope never learns this until
    *  it lands, which is the whole point: it plays a difficulty, not a prize. */
   quarryBagged?: { species: QuarrySpecies; meat: number; pelt: number };
+  /** Set by `mineStackAcresStoneNode` to what THIS swing just did -- every
+   *  other action leaves this undefined. `landed: false` means the node was
+   *  already broken and had not yet regrown, so nothing was mined. */
+  stoneMined?: { landed: boolean; broke: boolean; amount: number };
   /** Set by `meetStackAcresTraveler`/`turnInStackAcresTravelerQuest` to what
    *  THIS call just did -- never named `story`, which is StackAcresView's
    *  own always-present standing and would collide with it in this
@@ -3669,6 +3680,56 @@ export async function bagStackAcresQuarry(
   return { ...(await view(profile, now)), quarryBagged: { species, meat, pelt } };
 }
 
+/**
+ * One swing at one of the Mine's three Stone nodes.
+ *
+ * The node itself is GLOBAL, not per-profile (see lib/server/
+ * stone-node-store.ts's own header), so this is not a per-player row this
+ * function needs to guard against a race the way `harvestStackAcres` guards
+ * a unit -- `mineStoneNode` already applies the swing under the node row's
+ * own version-guarded update, so a lost race here reads back as a swing
+ * that simply did not land, never a double-collection.
+ *
+ * `quality` is the client's own timing grade -- "sweet" for a tap inside the
+ * gauge's sweet zone (lib/stackacres/swing-gauge.ts), "hit" otherwise -- and
+ * it can ONLY ever change how much Stone a landed swing pays out (see
+ * lib/stackacres/stone-nodes.ts's `SWING_YIELD`). It can never make an
+ * already-broken node break again or skip a swing: `mineStoneNode` reads the
+ * node's real hit count and regrow window off its own stored row, never off
+ * anything this call passes.
+ *
+ * Free like `bagStackAcresQuarry`: a swing costs nothing to attempt, so
+ * there is nothing to refund if the node turns out to be down.
+ */
+export async function mineStackAcresStoneNode(
+  token: string,
+  nodeIdInput: string,
+  qualityInput: string,
+  now = new Date(),
+): Promise<StackAcresActionResult> {
+  if (!isStoneNodeId(nodeIdInput)) throw new StackAcresRequestError("There is nothing to mine there.", 400);
+  if (qualityInput !== "hit" && qualityInput !== "sweet") {
+    throw new StackAcresRequestError("Not a real swing.", 400);
+  }
+  const nodeId: StoneNodeId = nodeIdInput;
+  const quality: SwingQuality = qualityInput;
+  const profile = await ensureProfile(token);
+
+  const outcome = await mineStoneNode(nodeId, quality, now);
+  if (!outcome.landed) {
+    return {
+      ...(await view(profile, now)),
+      stoneMined: { landed: false, broke: false, amount: 0 },
+    };
+  }
+
+  await adjustStackAcresInventory(profile.id, "stone", outcome.yield);
+  return {
+    ...(await view(profile, now)),
+    stoneMined: { landed: true, broke: outcome.broke, amount: outcome.yield },
+  };
+}
+
 /** Pays the maintenance fee on a mucked unit, clearing it -- see
  *  clearStackAcresMuck in the store for why this removes the row. */
 export async function clearStackAcresUnit(
@@ -4354,9 +4415,31 @@ export async function placeStackAcresMachine(
     );
   }
 
-  // Rule 1: the Gold leaves first.
+  // Rule 1: every stake leaves before the machine exists. Materials go
+  // first (cheaper to refund a handful of Stone than Gold if the Gold spend
+  // then comes up short), Gold second.
+  const materials = def.materials ?? [];
+  const debitedMaterials: { item: MachineRawItem; quantity: number }[] = [];
+  for (const material of materials) {
+    const remaining = await adjustStackAcresInventory(profile.id, material.item, -material.quantity);
+    if (remaining === null) {
+      for (const already of debitedMaterials) {
+        await adjustStackAcresInventory(profile.id, already.item, already.quantity);
+      }
+      throw new StackAcresRequestError(
+        `A ${def.label} needs ${material.quantity.toLocaleString()} ${machineItemNoun(material.item, material.quantity)}.`,
+        400,
+        { round: await snapshots(profile.id, now) },
+      );
+    }
+    debitedMaterials.push(material);
+  }
+
   const debited = await spendGoldByProfile(profile.id, def.placeCost);
   if (!debited) {
+    for (const material of debitedMaterials) {
+      await adjustStackAcresInventory(profile.id, material.item, material.quantity);
+    }
     throw new StackAcresRequestError(`A ${def.label} costs ${def.placeCost.toLocaleString()} Gold.`, 400, {
       round: await snapshots(profile.id, now),
     });
@@ -4366,6 +4449,9 @@ export async function placeStackAcresMachine(
     await createStackAcresMachine(profile.id, kind, now);
   } catch (error) {
     await refundGold(profile.id, def.placeCost);
+    for (const material of debitedMaterials) {
+      await adjustStackAcresInventory(profile.id, material.item, material.quantity);
+    }
     throw error;
   }
 

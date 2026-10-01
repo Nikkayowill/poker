@@ -52,10 +52,13 @@ import {
   collectStackAcresCellar,
   sealStackAcresVat,
   setStackAcresKitchenOrder,
+  mineStackAcresStoneNode,
   type StackAcresActionResult,
   type StackAcresView,
 } from "./stackacres-service";
 import { resetStackAcresDroneStoreForTests } from "./stackacres-drone-store";
+import { resetStoneNodeStoreForTests } from "./stone-node-store";
+import { HITS_TO_BREAK, REGROW_MS } from "@/lib/stackacres/stone-nodes";
 import { isDroneHangarUnlocked } from "./stackacres-drone-service";
 import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
 import type { StackAcresShopProgress } from "@/lib/stackacres/shop-locks";
@@ -296,6 +299,10 @@ async function funded(
   // predates that gate, so a funded farm starts carrying a deep shelf of
   // every crop rather than making each of those call sites buy seed first.
   for (const crop of STACKACRES_CROPS) await adjustStackAcresSeedStock(profile.id, crop, 1000);
+  // The Feed Silo and Preserves Cellar now also spend Stone to place
+  // (lib/stackacres/machines.ts's `materials`) -- a funded farm carries
+  // plenty so a machine-placement test never has to mine for it first.
+  await adjustStackAcresInventory(profile.id, "stone", 1000);
   if (beds) {
     // Straight into the store, not through `placeStackAcresSoilTile`: that
     // route spends a bag off Ray's shelf, and nothing here is about bags.
@@ -400,6 +407,7 @@ beforeEach(() => {
   __resetStackAcresCrossbreedForTest();
   __resetStackAcresRevisionsForTest();
   resetStackAcresDroneStoreForTests();
+  resetStoneNodeStoreForTests();
   vi.mocked(createStackAcresUnit).mockImplementation(REAL.createStackAcresUnit);
   vi.mocked(getStackAcresUnit).mockImplementation(REAL.getStackAcresUnit);
   vi.mocked(listStackAcresUnits).mockImplementation(REAL.listStackAcresUnits);
@@ -2194,6 +2202,7 @@ describe("the currency wall", () => {
       "give-gift",
       "harvest-crossbreed",
       "midnight-merchant-buy",
+      "mine-stone",
       "move-soil-tile-group",
       "place-machine",
       "place-pipe",
@@ -2237,6 +2246,9 @@ describe("the currency wall", () => {
     // `catch-fish` included too, same category as `collect`: it credits
     // inventory (one of the three catchable fish) and never Gold directly --
     // selling a catch is `sell`'s job, not a new payer of its own;
+    // `mine-stone` included, same category again: it credits Stone off a
+    // landed swing and never Gold directly -- `place-machine`'s own Stone
+    // spend and `sell` are the only two doors from it back to Gold;
     // `upgrade-tool` included, which is a pure sink, and the critical harvest
     // it buys is bonus produce inside `collect`, never Gold;
     // `work`, `process`, `request-contract` and `build-greenhouse` included,
@@ -3068,6 +3080,35 @@ describe("wheat and machines", () => {
     expect(await balance(token)).toBe(before - MACHINE_CATALOGUE.mill.placeCost);
     expect(view.machines).toHaveLength(1);
     expect(view.machines[0]).toMatchObject({ kind: "mill", status: "idle" });
+  });
+
+  it("also debits the Feed Silo's Stone requirement, alongside its Gold price", async () => {
+    const { token, id } = await funded();
+    const stoneBefore = (await readStackAcresInventory(id)).stone ?? 0;
+    const goldBefore = await balance(token);
+    await placeStackAcresMachine(token, "feed_silo", T0);
+    expect((await readStackAcresInventory(id)).stone).toBe(
+      stoneBefore - MACHINE_CATALOGUE.feed_silo.materials![0].quantity,
+    );
+    expect(await balance(token)).toBe(goldBefore - MACHINE_CATALOGUE.feed_silo.placeCost);
+  });
+
+  it("refuses to place a Stone-gated machine, and refunds nothing spent, when Stone is short", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresInventory(id, "stone", -((await readStackAcresInventory(id)).stone ?? 0));
+    const goldBefore = await balance(token);
+    await expect(placeStackAcresMachine(token, "cellar", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(goldBefore);
+    expect((await readStackAcresInventory(id)).stone ?? 0).toBe(0);
+  });
+
+  it("does not ask for Stone on a machine with no material cost, like the Mill", async () => {
+    const { token, id } = await funded();
+    const stoneBefore = (await readStackAcresInventory(id)).stone ?? 0;
+    await placeStackAcresMachine(token, "mill", T0);
+    expect((await readStackAcresInventory(id)).stone ?? 0).toBe(stoneBefore);
   });
 
   it("refuses and refunds once the machine cap is reached", async () => {
@@ -5086,5 +5127,65 @@ describe("seed locks", () => {
     const { token } = await funded();
     const view = await stockStackAcres(token, { stock: "potato" }, T0);
     expect(unitOf(view, "potato")).toBeDefined();
+  });
+});
+
+describe("mineStackAcresStoneNode", () => {
+  it("rejects an unknown node id without touching inventory", async () => {
+    const { token, id } = await funded();
+    const before = (await readStackAcresInventory(id)).stone ?? 0;
+    await expect(mineStackAcresStoneNode(token, "stone:mine-99", "hit", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect((await readStackAcresInventory(id)).stone ?? 0).toBe(before);
+  });
+
+  it("rejects a bogus quality string", async () => {
+    const { token } = await funded();
+    await expect(
+      mineStackAcresStoneNode(token, "stone:mine-1", "critical", T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+  });
+
+  it("credits Stone for a landed swing, more for a sweet one than a plain hit", async () => {
+    const { token, id } = await funded();
+    const before = (await readStackAcresInventory(id)).stone ?? 0;
+    const hit = await mineStackAcresStoneNode(token, "stone:mine-1", "hit", T0);
+    expect(hit.stoneMined).toEqual({ landed: true, broke: false, amount: 1 });
+    const sweet = await mineStackAcresStoneNode(token, "stone:mine-2", "sweet", T0);
+    expect(sweet.stoneMined).toEqual({ landed: true, broke: false, amount: 2 });
+    expect((await readStackAcresInventory(id)).stone ?? 0).toBe(before + 1 + 2);
+  });
+
+  it("breaks a node after exactly HITS_TO_BREAK swings, and refuses further mining until it regrows", async () => {
+    const { token, id } = await funded();
+    for (let i = 0; i < HITS_TO_BREAK - 1; i += 1) {
+      const result = await mineStackAcresStoneNode(token, "stone:mine-1", "hit", T0);
+      expect(result.stoneMined?.broke).toBe(false);
+    }
+    const felling = await mineStackAcresStoneNode(token, "stone:mine-1", "hit", T0);
+    expect(felling.stoneMined).toEqual({ landed: true, broke: true, amount: 1 });
+
+    const stoneAfterBreak = (await readStackAcresInventory(id)).stone ?? 0;
+    const refused = await mineStackAcresStoneNode(token, "stone:mine-1", "sweet", T0);
+    expect(refused.stoneMined).toEqual({ landed: false, broke: false, amount: 0 });
+    // A refused swing pays nothing -- inventory does not move.
+    expect((await readStackAcresInventory(id)).stone ?? 0).toBe(stoneAfterBreak);
+
+    // Once REGROW_MS has fully elapsed the same node accepts a swing again.
+    const later = new Date(T0.getTime() + REGROW_MS + 1000);
+    const regrown = await mineStackAcresStoneNode(token, "stone:mine-1", "hit", later);
+    expect(regrown.stoneMined).toEqual({ landed: true, broke: false, amount: 1 });
+  });
+
+  it("keeps each of the Mine's three nodes independent", async () => {
+    const { token, id } = await funded();
+    for (let i = 0; i < HITS_TO_BREAK; i += 1) {
+      await mineStackAcresStoneNode(token, "stone:mine-1", "hit", T0);
+    }
+    const stoneAfterFirstBroken = (await readStackAcresInventory(id)).stone ?? 0;
+    const otherNode = await mineStackAcresStoneNode(token, "stone:mine-2", "hit", T0);
+    expect(otherNode.stoneMined).toEqual({ landed: true, broke: false, amount: 1 });
+    expect((await readStackAcresInventory(id)).stone ?? 0).toBe(stoneAfterFirstBroken + 1);
   });
 });

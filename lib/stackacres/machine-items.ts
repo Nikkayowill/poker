@@ -41,8 +41,12 @@ import { FISH_SPECIES } from "./fishing";
 /** Wheat, the pond's three catchable fish, and what a stalk in the Oak's
  *  brush brings back: nothing crafted, nothing harvested off a stocked unit
  *  either -- see this file's header. Meat and pelts join the fish for exactly
- *  the same reason they did, and like them nothing consumes either yet. */
-export const MACHINE_RAW_ITEMS = ["wheat", ...FISH_SPECIES, "meat", "pelt"] as const;
+ *  the same reason they did, and like them nothing consumes either yet.
+ *  Stone joins the bucket for the same reason again: mined off a Mine boulder
+ *  (./stone-nodes.ts), not grown or crafted, and it is a required material on
+ *  the Preserves Cellar and Feed Silo (./machines.ts) rather than something a
+ *  recipe consumes. */
+export const MACHINE_RAW_ITEMS = ["wheat", ...FISH_SPECIES, "meat", "pelt", "stone"] as const;
 export const MACHINE_PROCESSED_ITEMS = [
   "flour",
   "cheese",
@@ -150,6 +154,11 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   // `homestead_inventory` rows.
   meat: { label: "Field Notes", plural: "Field Notes", icon: "ico-fieldnotes", sellPrice: 9 },
   pelt: { label: "Trail Photo", plural: "Trail Photos", icon: "ico-trailphoto", sellPrice: 20 },
+  // Mined off a Mine boulder (./stone-nodes.ts). Priced low like wheat, on
+  // purpose: Stone's real job is being spent on the Preserves Cellar and Feed
+  // Silo (./machines.ts), and a cheap sell keeps building always the better
+  // trade than cashing it in raw.
+  stone: { label: "Stone", plural: "Stone", icon: "ico-stone", sellPrice: 6 },
   flour: { label: "Flour", plural: "Flour", icon: "ico-flour", sellPrice: 40 },
   cheese: { label: "Cheese", plural: "Cheese", icon: "ico-cheese", sellPrice: 700 },
   cloth: { label: "Cloth", plural: "Cloth", icon: "ico-cloth", sellPrice: 320 },

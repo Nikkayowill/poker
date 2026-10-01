@@ -13,6 +13,10 @@
  * input and output is inventory (./inventory.ts). The only door from a
  * machine's output back to Gold is a fulfilled Contract (./contracts.ts).
  *
+ * A placement can ALSO spend a processing-track material alongside its Gold
+ * cost -- see `MachineDef.materials` below, currently the Preserves Cellar
+ * and Feed Silo asking for Stone.
+ *
  * Same timer discipline as ./wheat-plot.ts and ./units.ts: `isMachineDone`/
  * `machineProgress` are pure functions of `now`, and the server's own
  * `ready_at` check inside the guarded settlement is the only authority --
@@ -23,6 +27,7 @@
 import { canStartRecipe, recipesForMachine, type RecipeId } from "./recipes";
 import type { StackAcresInventory } from "./inventory";
 import { siloFeedsLeft } from "./feed-silo";
+import type { MachineRawItem } from "./machine-items";
 import { stackacresExchangeDay } from "./exchange";
 
 export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat", "oven", "stew_pot", "counter", "feed_silo", "cellar", "farm_kitchen"] as const;
@@ -32,11 +37,30 @@ export function isMachineKind(value: string): value is MachineKind {
   return (MACHINE_KINDS as readonly string[]).includes(value);
 }
 
+/** One material line a machine's placement also spends, alongside its Gold
+ *  `placeCost` -- the same shape ./blueprints.ts's `BlueprintRequirement`
+ *  takes, kept as its own narrower interface here rather than imported so
+ *  this file never has to import from ./blueprints.ts for one field. */
+export interface MachineMaterialCost {
+  readonly item: MachineRawItem;
+  readonly quantity: number;
+}
+
 export interface MachineDef {
   label: string;
   /** Gold debited once, when the machine is placed. A sink, same category as
    *  `stackacresCapacityPrice` -- nothing here is ever sold back. */
   placeCost: number;
+  /**
+   * Processing-track material this placement ALSO spends, on top of
+   * `placeCost` -- undefined for a machine that costs Gold alone. Only the
+   * two most literally structural buildings ask for Stone: the Preserves
+   * Cellar (a stone-walled root cellar, by name) and the Feed Silo (a poured
+   * foundation carrying a full year of grain). Both are debited the same way
+   * Gold is -- before the machine row exists, refunded if creation fails --
+   * see `placeStackAcresMachine` in lib/server/stackacres-service.ts.
+   */
+  materials?: readonly MachineMaterialCost[];
 }
 
 /**
@@ -65,12 +89,17 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
   counter: { label: "Kitchen Counter", placeCost: 800 },
   // Chapter 4a's first automation, placed from the Workshop. Runs no recipe:
   // it feeds hungry animals from the barn while the player is away
-  // (./feed-silo.ts). Priced as a late investment, not a convenience.
-  feed_silo: { label: "Feed Silo", placeCost: 12_000 },
+  // (./feed-silo.ts). Priced as a late investment, not a convenience. Its
+  // poured foundation is the reason it is one of the two Stone-gated
+  // machines: unlike the Mill or Loom's timber framing, a silo is concrete
+  // and rebar from the ground up.
+  feed_silo: { label: "Feed Silo", placeCost: 12_000, materials: [{ item: "stone", quantity: 20 }] },
   // Chapter 5's cellar under the house kitchen. Runs no recipe: it ages jars of
   // Pickles or Sauerkraut over hours (./aging.ts), so it earns while the
-  // player is away.
-  cellar: { label: "Preserves Cellar", placeCost: 25_000 },
+  // player is away. Stone-gated for the same reason the Feed Silo is -- a
+  // root cellar is dug and lined with stone, not framed in wood -- and
+  // priced a little steeper in Stone than the Silo since it sits underground.
+  cellar: { label: "Preserves Cellar", placeCost: 25_000, materials: [{ item: "stone", quantity: 30 }] },
   // Chapter 6's late automation beside the house kitchen. Runs no recipe of its
   // own: it cooks the player's standing order while they are away, at double
   // yield (./farm-kitchen.ts).

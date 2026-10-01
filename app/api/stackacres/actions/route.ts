@@ -23,6 +23,7 @@ import { STACKACRES_BUYABLE_CUTTERS } from "@/lib/stackacres/cutters";
 import { CROSSBREED_GRID_COLS, CROSSBREED_GRID_ROWS } from "@/lib/stackacres/crossbreeding";
 import { FRIENDSHIP_NPCS, GIFTABLE_ITEMS } from "@/lib/stackacres/friendship";
 import { TRAVELER_IDS } from "@/lib/stackacres/story/travelers";
+import { STONE_NODE_IDS } from "@/lib/stackacres/stone-nodes";
 import {
   activateStackAcresSynergyPerk,
   buildStackAcresGreenhouse,
@@ -55,6 +56,7 @@ import {
   bagStackAcresQuarry,
   catchStackAcresFish,
   sowStackAcresWheat,
+  mineStackAcresStoneNode,
   placeStackAcresMachine,
   workStackAcres,
   requestStackAcresContract,
@@ -270,6 +272,17 @@ const bodySchema = z.discriminatedUnion("action", [
   // pelt, same as a catch -- moves no Gold. Which quarry it was is the
   // server's own dice roll.
   z.object({ action: z.literal("bag-quarry") }),
+  // One swing at one of the Mine's three Stone nodes. Fills the shelf with
+  // Stone, same as a catch or a stalk -- moves no Gold. `quality` is the
+  // client's own timing grade off the mining gauge (lib/stackacres/
+  // swing-gauge.ts) and only ever changes how much Stone a landed swing
+  // pays out -- never whether it lands, which the node's own server-owned
+  // hit count and regrow window decide (lib/stackacres/stone-nodes.ts).
+  z.object({
+    action: z.literal("mine-stone"),
+    nodeId: z.enum(STONE_NODE_IDS),
+    quality: z.enum(["hit", "sweet"]),
+  }),
   z.object({ action: z.literal("clear"), unitId: unitIdSchema }),
   z.object({
     action: z.literal("buy-feed"),
@@ -607,6 +620,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return eatStackAcresFoodAction(token, action.item, now);
     case "bag-quarry":
       return bagStackAcresQuarry(token, now);
+    case "mine-stone":
+      return mineStackAcresStoneNode(token, action.nodeId, action.quality, now);
     case "clear":
       return clearStackAcresUnit(token, action.unitId, now);
     case "buy-feed":

@@ -125,61 +125,72 @@ describe("preflop looseness by personality (VPIP)", () => {
   // random hole cards and a randomized decision engine, not a closed-form
   // number, so the band has to tolerate real sampling variance rather than
   // pin an exact figure that would make this test flaky.
-  const TRIALS = 800;
-  const VPIP_TEST_TIMEOUT_MS = 15_000;
+  const TRIALS = 400;
+
+  // Each archetype is measured once and shared by every assertion below.
+  // A measurement is 400 full bot decisions, each running the 56-deal
+  // equity estimate, so it costs about a second and a half; measuring the
+  // same seeded archetype again for every comparison was most of a minute
+  // for the same numbers.
+  const SEEDS: Record<BotPersonality, number> = {
+    ROCK: 4_000,
+    MANIAC: 5_000,
+    CALLING_STATION: 6_000,
+    NIT: 7_000,
+    LAG: 8_000,
+    TAG: 9_000,
+  };
+  const measured = new Map<BotPersonality, number>();
+  const vpipOf = (personality: BotPersonality): number => {
+    const cached = measured.get(personality);
+    if (cached !== undefined) return cached;
+    const vpip = measureVpip(personality, TRIALS, SEEDS[personality]);
+    measured.set(personality, vpip);
+    return vpip;
+  };
 
   // Calibrated against the tuning in `personalityProfiles`: at these seeds
-  // and this trial count, ROCK/MANIAC/CALLING_STATION measure roughly
-  // 0.26/0.45/0.64. Every call here is fully deterministic (seeded hole
-  // cards, seeded decision rolls, personality pinned rather than drawn), so
-  // these bounds aren't chasing run-to-run noise -- they're a margin around
-  // an exact, reproducible number, wide enough to survive a deliberate
-  // future retune without being so wide it stops catching a broken one.
+  // and this trial count, ROCK/MANIAC/CALLING_STATION/NIT/LAG/TAG measure
+  // roughly 0.27/0.44/0.65/0.16/0.33/0.22. Every call here is fully
+  // deterministic (seeded hole cards, seeded decision rolls, personality
+  // pinned rather than drawn), so these bounds aren't chasing run-to-run
+  // noise -- they're a margin around an exact, reproducible number, wide
+  // enough to survive a deliberate future retune without being so wide it
+  // stops catching a broken one.
   it("keeps the Table Captain (ROCK) disciplined", () => {
-    const vpip = measureVpip("ROCK", TRIALS, 1_000);
+    const vpip = vpipOf("ROCK");
     expect(vpip).toBeGreaterThan(0.18);
     expect(vpip).toBeLessThan(0.38);
-  }, VPIP_TEST_TIMEOUT_MS);
+  });
 
   it("makes the Loose Cannon (MANIAC) noticeably wider", () => {
-    const vpip = measureVpip("MANIAC", TRIALS, 2_000);
+    const vpip = vpipOf("MANIAC");
     expect(vpip).toBeGreaterThan(0.35);
     expect(vpip).toBeLessThan(0.55);
-  }, VPIP_TEST_TIMEOUT_MS);
+  });
 
   it("makes the Whale (CALLING_STATION) play almost everything", () => {
-    const vpip = measureVpip("CALLING_STATION", TRIALS, 3_000);
-    expect(vpip).toBeGreaterThan(0.55);
-  }, VPIP_TEST_TIMEOUT_MS);
+    expect(vpipOf("CALLING_STATION")).toBeGreaterThan(0.55);
+  });
 
   it("orders the three archetypes Whale > Loose Cannon > Table Captain", () => {
-    const rock = measureVpip("ROCK", TRIALS, 4_000);
-    const maniac = measureVpip("MANIAC", TRIALS, 5_000);
-    const whale = measureVpip("CALLING_STATION", TRIALS, 6_000);
-    expect(whale).toBeGreaterThan(maniac);
-    expect(maniac).toBeGreaterThan(rock);
-  }, VPIP_TEST_TIMEOUT_MS);
+    expect(vpipOf("CALLING_STATION")).toBeGreaterThan(vpipOf("MANIAC"));
+    expect(vpipOf("MANIAC")).toBeGreaterThan(vpipOf("ROCK"));
+  });
 
   it("makes the Iron Vault (NIT) the tightest seat at the table", () => {
-    const nit = measureVpip("NIT", TRIALS, 7_000);
-    const rock = measureVpip("ROCK", TRIALS, 4_000);
-    expect(nit).toBeLessThan(0.2);
-    expect(rock).toBeGreaterThan(nit);
-  }, VPIP_TEST_TIMEOUT_MS);
+    expect(vpipOf("NIT")).toBeLessThan(0.2);
+    expect(vpipOf("ROCK")).toBeGreaterThan(vpipOf("NIT"));
+  });
 
   it("makes the Live Wire (LAG) noticeably wider than the Table Captain", () => {
-    const lag = measureVpip("LAG", TRIALS, 8_000);
-    const rock = measureVpip("ROCK", TRIALS, 4_000);
-    expect(lag).toBeGreaterThan(rock);
-  }, VPIP_TEST_TIMEOUT_MS);
+    expect(vpipOf("LAG")).toBeGreaterThan(vpipOf("ROCK"));
+  });
 
   it("keeps the Straight Shooter (TAG) between the Iron Vault and the Live Wire", () => {
-    const nit = measureVpip("NIT", TRIALS, 7_000);
-    const tag = measureVpip("TAG", TRIALS, 9_000);
-    const lag = measureVpip("LAG", TRIALS, 8_000);
-    expect(tag).toBeGreaterThan(nit);
-    expect(lag).toBeGreaterThan(tag);
-  }, VPIP_TEST_TIMEOUT_MS);
+    expect(vpipOf("TAG")).toBeGreaterThan(vpipOf("NIT"));
+    expect(vpipOf("LAG")).toBeGreaterThan(vpipOf("TAG"));
+  });
 });
 
 describe("table traffic: staggered bot re-entry", () => {

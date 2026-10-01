@@ -111,7 +111,7 @@ import {
   placeStackAcresSoilTile as laySoilBed,
 } from "./stackacres-soil-store";
 import { CROP_FIELD_BEDS } from "@/lib/stackacres/world";
-import { SOIL_TILE, soilTileAt } from "@/lib/stackacres/soil";
+import { HOME_STARTER_TILE_COUNT, SOIL_TILE, soilTileAt } from "@/lib/stackacres/soil";
 import {
   STACKACRES_BASE_CAP,
   STACKACRES_CATALOGUE,
@@ -460,8 +460,14 @@ describe("stocking", () => {
     expect(await balance(token)).toBe(before);
   });
 
-  it("refuses a crop with nothing tilled, and the seed comes back", async () => {
+  // A brand new farm is no longer "nothing tilled" -- the free Homestead
+  // starter beds (lib/stackacres/soil.ts's `homeStarterSoilTiles`) are
+  // always there, `beds: false` or not. This fills every one of those first
+  // so there really is no bed left anywhere before asking for the refusal.
+  it("refuses a crop with no bed left anywhere, and the seed comes back", async () => {
     const { token } = await funded(500_000, { beds: false });
+    const fillers = STACKACRES_CROPS.filter((crop) => crop !== "carrot").slice(0, HOME_STARTER_TILE_COUNT);
+    for (const filler of fillers) await stockStackAcres(token, { stock: filler }, T0);
     const seedsBefore = (await readStackAcres(token, T0)).seedStock.carrot;
 
     await expect(stockStackAcres(token, { stock: "carrot" }, T0)).rejects.toThrow(/bed/);
@@ -471,9 +477,11 @@ describe("stocking", () => {
     expect(after.seedStock.carrot).toBe(seedsBefore);
   });
 
-  it("refuses a crop bought outright with nothing tilled, and the Gold comes back", async () => {
+  it("refuses a crop bought outright with no bed left anywhere, and the Gold comes back", async () => {
     const { token, id } = await funded(500_000, { beds: false });
     await createStackAcresMachine(id, "mill"); // Opens corn (seed-unlocks.ts).
+    const fillers = STACKACRES_CROPS.filter((crop) => crop !== "corn").slice(0, HOME_STARTER_TILE_COUNT);
+    for (const filler of fillers) await stockStackAcres(token, { stock: filler }, T0);
     const before = await balance(token);
 
     await expect(buyStackAcresStock(token, { stock: "corn" }, T0)).rejects.toThrow(/bed/);

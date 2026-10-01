@@ -92,6 +92,8 @@ import {
 import { readStackAcresBatch } from "./stackacres-read-batch";
 import {
   createSoilMap,
+  homeStarterSoilTiles,
+  isHomeStarterSoilTile,
   nextFreeSoilSlot,
   planSoilGroupRelocation,
   soilSlotForTile,
@@ -877,12 +879,18 @@ async function waterIrrigatedCrops(profileId: string, now: Date): Promise<void> 
   await stampIrrigatedCrops(rows, await irrigatedUnitIdsFor(profileId, rows), now);
 }
 
-/** The full slot space for one farm: every tile it has bought. USED TO also
- *  merge in a free starter pair (`mergeSoilTiles`, since deleted along with
- *  the starter grant -- see lib/stackacres/soil.ts's own "starter kit"
- *  section) -- a farm's placed soil is now simply what it purchased. */
+/** The full slot space for one farm: the free Homestead starter beds
+ *  (`homeStarterSoilTiles`), never persisted, ahead of every tile it has
+ *  bought. Both server callers that need to show the player their soil --
+ *  the view's own `soilTiles` field and this function -- go through
+ *  `mergedSoilTiles` so the two cannot disagree about what a farm can plant
+ *  on. */
+function mergedSoilTiles(purchased: readonly SoilTile[]): SoilTile[] {
+  return [...homeStarterSoilTiles(), ...purchased];
+}
+
 function soilMapFor(purchased: readonly SoilTile[]): SoilMap {
-  return createSoilMap(purchased);
+  return createSoilMap(mergedSoilTiles(purchased));
 }
 
 function parseUnitId(value: unknown): string {
@@ -1249,7 +1257,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
       inventory: crossbreedInventory,
     },
     irrigation: [...irrigationGrid.nodes],
-    soilTiles,
+    soilTiles: mergedSoilTiles(soilTiles),
     soilStock,
     seedStock,
     devotion: devotionView(storedDevotion, now),
@@ -2569,8 +2577,16 @@ export async function stockStackAcres(
   // (lib/stackacres/crop-fields.ts), checked here instead -- except inside
   // the Greenhouse, which is its own separate, separately-gated growing
   // space (`greenhouseBuilt`, checked below) that never touches
-  // `CROP_FIELD_BEDS` at all.
-  if (zone === "farmstead" && !inGreenhouse && !(await readStackAcresCropFieldsUnlocked(profile.id))) {
+  // `CROP_FIELD_BEDS` at all, and except a tap naming one of the free
+  // Homestead starter beds (`isHomeStarterSoilTile`), which was never part
+  // of the Crop Fields' own ground and is not behind that unlock either.
+  const sowingStarterBed = tile !== null && isHomeStarterSoilTile(tile.tx, tile.ty);
+  if (
+    zone === "farmstead" &&
+    !inGreenhouse &&
+    !sowingStarterBed &&
+    !(await readStackAcresCropFieldsUnlocked(profile.id))
+  ) {
     throw new StackAcresRequestError(
       "The Crop Fields are still under wild growth. Unlock them before you sow anything there.",
       409,

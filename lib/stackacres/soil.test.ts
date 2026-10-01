@@ -16,6 +16,8 @@ import {
   meadowTileAt,
 } from "./zones";
 import {
+  HOME_STARTER_ORIGIN,
+  HOME_STARTER_TILE_COUNT,
   SOIL_EDGE_BAND,
   SOIL_TILE,
   SOIL_TILE_PRICE_GOLD,
@@ -24,6 +26,8 @@ import {
   getClosestDryCrop,
   getClosestHarvestableCrop,
   hasSoilTile,
+  homeStarterSoilTiles,
+  isHomeStarterSoilTile,
   nextSoilOrder,
   onSoil,
   orderedSoilTiles,
@@ -213,9 +217,68 @@ describe("the coordinate map tracks what was placed", () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* The starter kit is gone -- see ./soil.ts's own "starter kit" section --   */
-/* so there is no describe block here for it any more.                 */
+/* The Homestead starter beds -- reintroduced, small                   */
 /* ------------------------------------------------------------------ */
+
+describe("homeStarterSoilTiles -- the free Homestead starter beds", () => {
+  it("hands back a small, fixed number of beds, not the old 24-tile grant", () => {
+    const tiles = homeStarterSoilTiles();
+    expect(tiles).toHaveLength(HOME_STARTER_TILE_COUNT);
+    expect(HOME_STARTER_TILE_COUNT).toBeLessThan(24);
+    expect(HOME_STARTER_TILE_COUNT).toBeGreaterThanOrEqual(4);
+    expect(HOME_STARTER_TILE_COUNT).toBeLessThanOrEqual(8);
+  });
+
+  it("is deterministic -- the exact same tiles every call, nothing rolled per farm", () => {
+    expect(homeStarterSoilTiles()).toEqual(homeStarterSoilTiles());
+  });
+
+  it("marks every tile 'starter', never 'purchased'", () => {
+    for (const tile of homeStarterSoilTiles()) expect(tile.origin).toBe("starter");
+  });
+
+  it("sits entirely outside the Crop Fields' own lattice", () => {
+    for (const tile of homeStarterSoilTiles()) {
+      expect(soilTileInCropFieldBeds(tile.tx, tile.ty)).toBe(false);
+    }
+  });
+
+  it("gives every starter tile a unique, negative order", () => {
+    const orders = homeStarterSoilTiles().map((t) => t.order);
+    expect(new Set(orders).size).toBe(orders.length);
+    for (const order of orders) expect(order).toBeLessThan(0);
+  });
+
+  it("cannot be flood-filled together with a Crop Fields bed", () => {
+    // A purchased bed comfortably inside the Crop Fields, right next to a
+    // starter tile's own coordinate space would be a bug; this holds the two
+    // far enough apart that a relocation group seeded from either one can
+    // never walk into the other.
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased" },
+      ...homeStarterSoilTiles(),
+    ]);
+    const group = soilTileGroup(soil, HOME_STARTER_ORIGIN.tx, HOME_STARTER_ORIGIN.ty);
+    expect(group.some((t) => t.tx === 0 && t.ty === 0)).toBe(false);
+  });
+});
+
+describe("isHomeStarterSoilTile", () => {
+  it("is true for every tile homeStarterSoilTiles hands back", () => {
+    for (const tile of homeStarterSoilTiles()) {
+      expect(isHomeStarterSoilTile(tile.tx, tile.ty)).toBe(true);
+    }
+  });
+
+  it("is false for a Crop Fields coordinate", () => {
+    const centre = soilTileAt(CROP_FIELD_BEDS.x + CROP_FIELD_BEDS.width / 2, CROP_FIELD_BEDS.y + CROP_FIELD_BEDS.height / 2);
+    expect(isHomeStarterSoilTile(centre.tx, centre.ty)).toBe(false);
+  });
+
+  it("is false for an arbitrary far-away coordinate", () => {
+    expect(isHomeStarterSoilTile(-10_000, -10_000)).toBe(false);
+  });
+});
 
 /* ------------------------------------------------------------------ */
 /* The slot lattice                                                    */

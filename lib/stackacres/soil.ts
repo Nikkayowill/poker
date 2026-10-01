@@ -559,25 +559,89 @@ export function plantableTileGroup(
 }
 
 /* ------------------------------------------------------------------ */
-/* The starter kit -- SINCE REMOVED                                    */
+/* The Homestead starter beds -- reintroduced, small                   */
 /* ------------------------------------------------------------------ */
 
 /**
  * A new farm USED TO open with 24 free beds (`SOIL_STARTER_TILES`),
  * generated on the fly by a since-deleted `starterSoilTiles` from whichever
- * tiles of an area sat nearest its centre. Removed outright: free ground
- * undercut the whole point of a placeable, purchasable bed -- see the file
- * header's complaint about the old hardcoded dirt box having "nothing to
- * buy" -- and a garden should be something the player works up to, not
- * something every save already has. Every farm, including ones already
- * standing, opens as bare grass now: there was never a database row to
- * migrate, since a starter tile was derived fresh on every load and never
- * persisted (see lib/server/stackacres-soil-store.ts's own header).
+ * tiles of an area sat nearest its centre. Removed outright 2026-09-09: free
+ * ground undercut the whole point of a placeable, purchasable bed -- see the
+ * file header's complaint about the old hardcoded dirt box having "nothing
+ * to buy".
  *
- * `mergeSoilTiles` went with it -- it only ever flattened the starter pair
- * ahead of what a profile had bought, and a farm's placed soil is now simply
- * its purchased tiles, with no merge step.
+ * That removal also left a brand new farm with nothing plantable at all
+ * until it could afford the Crop Fields' 15,000 Gold unlock
+ * (./crop-fields.ts) -- and per docs/stackacres-direction.md, a Gold sink is
+ * supposed to be a deliberate investment, not friction that blocks the game
+ * before it starts. `homeStarterSoilTiles` below is the smaller fix: a
+ * handful of beds in the Homestead itself, free, so a new player can till
+ * and plant something in their first minute. It is deliberately NOT the old
+ * grant at its old size -- six beds, not twenty-four -- and it does not sit
+ * on the Crop Fields' own lattice, so it leaves that 15,000 Gold unlock as
+ * the real "scale up your farm" investment.
+ *
+ * Never persisted, the same way the old grant never was: these are derived
+ * fresh on every read (see `soilMapFor` in stackacres-service.ts), so there
+ * is nothing to migrate and nothing a farm can lose.
  */
+
+/** How many free beds a brand new farm opens with. Small on purpose -- see
+ *  the section header above. */
+export const HOME_STARTER_TILE_COUNT = 6;
+
+/** How many of those beds sit in one row. Exported so
+ *  lib/stackacres-td/field.ts's own Homestead map-pixel offset can be laid
+ *  out against the real grid rather than a hand-copied width. */
+export const HOME_STARTER_COLS = 3;
+
+/**
+ * Where the starter lattice sits, chosen to be far outside `CROP_FIELD_BEDS`
+ * (roughly tx/ty -16..16 -- see world.ts's own header on that rect) so a
+ * starter bed can never occupy the same cell as a purchased one, and, since
+ * `soilTileGroup` walks 4-neighbours with no area filter of its own, can
+ * never be flood-filled into the same relocation group as one either.
+ * soil.test.ts holds both of those apart. Exported for the identical reason
+ * `HOME_STARTER_COLS` is: lib/stackacres-td/field.ts needs the real corner,
+ * not a restated one, to pin the Homestead's own map pixels to it.
+ */
+export const HOME_STARTER_ORIGIN: SoilTileCoord = { tx: 100, ty: 100 };
+
+/**
+ * The starter beds themselves, fixed and hand-numbered rather than derived
+ * from any area rect -- there is no `growAreaBounds`/`CROP_FIELD_BEDS`-style
+ * rect this module may reach for (see the file header on why this stays a
+ * leaf), and a fixed handful of tiles does not need one.
+ *
+ * NEGATIVE ORDERS, deliberately (-6..-1 for six beds). A purchased bed's own
+ * order comes from `coalesce(max(tile_order), -1) + 1` -- both in the
+ * `place_homestead_soil_tile` RPC and its in-memory mirror in
+ * stackacres-soil-store.ts -- computed over that profile's PERSISTED rows
+ * alone, which never include a starter tile (see that store's own header:
+ * "ONLY PURCHASED TILES LIVE HERE"). That computation cannot be taught about
+ * six tiles it never reads a row for without a migration, so this keeps the
+ * two order spaces apart the other way: purchased beds start counting from 0
+ * exactly as they always have, and starter beds sit at the six negative
+ * numbers no `coalesce(max(...), -1) + 1` can ever produce. soil.test.ts
+ * holds that disjointness, and a mixed-sign sort is exactly what
+ * `orderedSoilTiles`/`nextFreeSoilSlot` already do correctly with no change.
+ */
+export function homeStarterSoilTiles(): SoilTile[] {
+  return Array.from({ length: HOME_STARTER_TILE_COUNT }, (_, i) => ({
+    tx: HOME_STARTER_ORIGIN.tx + (i % HOME_STARTER_COLS),
+    ty: HOME_STARTER_ORIGIN.ty + Math.floor(i / HOME_STARTER_COLS),
+    order: i - HOME_STARTER_TILE_COUNT,
+    origin: "starter" as const,
+  }));
+}
+
+/** Whether `(tx, ty)` names one of the free Homestead starter beds -- the one
+ *  case `stockStackAcres` (lib/server/stackacres-service.ts) lets a crop go
+ *  into the ground before the Crop Fields are unlocked. */
+export function isHomeStarterSoilTile(tx: number, ty: number): boolean {
+  return tx >= HOME_STARTER_ORIGIN.tx && tx < HOME_STARTER_ORIGIN.tx + HOME_STARTER_COLS &&
+    ty >= HOME_STARTER_ORIGIN.ty && ty < HOME_STARTER_ORIGIN.ty + Math.ceil(HOME_STARTER_TILE_COUNT / HOME_STARTER_COLS);
+}
 
 /**
  * Gold cost of one PLAIN purchased bed -- `SOIL_DEFAULT_TIER`'s own price,

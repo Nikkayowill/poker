@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { CROP_FIELD_BEDS } from "@/lib/stackacres/world";
 import {
+  HOME_STARTER_TILE_COUNT,
   SOIL_TILE,
   SOIL_TILE_PRICE_GOLD,
   createSoilMap,
+  homeStarterSoilTiles,
   soilSlotTile,
   soilTileAt,
   type SoilTile,
@@ -16,6 +18,7 @@ import {
   __resetStackAcresSeedStockForTest,
   adjustStackAcresSeedStock,
 } from "./stackacres-seed-store";
+import { CROP_FIELDS_UNLOCK_COST_GOLD } from "@/lib/stackacres/crop-fields";
 import {
   StackAcresRequestError,
   buyStackAcresSoil,
@@ -24,6 +27,7 @@ import {
   readStackAcres,
   removeStackAcresSoilTile,
   stockStackAcres,
+  unlockStackAcresCropFields,
 } from "./stackacres-service";
 import {
   __resetStackAcresForTest,
@@ -105,6 +109,64 @@ async function stocked(tier: SoilTier = "dirt", bags = 4, gold = 500_000) {
   await buyStackAcresSoil(token, { tier, quantity: bags }, T0);
   return token;
 }
+
+describe("the free Homestead starter beds", () => {
+  it("exist on a genuinely fresh profile, before any Gold is spent or the Crop Fields are unlocked", async () => {
+    const token = randomUUID();
+    await ensureProfile(token);
+
+    const view = await readStackAcres(token, T0);
+
+    expect(view.cropFieldsUnlocked).toBe(false);
+    expect(view.soilTiles.filter((t) => t.origin === "starter")).toHaveLength(HOME_STARTER_TILE_COUNT);
+  });
+
+  it("let a genuinely new player till and plant a real crop with no Gold spent and nothing unlocked", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await adjustStackAcresSeedStock(profile.id, "carrot", 1);
+    const goldBefore = (await ensureProfile(token)).goldBalance;
+    const starterBed = homeStarterSoilTiles()[0];
+
+    const view = await stockStackAcres(token, { stock: "carrot", tile: starterBed }, T0);
+
+    const planted = view.units.find((u) => u.stock === "carrot");
+    expect(planted).toBeDefined();
+    expect(planted?.soilSlot).toBe(starterBed.order);
+    expect(view.cropFieldsUnlocked).toBe(false);
+    expect((await ensureProfile(token)).goldBalance).toBe(goldBefore);
+  });
+
+  it("cannot be removed -- only a purchased bed can", async () => {
+    const token = randomUUID();
+    await ensureProfile(token);
+    const starterBed = homeStarterSoilTiles()[0];
+
+    await expect(removeStackAcresSoilTile(token, starterBed, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+  });
+
+  it("leaves the Crop Fields' own 15,000 Gold unlock and its bag-purchase gate untouched", async () => {
+    expect(CROP_FIELDS_UNLOCK_COST_GOLD).toBe(15_000);
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await adjustGold(profile.id, CROP_FIELDS_UNLOCK_COST_GOLD - profile.goldBalance);
+    // Two units first (`CROP_FIELDS_UNLOCK_REQUIRES_UNITS`) -- a crop sown on
+    // a free starter bed counts the same as any other.
+    await adjustStackAcresSeedStock(profile.id, "carrot", 2);
+    const beds = homeStarterSoilTiles();
+    await stockStackAcres(token, { stock: "carrot", tile: beds[0] }, T0);
+    await stockStackAcres(token, { stock: "carrot", tile: beds[1] }, T0);
+
+    const view = await unlockStackAcresCropFields(token, T0);
+    expect(view.cropFieldsUnlocked).toBe(true);
+
+    // Unlocking does not hand out a free Crop Fields bed either -- placing one
+    // there still spends a bag bought at Ray's shop.
+    await expect(placeStackAcresSoilTile(token, cropFieldTile(), T0)).rejects.toThrow(/Ray/);
+  });
+});
 
 describe("placeStackAcresSoilTile — spends a bag, never Gold", () => {
   it("lays a bed, takes one bag off the shelf, and moves no Gold", async () => {
@@ -469,13 +531,14 @@ describe("soil tiers", () => {
   it("shortens a crop's cycle when it is sown into an enriched bed", async () => {
     const base = STACKACRES_CATALOGUE.corn.durationMs;
 
-    // A plain dirt bed is the baseline -- a crop cannot be sown with no bed
-    // at all any more (see the refusal test just below), so the comparison
-    // is dirt against enriched rather than nothing against enriched.
+    // A plain dirt bed is the baseline. Both sows name CELL_A explicitly --
+    // a fresh farm also carries the free Homestead starter beds now (see
+    // lib/stackacres/soil.ts's `homeStarterSoilTiles`), and an unnamed sow
+    // would land on one of those, plain-tiered, rather than on CELL_A.
     const plainToken = await sowingFarm();
     await buyStackAcresSoil(plainToken, { tier: "dirt", quantity: 1 }, T0);
     await placeStackAcresSoilTile(plainToken, { ...CELL_A, tier: "dirt" }, T0);
-    const plain = (await stockStackAcres(plainToken, { stock: "corn" }, T0)).units
+    const plain = (await stockStackAcres(plainToken, { stock: "corn", tile: CELL_A }, T0)).units
       .filter((u) => u.stock === "corn")
       .at(-1)!;
     expect(Date.parse(plain.readyAt) - T0.getTime()).toBe(base);
@@ -484,21 +547,30 @@ describe("soil tiers", () => {
     const richToken = await sowingFarm();
     await buyStackAcresSoil(richToken, { tier: "enriched", quantity: 1 }, T0);
     await placeStackAcresSoilTile(richToken, { ...CELL_A, tier: "enriched" }, T0);
-    const rich = (await stockStackAcres(richToken, { stock: "corn" }, T0)).units
+    const rich = (await stockStackAcres(richToken, { stock: "corn", tile: CELL_A }, T0)).units
       .filter((u) => u.stock === "corn")
       .at(-1)!;
 
-    // The one bed on this farm, so slot 0 is CELL_A -- the enriched bed.
+    // The one PURCHASED bed on this farm, so slot 0 is CELL_A -- the
+    // enriched bed. Purchased order counting is untouched by the starter
+    // beds (they are never persisted -- see stackacres-soil-store.ts's own
+    // header), so this is still 0, not offset by the six starter beds.
     expect(rich.soilSlot).toBe(0);
     expect(Date.parse(rich.readyAt) - T0.getTime()).toBe(Math.round(base * 0.8));
   });
 
-  // A crop needs a bed under it (2026-09-09): with nothing tilled anywhere
-  // the sow is refused outright, and the seed it would have spent stays on
-  // the shelf -- the same "a failed creation refunds" rule the insert path
-  // already follows, applied one step earlier.
-  it("refuses a crop with no bed anywhere, and keeps the seed", async () => {
+  // A crop needs a bed under it (2026-09-09): with every bed already
+  // growing something -- Crop Fields or Homestead starter alike -- the sow
+  // is refused outright, and the seed it would have spent stays on the
+  // shelf, the same "a failed creation refunds" rule the insert path
+  // already follows, applied one step earlier. A brand new farm is no
+  // longer a case of "no bed anywhere" (that is the whole point of the free
+  // Homestead starter beds), so this fills all six of those first.
+  it("refuses a crop with no bed left anywhere, and keeps the seed", async () => {
     const token = await sowingFarm();
+    for (let i = 0; i < HOME_STARTER_TILE_COUNT; i += 1) {
+      await stockStackAcres(token, { stock: STACKACRES_CROPS[i] }, T0);
+    }
     const before = (await readStackAcres(token, T0)).seedStock.corn;
 
     await expect(stockStackAcres(token, { stock: "corn" }, T0)).rejects.toThrow(/bed/);
@@ -514,11 +586,12 @@ describe("soil tiers", () => {
     const thirstMs = STACKACRES_CATALOGUE.corn.thirstMs ?? 0;
     const wellPastThirst = new Date(T0.getTime() + thirstMs * 1.5);
 
-    // Dirt, so the dry half of this has a bed to stand on at all.
+    // Both sows name CELL_A explicitly -- see the enriched-bed test above on
+    // why an unnamed sow can no longer be trusted to land there.
     const dryToken = await sowingFarm();
     await buyStackAcresSoil(dryToken, { tier: "dirt", quantity: 1 }, T0);
     await placeStackAcresSoilTile(dryToken, { ...CELL_A, tier: "dirt" }, T0);
-    const dryId = (await stockStackAcres(dryToken, { stock: "corn" }, T0)).units
+    const dryId = (await stockStackAcres(dryToken, { stock: "corn", tile: CELL_A }, T0)).units
       .filter((u) => u.stock === "corn")
       .at(-1)!.id;
     const dried = (await readStackAcres(dryToken, wellPastThirst)).units.find((u) => u.id === dryId);
@@ -527,7 +600,7 @@ describe("soil tiers", () => {
     const hydroToken = await sowingFarm();
     await buyStackAcresSoil(hydroToken, { tier: "hydro", quantity: 1 }, T0);
     await placeStackAcresSoilTile(hydroToken, { ...CELL_A, tier: "hydro" }, T0);
-    const hydroId = (await stockStackAcres(hydroToken, { stock: "corn" }, T0)).units
+    const hydroId = (await stockStackAcres(hydroToken, { stock: "corn", tile: CELL_A }, T0)).units
       .filter((u) => u.stock === "corn")
       .at(-1)!.id;
     const still = (await readStackAcres(hydroToken, wellPastThirst)).units.find(
@@ -549,11 +622,17 @@ describe("stockStackAcres — plants the bed the player actually tapped", () => 
     await placeStackAcresSoilTile(token, bedB, T0);
     await placeStackAcresSoilTile(token, bedC, T0);
 
-    // Fills bed A the ordinary way -- no tile named, lowest free slot wins.
+    // Fills the lowest free slot on the farm the ordinary way -- no tile
+    // named. That is one of the free Homestead starter beds now (their
+    // negative orders sort ahead of every purchased one -- see
+    // lib/stackacres/soil.ts's own comment on `homeStarterSoilTiles`), not
+    // bed A, so this only occupies a starter bed and leaves every Crop
+    // Fields bed free for the real point of the test below.
     await stockStackAcres(token, { stock: "corn" }, T0);
 
-    // Bed C named directly. The lowest free slot left is bed B's -- this
-    // only proves anything if the crop lands on C, not B.
+    // Bed C named directly. This only proves anything if the crop lands on
+    // C specifically, not whichever bed the lowest-free-slot fallback would
+    // have picked.
     const view = await stockStackAcres(token, { stock: "corn", tile: bedC }, T0);
     const named = view.units.filter((u) => u.stock === "corn").at(-1)!;
     expect(named.soilSlot).toBe(2);
@@ -565,9 +644,11 @@ describe("stockStackAcres — plants the bed the player actually tapped", () => 
     await placeStackAcresSoilTile(token, cropFieldTile(), T0);
 
     // FAR_AWAY names no bed at all -- a stale or bogus tap, not a refusal.
+    // The lowest free slot on a fresh farm is one of the free Homestead
+    // starter beds, ahead of the Crop Fields bed just placed.
     const view = await stockStackAcres(token, { stock: "corn", tile: FAR_AWAY }, T0);
     const unit = view.units.filter((u) => u.stock === "corn").at(-1)!;
-    expect(unit.soilSlot).toBe(0);
+    expect(unit.soilSlot).toBe(homeStarterSoilTiles()[0].order);
   });
 
   it("falls back to the lowest free slot when the named tile is already standing on", async () => {
@@ -580,9 +661,10 @@ describe("stockStackAcres — plants the bed the player actually tapped", () => 
 
     await stockStackAcres(token, { stock: "corn", tile: bedA }, T0);
     // Naming bed A again -- something is already growing there, so this has
-    // to fall through rather than double a crop onto one slot.
+    // to fall through rather than double a crop onto one slot. The lowest
+    // free slot left is a Homestead starter bed, ahead of bed B.
     const view = await stockStackAcres(token, { stock: "corn", tile: bedA }, T0);
     const second = view.units.filter((u) => u.stock === "corn").at(-1)!;
-    expect(second.soilSlot).toBe(1);
+    expect(second.soilSlot).toBe(homeStarterSoilTiles()[0].order);
   });
 });

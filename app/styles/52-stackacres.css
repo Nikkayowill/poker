@@ -5893,7 +5893,9 @@
   position: absolute;
   top: calc(var(--sa-header-h) + 48px);
   right: max(10px, var(--safe-right));
-  z-index: 3;
+  /* Under the header (2 is .floor-bar) so the More drawer, which hangs down
+     over this column, is not covered by it. */
+  z-index: 1;
   display: grid;
   gap: 5px;
   width: min(272px, 42%);
@@ -6048,7 +6050,7 @@
   position: absolute;
   top: calc(var(--sa-header-h) + 48px);
   right: max(10px, var(--safe-right));
-  z-index: 3;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 4px;

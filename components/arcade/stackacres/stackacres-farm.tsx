@@ -4524,8 +4524,11 @@ export function StackAcresFarm() {
           {/* The Farm Planner, under the clock on the right. Absent entirely
               when the Journal has nothing pressing to say -- an empty card
               saying "nothing to do" is chrome a player learns to stop
-              reading, same reasoning as the Harvest key below. */}
+              reading, same reasoning as the Harvest key below. Only out on the
+              Homestead: indoors it sits over the barn counter and the other
+              props a finger has to reach. */}
           {next &&
+            onHomesteadMap &&
             (nextHidden ? (
               <StackAcresNextActionReopen onOpen={() => setNextPanelHidden(false)} />
             ) : (

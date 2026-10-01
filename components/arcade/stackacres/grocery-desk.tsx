@@ -1,5 +1,6 @@
 "use client";
 
+import { groceryOwnershipEnabled } from "@/lib/stackacres/grocery";
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { Coins, Store, UserPlus, Users, X, type LucideIcon } from "lucide-react";
@@ -411,13 +412,17 @@ export function GroceryDesk({ grocery, tab, onTab, focus, gold: walletGold, unli
         {!grocery.owned ? (
           <div className="sa-store-panel sa-grocery-unowned">
             <p className="sa-grocery-intro">The store&apos;s manager runs it for now. One day you&apos;ll be able to buy it from them.</p>
-            <p className="sa-grocery-note">
-              In development you can take it over now, with the crew of four it comes with, to try running it.
-            </p>
-            {refused && <p className="sa-grocery-said is-bad">{refused}</p>}
-            <button type="button" className="sa-cta" disabled={taking} onClick={() => void takeOver()}>
-              {taking ? "Taking over…" : "Take the store over (dev)"}
-            </button>
+            {groceryOwnershipEnabled() && (
+              <>
+                <p className="sa-grocery-note">
+                  In development you can take it over now, with the crew of four it comes with, to try running it.
+                </p>
+                {refused && <p className="sa-grocery-said is-bad">{refused}</p>}
+                <button type="button" className="sa-cta" disabled={taking} onClick={() => void takeOver()}>
+                  {taking ? "Taking over…" : "Take the store over (dev)"}
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <>

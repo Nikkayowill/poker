@@ -1554,6 +1554,30 @@
   line-height: 1.35;
 }
 
+.sa-gift-dialogue-errand {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.12);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.sa-gift-dialogue-errand-title {
+  margin: 0 0 4px;
+  font-weight: 800;
+}
+
+.sa-gift-dialogue-errand ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.sa-gift-dialogue-errand p + p,
+.sa-gift-dialogue-errand ul + p {
+  margin: 6px 0 0;
+}
+
 .sa-gift-dialogue-prompt {
   margin: 0 0 8px;
   font-size: 12.5px;

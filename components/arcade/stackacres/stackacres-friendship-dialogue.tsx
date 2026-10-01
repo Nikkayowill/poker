@@ -60,6 +60,8 @@ export interface StackAcresFriendshipDialogueProps {
         points: number;
         grantedKeepsake: KeepsakeId | null;
       };
+  /** The quest this person has set the player, so the way forward is on screen. */
+  errand?: { title: string; objectives: readonly { label: string; have: number; need: number }[]; blocked: boolean } | null;
   busy: boolean;
   onGift: (item: MachineItemId) => void;
   onGreet: () => void;
@@ -81,6 +83,7 @@ export function StackAcresFriendshipDialogue({
   inventory,
   friendship,
   result,
+  errand,
   busy,
   onGift,
   onGreet,
@@ -116,6 +119,19 @@ export function StackAcresFriendshipDialogue({
         {result.phase === "greeting" ? (
           <>
             <p className="sa-gift-dialogue-line">{result.line}</p>
+            {errand && (
+              <div className="sa-gift-dialogue-errand">
+                <p className="sa-gift-dialogue-errand-title">{npcLabel} is asking: {errand.title}</p>
+                <ul>
+                  {errand.objectives.map((objective) => (
+                    <li key={objective.label}>
+                      {objective.label} ({Math.min(objective.have, objective.need)}/{objective.need})
+                    </li>
+                  ))}
+                </ul>
+                {errand.blocked && <p>{npcLabel} wants to know you better first. Say hi or bring a gift each day.</p>}
+              </div>
+            )}
             <div className="sa-gift-dialogue-actions">
               {/* Never pre-disabled by `greetedToday`, same posture every gift-item
                   button already takes toward `giftedToday`: a repeat tap is a real,

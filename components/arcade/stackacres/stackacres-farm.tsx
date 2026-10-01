@@ -1,5 +1,6 @@
 "use client";
 
+import { isTravelerId } from "@/lib/stackacres/story/travelers";
 import { fenceKey, type FencePiece } from "@/lib/stackacres/fences";
 import { soilToMapTile } from "@/lib/stackacres/hoeable";
 import {
@@ -2489,6 +2490,11 @@ export function StackAcresFarm() {
     [act],
   );
   const story = useStackAcresStory({ view: storyView, submit: storySubmit });
+  const giftTraveler = giftDialogue && isTravelerId(giftDialogue.npc) ? story.view?.travelers[giftDialogue.npc] : undefined;
+  const giftErrand =
+    giftTraveler?.quest && giftTraveler.met && !giftTraveler.done
+      ? { title: giftTraveler.quest.title, objectives: giftTraveler.quest.objectives, blocked: giftTraveler.questBlocked }
+      : null;
   useEffect(() => {
     storyRef.current = story;
   });
@@ -4331,6 +4337,7 @@ export function StackAcresFarm() {
               inventory={processing.inventory}
               friendship={friendship[giftDialogue.npc]}
               result={giftDialogue}
+              errand={giftErrand}
               busy={pendingByPrefix(`give-gift:${giftDialogue.npc}`) || pendingByPrefix(`greet-npc:${giftDialogue.npc}`)}
               onGift={(item) => onGiveGift(giftDialogue.npc, item)}
               onGreet={() => onGreetNpc(giftDialogue.npc)}

@@ -1,3 +1,4 @@
+import { cityBuildingLine, cityGreeting } from "@/lib/stackacres/city-lines";
 import Phaser from "phaser";
 import { advance, approachSpot, findPath, steer, tileKey, type Grid, type Point } from "@/lib/stackacres-td/movement";
 import {
@@ -2516,6 +2517,7 @@ export class TopdownScene extends Phaser.Scene {
       else if (target.name === "pilgrim") cb.onMonkTap(at);
       // The City's townsfolk turn to look at the farmer (talkTo above) but have no story of their own yet.
       else if (isTravelerId(target.name)) cb.onTravelerTap(target.name, at);
+      else this.floatAt(at, cityGreeting(target.name), "gain", 2200);
       return;
     }
     if (target.kind !== "tag") return;
@@ -2525,6 +2527,7 @@ export class TopdownScene extends Phaser.Scene {
       case "barn":
         return cb.onBarnTap();
       case "signpost":
+      case "noticeboard":
         return cb.onSignpostTap();
       case "workshop":
         return cb.onWorkshopTap();
@@ -2563,6 +2566,10 @@ export class TopdownScene extends Phaser.Scene {
         return cb.onQuestPlaceTap(detail as QuestPlaceId, at);
       case "pen":
         return cb.onGroundTap(detail as ZoneId, at, penFeedSpot(detail as ZoneId));
+      default: {
+        const line = cityBuildingLine(kind);
+        if (line) this.floatAt(at, line, "deny", 2200);
+      }
     }
   }
 

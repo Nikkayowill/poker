@@ -215,6 +215,13 @@ import {
   type StackAcresFriendshipView,
 } from "@/lib/stackacres/friendship";
 import type { StoryEvent } from "@/lib/stackacres/story/events";
+import type { FarmBoardView } from "@/lib/stackacres/farm-board";
+import {
+  claimFarmBoardReward,
+  farmBoardView,
+  farmBoardsFromBatch,
+  recordFarmBoardEvents,
+} from "./stackacres-farm-board-service";
 import { isStoryItemId, type StoryItemId } from "@/lib/stackacres/story/items";
 import { isQuestPlaceId } from "@/lib/stackacres/story/places";
 import { questFlatObjectives } from "@/lib/stackacres/story/quests";
@@ -851,6 +858,11 @@ export interface StackAcresView {
   /** The Preserves Cellar (Chapter 5): null until placed, otherwise the jars
    *  aging inside it, on its own slower ladder. Same shape as `vat`. */
   cellar: VatContainer | null;
+  /** The Daily Farm Board (lib/stackacres/farm-board.ts): two objectives for
+   *  today and one for this week, drawn from work this farm can already do,
+   *  with progress as this server has counted it. Empty when a board could
+   *  not be read -- a side panel must not stop a farm loading. */
+  farmBoard: FarmBoardView;
   /** The travelers' story (lib/stackacres/story/): every traveler's unlock,
    *  quest and readiness as this server derives it, and the story items
    *  held. The bubble renders straight off this; a tap never asks the
@@ -1401,6 +1413,27 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   const vat = agingContainer("vat", AGING_TIERS);
   const cellar = agingContainer("cellar", CELLAR_AGING_TIERS);
   const settledEnergy = settleEnergy(storedEnergy, now);
+  // The Daily Farm Board. Drawn here, on the player's first read of a
+  // period, because this is the only place the facts eligibility needs are
+  // already loaded -- see lib/server/stackacres-farm-board-service.ts. On
+  // the live path the rows ride in the batch, so a board that already
+  // exists costs no read at all; only the once-a-period draw writes.
+  const farmBoard = await farmBoardView(
+    profile.id,
+    {
+      machines: machineRows.map((row) => row.kind),
+      // Seed on the shelf counts as "has crops" as much as a bed already
+      // sown does: a board that asked a player with seed to harvest is
+      // asking for work they can do, and one drawn the other way would
+      // have nothing to water on the morning they spend it.
+      hasCrops:
+        units.some((unit) => isStackAcresCrop(unit.stock)) ||
+        Object.values(seedStock).some((held) => (held ?? 0) > 0),
+      hasLivestock: units.some((unit) => isLivestock(unit.stock)),
+    },
+    now,
+    batch ? farmBoardsFromBatch(batch.farm_board_daily, batch.farm_board_weekly) : undefined,
+  );
   return {
     units,
     profile,
@@ -1456,6 +1489,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     friendship,
     vat,
     cellar,
+    farmBoard,
     // Off the same derived `sectors`, influence and flags Ray's shop locks
     // read (see readShopProgress), so a traveler's "Requires: ..." and the
     // shelf's can never disagree.
@@ -2475,7 +2509,7 @@ export async function forgeStackAcresToolEnchantment(
       round: await snapshots(profile.id, now),
     });
   }
-  await recordStoryEvents(profile.id, [{ kind: "enchantment-forged" }]);
+  await recordStoryEvents(profile.id, [{ kind: "enchantment-forged" }], now);
   return {
     ...(await view(profile, now)),
     forgeResult: { enchantmentId: outcome.enchantmentId, success: true },
@@ -2594,7 +2628,7 @@ export async function harvestStackAcresCrossbreedBed(
     });
   }
   if (settled.hybridItem !== null) {
-    await recordStoryEvents(profile.id, [{ kind: "crossbreed-harvested", item: settled.hybridItem }]);
+    await recordStoryEvents(profile.id, [{ kind: "crossbreed-harvested", item: settled.hybridItem }], now);
   }
   return { ...(await view(profile, now)), crossbreedResult: settled };
 }
@@ -3146,7 +3180,7 @@ export async function buyStackAcresFeed(
     throw error;
   }
 
-  await recordStoryEvents(profile.id, [{ kind: "feed-bought", servings: item.servings * quantity }]);
+  await recordStoryEvents(profile.id, [{ kind: "feed-bought", servings: item.servings * quantity }], now);
   return view(debited, now);
 }
 
@@ -3362,7 +3396,7 @@ export async function feedStackAcres(
     });
   }
 
-  await recordStoryEvents(profile.id, [{ kind: "fed", count: 1 }]);
+  await recordStoryEvents(profile.id, [{ kind: "fed", count: 1 }], now);
   return { ...(await view(profile, now)), ...fedResult([source]) };
 }
 
@@ -3446,7 +3480,7 @@ export async function feedStackAcresPen(
       round: await snapshots(profile.id, now),
     });
   }
-  await recordStoryEvents(profile.id, [{ kind: "fed", count: fedCount }]);
+  await recordStoryEvents(profile.id, [{ kind: "fed", count: fedCount }], now);
   return { ...(await view(profile, now)), ...fedResult(sources) };
 }
 
@@ -3561,7 +3595,7 @@ export async function waterStackAcres(
     });
   }
 
-  await recordStoryEvents(profile.id, [{ kind: "watered", count: 1 }]);
+  await recordStoryEvents(profile.id, [{ kind: "watered", count: 1 }], now);
   return view(profile, now);
 }
 
@@ -3651,7 +3685,7 @@ export async function waterStackAcresGroup(
       round: await snapshots(profile.id, now),
     });
   }
-  await recordStoryEvents(profile.id, [{ kind: "watered", count: wateredCount }]);
+  await recordStoryEvents(profile.id, [{ kind: "watered", count: wateredCount }], now);
   return view(profile, now);
 }
 
@@ -3736,7 +3770,7 @@ export async function catchStackAcresFish(
     await refundEnergy();
     throw error;
   }
-  await recordStoryEvents(profile.id, [{ kind: "fish-caught", species }]);
+  await recordStoryEvents(profile.id, [{ kind: "fish-caught", species }], now);
   return { ...(await view(profile, now)), fishCaught: { species } };
 }
 
@@ -4382,7 +4416,7 @@ async function openIfCleared(profileId: string, ground: ClearingGround, now: Dat
   );
   if (!progress.done) return false;
   const recorded = await recordStackAcresSectorCleared(profileId, sector, now);
-  if (recorded) await recordStoryEvents(profileId, [{ kind: "sector-cleared", sector }]);
+  if (recorded) await recordStoryEvents(profileId, [{ kind: "sector-cleared", sector }], now);
   return recorded;
 }
 
@@ -4426,6 +4460,7 @@ export async function chopStackAcresWoodTree(
   }
 
   await adjustStackAcresInventory(profile.id, "wood", swing.woodGained);
+  await recordStoryEvents(profile.id, [{ kind: "wood-chopped", count: swing.woodGained }], now);
   return {
     ...(await view(profile, now)),
     woodChopped: { nodeId, quantity: swing.woodGained, felled: swing.felled },
@@ -4468,6 +4503,7 @@ export async function mineStackAcresStoneNode(
 
   await adjustStackAcresInventory(profile.id, "stone", outcome.yield);
   if (outcome.broke) await adjustStackAcresInventory(profile.id, "iron_ore", oreForSwing(outcome.broke));
+  await recordStoryEvents(profile.id, [{ kind: "stone-mined", count: outcome.yield }], now);
   return {
     ...(await view(profile, now)),
     stoneMined: { landed: true, broke: outcome.broke, amount: outcome.yield },
@@ -4530,6 +4566,7 @@ export async function gatherStackAcresForage(
     return { ...(await view(profile, now)), foraged: null };
   }
 
+  await recordStoryEvents(profile.id, [{ kind: "forage-picked", count: picked.quantity }], now);
   return {
     ...(await view(profile, now)),
     foraged: { nodeId, crop: picked.crop, quantity: picked.quantity },
@@ -4635,7 +4672,7 @@ export async function tapStackAcresSecretZone(
   }
 
   // A marked attempt is a spot searched, found or not -- what Miles asks for.
-  await recordStoryEvents(profile.id, [{ kind: "secret-zone-tapped", zoneId }]);
+  await recordStoryEvents(profile.id, [{ kind: "secret-zone-tapped", zoneId }], now);
 
   const found = rollSecretDiscovery(zone, Math.random);
   let discovery: SecretItemId | null = null;
@@ -4673,7 +4710,7 @@ export async function reachStackAcresQuestPlace(
   }
   const placeId = placeIdInput;
   const profile = await ensureProfile(token);
-  await recordStoryEvents(profile.id, [{ kind: "place-reached", placeId }]);
+  await recordStoryEvents(profile.id, [{ kind: "place-reached", placeId }], now);
   return view(profile, now);
 }
 
@@ -5144,6 +5181,7 @@ export async function harvestStackAcres(
   await recordStoryEvents(
     profile.id,
     [...settledByStock].map(([stock, count]) => ({ kind: "harvested", stock, count })),
+    now,
   );
 
   return {
@@ -5676,7 +5714,7 @@ export async function workStackAcres(
   if (kitchenCooked) {
     processedEvents.push({ kind: "processed", recipe: kitchenCooked.recipe, count: kitchenCooked.quantity });
   }
-  await recordStoryEvents(profile.id, processedEvents);
+  await recordStoryEvents(profile.id, processedEvents, now);
   return {
     ...(await view(profile, now)),
     work: {
@@ -5897,9 +5935,11 @@ export async function processStackAcresRecipeAction(
   // An instant recipe is made right here; a queued one is counted when
   // `workStackAcres` collects it, so it is never counted twice.
   if (processed.produced !== null) {
-    await recordStoryEvents(profile.id, [
-      { kind: "processed", recipe: processed.recipe, count: processed.produced.quantity },
-    ]);
+    await recordStoryEvents(
+      profile.id,
+      [{ kind: "processed", recipe: processed.recipe, count: processed.produced.quantity }],
+      now,
+    );
   }
   return { ...(await view(profile, now)), processed };
 }
@@ -6086,12 +6126,53 @@ export async function fulfillStackAcresTownContract(
     });
   }
 
-  await recordStoryEvents(profile.id, [{ kind: "contract-fulfilled" }]);
+  await recordStoryEvents(profile.id, [{ kind: "contract-fulfilled" }], now);
   return {
     ...(await view(await ensureProfile(token), now)),
     contractReward: { gold: contract.goldReward, influence: contract.influenceReward },
   };
 }
+
+/**
+ * Takes one finished Daily Farm Board line's reward.
+ *
+ * A CLAIM, not an auto-credit, and lib/stackacres/farm-board.ts's
+ * `advanceFarmBoard` has the reasoning: a reward that fired inside whatever
+ * action happened to finish a line would put a Gold credit in every farm
+ * action, which is the one thing the currency wall below exists to stop.
+ * The money itself is not moved here -- `claimFarmBoardReward` writes the
+ * claim under the board's version guard and then pays through its own keyed
+ * ledger, so this function holds no faucet of its own and a retried tap
+ * pays nothing twice.
+ *
+ * Refusals are plain 400s with a line the Journal can show. An unfinished
+ * line is the common one (two taps racing the same last swing); a code this
+ * deploy no longer has is the other.
+ */
+export async function claimStackAcresFarmBoard(
+  token: string,
+  code: string,
+  now = new Date(),
+): Promise<StackAcresView & { farmBoardClaim: { gold: number; influence: number } }> {
+  const profile = await ensureProfile(token);
+  const claim = await claimFarmBoardReward(profile.id, code, now);
+  if (!claim.ok) {
+    throw new StackAcresRequestError(FARM_BOARD_REFUSALS[claim.reason], 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  return {
+    ...(await view(await ensureProfile(token), now)),
+    farmBoardClaim: { gold: claim.entry.goldReward, influence: claim.entry.influenceReward },
+  };
+}
+
+const FARM_BOARD_REFUSALS: Record<"unknown" | "unfinished" | "already-claimed" | "conflict", string> = {
+  unknown: "That job is not on your board.",
+  unfinished: "That job is not finished yet.",
+  "already-claimed": "You have already taken that reward.",
+  conflict: "Your board was busy. Try that again.",
+};
 
 /**
  * Sells inventory for Gold, at any time, at that item's own sell price. The
@@ -6342,7 +6423,7 @@ export async function placeStackAcresSoilTile(
     // (one round trip, idempotent), where "is it set already?" would cost a
     // read and still race the other tab.
     if (inMeadow) await recordStackAcresCropFieldsUnlocked(profile.id, now);
-    await recordStoryEvents(profile.id, [{ kind: "soil-placed", count: 1 }]);
+    await recordStoryEvents(profile.id, [{ kind: "soil-placed", count: 1 }], now);
     return view(profile, now);
   }
 
@@ -6670,9 +6751,25 @@ const STORY_WRITE_ATTEMPTS = 3;
  * a settled, credited action into an error response. Version-guarded and
  * retried, so two actions landing together each count; the client replays
  * the same events locally and this server view overwrites its guess.
+ *
+ * `now` is the ACTION'S own clock, threaded rather than read here, because
+ * the Daily Farm Board below keys on the UTC day it falls in -- a `new
+ * Date()` in this function would put a Chrono-DeLorean day's work on the
+ * real day's board, and would make every test that passes a fixed `now`
+ * count against whatever today happens to be.
  */
-async function recordStoryEvents(profileId: string, events: readonly StoryEvent[]): Promise<void> {
+async function recordStoryEvents(
+  profileId: string,
+  events: readonly StoryEvent[],
+  now: Date,
+): Promise<void> {
   if (events.length === 0) return;
+  // The Daily Farm Board listens to the same stream, and BEFORE the story
+  // write: the story returns early when no open quest cared about any of
+  // these events, and the board still did. Best-effort on its own inside,
+  // so it can neither fail this action nor delay the story write behind a
+  // retry of its own.
+  await recordFarmBoardEvents(profileId, events, now);
   try {
     for (let attempt = 0; attempt < STORY_WRITE_ATTEMPTS; attempt += 1) {
       const current = await readStackAcresStory(profileId);

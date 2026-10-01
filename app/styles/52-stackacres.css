@@ -5376,6 +5376,33 @@
 .sa-journal-foot { margin: 6px 0 0; font-size: 11px; color: var(--sa-ink-soft); }
 .sa-journal-callers { display: grid; gap: 3px; margin: 8px 0 0; padding: 0; list-style: none; font-size: 12px; }
 .sa-journal-callers > li.is-ready { color: var(--sa-ink); font-weight: 700; }
+/* The board. Same two-column tick-then-text grid as .sa-journal-reach, so a
+   finished line reads the same way a finished flag does; the meter inside
+   each line is a plain block rather than a grid child, which is why it needs
+   no column span of its own. */
+.sa-journal-board { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 12px; }
+.sa-journal-board > li { display: grid; grid-template-columns: 16px 1fr; gap: 6px; opacity: 0.78; }
+.sa-journal-board > li.is-done { opacity: 1; }
+.sa-journal-board-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-weight: 700; }
+.sa-journal-board-when { font-size: 10px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sa-ink-soft); }
+.sa-journal-board-pay { display: block; font-size: 11px; color: var(--sa-ink-soft); font-variant-numeric: tabular-nums; }
+.sa-journal-board > li.is-done .sa-journal-board-pay { color: var(--sa-ink); }
+/* The one tap on the board. Deliberately the only button inside the
+   Journal: everything else in this sheet is a readout. */
+.sa-journal-board-claim {
+  margin-top: 4px;
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--sa-ink);
+  color: var(--sa-cream);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+.sa-journal-board-claim:hover { filter: brightness(1.1); }
 .sa-journal-waiting { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; font-size: 12px; }
 .sa-journal-waiting > li {
   display: grid;

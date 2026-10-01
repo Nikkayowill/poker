@@ -66,6 +66,7 @@ import {
   requestStackAcresContract,
   passStackAcresContract,
   fulfillStackAcresTownContract,
+  claimStackAcresFarmBoard,
   sellStackAcresItem,
   processStackAcresRecipeAction,
   sealStackAcresCellar,
@@ -343,6 +344,11 @@ const bodySchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("request-contract") }),
   z.object({ action: z.literal("fulfill-contract") }),
+  // The Daily Farm Board (lib/stackacres/farm-board.ts). PAYS Gold and Town
+  // Influence, once per finished line per period. The code names its own
+  // slot and therefore its own period, so there is nothing else to send;
+  // a code this deploy's pool does not hold is refused, not guessed at.
+  z.object({ action: z.literal("claim-farm-board"), code: z.string().min(1).max(64) }),
   // One a UTC day, and it moves nothing. See passStackAcresContract.
   z.object({ action: z.literal("pass-contract") }),
   // The Fermenting Vat. `seal-vat` spends Cheese (never Gold) and locks it
@@ -663,6 +669,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return requestStackAcresContract(token, now);
     case "fulfill-contract":
       return fulfillStackAcresTownContract(token, now);
+    case "claim-farm-board":
+      return claimStackAcresFarmBoard(token, action.code, now);
     case "pass-contract":
       return passStackAcresContract(token, now);
     case "seal-vat":

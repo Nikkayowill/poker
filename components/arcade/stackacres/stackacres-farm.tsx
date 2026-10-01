@@ -1,6 +1,7 @@
 "use client";
 
 import { fenceKey, type FencePiece } from "@/lib/stackacres/fences";
+import type { GuardDog } from "@/lib/stackacres/guard-dog";
 import { soilToMapTile } from "@/lib/stackacres/hoeable";
 import {
   useCallback,
@@ -610,6 +611,8 @@ interface StackAcresResponse {
   landObstacles?: LandObstacleSnapshot[];
   /** Every fence piece this farm has put up, by Homestead map square. */
   fences?: FencePiece[];
+  /** The guard dogs standing on the Homestead, by map square. */
+  guardDogs?: GuardDog[];
   /** Set (to an item id or null) by a `tap-secret-zone` response only --
    *  absent from every other action's answer. */
   discovery?: SecretItemId | null;
@@ -899,6 +902,7 @@ function farmFieldsOf(data: Partial<StackAcresResponse>): Partial<FarmFields> {
   if (data.forageNodes) fields.forageNodes = data.forageNodes;
   if (data.landObstacles) fields.landObstacles = data.landObstacles;
   if (data.fences) fields.fences = data.fences;
+  if (data.guardDogs) fields.guardDogs = data.guardDogs;
   if (data.secrets) fields.secrets = data.secrets;
   if (data.secretDonations) fields.secretDonations = data.secretDonations;
   if (data.synergy) fields.synergy = data.synergy;
@@ -1261,6 +1265,7 @@ export function StackAcresFarm() {
    *  (lib/stackacres/land-clearing.ts). */
   const [landObstacles, setLandObstacles] = useState<LandObstacleSnapshot[]>([]);
   const [fences, setFences] = useState<FencePiece[]>([]);
+  const [guardDogs, setGuardDogs] = useState<GuardDog[]>([]);
   /** Which map squares hold a piece, for the belt's "is there a fence here". */
   const fencedSquares = useMemo(() => new Set(fences.map((piece) => fenceKey(piece.tx, piece.ty))), [fences]);
   /** Same sidecar for the Workshop and the vat: what the last processing
@@ -1747,6 +1752,7 @@ export function StackAcresFarm() {
     lay("forageNodes", setForageNodes);
     lay("landObstacles", setLandObstacles);
     lay("fences", setFences);
+    lay("guardDogs", setGuardDogs);
     lay("secrets", setSecrets);
     lay("secretDonations", setSecretDonations);
     // Three atoms here, one field in a guess.
@@ -2960,7 +2966,7 @@ export function StackAcresFarm() {
     act,
     farmerTile,
   });
-  const herdPlace = useHerdPlace({ active: onHomesteadMap, units: liveUnits, act });
+  const herdPlace = useHerdPlace({ active: onHomesteadMap, units: liveUnits, dogs: guardDogs, act });
   const arrange = useGroceryArrange({
     active: onGroceryMap && grocery?.owned === true,
     grocery,
@@ -4433,6 +4439,7 @@ export function StackAcresFarm() {
               forageNodes={forageNodes}
               landObstacles={landObstacles}
               fences={fences}
+              guardDogs={guardDogs}
               empireBuildings={build.shown}
               buildMode={build.buildMode || arrange.buildMode || herdPlace.buildMode}
               buildGhost={build.ghost}

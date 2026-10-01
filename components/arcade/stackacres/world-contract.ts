@@ -1,4 +1,5 @@
 import type { FencePiece } from "@/lib/stackacres/fences";
+import type { GuardDog } from "@/lib/stackacres/guard-dog";
 import type { EmpireBuildingKind, PlacedEmpireBuilding, Tile } from "@/lib/stackacres/empire-buildings";
 import type { GroceryItemKind, GroceryPlacement } from "@/lib/stackacres/grocery-layout";
 import type { Ref } from "react";
@@ -318,6 +319,8 @@ export interface StackAcresWorldProps {
   landObstacles: readonly LandObstacleSnapshot[];
   /** Every fence piece the farm has put up, by Homestead map square (lib/stackacres/fences.ts). */
   fences: readonly FencePiece[];
+  /** The guard dogs standing on the Homestead, by map square (lib/stackacres/guard-dog.ts). */
+  guardDogs: readonly GuardDog[];
   /** The buildings standing on the Far Field (lib/stackacres/empire-buildings.ts). */
   empireBuildings: readonly PlacedEmpireBuilding[];
   /** Placing a building: taps pick a square (`onBuildTap`) instead of walking the farmer there. */

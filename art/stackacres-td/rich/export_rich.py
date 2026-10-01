@@ -612,6 +612,7 @@ def export_common(out_root):
     named.append(("crop_seeds", seeds()))
     for side, left in (("left", True), ("right", False)):
         named.append((f"sheep_{side}", area_farm.sheep(left)[0]))
+        named.append((f"dog_{side}", area_farm.dog(left)[0]))
         named.append((f"cattle_{side}", area_farm.cattle(left, patches=True)[0]))
         named.append((f"cattle_{side}_plain", area_farm.cattle(left, patches=False)[0]))
         named.append((f"hen_{side}", sprites.hen(left)[0]))

@@ -126,6 +126,21 @@ import {
 } from "@/lib/stackacres/fences";
 import { HERD_AWAY_MESSAGES, herdAway, type HerdAway } from "@/lib/stackacres/herd-risk";
 import {
+  DOG_PLACEMENT_MESSAGES,
+  GUARD_DOG_CAP,
+  GUARD_DOG_COSTS,
+  GUARD_DOG_GOLD,
+  dogPlacementProblem,
+  dogSquares,
+  type GuardDog,
+} from "@/lib/stackacres/guard-dog";
+import {
+  addStackAcresGuardDog as addGuardDogRow,
+  listStackAcresGuardDogs,
+  moveStackAcresGuardDog as moveGuardDogRow,
+  stackAcresGuardDogFromBatchRow,
+} from "./stackacres-guard-dog-store";
+import {
   HERD_PLACEMENT_MESSAGES,
   herdKey,
   herdPlacementProblem,
@@ -910,6 +925,8 @@ export interface StackAcresView {
   landObstacles: LandObstacleSnapshot[];
   /** Every fence piece this farm has put up (lib/stackacres/fences.ts), by Homestead map square. */
   fences: FencePiece[];
+  /** The guard dogs standing on this farm (lib/stackacres/guard-dog.ts), by Homestead map square. */
+  guardDogs: GuardDog[];
   /** The farm clock (lib/stackacres/clock.ts): this farm's offset, and the
    *  server's `now` for this read, so the client can correct for its own
    *  clock being off. */
@@ -1091,10 +1108,14 @@ async function herdAwayFor(
   rows: readonly StoredStackAcresUnit[],
   now: Date,
   fences?: readonly FencePiece[],
+  dogs?: readonly GuardDog[],
 ): Promise<Map<string, HerdAway>> {
   if (!rows.some(isHerdPlaced)) return new Map();
-  const pieces = fences ?? (await listStackAcresFences(profileId));
-  return herdAway(rows, new Set(pieces.map((piece) => herdKey(piece.tx, piece.ty))), now.getTime());
+  const [pieces, guards] = await Promise.all([
+    fences ?? listStackAcresFences(profileId),
+    dogs ?? listStackAcresGuardDogs(profileId),
+  ]);
+  return herdAway(rows, new Set(pieces.map((piece) => herdKey(piece.tx, piece.ty))), now.getTime(), guards);
 }
 
 async function snapshots(profileId: string, now: Date): Promise<StackAcresRoundSnapshot> {
@@ -1266,6 +1287,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
           listStackAcresForageNodeStates(profile.id),
           listStackAcresLandObstacleStates(profile.id),
           listStackAcresFences(profile.id),
+          listStackAcresGuardDogs(profile.id),
           readStackAcresAxeLevel(profile.id),
           listEmpireBuildings(profile.id),
           groceryOwnershipEnabled() ? readGrocery(profile.id) : Promise.resolve(null),
@@ -1309,6 +1331,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   let forageNodeStates: Partial<Record<ForageNodeId, ForageNodeState>>;
   let landObstacleStates: Record<string, LandObstacleState>;
   let fences: FencePiece[];
+  let guardDogs: GuardDog[];
   let axe: AxeLevel;
   let empireBuildings: EmpireBuilding[];
   let groceryState: GroceryState | null;
@@ -1378,6 +1401,9 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       (batch.land_obstacles ?? []) as unknown as LandObstacleDbRow[],
     );
     fences = ((batch.fences ?? []) as { tx: number | string; ty: number | string }[]).map(stackAcresFenceFromBatchRow);
+    guardDogs = ((batch.guard_dogs ?? []) as { id: unknown; tx: number | string; ty: number | string }[]).map(
+      stackAcresGuardDogFromBatchRow,
+    );
     axe = stackAcresAxeLevelFromBatchRow((batch.axe ?? null) as { level?: unknown } | null);
     empireBuildings = (
       (batch.empire_buildings ?? []) as { id: unknown; kind: unknown; tx: number | string | null; ty: number | string | null }[]
@@ -1427,6 +1453,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       forageNodeStates,
       landObstacleStates,
       fences,
+      guardDogs,
       axe,
       empireBuildings,
       groceryState,
@@ -1443,6 +1470,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       Partial<Record<ForageNodeId, ForageNodeState>>,
       Record<string, LandObstacleState>,
       FencePiece[],
+      GuardDog[],
       AxeLevel,
       EmpireBuilding[],
       GroceryState | null,
@@ -1466,7 +1494,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     now,
     irrigationGrid.irrigatedUnitIds,
     comfort,
-    await herdAwayFor(profile.id, rows, now, fences),
+    await herdAwayFor(profile.id, rows, now, fences, guardDogs),
   );
   const sectors = unlockedSectors(cleared, units);
   const agingContainer = (kind: "vat" | "cellar", tiers: readonly AgingTier[]): VatContainer | null => {
@@ -1582,6 +1610,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       ),
     ),
     fences,
+    guardDogs,
     clock: { offsetMs: clockOffset, serverNowMs: now.getTime() },
     revision,
     // Wood and Metal are the shared inventory's, since that is what the Far
@@ -4173,14 +4202,16 @@ export async function placeStackAcresAnimal(
   now = new Date(),
 ): Promise<StackAcresView> {
   const profile = await ensureProfile(token);
-  const [units, beds, fences] = await Promise.all([
+  const [units, beds, fences, dogs] = await Promise.all([
     listStackAcresUnits(profile.id),
     listStackAcresSoilTiles(profile.id),
     listStackAcresFences(profile.id),
+    listStackAcresGuardDogs(profile.id),
   ]);
   const unit = units.find((candidate) => candidate.id === input.unitId);
   if (!unit || !isHerdStock(unit.stock)) throw new StackAcresRequestError("That isn't one of your animals.", 404);
 
+  // A dog's square counts as an animal's: nothing stands on the dog.
   const problem = herdPlacementProblem(input.tx, input.ty, {
     beds: new Set(
       beds.map((bed) => {
@@ -4189,7 +4220,7 @@ export async function placeStackAcresAnimal(
       }),
     ),
     fences: new Set(fences.map((piece) => herdKey(piece.tx, piece.ty))),
-    animals: herdSquares(units, unit.id),
+    animals: new Set([...herdSquares(units, unit.id), ...dogSquares(dogs)]),
   });
   if (problem) {
     throw new StackAcresRequestError(HERD_PLACEMENT_MESSAGES[problem], problem === "off_yard" ? 400 : 409, {
@@ -4217,6 +4248,117 @@ export async function pickUpStackAcresAnimal(
   if (!unit || !isHerdStock(unit.stock)) throw new StackAcresRequestError("That isn't one of your animals.", 404);
   const outcome = await setStackAcresUnitPosition(profile.id, unit.id, null);
   if (outcome === "missing") throw new StackAcresRequestError("That isn't one of your animals.", 404);
+  return view(profile, now);
+}
+
+/**
+ * The beds, fences, animals and other dogs a dog's square is checked against
+ * (lib/stackacres/guard-dog.ts). `exceptDogId` is the dog being moved, whose
+ * own square is not in its own way.
+ */
+async function dogSquareProblem(
+  profileId: string,
+  tx: number,
+  ty: number,
+  exceptDogId: string | null,
+): Promise<{ problem: ReturnType<typeof dogPlacementProblem>; dogs: GuardDog[] }> {
+  const [units, beds, fences, dogs] = await Promise.all([
+    listStackAcresUnits(profileId),
+    listStackAcresSoilTiles(profileId),
+    listStackAcresFences(profileId),
+    listStackAcresGuardDogs(profileId),
+  ]);
+  const problem = dogPlacementProblem(tx, ty, {
+    beds: new Set(
+      beds.map((bed) => {
+        const { mx, my } = soilToMapTile(bed.tx, bed.ty);
+        return herdKey(mx, my);
+      }),
+    ),
+    fences: new Set(fences.map((piece) => herdKey(piece.tx, piece.ty))),
+    animals: new Set([...herdSquares(units), ...dogSquares(dogs, exceptDogId)]),
+  });
+  return { problem, dogs };
+}
+
+function dogRefusal(problem: NonNullable<ReturnType<typeof dogPlacementProblem>>): { status: 400 | 409; message: string } {
+  return { status: problem === "off_yard" ? 400 : 409, message: DOG_PLACEMENT_MESSAGES[problem] };
+}
+
+/**
+ * Buys a guard dog and sets it down at (tx, ty) (lib/stackacres/guard-dog.ts).
+ *
+ * Rule 1: the Gold leaves first, then the dog is written; a refused or failed
+ * write gives the Gold back, once. The square and the cap are checked before
+ * anything is spent, so a plainly wrong tap costs nothing, and checked again by
+ * the write under its lock, so two taps at once cannot both land.
+ */
+export async function buyStackAcresGuardDog(
+  token: string,
+  input: { tx: number; ty: number },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const tx = Math.trunc(input.tx);
+  const ty = Math.trunc(input.ty);
+  const { problem, dogs: before } = await dogSquareProblem(profile.id, tx, ty, null);
+  if (before.length >= GUARD_DOG_CAP) {
+    throw new StackAcresRequestError(DOG_PLACEMENT_MESSAGES.full, 409, { round: await snapshots(profile.id, now) });
+  }
+  if (problem) {
+    const refusal = dogRefusal(problem);
+    throw new StackAcresRequestError(refusal.message, refusal.status, { round: await snapshots(profile.id, now) });
+  }
+
+  const paid = await debitGoldByProfile(profile.id, GUARD_DOG_GOLD);
+  if (!paid) throw new StackAcresRequestError(GUARD_DOG_COSTS, 400, { round: await snapshots(profile.id, now) });
+  const giveBack = async () => {
+    if (!profile.unlimitedGold) await refundGold(profile.id, GUARD_DOG_GOLD);
+  };
+
+  let outcome: Awaited<ReturnType<typeof addGuardDogRow>>;
+  try {
+    outcome = await addGuardDogRow(profile.id, tx, ty);
+  } catch (error) {
+    // The write may have landed with only its answer lost; then the dog is theirs and stays paid for.
+    const landed = await listStackAcresGuardDogs(profile.id)
+      .then((dogs) => dogs.some((dog) => dog.tx === tx && dog.ty === ty && !before.some((old) => old.id === dog.id)))
+      .catch(() => false);
+    if (!landed) {
+      await giveBack();
+      throw error;
+    }
+    return view(await ensureProfile(token), now);
+  }
+  if (outcome === "full" || outcome === "taken") {
+    await giveBack();
+    throw new StackAcresRequestError(DOG_PLACEMENT_MESSAGES[outcome === "full" ? "full" : "occupied"], 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  return view(await ensureProfile(token), now);
+}
+
+/** Moves a dog the player owns to another square. No Gold moves. */
+export async function moveStackAcresGuardDog(
+  token: string,
+  input: { id: string; tx: number; ty: number },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const tx = Math.trunc(input.tx);
+  const ty = Math.trunc(input.ty);
+  const { problem, dogs } = await dogSquareProblem(profile.id, tx, ty, input.id);
+  if (!dogs.some((dog) => dog.id === input.id)) throw new StackAcresRequestError("That isn't your dog.", 404);
+  if (problem) {
+    const refusal = dogRefusal(problem);
+    throw new StackAcresRequestError(refusal.message, refusal.status, { round: await snapshots(profile.id, now) });
+  }
+  const outcome = await moveGuardDogRow(profile.id, input.id, tx, ty);
+  if (outcome === "missing") throw new StackAcresRequestError("That isn't your dog.", 404);
+  if (outcome === "taken") {
+    throw new StackAcresRequestError(DOG_PLACEMENT_MESSAGES.occupied, 409, { round: await snapshots(profile.id, now) });
+  }
   return view(profile, now);
 }
 

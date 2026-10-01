@@ -122,6 +122,7 @@ function project(
       units: view.units,
       soilTiles: view.soilTiles,
       fences: [...view.fences],
+      guardDogs: [...view.guardDogs],
       // Placed only. A building in storage stands nowhere, so there is
       // nothing for the map to draw and nothing to tell a visitor about.
       empireBuildings: view.empire.buildings.filter(isPlaced),

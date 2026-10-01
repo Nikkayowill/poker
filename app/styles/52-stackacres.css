@@ -5784,3 +5784,97 @@
   .sa-use-key { width: 60px; height: 60px; bottom: max(10px, calc(var(--safe-bottom) + 4px)); }
   .sa-use-key svg { width: 32px; height: 32px; }
 }
+
+/* The Resource Guide: a list of what you hold, then one item's uses and sources. */
+.sa-guide-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 6px;
+  margin: 8px 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.sa-guide-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 5px 10px;
+  border: 2px solid var(--sa-paint-line-soft);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paint-fill-quiet);
+  color: var(--sa-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sa-guide-item.is-empty { color: var(--sa-ink-soft); }
+.sa-guide-item-name { flex: 1; min-width: 0; }
+.sa-guide-item strong { font-variant-numeric: tabular-nums; }
+
+.sa-guide-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sa-ink-soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.sa-guide-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 8px;
+  color: var(--sa-ink);
+}
+
+.sa-guide-qty { margin: 0; font-size: 16px; font-weight: 900; }
+.sa-guide-desc { margin: 2px 0 0; font-size: 13.5px; line-height: 1.35; color: var(--sa-ink-soft); }
+
+.sa-guide-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.sa-guide-rows li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 6px 6px 10px;
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paint-fill-quiet);
+  color: var(--sa-ink);
+}
+
+.sa-guide-rows li.is-closed { color: var(--sa-ink-soft); }
+
+.sa-guide-row-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: 13.5px; }
+.sa-guide-row-text small { font-size: 12px; font-weight: 700; color: var(--sa-ink-soft); }
+
+.sa-guide-go {
+  flex: none;
+  min-height: 36px;
+  margin-top: 0;
+  padding: 4px 12px;
+  font-size: 13px;
+}
+
+.sa-guide-toggle { margin-top: 4px; }

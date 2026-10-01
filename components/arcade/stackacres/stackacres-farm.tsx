@@ -16,6 +16,7 @@ import {
 } from "react";
 import clsx from "clsx";
 import {
+  Backpack,
   Dna,
   Lock,
   Moon,
@@ -181,6 +182,8 @@ import {
   type CrossbreedActionResult,
   type CrossbreedHarvestActionResult,
 } from "./crossbreed-bed-sheet";
+import { ResourceGuideSheet } from "./resource-guide-sheet";
+import type { GuideDestinationId } from "@/lib/stackacres/resource-guide";
 import {
   emptyCrossbreedBedView,
   type CrossbreedBedView,
@@ -997,6 +1000,7 @@ export function StackAcresFarm() {
   // `act`'s fixed return type has no room for what a harvest just bred.
   const [crossbreed, setCrossbreed] = useState<CrossbreedBedView>(emptyCrossbreedBedView);
   const [showCrossbreed, setShowCrossbreed] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
   const lastCrossbreedHarvest = useRef<CrossbreedHarvestSettlement | null>(null);
   // Ray's Mythic Blueprints. Seeded empty -- the dashboard only ever opens
   // from a player press well after mount, by which point the first poll has
@@ -3122,6 +3126,30 @@ export function StackAcresFarm() {
     setShowContracts(true);
   }, []);
 
+  /** The Resource Guide's buttons: close the guide, open the screen. */
+  const onGuideDestination = useCallback((destination: GuideDestinationId) => {
+    panelSound();
+    setShowGuide(false);
+    switch (destination) {
+      case "workshop":
+        setShowWorkshop(true);
+        break;
+      case "house":
+        setShowHouse(true);
+        break;
+      case "contracts":
+        setShowContracts(true);
+        break;
+      case "store-sell":
+        setStoreTab("sell");
+        setShowStore(true);
+        break;
+      case "crossbreed":
+        setShowCrossbreed(true);
+        break;
+    }
+  }, []);
+
   /** A finger landed on the Workshop building. Same shape
    *  as `onWorldBarnTap`. */
   const onWorldWorkshopTap = useCallback(() => {
@@ -4096,6 +4124,15 @@ export function StackAcresFarm() {
         <strong>
           {Object.values(crossbreed.inventory).reduce((sum, qty) => sum + (qty ?? 0), 0)}
         </strong>
+      </button>
+      <button
+        type="button"
+        className="sa-prestige-badge"
+        onClick={() => { panelSound(); setShowGuide(true); }}
+        title="Resource Guide"
+        aria-label="Resource Guide"
+      >
+        <Backpack size={13} aria-hidden="true" />
       </button>
       <StackAcresMusicToggle />
     </>
@@ -5073,6 +5110,15 @@ export function StackAcresFarm() {
           onPlant={onPlantCrossbreed}
           onHarvest={onHarvestCrossbreed}
           onClose={() => { panelSound(); setShowCrossbreed(false); }}
+        />
+      )}
+
+      {showGuide && (
+        <ResourceGuideSheet
+          inventory={processing.inventory}
+          crossbreedInventory={crossbreed.inventory}
+          onOpenDestination={onGuideDestination}
+          onClose={() => { panelSound(); setShowGuide(false); }}
         />
       )}
 

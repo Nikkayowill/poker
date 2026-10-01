@@ -94,6 +94,8 @@ export const NPC_GIFT_CATALOGUE: Readonly<Record<NpcId, NpcGiftDef>> = {
       flour: "liked",
       bean_casserole: "liked",
       stuffed_peppers: "liked",
+      bluegill: "liked",
+      trout: "liked",
     },
   },
   pierre: {
@@ -106,6 +108,8 @@ export const NPC_GIFT_CATALOGUE: Readonly<Record<NpcId, NpcGiftDef>> = {
       stuffed_peppers: "liked",
       bean_casserole: "liked",
       cheese: "liked",
+      catfish: "loved",
+      trout: "loved",
     },
   },
   ivy: {
@@ -118,6 +122,8 @@ export const NPC_GIFT_CATALOGUE: Readonly<Record<NpcId, NpcGiftDef>> = {
       wheat: "loved",
       cloth: "liked",
       harvest_feast: "liked",
+      pelt: "loved",
+      meat: "liked",
     },
   },
 };
@@ -137,6 +143,11 @@ export const GIFTABLE_ITEMS: readonly MachineItemId[] = [
   "stuffed_peppers",
   "bean_casserole",
   "harvest_feast",
+  "bluegill",
+  "trout",
+  "catfish",
+  "meat",
+  "pelt",
 ];
 
 export function isGiftableItem(item: MachineItemId): boolean {

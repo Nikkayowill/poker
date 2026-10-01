@@ -101,6 +101,7 @@ export function SynergyBadge({
       className={clsx("sa-synergy-badge", { "has-active": active.length > 0 })}
       onClick={onOpen}
       title={`Synergy Tree. ${milestone}`}
+      data-label="Synergy"
     >
       <Zap size={16} aria-hidden="true" />
       <strong>

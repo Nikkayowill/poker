@@ -467,12 +467,38 @@
   flex-direction: column;
   gap: 6px;
   min-width: 200px;
+  /* Ten pills are taller than a phone on its side. The drawer scrolls rather
+     than running off the bottom of the screen with half its pills unreachable. */
+  max-height: calc(100dvh - 72px);
+  overflow-y: auto;
   padding: 8px;
   border: 2px solid var(--sa-paint-line);
   border-radius: var(--sa-r-block);
   background: var(--sa-paint-fill-open);
   box-shadow: var(--sa-paint-rim), var(--sa-drop-lg);
 }
+
+/* In the drawer the pills stand in a column with room to spare, so each one
+   says what it is. Inline on a wide screen they stay icon-and-count, where a
+   hover title does the naming; on a phone there is no hover, and a column of
+   bare numbers told a new player nothing. */
+.sa-hud-more-popover [data-label]::after {
+  content: attr(data-label);
+  margin-left: auto;
+  padding-left: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--sa-ink-soft);
+}
+.sa-hud-more-popover .sa-music-toggle {
+  width: auto;
+  padding: 0 11px;
+  justify-content: flex-start;
+}
+/* The header bar is a stacking context under the joystick (z-index 2 against
+   3), which is right while the drawer is closed and wrong the moment it opens:
+   the bottom of the list went under the stick. An open drawer lifts the bar. */
+.sa-theme .floor-bar:has(.sa-hud-more-popover) { z-index: 6; }
 
 /* Screen-reader-only. There is no shared utility for this in the codebase --
    every component inlines the pattern -- so it is inlined here too. */
@@ -1179,15 +1205,18 @@
   gap: 10px;
   padding: 4px 2px;
   font-size: 13px;
-  color: var(--sa-ink);
+  font-weight: 700;
+  color: var(--sa-cream);
   /* Only text left floating with no shell behind it now that `.sa-gel-row`
      carries no fill -- a soft dark halo keeps cream lettering legible over
      whatever the map is showing underneath, same trick `.sa-gel-close`
-     already uses. */
+     already uses. Cream, not ink: dark letters under a dark halo vanished
+     into the grass. */
   text-shadow: 0 1px 3px rgba(20, 15, 10, .75), 0 1px 1px rgba(20, 15, 10, .6);
 }
 
-.sa-gel-empty p { margin: 0; }
+/* Two short lines on the left, not one long one under the planner. */
+.sa-gel-empty p { margin: 0; max-width: 44ch; }
 
 /* One token: a small whitewash capsule with its own border, so tokens packed
    edge to edge in the scroll strip still read as separate pieces. */
@@ -2697,6 +2726,19 @@
     width: 64px;
     height: 64px;
   }
+}
+/* A phone on its side is 390px tall or less, and even the small portrait
+   pushed the button off the bottom. His face is in the byline from then on. */
+@media (max-height: 430px) {
+  .sa-ray-welcome-portrait { display: none; }
+  .sa-theme .htp-modal .htp-body { gap: 10px; padding-bottom: 16px; }
+}
+/* The shared modals scroll when a short screen cannot hold their copy, and
+   nothing says so. The one button stays pinned at the bottom of the scroll,
+   so it is always there to press. */
+.sa-theme .htp-modal .htp-body > .sa-cta {
+  position: sticky;
+  bottom: 0;
 }
 
 /* The "While you were away" list (stackacres-away-report.tsx). */

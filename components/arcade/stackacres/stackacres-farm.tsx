@@ -4233,7 +4233,7 @@ export function StackAcresFarm() {
           progress bar, always on screen) and folded into this same
           standing-badge row as the Forge and Crossbreeding Bed below it. */}
       <StackAcresJournalChip view={journal} onOpen={() => { journalSound(); setShowGoals(true); }} />
-      <span className="sa-feed" title="Feed servings">
+      <span className="sa-feed" title="Feed servings" data-label="Feed">
         <StackAcresPixelIcon name="sack" />
         <strong>{feed}</strong>
         <span className="sa-sr">feed servings</span>
@@ -4241,6 +4241,7 @@ export function StackAcresFarm() {
       <span
         className={clsx("sa-feed sa-water", { "is-empty": water < 1 })}
         title="Water in your can. Fill it at the well."
+        data-label="Water"
       >
         <StackAcresPixelIcon name="water" />
         <strong>{water}</strong>
@@ -4265,6 +4266,7 @@ export function StackAcresFarm() {
         className="sa-prestige-badge"
         onClick={() => { panelSound(); setShowForge(true); }}
         title="The Sunlight Forge"
+        data-label="Forge"
       >
         <Wand2 size={13} aria-hidden="true" />
         <strong>{forge.length}/{Object.keys(FORGE_ENCHANTMENTS).length}</strong>
@@ -4277,6 +4279,7 @@ export function StackAcresFarm() {
         className="sa-prestige-badge"
         onClick={() => { panelSound(); setShowCrossbreed(true); }}
         title="The Crossbreeding Bed"
+        data-label="Crossbreeding"
       >
         <Dna size={13} aria-hidden="true" />
         <strong>
@@ -4299,6 +4302,7 @@ export function StackAcresFarm() {
           className={clsx("sa-prestige-badge sa-barn-badge", { "is-waiting": barnWaiting > 0 })}
           onClick={() => { panelSound(); setShowBarn(true); }}
           title="Your animals"
+          data-label="Animals"
         >
           <Heart size={13} aria-hidden="true" />
           <strong>{barnWaiting > 0 ? barnWaiting : barnCards.length}</strong>
@@ -4310,6 +4314,7 @@ export function StackAcresFarm() {
         onClick={() => { panelSound(); setShowGuide(true); }}
         title="Resource Guide"
         aria-label="Resource Guide"
+        data-label="Resource Guide"
       >
         <Backpack size={13} aria-hidden="true" />
       </button>

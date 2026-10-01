@@ -49,9 +49,9 @@ export function StackAcresRayWelcome({ onClose }: { onClose: () => void }) {
             long while. Tap the ground to walk, and tap whatever you&rsquo;re standing by to use it.&rdquo;
           </p>
           <p>
-            &ldquo;The barn is my supply store. Plant wheat in your beds, and the Mill in the Workshop
-            next door grinds it into flour. The signpost takes orders from town. Come find me when you&rsquo;re ready to
-            help out.&rdquo;
+            &ldquo;The barn is my supply store, and wheat seed is a few Gold a packet. Break ground with
+            the hoe, sow it, and the Mill in the Workshop next door grinds the wheat into flour. The
+            signpost takes orders from town.&rdquo;
           </p>
           <button type="button" className="sa-cta" onClick={onClose}>
             Thanks, Ray

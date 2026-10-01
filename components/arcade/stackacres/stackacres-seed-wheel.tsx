@@ -72,7 +72,7 @@ export function StackAcresSeedWheel({ items, picked, onPick, onClose }: StackAcr
       </button>
       {empty ? (
         <div className="sa-gel-empty">
-          <p>No seeds on hand. Pick the berry bushes around the farmyard.</p>
+          <p>No seeds on hand. Wheat seed is at the barn, and the berry bushes around the yard hold seed too.</p>
         </div>
       ) : (
         <div className={clsx("sa-gel-scroll", { "is-scrollable": items.length > 3 })}>

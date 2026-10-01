@@ -2250,6 +2250,11 @@ describe("the currency wall", () => {
       "buy-stock",
       "catch-fish",
       "chop-tree",
+      // PAYS Gold and Town Influence: one finished Daily Farm Board line,
+      // once per line per period, through its own keyed ledger. A claim
+      // rather than an auto-credit precisely so that no OTHER action in
+      // this list has to move Gold -- see lib/stackacres/farm-board.ts.
+      "claim-farm-board",
       "clear",
       "collect",
       "collect-cellar",

@@ -45,7 +45,16 @@ export type StoryObjective =
   | { readonly kind: "crossbreed"; readonly target: number }
   | { readonly kind: "deliver"; readonly item: MachineItemId; readonly target: number }
   | { readonly kind: "hold-tool"; readonly tool: StackAcresToolTier; readonly target: 1 }
-  | { readonly kind: "reach-place"; readonly place: QuestPlaceId; readonly target: 1 };
+  | { readonly kind: "reach-place"; readonly place: QuestPlaceId; readonly target: 1 }
+  // Gathering. The Daily Farm Board (../farm-board.ts) is what asks for
+  // these -- they are the work a farm with nothing built yet can still do,
+  // which is exactly what a board must be able to draw for a new player.
+  // No traveler line uses them; the union is shared so the board gets
+  // `objectiveAdvance`, `objectiveLabel` and one counter shape for free
+  // rather than declaring a second, parallel objective vocabulary.
+  | { readonly kind: "chop"; readonly target: number }
+  | { readonly kind: "mine"; readonly target: number }
+  | { readonly kind: "forage"; readonly target: number };
 
 export type StoryObjectiveKind = StoryObjective["kind"];
 
@@ -105,6 +114,12 @@ export function objectiveAdvance(objective: StoryObjective, event: StoryEvent): 
       return event.kind === "crossbreed-harvested" ? 1 : 0;
     case "reach-place":
       return event.kind === "place-reached" && event.placeId === objective.place ? 1 : 0;
+    case "chop":
+      return event.kind === "wood-chopped" ? event.count : 0;
+    case "mine":
+      return event.kind === "stone-mined" ? event.count : 0;
+    case "forage":
+      return event.kind === "forage-picked" ? event.count : 0;
     case "deliver":
     case "hold-tool":
       return 0;
@@ -159,6 +174,12 @@ export function objectiveLabel(objective: StoryObjective): string {
       return `Own the ${STACKACRES_TOOL_TIER_DEFS[objective.tool].label}`;
     case "reach-place":
       return `Go to ${QUEST_PLACE_LABEL[objective.place]}`;
+    case "chop":
+      return `Chop ${objective.target} Wood`;
+    case "mine":
+      return `Mine ${objective.target} Stone`;
+    case "forage":
+      return `Pick ${objective.target} seeds from the bushes`;
   }
 }
 

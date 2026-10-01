@@ -202,6 +202,7 @@ import { StackAcresStoryDialogue } from "./stackacres-story-dialogue";
 import { useStackAcresStory, type StackAcresStoryController } from "@/lib/stackacres/story/use-stackacres-story";
 import { storyEventsForAction } from "@/lib/stackacres/story/predict";
 import { travelerHasStoryToTell, type StackAcresStoryView } from "@/lib/stackacres/story/state";
+import type { FarmBoardView } from "@/lib/stackacres/farm-board";
 import type { StoryIntent } from "@/lib/stackacres/story/dialogue";
 import type { QuestPlaceId } from "@/lib/stackacres/story/places";
 import { TRAVELER_CATALOGUE, type TravelerId } from "@/lib/stackacres/story/travelers";
@@ -695,6 +696,10 @@ interface StackAcresResponse {
    *  working, which leaves every traveler's bubble unreachable rather than
    *  wrong. See lib/stackacres/story/. */
   story?: StackAcresStoryView;
+  /** The Daily Farm Board, straight off `StackAcresView.farmBoard`. Optional
+   *  for the same reason `story` above is: a bundle that predates the
+   *  feature shows no board rather than an empty one. */
+  farmBoard?: FarmBoardView;
   /** Set only by a `story-meet`/`story-turn-in` response; every other
    *  action's answer leaves this undefined. `story` above already carries
    *  the resulting standing -- this is only what THIS call just did, so the
@@ -1060,6 +1065,13 @@ export function StackAcresFarm() {
    * bubble and its optimistic tick.
    */
   const [storyView, setStoryView] = useState<StackAcresStoryView | null>(null);
+  /**
+   * The Daily Farm Board, as the server counted it. Same "full state, not a
+   * diff" posture as `storyView` above: every response carries the whole
+   * board, so a line that just completed arrives already complete and there
+   * is no local reducer to keep in step.
+   */
+  const [farmBoard, setFarmBoard] = useState<FarmBoardView | null>(null);
   /**
    * Land the player may work, and what keeping it costs today.
    *
@@ -1798,6 +1810,7 @@ export function StackAcresFarm() {
     }
     if (data.blueprints) setBlueprints(data.blueprints);
     if (data.story) setStoryView(data.story);
+    if (data.farmBoard) setFarmBoard(data.farmBoard);
   }, [acceptRevision, layFarm, gameHourNow]);
 
   /**
@@ -2688,6 +2701,15 @@ export function StackAcresFarm() {
 
   /** The Eat tab in the player's house (./stackacres-kitchen.tsx). */
   const onEat = useCallback((item: FoodItem) => act({ action: "eat", item }), [act]);
+  /**
+   * Taking a finished Farm Board line's reward, from the Journal.
+   *
+   * No optimistic patch: this is the one board interaction that moves Gold,
+   * and the server's own answer carries both the new balance and the line
+   * marked claimed. Guessing at it would mean showing a payout that a
+   * refusal then has to take back.
+   */
+  const onClaimBoard = useCallback((code: string) => act({ action: "claim-farm-board", code }), [act]);
   /** Built machine kinds, for the seed locks (lib/stackacres/seed-unlocks.ts). */
   const builtKinds = useMemo(
     () => new Set(processing.machines.map((machine) => machine.kind)),
@@ -3777,6 +3799,7 @@ export function StackAcresFarm() {
         vat,
         cellar,
         story: storyView,
+        farmBoard,
         progress: shopProgress,
         machines: processing.machines,
         woodNodes,
@@ -3794,6 +3817,7 @@ export function StackAcresFarm() {
       vat,
       cellar,
       storyView,
+      farmBoard,
       shopProgress,
       woodNodes,
       stoneNodes,
@@ -4902,7 +4926,11 @@ export function StackAcresFarm() {
       )}
 
       {showGoals && (
-        <StackAcresJournalSheet view={journal} onClose={() => { panelSound(); setShowGoals(false); }} />
+        <StackAcresJournalSheet
+          view={journal}
+          onClaimBoard={onClaimBoard}
+          onClose={() => { panelSound(); setShowGoals(false); }}
+        />
       )}
 
       {chapterCard && (

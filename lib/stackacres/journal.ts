@@ -32,6 +32,7 @@
  */
 
 import { CHAPTERS } from "./chapters";
+import type { FarmBoardLine, FarmBoardView } from "./farm-board";
 import { buildCost, buildPlace, costLines, costSummary, type BuildCost, type BuildPlace } from "./build-cost";
 import { STACKACRES_CATALOGUE, isLivestock } from "./catalogue";
 import { canFulfillContract, type StackAcresContractRow } from "./contracts";
@@ -204,6 +205,13 @@ export interface JournalView {
   /** What earning any one more flag opens, whichever flag it turns out to be. */
   readonly nextMilestoneOpens: readonly string[];
   readonly callers: readonly JournalCaller[];
+  /** Today's and this week's Farm Board lines, in board order, exactly as
+   *  the server counted them. Empty when there is no board to show -- a
+   *  farm read that could not reach one, or a snapshot that has not landed.
+   *  The board belongs here rather than on its own panel: the Journal is
+   *  already the one place that answers "what now", and a sixth competing
+   *  surface is the problem this file's own header exists about. */
+  readonly board: readonly FarmBoardLine[];
 }
 
 export interface JournalInput {
@@ -227,6 +235,10 @@ export interface JournalInput {
   readonly woodNodes: readonly { readonly ready: boolean }[];
   readonly stoneNodes: readonly { readonly ready: boolean }[];
   readonly forageNodes: readonly { readonly ready: boolean }[];
+  /** The board off the last snapshot, or null before one has landed. Server
+   *  truth, passed in rather than derived, the same posture `story` above
+   *  takes -- nothing here can work out what today's draw was. */
+  readonly farmBoard: FarmBoardView | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -587,6 +599,7 @@ export function journalView(input: JournalInput): JournalView {
     reach: journalReach(input),
     nextMilestoneOpens: milestone >= STACKACRES_QUEST_FLAGS.length ? [] : opensAtMilestone(milestone + 1),
     callers: journalCallers(input.story),
+    board: input.farmBoard?.lines ?? [],
   };
 }
 

@@ -40,7 +40,11 @@ per-acre daily upkeep, the guard dog is in, slaughter stays off-screen.
 2. **Contract board filter.** Contracts only ask for goods whose inputs the player can obtain, and
    flour gets a repeat limit. If the limit needs a stored counter, it goes on an existing contract
    table, not a new one. Small, and safe to ship right after phase 1.
-3. **Layout risk.** At collect time, from layout plus a seed of unit id and a night index taken
+3. **Layout risk (built on `feat/stackacres-herd-risk`, not merged).** Shipped as the pure rules in
+   `lib/stackacres/herd-risk.ts`: an animal in the open is away 20% of nights, one in a crowded pen 10%, a
+   fenced one never. The roll is its id plus the UTC day, so reloads and sleeping cannot reroll it. An away
+   animal shows as working, is not drawn, and collect answers 409 until the next day. Crop trampling is not
+   in this pass. Original plan: At collect time, from layout plus a seed of unit id and a night index taken
    from the server clock, never the client's, so a reload cannot reroll. Chrono-DeLorean offsets
    already shift that clock, so tests can replay a night. Covers wandering off, predators at night,
    crop trampling and crowding. The animal comes back next day. Never debits Gold. Hens in Hen

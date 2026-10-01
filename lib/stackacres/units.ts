@@ -27,6 +27,7 @@ import { STACKACRES_YIELDS } from "./items";
 import { greenhouseDurationMs } from "./greenhouse";
 import { enrichedGrowthMultiplier } from "./soil-enrich";
 import { applyCare, freshAnimalCare } from "./barn";
+import type { HerdAway } from "./herd-risk";
 
 /** One owned unit as a store row. See lib/server/stackacres-store.ts. */
 export interface StackAcresUnitRow {
@@ -109,6 +110,9 @@ export interface StackAcresUnitRow {
   caredOn?: string | null;
   careStreak?: number;
   careBonus?: number;
+  /** Set while a placed sheep or cow is away for the night (./herd-risk.ts). It
+   *  cannot be collected from, and it shows as working so nothing offers to. */
+  away?: HerdAway | null;
 }
 
 /**
@@ -173,6 +177,9 @@ export interface StackAcresUnitSnapshot {
   caredOn?: string | null;
   careStreak?: number;
   careBonus?: number;
+  /** Set while a placed sheep or cow is away for the night (./herd-risk.ts). It
+   *  cannot be collected from, and it never shows as ready, so nothing offers to. */
+  away?: HerdAway | null;
 }
 
 /**
@@ -442,6 +449,7 @@ export function isStackAcresUnitReady(
  *  Empty unless a caller passes one -- livestock and pipe-less farms just get
  *  the same behaviour they had before. */
 const NO_IRRIGATED_UNITS: ReadonlySet<string> = new Set<string>();
+const NO_AWAY_UNITS: ReadonlyMap<string, HerdAway> = new Map<string, HerdAway>();
 
 /** Every owned unit, as the client renders it. */
 export function toStackAcresUnitSnapshots(
@@ -449,6 +457,7 @@ export function toStackAcresUnitSnapshots(
   now: Date,
   irrigatedUnitIds: ReadonlySet<string> = NO_IRRIGATED_UNITS,
   comfort = 1,
+  awayUnits: ReadonlyMap<string, HerdAway> = NO_AWAY_UNITS,
 ): StackAcresUnitSnapshot[] {
   return rows.map((row) => {
     if (row.status === "mucked") {
@@ -482,7 +491,8 @@ export function toStackAcresUnitSnapshots(
     const irrigated = irrigatedUnitIds.has(row.id);
     const hungry = isStackAcresUnitHungry(row, now, comfort);
     const dry = isStackAcresUnitDry(row, now, irrigated);
-    const ready = isStackAcresUnitReady(row, now, irrigated, comfort);
+    const away = awayUnits.get(row.id) ?? null;
+    const ready = away === null && isStackAcresUnitReady(row, now, irrigated, comfort);
     const thirstyAt = thirstyAtFor(row);
     // A dry crop's clock stopped the moment its soil did, so its bar is read
     // at THAT moment rather than at `now`. Everything else is read live.
@@ -519,6 +529,7 @@ export function toStackAcresUnitSnapshots(
       caredOn: row.caredOn ?? null,
       careStreak: row.careStreak ?? 0,
       careBonus: row.careBonus ?? 0,
+      away,
     };
   });
 }
@@ -556,7 +567,7 @@ export function withLocalClockUnit(unit: StackAcresUnitSnapshot, nowMs: number):
   // stopped instead of creeping on to a full bar it cannot cash.
   if (dry) return { ...unit, state: "dry", isWatered: false, progress: progressAt(driedAt) };
   if (!Number.isFinite(ready) || !Number.isFinite(started)) return unit;
-  if (ready <= nowMs) return { ...unit, state: "ready", progress: 1, isWatered: true };
+  if (ready <= nowMs && !unit.away) return { ...unit, state: "ready", progress: 1, isWatered: true };
   return { ...unit, state: "working", progress: progressAt(nowMs), isWatered: true };
 }
 

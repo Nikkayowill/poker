@@ -77,6 +77,36 @@ describe("buildAwayReport", () => {
   });
 });
 
+describe("animals lost in the night", () => {
+  const sheep = (away: "wandered" | "predator" | null) => ({
+    stock: "pig" as const,
+    state: "working" as const,
+    readyAt: at(HOUR),
+    hungryAt: null,
+    thirstyAt: null,
+    away,
+  });
+
+  it("tells the player which night it was and how to stop it", () => {
+    const report = run({ lastSeenMs: NOW - 15 * HOUR, units: [sheep("wandered"), sheep("wandered"), { ...sheep(null), readyAt: at(-HOUR) }] });
+    expect(report?.lines).toEqual(["2 animals wandered off last night. Make sure to enclose your livestock."]);
+  });
+
+  it("says something got at them for a predator", () => {
+    const report = run({ lastSeenMs: NOW - 15 * HOUR, units: [sheep("predator")] });
+    expect(report?.lines).toEqual(["Something got at 1 animal last night. A fence keeps them safe."]);
+  });
+
+  it("does not announce a night the player already saw", () => {
+    expect(run({ lastSeenMs: NOW - 5 * HOUR, units: [sheep("wandered")] })).toBeNull();
+  });
+
+  it("does not also call an away animal ripe or hungry", () => {
+    const report = run({ lastSeenMs: NOW - 15 * HOUR, units: [{ ...sheep("wandered"), hungryAt: at(HOUR) }] });
+    expect(report?.lines).toEqual(["1 animal wandered off last night. Make sure to enclose your livestock."]);
+  });
+});
+
 describe("awayDurationLabel", () => {
   it("reads in the largest sensible unit", () => {
     expect(awayDurationLabel(25 * 60_000)).toBe("25 minutes");

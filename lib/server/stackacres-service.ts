@@ -124,12 +124,14 @@ import {
   isFenceableMapTile,
   type FencePiece,
 } from "@/lib/stackacres/fences";
+import { HERD_AWAY_MESSAGES, herdAway, type HerdAway } from "@/lib/stackacres/herd-risk";
 import {
   HERD_PLACEMENT_MESSAGES,
   herdKey,
   herdPlacementProblem,
   herdSquares,
   isHerdStock,
+  isPlaced as isHerdPlaced,
 } from "@/lib/stackacres/herd";
 import {
   listStackAcresFences,
@@ -1077,6 +1079,24 @@ async function barnComfortFor(profileId: string): Promise<number> {
   return farmComfort(machines.map((machine) => machine.kind));
 }
 
+/**
+ * Which placed sheep and cows are away tonight (lib/stackacres/herd-risk.ts).
+ * Derived from the fences and the server clock alone, so a read stays
+ * write-free and a refetch cannot change the answer. Callers that already hold
+ * the fences pass them; otherwise they are read, and only when something is
+ * placed to be at risk.
+ */
+async function herdAwayFor(
+  profileId: string,
+  rows: readonly StoredStackAcresUnit[],
+  now: Date,
+  fences?: readonly FencePiece[],
+): Promise<Map<string, HerdAway>> {
+  if (!rows.some(isHerdPlaced)) return new Map();
+  const pieces = fences ?? (await listStackAcresFences(profileId));
+  return herdAway(rows, new Set(pieces.map((piece) => herdKey(piece.tx, piece.ty))), now.getTime());
+}
+
 async function snapshots(profileId: string, now: Date): Promise<StackAcresRoundSnapshot> {
   // Revision before rows, so the number never claims more than the rows show.
   const revision = await readStackAcresRevision(profileId);
@@ -1084,11 +1104,12 @@ async function snapshots(profileId: string, now: Date): Promise<StackAcresRoundS
   // Comfort is read here too, not just in `view`: a refusal's round repaints
   // the farm, and a Barn farm whose refusal round said an animal was hungry
   // while the next full view said it was not would flicker on every refusal.
-  const [irrigatedUnitIds, comfort] = await Promise.all([
+  const [irrigatedUnitIds, comfort, away] = await Promise.all([
     irrigatedUnitIdsFor(profileId, rows),
     barnComfortFor(profileId),
+    herdAwayFor(profileId, rows, now),
   ]);
-  return { units: toStackAcresUnitSnapshots(rows, now, irrigatedUnitIds, comfort), revision };
+  return { units: toStackAcresUnitSnapshots(rows, now, irrigatedUnitIds, comfort, away), revision };
 }
 
 /** Whether each secret item has ever been donated (see `readStackAcresMuseum`
@@ -1440,7 +1461,13 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     friendship[npc] = friendshipView(npc, storedFriendships[index], now);
   });
   const comfort = farmComfort(machineRows.map((row) => row.kind));
-  const units = toStackAcresUnitSnapshots(rows, now, irrigationGrid.irrigatedUnitIds, comfort);
+  const units = toStackAcresUnitSnapshots(
+    rows,
+    now,
+    irrigationGrid.irrigatedUnitIds,
+    comfort,
+    await herdAwayFor(profile.id, rows, now, fences),
+  );
   const sectors = unlockedSectors(cleared, units);
   const agingContainer = (kind: "vat" | "cellar", tiers: readonly AgingTier[]): VatContainer | null => {
     const machine = machineRows.find((candidate) => candidate.kind === kind);
@@ -5196,6 +5223,14 @@ export async function harvestStackAcres(
   // a collect has to ask the comforted question or a Barn farm would be
   // refused produce its own view says is ready.
   const comfort = await barnComfortFor(profile.id);
+  // A sheep or cow that wandered off in the night cannot be collected from
+  // today. The roll is a fact of its id and the server's day, so asking again
+  // gives the same answer; the animal and its finished cycle are untouched.
+  const away = await herdAwayFor(profile.id, rows, now);
+  const roundNow = async (): Promise<StackAcresRoundSnapshot> => ({
+    units: toStackAcresUnitSnapshots(rows, now, irrigated, comfort, away),
+    revision: await readStackAcresRevision(profile.id),
+  });
 
   // A named set is the single-tap path; no set at all is "bring in everything
   // that is ready". Naming ONE unit that is not ready is answered with the
@@ -5208,32 +5243,27 @@ export async function harvestStackAcres(
     for (const unitId of named) {
       const row = rows.find((candidate) => candidate.id === unitId);
       if (!row || row.status !== "working") {
-        throw new StackAcresRequestError("Nothing to collect here.", 404, {
-          round: { units: toStackAcresUnitSnapshots(rows, now, irrigated), revision: await readStackAcresRevision(profile.id) },
-        });
+        throw new StackAcresRequestError("Nothing to collect here.", 404, { round: await roundNow() });
       }
+      const wandered = away.get(row.id);
+      if (wandered) throw new StackAcresRequestError(HERD_AWAY_MESSAGES[wandered], 409, { round: await roundNow() });
       if (isStackAcresUnitHungry(row, now, comfort)) {
-        throw new StackAcresRequestError("Feed them first.", 409, {
-          round: { units: toStackAcresUnitSnapshots(rows, now, irrigated), revision: await readStackAcresRevision(profile.id) },
-        });
+        throw new StackAcresRequestError("Feed them first.", 409, { round: await roundNow() });
       }
       // The client's clock is decoration; this is the answer that counts, and
       // the store's own ready_at guard backs it even if this check is raced.
       if (!isStackAcresUnitReady(row, now, irrigated.has(row.id), comfort)) {
-        throw new StackAcresRequestError("Not ready yet.", 409, {
-          round: { units: toStackAcresUnitSnapshots(rows, now, irrigated), revision: await readStackAcresRevision(profile.id) },
-        });
+        throw new StackAcresRequestError("Not ready yet.", 409, { round: await roundNow() });
       }
     }
   }
 
   const ready = rows.filter(
-    (row) => (!named || named.has(row.id)) && isStackAcresUnitReady(row, now, irrigated.has(row.id), comfort),
+    (row) =>
+      (!named || named.has(row.id)) && !away.has(row.id) && isStackAcresUnitReady(row, now, irrigated.has(row.id), comfort),
   );
   if (ready.length === 0) {
-    throw new StackAcresRequestError("Nothing is ready yet.", 409, {
-      round: { units: toStackAcresUnitSnapshots(rows, now, irrigated), revision: await readStackAcresRevision(profile.id) },
-    });
+    throw new StackAcresRequestError("Nothing is ready yet.", 409, { round: await roundNow() });
   }
 
   const candidateOf = (row: StoredStackAcresUnit): HarvestCandidate => ({

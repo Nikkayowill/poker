@@ -144,6 +144,8 @@ export type Action =
   | { action: "buy-building"; kind: EmpireBuildingKind; tx: number; ty: number }
   | { action: "place-building"; id: string; tx: number; ty: number }
   | { action: "pick-up-building"; id: string }
+  // One acre of the wild land (./acres.ts): Gold, Wood and Stone, priced by the server.
+  | { action: "buy-acre"; acreId: string }
   // The city grocery (./grocery.ts): taking it over, its staff, its till, and arranging its floor.
   | { action: "grocery-take-over" }
   | { action: "grocery-hire"; name: string }

@@ -1,5 +1,6 @@
 import { cropFieldObstaclePlacements } from "./crop-field-obstacles";
 import { isWildMapTile, mapToSoilTile } from "./hoeable";
+import { acreAtMapTile } from "./acres";
 import { isFenceableMapTile } from "./fences";
 import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "./homestead-ground";
 import { describe, expect, it } from "vitest";
@@ -1055,5 +1056,31 @@ describe("predictStackAcresAction: fences", () => {
     const patch = predictStackAcresAction({ action: "remove-fence", ...grass }, ctx({ fences: [grass], inventory: { wood: 0 } }));
     expect(patch?.fences).toEqual([]);
     expect(patch?.inventory?.wood).toBe(2);
+  });
+});
+
+describe("predictStackAcresAction: ground the farm does not own", () => {
+  const wild = (() => {
+    for (let ty = 0; ty < HOMESTEAD_MAP_HEIGHT; ty++) {
+      for (let tx = 0; tx < HOMESTEAD_MAP_WIDTH; tx++) {
+        if (isFenceableMapTile(tx, ty) && isWildMapTile(tx, ty) && acreAtMapTile(tx, ty)) return { tx, ty, acre: acreAtMapTile(tx, ty)!.id };
+      }
+    }
+    throw new Error("no wild ground on the Homestead");
+  })();
+
+  it("puts no fence up on an acre it does not own", () => {
+    const patch = predictStackAcresAction({ action: "place-fence", tx: wild.tx, ty: wild.ty }, ctx({ inventory: { wood: 5 }, ownedAcres: [] }));
+    expect(patch).toBeNull();
+  });
+
+  it("puts the fence up once the acre is owned", () => {
+    const patch = predictStackAcresAction({ action: "place-fence", tx: wild.tx, ty: wild.ty }, ctx({ inventory: { wood: 5 }, ownedAcres: [wild.acre] }));
+    expect(patch?.fences).toEqual([{ tx: wild.tx, ty: wild.ty }]);
+  });
+
+  it("guesses nothing about ownership it was never told", () => {
+    const patch = predictStackAcresAction({ action: "place-fence", tx: wild.tx, ty: wild.ty }, ctx({ inventory: { wood: 5 } }));
+    expect(patch?.fences).toEqual([{ tx: wild.tx, ty: wild.ty }]);
   });
 });

@@ -134,6 +134,18 @@ import {
   isPlaced as isHerdPlaced,
 } from "@/lib/stackacres/herd";
 import {
+  acreById,
+  acreGate,
+  acreGateMessage,
+  acrePrice,
+  acresView,
+  boughtAcreCount,
+  isAcreId,
+  type OwnedAcre,
+  type StackAcresAcresView,
+} from "@/lib/stackacres/acres";
+import { insertStackAcresAcre, listStackAcresAcres, stackAcresAcresFromBatchRows } from "./stackacres-acre-store";
+import {
   listStackAcresFences,
   placeStackAcresFence as placeFenceRow,
   removeStackAcresFence as removeFenceRow,
@@ -910,6 +922,8 @@ export interface StackAcresView {
   landObstacles: LandObstacleSnapshot[];
   /** Every fence piece this farm has put up (lib/stackacres/fences.ts), by Homestead map square. */
   fences: FencePiece[];
+  /** The wild land's acres this farm owns, and what the next one costs (lib/stackacres/acres.ts). */
+  acres: StackAcresAcresView;
   /** The farm clock (lib/stackacres/clock.ts): this farm's offset, and the
    *  server's `now` for this read, so the client can correct for its own
    *  clock being off. */
@@ -1269,6 +1283,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
           readStackAcresAxeLevel(profile.id),
           listEmpireBuildings(profile.id),
           groceryOwnershipEnabled() ? readGrocery(profile.id) : Promise.resolve(null),
+          listStackAcresAcres(profile.id),
         ] as const),
   ]);
 
@@ -1312,6 +1327,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   let axe: AxeLevel;
   let empireBuildings: EmpireBuilding[];
   let groceryState: GroceryState | null;
+  let ownedAcres: OwnedAcre[];
 
   if (batch) {
     rows = (batch.units as unknown as UnitDbRow[]).map(stackAcresUnitFromBatchRow);
@@ -1388,6 +1404,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     groceryState = groceryOwnershipEnabled()
       ? stackAcresGroceryFromBatchRow(batch.grocery as Parameters<typeof stackAcresGroceryFromBatchRow>[0])
       : null;
+    ownedAcres = stackAcresAcresFromBatchRows((batch.acres ?? []) as { acre_id: string; source: string }[]);
   } else {
     [
       rows,
@@ -1430,6 +1447,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       axe,
       empireBuildings,
       groceryState,
+      ownedAcres,
     ] = fallback as [
       StoredStackAcresUnit[], number, number, Partial<Record<StackAcresStock, number>>, SectorId[], number,
       string[], StackAcresToolTier, StoredWheatPlot[], StoredMachine[], StackAcresInventory, StoredContract | null,
@@ -1446,6 +1464,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       AxeLevel,
       EmpireBuilding[],
       GroceryState | null,
+      OwnedAcre[],
     ];
   }
 
@@ -1509,7 +1528,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     sectors,
     // Reported, never charged, from here: a read must not move a purse. The
     // charge happens inside a harvest, netted out of what it pays.
-    upkeep: upkeepState(unlockedPlotCount(sectors, capacity, cropFieldsUnlocked), upkeepPaid),
+    upkeep: upkeepState(unlockedPlotCount(sectors, capacity, cropFieldsUnlocked), upkeepPaid, boughtAcreCount(ownedAcres)),
     tool,
     axe,
     cutters,
@@ -1582,6 +1601,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       ),
     ),
     fences,
+    acres: acresView(ownedAcres),
     clock: { offsetMs: clockOffset, serverNowMs: now.getTime() },
     revision,
     // Wood and Metal are the shared inventory's, since that is what the Far
@@ -2122,13 +2142,18 @@ async function netUpkeepFromPayout(profileId: string, now: Date, grossGold: numb
   if (grossGold <= 0) return grossGold;
   try {
     const day = stackacresUpkeepDay(now);
-    const [upkeepPaid, { sectors }, capacity, cropFieldsUnlocked] = await Promise.all([
+    const [upkeepPaid, { sectors }, capacity, cropFieldsUnlocked, acres] = await Promise.all([
       readStackAcresUpkeep(profileId, day),
       readLand(profileId),
       readStackAcresCapacity(profileId),
       readStackAcresCropFieldsUnlocked(profileId),
+      listStackAcresAcres(profileId),
     ]);
-    const due = stackacresUpkeepDue(unlockedPlotCount(sectors, capacity, cropFieldsUnlocked), upkeepPaid);
+    const due = stackacresUpkeepDue(
+      unlockedPlotCount(sectors, capacity, cropFieldsUnlocked),
+      upkeepPaid,
+      boughtAcreCount(acres),
+    );
     if (due <= 0) return grossGold;
 
     const skimmed = Math.min(due, grossGold);
@@ -4135,6 +4160,7 @@ export async function placeStackAcresFencePiece(
   const tx = Math.trunc(input.tx);
   const ty = Math.trunc(input.ty);
   if (!isFenceableMapTile(tx, ty)) throw new StackAcresRequestError(FENCE_NOT_HERE, 400);
+  await requireOwnedGround(profile.id, [{ mx: tx, my: ty }], now);
   const { tx: sx, ty: sy } = mapToSoilTile(tx, ty);
   const beds = await listStackAcresSoilTiles(profile.id);
   if (beds.some((bed) => bed.tx === sx && bed.ty === sy)) {
@@ -4219,6 +4245,8 @@ export async function pickUpStackAcresAnimal(
   if (outcome === "missing") throw new StackAcresRequestError("That isn't one of your animals.", 404);
   return view(profile, now);
 }
+
+const ACRE_ALREADY_OWNED = "You already own that acre.";
 
 /** Why a Far Field spot is refused, in the same words the build bar shows. */
 type EmpireRefusal = { status: 404 | 409; message: string };
@@ -4313,6 +4341,97 @@ export async function buyEmpireBuilding(
   if (outcome !== undefined && !("placed" in outcome)) {
     await giveBack();
     throw new StackAcresRequestError(outcome.message, outcome.status, { round: await snapshots(profile.id, now) });
+  }
+  return view(await ensureProfile(token), now);
+}
+
+/**
+ * Refuses a bed or a fence piece on wild ground the farm does not own
+ * (lib/stackacres/acres.ts). The yard is never refused.
+ */
+async function requireOwnedGround(
+  profileId: string,
+  tiles: readonly { mx: number; my: number }[],
+  now: Date,
+): Promise<void> {
+  const owned = new Set((await listStackAcresAcres(profileId)).map((entry) => entry.id));
+  for (const { mx, my } of tiles) {
+    const gate = acreGate(mx, my, owned);
+    if (gate.ok) continue;
+    throw new StackAcresRequestError(acreGateMessage(gate), gate.reason === "treeline" ? 400 : 409, {
+      round: await snapshots(profileId, now),
+    });
+  }
+}
+
+/**
+ * Buys one acre of the wild land (lib/stackacres/acres.ts), so beds and fences
+ * may go on it.
+ *
+ * Money order: Wood and Stone leave, then the Gold, and only then is the row
+ * written. If the Gold will not leave, or the write fails or finds the acre
+ * already owned, everything taken goes back once. Only what actually moved goes
+ * back: an account with unlimited Gold was never charged. The price comes from
+ * how many acres the farm already owns, never from the request.
+ */
+export async function buyStackAcresAcre(
+  token: string,
+  input: { acreId: string },
+  now = new Date(),
+): Promise<StackAcresView> {
+  if (!isAcreId(input.acreId) || !acreById(input.acreId)) throw new StackAcresRequestError("Not a real acre.", 400);
+  const acreId = input.acreId;
+  const profile = await ensureProfile(token);
+  const owned = await listStackAcresAcres(profile.id);
+  if (owned.some((entry) => entry.id === acreId)) {
+    throw new StackAcresRequestError(ACRE_ALREADY_OWNED, 409, { round: await snapshots(profile.id, now) });
+  }
+  const price = acrePrice(owned.length);
+
+  const { refund: refundMaterials } = await spendStackAcresMaterials(
+    profile.id,
+    [
+      { item: "wood", quantity: price.wood },
+      { item: "stone", quantity: price.stone },
+    ],
+    now,
+    (material) => `This acre needs ${material.quantity.toLocaleString()} ${machineItemNoun(material.item, material.quantity)}.`,
+  );
+  let paid: boolean;
+  try {
+    paid = await debitGoldByProfile(profile.id, price.gold);
+  } catch (error) {
+    await refundMaterials();
+    throw error;
+  }
+  if (!paid) {
+    await refundMaterials();
+    throw new StackAcresRequestError(`This acre costs ${price.gold.toLocaleString()} Gold.`, 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  const giveBack = async () => {
+    if (!profile.unlimitedGold) await refundGold(profile.id, price.gold);
+    await refundMaterials();
+  };
+
+  let wrote: boolean;
+  try {
+    wrote = await insertStackAcresAcre(profile.id, acreId);
+  } catch (error) {
+    // The write may have landed with only its answer lost; then the acre is theirs and stays paid for.
+    const landed = await listStackAcresAcres(profile.id)
+      .then((held) => held.some((entry) => entry.id === acreId))
+      .catch(() => false);
+    if (!landed) {
+      await giveBack();
+      throw error;
+    }
+    wrote = true;
+  }
+  if (!wrote) {
+    await giveBack();
+    throw new StackAcresRequestError(ACRE_ALREADY_OWNED, 409, { round: await snapshots(profile.id, now) });
   }
   return view(await ensureProfile(token), now);
 }
@@ -5106,13 +5225,18 @@ export async function tradeStackAcresSecretItemToRay(
   }
 
   const day = stackacresExchangeDay(now);
-  const [land, capacity, upkeepPaid, cropFieldsUnlocked] = await Promise.all([
+  const [land, capacity, upkeepPaid, cropFieldsUnlocked, acres] = await Promise.all([
     readLand(profile.id),
     readStackAcresCapacity(profile.id),
     readStackAcresUpkeep(profile.id, day),
     readStackAcresCropFieldsUnlocked(profile.id),
+    listStackAcresAcres(profile.id),
   ]);
-  const fee = upkeepState(unlockedPlotCount(land.sectors, capacity, cropFieldsUnlocked), upkeepPaid).fee;
+  const fee = upkeepState(
+    unlockedPlotCount(land.sectors, capacity, cropFieldsUnlocked),
+    upkeepPaid,
+    boughtAcreCount(acres),
+  ).fee;
   const target = nextUpkeepPaidAfterDiceTrade(upkeepPaid, fee);
   if (target <= upkeepPaid) {
     throw new StackAcresRequestError("There is no Land Maintenance owed today to wipe.", 409, {
@@ -6653,6 +6777,7 @@ export async function placeStackAcresSoilTile(
   if (await fencedSoilTile(profile.id, tx, ty)) {
     throw new StackAcresRequestError(FENCE_IN_THE_WAY, 409, { round: await snapshots(profile.id, now) });
   }
+  await requireOwnedGround(profile.id, [soilToMapTile(tx, ty)], now);
   if (overgrownSoilTile(tx, ty, clearedObstacleIds(await listStackAcresLandObstacleStates(profile.id)))) {
     throw new StackAcresRequestError(OVERGROWN_SQUARE, 409, { round: await snapshots(profile.id, now) });
   }
@@ -6748,6 +6873,12 @@ export async function moveStackAcresSoilTileGroup(
   if (plan.moves.some(({ to }) => !holding.has(soilTileKey(to.tx, to.ty)) && overgrownSoilTile(to.tx, to.ty, cleared))) {
     throw new StackAcresRequestError(OVERGROWN_SQUARE, 409, { round: await snapshots(profile.id, now) });
   }
+
+  await requireOwnedGround(
+    profile.id,
+    plan.moves.filter(({ to }) => !holding.has(soilTileKey(to.tx, to.ty))).map(({ to }) => soilToMapTile(to.tx, to.ty)),
+    now,
+  );
 
   const fenced = new Set((await listStackAcresFences(profile.id)).map((piece) => fenceKey(piece.tx, piece.ty)));
   if (plan.moves.some(({ to }) => { const { mx, my } = soilToMapTile(to.tx, to.ty); return fenced.has(fenceKey(mx, my)); })) {

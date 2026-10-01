@@ -3,8 +3,11 @@ import {
   isHoeableMapTile,
   isWildMapTile,
   mapToSoilTile,
+  soilToMapTile,
 } from "@/lib/stackacres/hoeable";
 import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "@/lib/stackacres/homestead-ground";
+import { ACRE_NOT_YOURS, acreAtMapTile } from "@/lib/stackacres/acres";
+import { __grantStackAcresAcreForTest, __resetStackAcresAcresForTest } from "./stackacres-acre-store";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -19,6 +22,7 @@ import {
 } from "./stackacres-seed-store";
 import {
   StackAcresRequestError,
+  buyStackAcresAcre,
   moveStackAcresSoilTileGroup,
   placeStackAcresSoilTile,
   readStackAcres,
@@ -37,6 +41,7 @@ import {
 } from "./stackacres-soil-store";
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
 import { adjustGold, ensureProfile } from "./profile-store";
+import { adjustStackAcresInventory } from "./stackacres-store";
 import { SECTOR_LADDER } from "@/lib/stackacres/sectors";
 import { recordStackAcresSectorCleared } from "./stackacres-store";
 
@@ -47,9 +52,10 @@ async function funded(gold = 500_000) {
   const profile = await ensureProfile(token);
   const delta = gold - profile.goldBalance;
   if (delta !== 0) await adjustGold(profile.id, delta);
-  // Nothing is recorded about the Crop Fields here: tiling and sowing out
-  // there are not gated any more, and the flag is what breaking the ground
-  // SETS, which is the thing several of these tests are checking.
+  // Nothing is recorded about the Crop Fields here: the flag is what breaking
+  // the ground SETS, which is the thing several of these tests are checking.
+  // The acres under the wild patch are theirs, since digging there needs the deed.
+  ownTheWildPatch(profile.id);
   return token;
 }
 
@@ -71,6 +77,7 @@ async function sowingFarm(gold = 500_000) {
     await recordStackAcresSectorCleared(profile.id, sector, T0);
   }
   await recordStackAcresCropFieldsUnlocked(profile.id, T0);
+  ownTheWildPatch(profile.id);
   // Ray's seed shelf gates planting a crop now -- see the 2026-09-07 seed
   // inventory pass. This file's own crop-sowing tests predate that gate.
   for (const crop of STACKACRES_CROPS) await adjustStackAcresSeedStock(profile.id, crop, 1000);
@@ -93,6 +100,16 @@ const WILD_PATCH = (() => {
   }
   throw new Error("no clear spot out in the wild land on the Homestead");
 })();
+
+/** Every acre the wild patch touches, so a farm may dig there (lib/stackacres/acres.ts). */
+function ownTheWildPatch(profileId: string): void {
+  const start = soilToMapTile(WILD_PATCH.tx, WILD_PATCH.ty);
+  for (const [dx, dy] of WILD_NEEDS) {
+    const acre = acreAtMapTile(start.mx + dx, start.my + dy);
+    if (!acre) throw new Error("the wild patch sits outside every acre");
+    __grantStackAcresAcreForTest(profileId, acre.id, "bought");
+  }
+}
 
 /** A bed square out in the Crop Fields, `offset` squares along from the patch's corner. */
 function cropFieldTile(offset = 0) {
@@ -131,6 +148,7 @@ const FAR_AWAY = { tx: 10_000, ty: 10_000 };
 
 beforeEach(() => {
   __resetStackAcresForTest();
+  __resetStackAcresAcresForTest();
   __resetStackAcresSoilTilesForTest();
   __resetStackAcresSeedStockForTest();
   __resetStackAcresIntentsForTest();
@@ -162,9 +180,23 @@ describe("a new farm opens on bare grass", () => {
     expect((await ensureProfile(token)).goldBalance).toBe(goldBefore);
   });
 
-  it("lets a brand new player break ground in the Crop Fields with nothing bought", async () => {
+  it("keeps the Crop Fields shut until the acre under the bed is bought", async () => {
     const token = randomUUID();
     await ensureProfile(token);
+
+    await expect(placeStackAcresSoilTile(token, cropFieldTile(), T0)).rejects.toThrow(ACRE_NOT_YOURS);
+
+    expect((await readStackAcres(token, T0)).soilTiles).toHaveLength(0);
+  });
+
+  it("lets a new player break ground in the Crop Fields once they have bought the acre", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await adjustGold(profile.id, 1_000 - profile.goldBalance);
+    await adjustStackAcresInventory(profile.id, "wood", 100);
+    await adjustStackAcresInventory(profile.id, "stone", 100);
+    const { mx, my } = soilToMapTile(cropFieldTile().tx, cropFieldTile().ty);
+    await buyStackAcresAcre(token, { acreId: acreAtMapTile(mx, my)!.id }, T0);
 
     const view = await placeStackAcresSoilTile(token, cropFieldTile(), T0);
 
@@ -607,13 +639,22 @@ describe("the Crop Fields start overgrown", () => {
   const [first] = cropFieldObstaclePlacements();
   const square = mapToSoilTile(first.tx, first.ty);
 
+  /** The first obstacle's acre, so the bed is refused for the overgrowth and not for the deed. */
+  const ownFirstSquare = async (token: string) => {
+    const acre = acreAtMapTile(first.tx, first.ty);
+    if (!acre) throw new Error("the first obstacle sits outside every acre");
+    __grantStackAcresAcreForTest((await ensureProfile(token)).id, acre.id, "bought");
+  };
+
   it("refuses to break a bed where something still stands", async () => {
     const token = await funded();
+    await ownFirstSquare(token);
     await expect(placeStackAcresSoilTile(token, square, T0)).rejects.toThrow(OVERGROWN_SQUARE);
   });
 
   it("breaks the bed once that square is cleared, and the clearing pays the barn", async () => {
     const token = await funded();
+    await ownFirstSquare(token);
     const obstacle = landObstacle(first.id)!;
     let result = null;
     for (let swing = 0; swing < LAND_OBSTACLE_DEFS[obstacle.kind].hits; swing += 1) {

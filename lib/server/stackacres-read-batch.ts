@@ -64,6 +64,8 @@ export interface StackAcresReadBatch {
   fences?: Record<string, unknown>[];
   empire_buildings?: Record<string, unknown>[];
   grocery?: Record<string, unknown> | null;
+  /** The wild acres a farm owns. Absent until the acres migration redefines the batch. */
+  acres?: Record<string, unknown>[];
 }
 
 /**

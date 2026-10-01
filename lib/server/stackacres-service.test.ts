@@ -2244,6 +2244,8 @@ describe("the currency wall", () => {
       "activate-synergy-perk",
       "bag-quarry",
       "build-greenhouse",
+      // Spends Gold, Wood and Stone on an acre of the wild land, refunded if the deed can't be written.
+      "buy-acre",
       // Spends Gold (plus Wood and Metal) on a Far Field building, refunded if it can't go down.
       "buy-building",
       "buy-cutter",
@@ -5579,17 +5581,18 @@ describe("the herd stands where the player puts it", () => {
 
   describe("a night in the open", () => {
     const DAY = 86_400_000;
+    const yard = (mx: number, my: number) => isHoeableMapTile(mx, my) && !isWildMapTile(mx, my);
 
-    /** A yard square whose four neighbours are all fenceable, found on a farm with no beds. */
+    /** A yard square whose four neighbours are all fenceable yard grass, found on a farm with no beds. */
     function pennableSquare(): { tx: number; ty: number } {
       for (let ty = 1; ty < HOMESTEAD_MAP_HEIGHT - 1; ty += 1) {
         for (let tx = 1; tx < HOMESTEAD_MAP_WIDTH - 1; tx += 1) {
           if (
             isHerdMapTile(tx, ty) &&
-            isHoeableMapTile(tx + 1, ty) &&
-            isHoeableMapTile(tx - 1, ty) &&
-            isHoeableMapTile(tx, ty + 1) &&
-            isHoeableMapTile(tx, ty - 1)
+            yard(tx + 1, ty) &&
+            yard(tx - 1, ty) &&
+            yard(tx, ty + 1) &&
+            yard(tx, ty - 1)
           ) {
             return { tx, ty };
           }

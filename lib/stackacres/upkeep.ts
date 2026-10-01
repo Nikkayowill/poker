@@ -34,6 +34,7 @@
  * paid total lives in one row per (profile, day), in `homestead_upkeep`.
  */
 
+import { ACRE_UPKEEP_GOLD } from "./acres";
 import { stackacresExchangeDay } from "./exchange";
 
 /**
@@ -71,12 +72,17 @@ export const STACKACRES_UPKEEP_BASE_FEE = 25;
  */
 export const STACKACRES_UPKEEP_EXPONENT = 1.5;
 
-/** The day's land maintenance, in Gold, for a farm of this many plots. */
-export function stackacresUpkeepFee(plots: number): number {
-  if (!Number.isFinite(plots)) return 0;
+/**
+ * The day's land maintenance, in Gold, for a farm of this many plots and this
+ * many bought acres (./acres.ts). Acres are a flat fee each, added on top of the
+ * plot curve.
+ */
+export function stackacresUpkeepFee(plots: number, acres = 0): number {
+  const acreFee = Number.isFinite(acres) ? Math.max(0, Math.floor(acres)) * ACRE_UPKEEP_GOLD : 0;
+  if (!Number.isFinite(plots)) return acreFee;
   const chargeable = Math.floor(plots) - STACKACRES_UPKEEP_FREE_PLOTS;
-  if (chargeable <= 0) return 0;
-  return Math.round(STACKACRES_UPKEEP_BASE_FEE * chargeable ** STACKACRES_UPKEEP_EXPONENT);
+  if (chargeable <= 0) return acreFee;
+  return Math.round(STACKACRES_UPKEEP_BASE_FEE * chargeable ** STACKACRES_UPKEEP_EXPONENT) + acreFee;
 }
 
 /**
@@ -87,8 +93,8 @@ export function stackacresUpkeepFee(plots: number): number {
  * and holding less later does not earn a refund. Clamped at zero rather than
  * going negative, because a negative "due" would read as a credit one line on.
  */
-export function stackacresUpkeepDue(plots: number, paidToday: number): number {
-  return Math.max(0, stackacresUpkeepFee(plots) - Math.max(0, paidToday));
+export function stackacresUpkeepDue(plots: number, paidToday: number, acres = 0): number {
+  return Math.max(0, stackacresUpkeepFee(plots, acres) - Math.max(0, paidToday));
 }
 
 /**
@@ -110,8 +116,8 @@ export interface StackAcresUpkeepState {
   due: number;
 }
 
-export function upkeepState(plots: number, paidToday: number): StackAcresUpkeepState {
-  const fee = stackacresUpkeepFee(plots);
+export function upkeepState(plots: number, paidToday: number, acres = 0): StackAcresUpkeepState {
+  const fee = stackacresUpkeepFee(plots, acres);
   const paid = Math.max(0, Math.min(paidToday, fee));
   return { plots: Math.max(0, Math.floor(plots)), fee, paidToday: paid, due: fee - paid };
 }

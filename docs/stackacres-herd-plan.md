@@ -51,9 +51,18 @@ per-acre daily upkeep, the guard dog is in, slaughter stays off-screen.
    Haven count as protected. The away report gets the "wandered off last night. Make sure to
    enclose your livestock." line.
 4. **Guard dog.** An item that protects animals near it. First thing to drop if time runs short.
-5. **Land by the acre.** Rectangular acres, escalating Gold plus Wood and Stone, one flat daily
-   per-acre upkeep netted off payouts the way upkeep works today. Existing farms keep any ground
-   they already use.
+5. **Land by the acre (built on `feat/stackacres-acres`, not merged).** Rectangular acres, escalating
+   Gold plus Wood and Stone, one flat daily per-acre upkeep netted off payouts the way upkeep works
+   today. Existing farms keep any ground they already use.
+   - The yard stays free. The wild ring is cut into 31 acres (`lib/stackacres/acres.ts`) and a bed or
+     fence piece needs the acre it stands on. Chopping and mining out there stays free, so the Wood and
+     Stone for the first deed can be gathered. One stray wild tile belongs to no acre and can't be built on.
+   - Price is 300 Gold x 1.2 per acre already owned (to the nearest 50), 15 Wood + 3 per acre and
+     8 Stone + 2 per acre. Upkeep is 40 Gold a day per bought acre.
+   - The migration writes a grandfathered row for every acre that already holds a bed or fence. Those
+     are not billed, because the Crop Fields were already billed as plots.
+   - Capacity slots stay the animal cap. Animals still go in the yard only.
+   - The hoe or fence on ground you don't own opens a buy bar. Nothing is drawn on the map.
 
 ## The direction doc's questions, for the herd as a whole
 

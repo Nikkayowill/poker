@@ -117,6 +117,7 @@ import type { Action } from "./farm-actions";
 import { WATER_CAPACITY } from "./water-can";
 import { stockZone } from "./world";
 import { addToInventory, removeFromInventory, type StackAcresInventory } from "./inventory";
+import { acreGate } from "./acres";
 import { isHoeableSoilTile, isWildSoilTile, mapToSoilTile, soilToMapTile } from "./hoeable";
 import { herdKey, herdPlacementProblem, herdSquares, isHerdStock } from "./herd";
 import { FENCE_CAP, FENCE_WOOD_COST, isFenceableMapTile, type FencePiece } from "./fences";
@@ -207,6 +208,8 @@ export interface FarmPredictContext {
   landObstacles: readonly LandObstacleSnapshot[];
   /** The fence pieces this farm has put up, by Homestead map square. */
   fences: readonly FencePiece[];
+  /** The wild acres this farm owns (./acres.ts). Missing means unknown, so nothing is refused on it. */
+  ownedAcres?: readonly string[];
   /** The processing track, straight off the component's own `processing`
    *  state. Always patched together with `contract` (see `processingPatch`)
    *  because the component applies the four as one unit. */
@@ -251,6 +254,12 @@ export interface FarmStatePatch {
     active: SynergyArchetype[];
     farmhandSpeedMultiplier: number;
   };
+}
+
+/** Whether the acre under a map square is one the farm owns, as far as this guess can tell. */
+function ownsMapTile(ctx: FarmPredictContext, tile: { mx: number; my: number }): boolean {
+  if (!ctx.ownedAcres) return true;
+  return acreGate(tile.mx, tile.my, new Set(ctx.ownedAcres)).ok;
 }
 
 /** A Gold debit, or `null` when the balance won't cover it -- the same
@@ -750,6 +759,7 @@ export function predictStackAcresAction(
       // on the road never flashes a bed the answer then takes away.
       if (!isHoeableSoilTile(body.tx, body.ty)) return null;
       if (overgrownSoilTile(body.tx, body.ty, clearedLandIds(ctx.landObstacles))) return null;
+      if (!ownsMapTile(ctx, soilToMapTile(body.tx, body.ty))) return null;
       const soil = createSoilMap(ctx.soilTiles);
       // Every slot a crop currently holds, so the new bed's order clears
       // them all -- see `nextSoilOrder` on why max-plus-one over the beds
@@ -910,6 +920,7 @@ export function predictStackAcresAction(
       // The same refusals the server makes, so a piece never flashes up and
       // back down: open grass, no bed, no piece already, the cap, and the Wood.
       if (!isFenceableMapTile(body.tx, body.ty)) return null;
+      if (!ownsMapTile(ctx, { mx: body.tx, my: body.ty })) return null;
       if (ctx.fences.some((piece) => piece.tx === body.tx && piece.ty === body.ty)) return null;
       if (ctx.fences.length >= FENCE_CAP) return null;
       const bed = mapToSoilTile(body.tx, body.ty);

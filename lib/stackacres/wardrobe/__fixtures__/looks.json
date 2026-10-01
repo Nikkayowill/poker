@@ -1,0 +1,166 @@
+{
+ "default": {
+  "body": "male",
+  "picks": {
+   "skin": {
+    "item": "skin",
+    "colour": "skin:light"
+   },
+   "eyes": {
+    "item": "eyes",
+    "colour": "eye:blue"
+   },
+   "hair": {
+    "item": "hair_plain",
+    "colour": "hair:light_brown"
+   },
+   "hat": {
+    "item": "hat_cap_bonnie",
+    "colour": "cloth:tan"
+   },
+   "top": {
+    "item": "torso_clothes_longsleeve",
+    "colour": "cloth:forest"
+   },
+   "over": {
+    "item": "torso_aprons_overalls",
+    "colour": "cloth:blue"
+   },
+   "bottom": {
+    "item": "legs_pants2",
+    "colour": "cloth:navy"
+   },
+   "shoes": {
+    "item": "feet_boots_revised",
+    "colour": "cloth:brown"
+   },
+   "face": {
+    "item": null,
+    "colour": null
+   }
+  }
+ },
+ "female-ponytail": {
+  "body": "female",
+  "picks": {
+   "skin": {
+    "item": "skin",
+    "colour": "skin:brown"
+   },
+   "eyes": {
+    "item": "eyes",
+    "colour": "eye:brown"
+   },
+   "hair": {
+    "item": "hair_high_ponytail",
+    "colour": "hair:black"
+   },
+   "hat": {
+    "item": "hat_bandana",
+    "colour": "cloth:red"
+   },
+   "top": {
+    "item": "torso_clothes_tshirt",
+    "colour": "cloth:yellow"
+   },
+   "over": {
+    "item": "torso_aprons_suspenders",
+    "colour": "cloth:walnut"
+   },
+   "bottom": {
+    "item": "legs_skirts_plain",
+    "colour": "cloth:teal"
+   },
+   "shoes": {
+    "item": "feet_shoes_basic",
+    "colour": "cloth:brown"
+   },
+   "face": {
+    "item": "facial_glasses",
+    "colour": "cloth:blue"
+   }
+  }
+ },
+ "male-bare": {
+  "body": "male",
+  "picks": {
+   "skin": {
+    "item": "skin",
+    "colour": "skin:black"
+   },
+   "eyes": {
+    "item": "eyes",
+    "colour": "eye:green"
+   },
+   "hair": {
+    "item": "hair_afro",
+    "colour": "hair:dark_brown"
+   },
+   "hat": {
+    "item": null,
+    "colour": null
+   },
+   "top": {
+    "item": "torso_clothes_longsleeve2_polo",
+    "colour": "cloth:sky"
+   },
+   "over": {
+    "item": null,
+    "colour": null
+   },
+   "bottom": {
+    "item": "legs_shorts",
+    "colour": "cloth:navy"
+   },
+   "shoes": {
+    "item": "feet_sandals",
+    "colour": "cloth:tan"
+   },
+   "face": {
+    "item": "beards_trimmed",
+    "colour": null
+   }
+  }
+ },
+ "male-cavalier": {
+  "body": "male",
+  "picks": {
+   "skin": {
+    "item": "skin",
+    "colour": "skin:olive"
+   },
+   "eyes": {
+    "item": "eyes",
+    "colour": "eye:gray"
+   },
+   "hair": {
+    "item": "hair_braid",
+    "colour": "hair:ginger"
+   },
+   "hat": {
+    "item": "hat_cap_cavalier",
+    "colour": "cloth:purple"
+   },
+   "top": {
+    "item": "torso_clothes_longsleeve2_cardigan",
+    "colour": "cloth:white"
+   },
+   "over": {
+    "item": "torso_aprons_overalls",
+    "colour": "cloth:maroon"
+   },
+   "bottom": {
+    "item": "legs_cuffed",
+    "colour": "cloth:gray"
+   },
+   "shoes": {
+    "item": "feet_boots_revised",
+    "colour": "cloth:black"
+   },
+   "face": {
+    "item": "facial_glasses_halfmoon",
+    "colour": "cloth:gray"
+   }
+  }
+ }
+}

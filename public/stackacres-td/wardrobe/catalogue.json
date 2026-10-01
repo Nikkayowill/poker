@@ -1,0 +1,1322 @@
+{
+ "version": 1,
+ "items": [
+  {
+   "id": "skin",
+   "slot": "skin",
+   "label": "Skin",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "skin:light",
+    "skin:amber",
+    "skin:olive",
+    "skin:taupe",
+    "skin:bronze",
+    "skin:brown",
+    "skin:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "eyes",
+   "slot": "eyes",
+   "label": "Eyes",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "eye:blue",
+    "eye:brown",
+    "eye:green",
+    "eye:gray",
+    "eye:purple"
+   ],
+   "price": null
+  },
+  {
+   "id": "hair_plain",
+   "slot": "hair",
+   "label": "Short",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "hair:light_brown",
+    "hair:dark_brown",
+    "hair:chestnut",
+    "hair:black",
+    "hair:blonde",
+    "hair:sandy",
+    "hair:ginger",
+    "hair:carrot",
+    "hair:gray",
+    "hair:white",
+    "hair:pink",
+    "hair:blue"
+   ],
+   "price": null
+  },
+  {
+   "id": "hair_cowlick",
+   "slot": "hair",
+   "label": "Cowlick",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "hair:light_brown",
+    "hair:dark_brown",
+    "hair:chestnut",
+    "hair:black",
+    "hair:blonde",
+    "hair:sandy",
+    "hair:ginger",
+    "hair:carrot",
+    "hair:gray",
+    "hair:white",
+    "hair:pink",
+    "hair:blue"
+   ],
+   "price": null
+  },
+  {
+   "id": "hair_parted_side_bangs",
+   "slot": "hair",
+   "label": "Side part",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "hair:light_brown",
+    "hair:dark_brown",
+    "hair:chestnut",
+    "hair:black",
+    "hair:blonde",
+    "hair:sandy",
+    "hair:ginger",
+    "hair:carrot",
+    "hair:gray",
+    "hair:white",
+    "hair:pink",
+    "hair:blue"
+   ],
+   "price": null
+  },
+  {
+   "id": "hair_bob",
+   "slot": "hair",
+   "label": "Bob",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "hair:light_brown",
+    "hair:dark_brown",
+    "hair:chestnut",
+    "hair:black",
+    "hair:blonde",
+    "hair:sandy",
+    "hair:ginger",
+    "hair:carrot",
+    "hair:gray",
+    "hair:white",
+    "hair:pink",
+    "hair:blue"
+   ],
+   "price": null
+  },
+  {
+   "id": "hair_curly_short",
+   "slot": "hair",
+   "label": "Curly",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "hair:light_brown",
+    "hair:dark_brown",
+    "hair:chestnut",
+    "hair:black",
+    "hair:blonde",
+    "hair:sandy",
+    "hair:ginger",
+    "hair:carrot",
+    "hair:gray",
+    "hair:white",
+    "hair:pink",
+    "hair:blue"
+   ],
+   "price": null
+  },
+  {
+   "id": "hair_afro",
+   "slot": "hair",
+   "label": "Afro",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "hair:light_brown",
+    "hair:dark_brown",
+    "hair:chestnut",
+    "hair:black",
+    "hair:blonde",
+    "hair:sandy",
+    "hair:ginger",
+    "hair:carrot",
+    "hair:gray",
+    "hair:white",
+    "hair:pink",
+    "hair:blue"
+   ],
+   "price": null
+  },
+  {
+   "id": "hair_cornrows",
+   "slot": "hair",
+   "label": "Cornrows",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "hair:light_brown",
+    "hair:dark_brown",
+    "hair:chestnut",
+    "hair:black",
+    "hair:blonde",
+    "hair:sandy",
+    "hair:ginger",
+    "hair:carrot",
+    "hair:gray",
+    "hair:white",
+    "hair:pink",
+    "hair:blue"
+   ],
+   "price": null
+  },
+  {
+   "id": "hair_buzzcut",
+   "slot": "hair",
+   "label": "Buzz cut",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "hair:light_brown",
+    "hair:dark_brown",
+    "hair:chestnut",
+    "hair:black",
+    "hair:blonde",
+    "hair:sandy",
+    "hair:ginger",
+    "hair:carrot",
+    "hair:gray",
+    "hair:white",
+    "hair:pink",
+    "hair:blue"
+   ],
+   "price": null
+  },
+  {
+   "id": "hair_spiked",
+   "slot": "hair",
+   "label": "Spiky",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "hair:light_brown",
+    "hair:dark_brown",
+    "hair:chestnut",
+    "hair:black",
+    "hair:blonde",
+    "hair:sandy",
+    "hair:ginger",
+    "hair:carrot",
+    "hair:gray",
+    "hair:white",
+    "hair:pink",
+    "hair:blue"
+   ],
+   "price": null
+  },
+  {
+   "id": "hair_long_straight",
+   "slot": "hair",
+   "label": "Long",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "hair:light_brown",
+    "hair:dark_brown",
+    "hair:chestnut",
+    "hair:black",
+    "hair:blonde",
+    "hair:sandy",
+    "hair:ginger",
+    "hair:carrot",
+    "hair:gray",
+    "hair:white",
+    "hair:pink",
+    "hair:blue"
+   ],
+   "price": null
+  },
+  {
+   "id": "hair_high_ponytail",
+   "slot": "hair",
+   "label": "Ponytail",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "hair:light_brown",
+    "hair:dark_brown",
+    "hair:chestnut",
+    "hair:black",
+    "hair:blonde",
+    "hair:sandy",
+    "hair:ginger",
+    "hair:carrot",
+    "hair:gray",
+    "hair:white",
+    "hair:pink",
+    "hair:blue"
+   ],
+   "price": null
+  },
+  {
+   "id": "hair_braid",
+   "slot": "hair",
+   "label": "Braid",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "hair:light_brown",
+    "hair:dark_brown",
+    "hair:chestnut",
+    "hair:black",
+    "hair:blonde",
+    "hair:sandy",
+    "hair:ginger",
+    "hair:carrot",
+    "hair:gray",
+    "hair:white",
+    "hair:pink",
+    "hair:blue"
+   ],
+   "price": null
+  },
+  {
+   "id": "hat_cap_bonnie",
+   "slot": "hat",
+   "label": "Straw hat",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:tan",
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "hat_bandana",
+   "slot": "hat",
+   "label": "Bandana",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "hat_headband_kerchief",
+   "slot": "hat",
+   "label": "Kerchief",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "hat_hood_cloth",
+   "slot": "hat",
+   "label": "Hood",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "hat_cap_leather",
+   "slot": "hat",
+   "label": "Leather cap",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:brown",
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": 800
+  },
+  {
+   "id": "hat_cap_cavalier",
+   "slot": "hat",
+   "label": "Cavalier hat",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": 1500
+  },
+  {
+   "id": "hat_holiday_christmas",
+   "slot": "hat",
+   "label": "Holiday hat",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": 500
+  },
+  {
+   "id": "torso_clothes_longsleeve",
+   "slot": "top",
+   "label": "Long sleeves",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:forest",
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "torso_clothes_longsleeve2_buttoned",
+   "slot": "top",
+   "label": "Button-up",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "torso_clothes_longsleeve2_polo",
+   "slot": "top",
+   "label": "Polo",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "torso_clothes_longsleeve2_cardigan",
+   "slot": "top",
+   "label": "Cardigan",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "torso_clothes_tshirt",
+   "slot": "top",
+   "label": "T-shirt",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "torso_clothes_sleeveless2",
+   "slot": "top",
+   "label": "Tank top",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "torso_aprons_overalls",
+   "slot": "over",
+   "label": "Overalls",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:blue",
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "torso_aprons_suspenders",
+   "slot": "over",
+   "label": "Suspenders",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "legs_pants2",
+   "slot": "bottom",
+   "label": "Trousers",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:navy",
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "legs_cuffed",
+   "slot": "bottom",
+   "label": "Cuffed trousers",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "legs_shorts",
+   "slot": "bottom",
+   "label": "Shorts",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "legs_skirts_plain",
+   "slot": "bottom",
+   "label": "Skirt",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "feet_boots_revised",
+   "slot": "shoes",
+   "label": "Boots",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:brown",
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "feet_shoes_basic",
+   "slot": "shoes",
+   "label": "Shoes",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "feet_sandals",
+   "slot": "shoes",
+   "label": "Sandals",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray",
+    "cloth:black"
+   ],
+   "price": null
+  },
+  {
+   "id": "facial_glasses",
+   "slot": "face",
+   "label": "Glasses",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:black",
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray"
+   ],
+   "price": null
+  },
+  {
+   "id": "facial_glasses_halfmoon",
+   "slot": "face",
+   "label": "Reading glasses",
+   "bodies": [
+    "male",
+    "female"
+   ],
+   "colours": [
+    "cloth:black",
+    "cloth:red",
+    "cloth:maroon",
+    "cloth:orange",
+    "cloth:yellow",
+    "cloth:tan",
+    "cloth:brown",
+    "cloth:walnut",
+    "cloth:forest",
+    "cloth:green",
+    "cloth:teal",
+    "cloth:sky",
+    "cloth:blue",
+    "cloth:navy",
+    "cloth:purple",
+    "cloth:pink",
+    "cloth:white",
+    "cloth:gray"
+   ],
+   "price": null
+  },
+  {
+   "id": "beards_trimmed",
+   "slot": "face",
+   "label": "Short beard",
+   "bodies": [
+    "male"
+   ],
+   "colours": [],
+   "price": null
+  },
+  {
+   "id": "beards_medium",
+   "slot": "face",
+   "label": "Beard",
+   "bodies": [
+    "male"
+   ],
+   "colours": [],
+   "price": null
+  }
+ ],
+ "colours": {
+  "skin:light": {
+   "id": "skin:light",
+   "label": "Light",
+   "swatch": "#e4a47c"
+  },
+  "skin:amber": {
+   "id": "skin:amber",
+   "label": "Amber",
+   "swatch": "#ea9f54"
+  },
+  "skin:olive": {
+   "id": "skin:olive",
+   "label": "Olive",
+   "swatch": "#ae6b3f"
+  },
+  "skin:taupe": {
+   "id": "skin:taupe",
+   "label": "Taupe",
+   "swatch": "#936849"
+  },
+  "skin:bronze": {
+   "id": "skin:bronze",
+   "label": "Bronze",
+   "swatch": "#7f4c31"
+  },
+  "skin:brown": {
+   "id": "skin:brown",
+   "label": "Brown",
+   "swatch": "#76513a"
+  },
+  "skin:black": {
+   "id": "skin:black",
+   "label": "Deep brown",
+   "swatch": "#442725"
+  },
+  "eye:blue": {
+   "id": "eye:blue",
+   "label": "Blue",
+   "swatch": "#5686ae"
+  },
+  "eye:brown": {
+   "id": "eye:brown",
+   "label": "Brown",
+   "swatch": "#544c2e"
+  },
+  "eye:green": {
+   "id": "eye:green",
+   "label": "Green",
+   "swatch": "#53b351"
+  },
+  "eye:gray": {
+   "id": "eye:gray",
+   "label": "Grey",
+   "swatch": "#8b8979"
+  },
+  "eye:purple": {
+   "id": "eye:purple",
+   "label": "Purple",
+   "swatch": "#b90da0"
+  },
+  "hair:light_brown": {
+   "id": "hair:light_brown",
+   "label": "Light brown",
+   "swatch": "#ae682a"
+  },
+  "hair:dark_brown": {
+   "id": "hair:dark_brown",
+   "label": "Dark brown",
+   "swatch": "#5f1f04"
+  },
+  "hair:chestnut": {
+   "id": "hair:chestnut",
+   "label": "Chestnut",
+   "swatch": "#b6550e"
+  },
+  "hair:black": {
+   "id": "hair:black",
+   "label": "Black",
+   "swatch": "#31313e"
+  },
+  "hair:blonde": {
+   "id": "hair:blonde",
+   "label": "Blonde",
+   "swatch": "#fccf56"
+  },
+  "hair:sandy": {
+   "id": "hair:sandy",
+   "label": "Sandy",
+   "swatch": "#eddc7e"
+  },
+  "hair:ginger": {
+   "id": "hair:ginger",
+   "label": "Ginger",
+   "swatch": "#faa301"
+  },
+  "hair:carrot": {
+   "id": "hair:carrot",
+   "label": "Carrot",
+   "swatch": "#f68764"
+  },
+  "hair:gray": {
+   "id": "hair:gray",
+   "label": "Grey",
+   "swatch": "#aaaaaa"
+  },
+  "hair:white": {
+   "id": "hair:white",
+   "label": "White",
+   "swatch": "#d8dcdc"
+  },
+  "hair:pink": {
+   "id": "hair:pink",
+   "label": "Pink",
+   "swatch": "#e976c4"
+  },
+  "hair:blue": {
+   "id": "hair:blue",
+   "label": "Blue",
+   "swatch": "#0074cb"
+  },
+  "cloth:red": {
+   "id": "cloth:red",
+   "label": "Red",
+   "swatch": "#ab1e1e"
+  },
+  "cloth:maroon": {
+   "id": "cloth:maroon",
+   "label": "Maroon",
+   "swatch": "#832121"
+  },
+  "cloth:orange": {
+   "id": "cloth:orange",
+   "label": "Orange",
+   "swatch": "#ef7e19"
+  },
+  "cloth:yellow": {
+   "id": "cloth:yellow",
+   "label": "Yellow",
+   "swatch": "#f3c03f"
+  },
+  "cloth:tan": {
+   "id": "cloth:tan",
+   "label": "Tan",
+   "swatch": "#b7996a"
+  },
+  "cloth:brown": {
+   "id": "cloth:brown",
+   "label": "Brown",
+   "swatch": "#744b30"
+  },
+  "cloth:walnut": {
+   "id": "cloth:walnut",
+   "label": "Walnut",
+   "swatch": "#996b4a"
+  },
+  "cloth:forest": {
+   "id": "cloth:forest",
+   "label": "Forest green",
+   "swatch": "#134507"
+  },
+  "cloth:green": {
+   "id": "cloth:green",
+   "label": "Green",
+   "swatch": "#2f8136"
+  },
+  "cloth:teal": {
+   "id": "cloth:teal",
+   "label": "Teal",
+   "swatch": "#0098b2"
+  },
+  "cloth:sky": {
+   "id": "cloth:sky",
+   "label": "Sky blue",
+   "swatch": "#c6eefd"
+  },
+  "cloth:blue": {
+   "id": "cloth:blue",
+   "label": "Blue",
+   "swatch": "#466ac9"
+  },
+  "cloth:navy": {
+   "id": "cloth:navy",
+   "label": "Navy",
+   "swatch": "#3c49ad"
+  },
+  "cloth:purple": {
+   "id": "cloth:purple",
+   "label": "Purple",
+   "swatch": "#621e78"
+  },
+  "cloth:pink": {
+   "id": "cloth:pink",
+   "label": "Pink",
+   "swatch": "#c36072"
+  },
+  "cloth:white": {
+   "id": "cloth:white",
+   "label": "White",
+   "swatch": "#e5e6c7"
+  },
+  "cloth:gray": {
+   "id": "cloth:gray",
+   "label": "Grey",
+   "swatch": "#797580"
+  },
+  "cloth:black": {
+   "id": "cloth:black",
+   "label": "Black",
+   "swatch": "#2a3034"
+  }
+ },
+ "defaultLook": {
+  "body": "male",
+  "picks": {
+   "skin": {
+    "item": "skin",
+    "colour": "skin:light"
+   },
+   "eyes": {
+    "item": "eyes",
+    "colour": "eye:blue"
+   },
+   "hair": {
+    "item": "hair_plain",
+    "colour": "hair:light_brown"
+   },
+   "hat": {
+    "item": "hat_cap_bonnie",
+    "colour": "cloth:tan"
+   },
+   "top": {
+    "item": "torso_clothes_longsleeve",
+    "colour": "cloth:forest"
+   },
+   "over": {
+    "item": "torso_aprons_overalls",
+    "colour": "cloth:blue"
+   },
+   "bottom": {
+    "item": "legs_pants2",
+    "colour": "cloth:navy"
+   },
+   "shoes": {
+    "item": "feet_boots_revised",
+    "colour": "cloth:brown"
+   },
+   "face": {
+    "item": null,
+    "colour": null
+   }
+  }
+ }
+}

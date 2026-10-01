@@ -230,6 +230,11 @@ import {
 } from "@/lib/stackacres/energy";
 import { shelfFeedFor } from "@/lib/stackacres/feeding";
 import { StackAcresHouse } from "./stackacres-house";
+import { WardrobeSheet } from "./wardrobe-sheet";
+import { bakeLookImage, lookPreviewFrames } from "./wardrobe-bake";
+import { WARDROBE_CATALOGUE } from "@/lib/stackacres/wardrobe/catalogue";
+import { sameLook } from "@/lib/stackacres/wardrobe/look";
+import type { FarmerLook, FarmerWardrobeState } from "@/lib/stackacres/wardrobe/types";
 import { isActiveStock } from "@/lib/stackacres/scope";
 import { isSeedUnlocked, seedLockLine } from "@/lib/stackacres/seed-unlocks";
 import { chapterFinishedBy, chapterViews, currentChapter, type Chapter } from "@/lib/stackacres/chapters";
@@ -1172,6 +1177,49 @@ export function StackAcresFarm() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [hasStarted]);
+  // The farmer's look (the wardrobe, ./wardrobe-sheet.tsx): read once the farm
+  // starts. `chosen` false means this player has never saved one, which is
+  // what offers "make your farmer" once, right after Ray's hello.
+  const [wardrobe, setWardrobe] = useState<{ state: FarmerWardrobeState; owned: string[]; chosen: boolean } | null>(null);
+  const [wardrobeSettled, setWardrobeSettled] = useState(false);
+  const [wardrobeOpen, setWardrobeOpen] = useState<"first" | "mirror" | null>(null);
+  useEffect(() => {
+    if (!hasStarted) return;
+    let live = true;
+    void fetch("/api/stackacres/wardrobe", { cache: "no-store" })
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((data: { wardrobe: FarmerWardrobeState; owned: string[]; chosen: boolean } | null) => {
+        if (!live) return;
+        if (data) setWardrobe({ state: data.wardrobe, owned: data.owned, chosen: data.chosen });
+        setWardrobeSettled(true);
+      })
+      .catch(() => {
+        if (live) setWardrobeSettled(true);
+      });
+    return () => {
+      live = false;
+    };
+  }, [hasStarted]);
+  // Draw him in his look once the map is up. Today's farmer keeps the shipped sheet.
+  const wornLook: FarmerLook | null = wardrobe?.state.look ?? null;
+  useEffect(() => {
+    if (!worldReady || !wornLook) return;
+    if (sameLook(wornLook, WARDROBE_CATALOGUE.defaultLook)) {
+      world.current?.setFarmerSheet(null);
+      return;
+    }
+    let live = true;
+    void bakeLookImage(wornLook)
+      .then((image) => {
+        if (live) world.current?.setFarmerSheet(image);
+      })
+      .catch(() => {
+        // A bake that fails leaves him as he was, never blank.
+      });
+    return () => {
+      live = false;
+    };
+  }, [worldReady, wornLook]);
   const dismissWelcome = useCallback(() => {
     panelSound();
     setShowWelcome(false);
@@ -1187,7 +1235,18 @@ export function StackAcresFarm() {
   // side, across all three screens. Gated on the world actually being loaded
   // and Ray's hello either dismissed or never owed, so it never races either
   // splash for the player's attention.
-  useOnboardingTour(profile, STACKACRES_TOUR_STEPS, hasStarted && loaded && rayCheckDone && !showWelcome);
+  // "Make your farmer" comes straight after Ray's hello, before the tour.
+  const owesFirstLook = wardrobe !== null && !wardrobe.chosen;
+  useEffect(() => {
+    if (!hasStarted || !rayCheckDone || showWelcome || !owesFirstLook || wardrobeOpen !== null) return;
+    const timer = window.setTimeout(() => setWardrobeOpen("first"), 0);
+    return () => window.clearTimeout(timer);
+  }, [hasStarted, rayCheckDone, showWelcome, owesFirstLook, wardrobeOpen]);
+  useOnboardingTour(
+    profile,
+    STACKACRES_TOUR_STEPS,
+    hasStarted && loaded && rayCheckDone && !showWelcome && wardrobeSettled && !owesFirstLook && wardrobeOpen === null,
+  );
 
   useStackAcresMusic(hasStarted);
 
@@ -2427,6 +2486,27 @@ export function StackAcresFarm() {
   );
 
   /** The player's house: its own panel, nothing to do with Ray. */
+  /** The looking-glass by the bed opens the wardrobe. */
+  const onWorldMirrorTap = useCallback(() => {
+    panelSound();
+    setWardrobeOpen("mirror");
+  }, []);
+
+  const wardrobeAct = useCallback(async (body: Record<string, unknown>): Promise<string | null> => {
+    const response = await fetch("/api/stackacres/wardrobe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = (await response.json().catch(() => null)) as
+      | { wardrobe?: FarmerWardrobeState; owned?: string[]; chosen?: boolean; profile?: PlayerProfile; error?: string }
+      | null;
+    if (!response.ok || !data?.wardrobe) return data?.error ?? "That did not go through.";
+    setWardrobe({ state: data.wardrobe, owned: data.owned ?? [], chosen: data.chosen ?? true });
+    if (data.profile) setProfile(data.profile);
+    return null;
+  }, []);
+
   const onWorldHouseTap = useCallback(() => {
     panelSound();
     setShowHouse(true);
@@ -3815,6 +3895,7 @@ export function StackAcresFarm() {
               onMonkTap={onWorldMonkTap}
               onRayTap={onWorldRayTap}
               onHouseTap={onWorldHouseTap}
+              onMirrorTap={onWorldMirrorTap}
               onTravelerTap={onWorldTravelerTap}
               onSecretZoneTap={onWorldSecretZoneTap}
               sectors={sectors}
@@ -4410,6 +4491,26 @@ export function StackAcresFarm() {
         </div>
       )}
 
+      {wardrobeOpen && wardrobe && (
+        <WardrobeSheet
+          catalogue={WARDROBE_CATALOGUE}
+          state={wardrobe.state}
+          owned={new Set(wardrobe.owned)}
+          gold={profile?.unlimitedGold ? Number.POSITIVE_INFINITY : (profile?.goldBalance ?? 0)}
+          first={wardrobeOpen === "first"}
+          renderPreview={lookPreviewFrames}
+          onSave={(look) => wardrobeAct({ action: "save-look", look })}
+          onSaveOutfit={(slot, look) => wardrobeAct({ action: "save-outfit", slot, look })}
+          onBuy={(item) => {
+            buySound();
+            return wardrobeAct({ action: "buy", item });
+          }}
+          onClose={() => {
+            panelSound();
+            setWardrobeOpen(null);
+          }}
+        />
+      )}
       {showHouse && (
         <StackAcresHouse
           onClose={() => { panelSound(); setShowHouse(false); }}

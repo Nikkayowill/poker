@@ -168,6 +168,8 @@ export interface StackAcresWorldApi {
   celebrateCrit: (unitId: string, multiplier: number) => void;
   /** The farmer acts out a water, harvest, hoe or planting drop where he stands. */
   farmerAction: (action: FarmerAction, impact?: TapPoint) => void;
+  /** Draw the farmer from a sheet baked from the player's look, or the shipped sheet with null. */
+  setFarmerSheet: (image: HTMLImageElement | null) => void;
   /** A small emote bubble over someone's head for a moment: a heart when a gift lands, a note when a
    *  traveler's story moves on. Nothing happens when that person isn't on the map the player is looking at. */
   emote: (who: EmoteTarget, kind: EmoteKind) => void;
@@ -330,6 +332,8 @@ export interface StackAcresWorldProps {
   /** A finger landed on the player's house. Opens the house panel (the
    *  kitchen), never anything of Ray's -- see stackacres-farm.tsx's `onWorldHouseTap`. */
   onHouseTap: (at: TapPoint) => void;
+  /** The looking-glass in the farmhouse: the shell opens the wardrobe. */
+  onMirrorTap: () => void;
   /** A finger landed on one of the eleven story travelers (see
    *  lib/stackacres/story/placement.ts). `at` is the point over their head,
    *  where the dialogue bubble hangs; see stackacres-farm.tsx's

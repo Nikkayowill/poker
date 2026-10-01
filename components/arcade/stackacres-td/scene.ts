@@ -333,6 +333,8 @@ export interface TopdownCallbacks {
   onMonkTap: (at: TapPoint) => void;
   onRayTap: (at: TapPoint) => void;
   onHouseTap: (at: TapPoint) => void;
+  /** The looking-glass in the farmhouse: the shell opens the wardrobe. */
+  onMirrorTap: () => void;
   onTravelerTap: (traveler: TravelerId, at: TapPoint) => void;
   onSecretZoneTap: (zoneId: HiddenZoneId, at: TapPoint) => void;
   onLockedSectorTap: (zone: ZoneId, at: TapPoint) => void;
@@ -424,6 +426,11 @@ export class TopdownScene extends Phaser.Scene {
   private stroked: string | null = null;
   /** An action animation is playing and must not be trampled by the walk cycle. */
   private acting = false;
+  /** The texture the farmer is drawn from: "farmer" (the shipped sheet) or one baked from the player's look. */
+  private farmerKey = "farmer";
+  private lookSerial = 0;
+  /** A sheet handed over before the scene finished booting, applied once it has. */
+  private pendingSheet: HTMLImageElement | null | undefined;
   /** The cast in progress, or null. Its presence is the input lock. */
   private cast: CastRun | null = null;
   /** The bite's kick, decaying to nothing. Applied in `placeCamera`, because
@@ -575,17 +582,10 @@ export class TopdownScene extends Phaser.Scene {
     // animations the sheet does not carry and this scene registers itself.
     // Once, here: an animation is a shared keyed thing in Phaser, and building
     // one mid-play blanks the sprite for a frame.
-    for (const anim of castAnims()) {
-      this.anims.create({
-        key: anim.key,
-        frames: anim.frames.map((frame) => ({ key: "farmer", frame: String(frame) })),
-        frameRate: 1000 / anim.frameMs,
-        repeat: anim.repeat,
-        yoyo: anim.yoyo,
-      });
-    }
+    this.buildCastAnims();
     this.enterArea("homestead", this.specs.get("homestead")!.spawn);
     this.booted = true;
+    if (this.pendingSheet !== undefined) this.setFarmerSheet(this.pendingSheet);
     this.callbacks.onReady();
   }
 
@@ -942,8 +942,8 @@ export class TopdownScene extends Phaser.Scene {
       this.npcSprites.set(npc.name, { sprite, shadow });
     }
 
-    this.player = this.keep(this.add.sprite(spawn.x, spawn.y, "farmer", STANDING[this.facing]).setOrigin(0.5, 44 / 48).setDepth(spawn.y));
-    this.anims.createFromAseprite("farmer", undefined, this.player);
+    this.player = this.keep(this.add.sprite(spawn.x, spawn.y, this.farmerKey, STANDING[this.facing]).setOrigin(0.5, 44 / 48).setDepth(spawn.y));
+    this.anims.createFromAseprite(this.farmerKey, undefined, this.player);
     // A step on each foot's contact frame, the first and the middle of the
     // walk cycle: floorboards indoors, grass outside.
     const stepSound = this.area.indoor ? floorStepSound : grassStepSound;
@@ -1761,6 +1761,57 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   /**
+   * The cast's beats are cut out of the rig's own fishing tag, so they are
+   * animations the sheet does not carry and this scene registers itself: at
+   * boot, and again whenever the farmer's sheet is swapped for a new look.
+   */
+  private buildCastAnims(): void {
+    for (const anim of castAnims()) {
+      if (this.anims.exists(anim.key)) this.anims.remove(anim.key);
+      this.anims.create({
+        key: anim.key,
+        frames: anim.frames.map((frame) => ({ key: this.farmerKey, frame: String(frame) })),
+        frameRate: 1000 / anim.frameMs,
+        repeat: anim.repeat,
+        yoyo: anim.yoyo,
+      });
+    }
+  }
+
+  /**
+   * Draws the farmer from a sheet baked from the player's look
+   * (lib/stackacres/wardrobe/bake.ts), or from the shipped sheet again with
+   * null. The baked sheet has the shipped sheet's exact frame layout, so its
+   * atlas and tags are reused. Swapped in place: he keeps where he stands and
+   * which way he faces.
+   */
+  setFarmerSheet(image: HTMLImageElement | null): void {
+    if (!this.booted) {
+      this.pendingSheet = image;
+      return;
+    }
+    const atlas = this.cache.json.get("farmer") as { meta: { frameTags: { name: string }[] } };
+    const previous = this.farmerKey;
+    const key = image ? `farmer-look-${++this.lookSerial}` : "farmer";
+    if (image) {
+      this.textures.addAtlas(key, image, atlas);
+      this.cache.json.add(key, atlas);
+    }
+    this.farmerKey = key;
+    this.buildCastAnims();
+    if (this.player) {
+      this.stand();
+      for (const tag of atlas.meta.frameTags) this.player.anims.remove(tag.name);
+      this.player.setTexture(key, STANDING[this.facing]);
+      this.anims.createFromAseprite(key, undefined, this.player);
+    }
+    if (previous !== "farmer" && previous !== key) {
+      this.textures.remove(previous);
+      this.cache.json.remove(previous);
+    }
+  }
+
+  /**
    * The shell's belt action landed: act it out, facing whatever he is standing on.
    *
    * It plays while he is walking too, which is what makes a held stroke read as
@@ -1964,6 +2015,8 @@ export class TopdownScene extends Phaser.Scene {
         return cb.onGreenhouseTap();
       case "farmhouse":
         return cb.onHouseTap(at);
+      case "mirror":
+        return cb.onMirrorTap();
       case "secret":
         return cb.onSecretZoneTap(detail as HiddenZoneId, at);
       case "pen":

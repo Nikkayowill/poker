@@ -23,6 +23,8 @@ cast rebuilds from one command and a character is a list of clothes instead of a
 | `verify.py` | reads the built PNG and its tags back, so a layout mistake shows as a broken picture |
 | `mockup.py` | drops sprites into a real area, the way the game draws it |
 | `review.py` | the before and after pictures for a review page |
+| `wardrobe_items.py` | what the farmer can wear at the mirror: items, colours, prices, today's look |
+| `wardrobe.py` | the mirror's art: `public/stackacres-td/wardrobe/` and the baker's test goldens |
 
 ## Things that cost an hour to find out
 
@@ -48,9 +50,22 @@ frame for frame like the one it replaces: 48x48, four to a row, tags walk, harve
 fish, shoot, then idle, four frames each, four directions. The player also gets an eight frame walk
 appended, which the walk tags point at.
 
+## The wardrobe
+
+The player's farmer is baked in the game from `public/stackacres-td/wardrobe/` by
+`lib/stackacres/wardrobe/bake.ts`, which repeats build.py's recipe with Pillow's exact arithmetic
+(composite at 64px, `lpc.shrink`, the harvest bend, the stride, the 48-colour median cut). Shrinking
+layers one at a time and stacking them looks visibly different, which is why it is done this way.
+`wardrobe.py` captures every layer's crops by running `build.frames_for` with the other layers
+blanked, so the baker cannot drift from build.py. Run it after changing build.py, cast.py's farmer or
+`wardrobe_items.py`; it fails if the default look stops matching `farmer.png`, and the baker's tests
+(`pnpm test lib/stackacres/wardrobe`) check the bake against build.py's own sheets.
+
+    python3 wardrobe.py
+
 ## Credit is not optional
 
 The art is CC0, OGA-BY and CC-BY. All but CC0 ask for the artists to be named somewhere a player can
-reach. `build.py` writes `CREDITS.md` next to the sheets, `components/info/credits-page.tsx` names
+reach. `build.py` writes `CREDITS.md` next to the sheets, covering the cast and every wardrobe item, `components/info/credits-page.tsx` names
 the artists and links it, and `Character.license_problems()` fails loudly on anything share-alike
 only. One piece is: LPC's hoe is CC-BY-SA 3.0 and nothing else.

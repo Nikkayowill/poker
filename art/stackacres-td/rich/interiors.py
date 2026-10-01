@@ -828,6 +828,35 @@ def bed():
     return c.outline().image(), (w // 2, h - 1)
 
 
+def standing_mirror():
+    """A tall oval looking-glass on a wooden stand, where the farmer changes his look. The glass catches the window
+    light in one streak, top left."""
+    w, h = 16, 36
+    c = Canvas(w, h)
+    cx, cy, rx, ry = 7.5, 13.0, 6.2, 11.0
+    for y in range(0, 26):
+        for x in range(0, w):
+            d = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2
+            if d > 1.0:
+                continue
+            if d > 0.62:                                          # the carved frame
+                c.put(x, y, "wood", 4.6 - (y / 26) * 1.2 - (0.8 if x > cx else 0))
+                continue
+            level = 3.6 - (y - 3) * 0.05 - (x - 2) * 0.06          # the glass, lit from the top left
+            if 0 <= (x - 3) + (y - 6) * 0.5 - 1 <= 1.4 and y < 18:
+                level = 4.9                                       # the one bright streak
+            c.put(x, y, "glass", level)
+    for y in range(20, 32):                                       # the legs of the stand
+        c.put(3, y, "wood", 3.4)
+        c.put(4, y, "wood", 2.2)
+        c.put(11, y, "wood", 3.0)
+        c.put(12, y, "wood", 1.8)
+    for y in range(32, h):                                        # the feet
+        for x in range(1, w - 1):
+            c.put(x, y, "wood", 3.8 - (y - 32) * 0.6 - (0.6 if x in (1, w - 2) else 0))
+    return c.outline().image(), (w // 2, h - 1)
+
+
 def cellar_hatch():
     """A trapdoor set flush in the floor with an iron ring, for the cellar below."""
     w, h = 32, 18
@@ -860,8 +889,8 @@ def cellar_hatch():
 
 
 def house(for_game=False):
-    """Kitchen along the back wall (the counter and stove open the house panel), the bed in the corner, a table set
-    for supper and the cellar hatch in the floor."""
+    """Kitchen along the back wall (the counter and stove open the house panel), the bed in the corner with the
+    looking-glass beside it (the wardrobe), a table set for supper and the cellar hatch in the floor."""
     room = HOUSE
     a = Area("farmhouse", room.w, room.h)
     a.indoor = True
@@ -876,6 +905,7 @@ def house(for_game=False):
     a.add(kitchen_counter(), 128, 92, (34, 3), tag="farmhouse")
     a.add(stove(), stove_x, 78, (9, 2), tag="farmhouse")
     a.add(bed(), 46, 108, (18, 4))
+    a.add(standing_mirror(), 14, 96, (6, 2), tag="mirror")
     a.add(dining_table(), 96, 140, (22, 3))
     a.add(chair("west"), 62, 138, (5, 2))
     a.add(chair("east"), 132, 138, (5, 2))

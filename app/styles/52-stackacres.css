@@ -5340,3 +5340,128 @@
   .sa-belt-slot { width: 44px; height: 44px; }
   .sa-belt-slot .sa-px-lg { margin: -6px; }
 }
+
+/* The wardrobe (wardrobe-sheet.tsx): the store's card, with the farmer on a
+   stage to the left and the picker to the right. Landscape phone first, so
+   the two sit side by side. Tap targets are big for young hands. */
+.sa-wardrobe-card { width: min(100% - 32px, 820px); }
+.sa-wardrobe-body {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 12px;
+  min-height: 0;
+  flex: 1;
+  padding: 0 12px;
+}
+.sa-wardrobe-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+  border-radius: var(--sa-r-panel);
+  background: radial-gradient(ellipse at 50% 70%, #86b35a 0 45%, #5a8f3c 46% 100%);
+  box-shadow: var(--sa-paint-rim-sm);
+}
+.sa-wardrobe-figure {
+  width: 192px;
+  height: 192px;
+  image-rendering: pixelated;
+}
+.sa-wardrobe-turn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--sa-ink);
+  font-weight: 800;
+  font-size: 13px;
+}
+.sa-wardrobe-turn button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 2px solid var(--sa-paint-line);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paint-fill-ctl);
+  color: var(--sa-ink);
+  cursor: pointer;
+}
+.sa-wardrobe-picker { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.sa-wardrobe-picker .sa-store-tabs { margin: 10px 0 0; overflow-x: auto; }
+.sa-wardrobe-picker .sa-store-tab { flex: none; padding: 6px 10px; }
+.sa-wardrobe-panel { overflow-y: auto; padding: 10px 2px; }
+.sa-wardrobe-label { margin: 10px 0 4px; color: var(--sa-ink-soft); font-size: 12.5px; font-weight: 800; }
+.sa-wardrobe-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.sa-wardrobe-choice {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 84px;
+  min-height: 48px;
+  padding: 6px 12px;
+  border: 2px solid var(--sa-paint-line-soft);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paint-fill-quiet);
+  color: var(--sa-ink);
+  font-size: 13.5px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.sa-wardrobe-choice.is-on {
+  border-color: var(--sa-paint-line);
+  background: var(--sa-paint-fill-ctl);
+  box-shadow: var(--sa-paint-rim-sm);
+}
+.sa-wardrobe-price { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-style: normal; color: var(--sa-ink-soft); }
+.sa-wardrobe-swatches { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.sa-wardrobe-swatch {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--sa-paint-fill);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--sa-paint-line-soft);
+  cursor: pointer;
+}
+.sa-wardrobe-swatch.is-on { box-shadow: 0 0 0 3px var(--sa-paint-line), 0 4px 10px -4px rgba(20, 20, 24, .5); }
+.sa-wardrobe-buy { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.sa-wardrobe-buy p { flex: 1; margin: 0; color: var(--sa-ink-soft); font-size: 13px; }
+.sa-wardrobe-outfits { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.sa-wardrobe-outfits li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paint-fill-quiet);
+}
+.sa-wardrobe-outfits strong { flex: 1 0 100%; color: var(--sa-ink); }
+.sa-wardrobe-empty { color: var(--sa-ink-soft); font-size: 13px; }
+.sa-wardrobe-link {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  color: var(--sa-ink);
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.sa-wardrobe-link:disabled { opacity: .45; cursor: default; }
+.sa-wardrobe-note { margin: 6px 12px 0; color: #9b2c1f; font-size: 13px; font-weight: 700; }
+.sa-wardrobe-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex: none;
+  padding: 10px 12px 12px;
+}
+.sa-wardrobe-hint { flex: 1; color: var(--sa-ink-soft); font-size: 12.5px; }
+@media (max-height: 460px) {
+  .sa-wardrobe-body { grid-template-columns: 150px 1fr; }
+  .sa-wardrobe-figure { width: 144px; height: 144px; }
+}

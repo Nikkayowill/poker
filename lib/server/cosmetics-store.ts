@@ -83,8 +83,21 @@ export async function purchaseCosmetic(
     // the rule that keeps the best-looking things at the table unbuyable.
     throw new Error("That item can only be earned, not bought.");
   }
-  const price = item.price as number;
+  return buyOwnedItem(token, profile, cosmeticId, item.price as number);
+}
 
+/**
+ * Buys something recorded in player_cosmetics at a price the SERVER fixed:
+ * the store's catalog above, or the farm wardrobe's (lib/stackacres/wardrobe).
+ * The balance check, debit and ownership insert happen in one locked
+ * transaction, so a double tap pays once.
+ */
+export async function buyOwnedItem(
+  token: string,
+  profile: PlayerProfile,
+  cosmeticId: string,
+  price: number,
+): Promise<PurchaseResult> {
   const supabase = adminClient();
   if (!supabase) {
     const owned = memoryOwned.get(profile.id) ?? new Set<string>();

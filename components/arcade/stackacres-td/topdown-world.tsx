@@ -143,6 +143,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onMonkTap: (at) => p().onMonkTap(at),
           onRayTap: (at) => p().onRayTap(at),
           onHouseTap: (at) => p().onHouseTap(at),
+          onMirrorTap: () => p().onMirrorTap(),
           onTravelerTap: (traveler, at) => p().onTravelerTap(traveler, at),
           onSecretZoneTap: (zoneId, at) => p().onSecretZoneTap(zoneId, at),
           onLockedSectorTap: (zone, at) => p().onLockedSectorTap(zone, at),
@@ -240,6 +241,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       zoomBy: (factor) => sceneRef.current?.zoomBy(factor),
       recenter: () => sceneRef.current?.recenter(),
       farmerAction: (action, impact) => sceneRef.current?.farmerAction(action, impact),
+      setFarmerSheet: (image) => sceneRef.current?.setFarmerSheet(image),
       emote: (who, kind) => sceneRef.current?.emote(who, kind),
       // Not drawn yet (see this file's header).
       endFishingCast: (outcome) => sceneRef.current?.endFishingCast(outcome),

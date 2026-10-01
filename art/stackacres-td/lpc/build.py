@@ -253,13 +253,40 @@ def write(name, blocks):
     return len(frames), sheet.size
 
 
+# The licence each piece is used under, most permissive first. Many LPC pieces are offered under
+# several licences at once (OGA-BY or CC-BY-SA or GPL); we take the first of these a row offers.
+USED_UNDER = ("CC0", "CC-BY 4.0", "CC-BY 3.0", "CC-BY", "OGA-BY 3.0", "OGA-BY-3.0")
+
+
+def used_under(row):
+    got = row.get("licenses", [])
+    for want in USED_UNDER:
+        for g in got:
+            if g == want or g.startswith(want + "+") or (want == "CC-BY" and g == "CC-BY"):
+                return g
+    return ", ".join(got)
+
+
+def wardrobe_rows():
+    """Credit rows for everything the farmer can wear at the mirror (wardrobe_items.py), on every
+    body it is offered on, whether or not the shipped farmer wears it."""
+    import wardrobe_items
+    rows = []
+    for body in wardrobe_items.body_types():
+        head = lpc.definition(wardrobe_items.head_for(body))["name"].replace(" ", "_")
+        for item in wardrobe_items.all_lpc_items():
+            rels = {rel for _z, rel, _c in lpc.layers(item, None, body, head)}
+            rows += lpc.credits_for(item, rels)
+    return rows
+
+
 def credits(names):
-    """Attribution for every piece of LPC art the built sheets use.
+    """Attribution for every piece of LPC art the built sheets and the farmer's wardrobe use.
 
     Required: the art is CC0, OGA-BY and CC-BY, and all but CC0 want the authors named somewhere a
     player can find. `components/info/credits-page.tsx` is where that happens; this is the long list
     it points at. Written next to the sheets so it ships."""
-    rows, licences = {}, set()
+    rows = {}
     for name in names:
         spec = cast.CAST[name]
         tools = [t for how in list(ACTIONS.values()) + list(SWINGS.values()) for t in how["tools"]]
@@ -267,17 +294,35 @@ def credits(names):
                             palette=spec.get("palette"))
         for row in who.credits():
             rows[row.get("file")] = row
-            licences.update(row.get("licenses", []))
+    for row in wardrobe_rows():
+        rows[row.get("file")] = row
+    licences = {used_under(row) for row in rows.values()}
     authors = sorted({a for row in rows.values() for a in row.get("authors", [])})
+    share_alike = sorted(f for f, row in rows.items() if not any(
+        any(g.startswith(s) for s in lpc.SAFE_LICENSES) for g in row.get("licenses", [])))
     out = ["# Character art credits", "",
-           "The StackAcres people are built from the Universal LPC Spritesheet Character Generator",
+           "The StackAcres people, and everything the farmer can wear at the mirror, are built from the",
+           "Universal LPC Spritesheet Character Generator",
            "(https://github.com/LiberatedPixelCup/Universal-LPC-Spritesheet-Character-Generator).",
-           "Every layer used is listed below with its authors and licence.", "",
+           "Every layer used is listed below with its authors, the licences it is offered under, and the",
+           "one we use it under.", "",
            "## Everyone who drew a piece of it", "", ", ".join(authors), "",
-           "## Licences in use", "", ", ".join(sorted(licences)), "", "## Layer by layer", ""]
+           "## Licences we use the art under", "", ", ".join(sorted(licences)), "",
+           "Where a piece is offered under several licences (for example OGA-BY 3.0, CC-BY-SA 3.0 or",
+           "GPL 3.0), we use it under the first attribution-only licence listed for it.", "",
+           "## Changes we made", "",
+           "The art is modified: layers are recoloured, composited into one character, shrunk from 64px",
+           "frames to about 31px tall and cut to a 48-colour palette. Some frames are rearranged or edited:",
+           "the harvest pose bends the body at the hips, the walk's legs are redrawn from the standing pose,",
+           "and the overhead hoe swing is the pickaxe swing with one point of its head removed.", ""]
+    if share_alike:
+        out += ["## Share-alike", "",
+                "These are offered under share-alike licences only and are used under them: "
+                + ", ".join(share_alike) + ". (LPC's hoe, drawn for the forward hoeing action.)", ""]
+    out += ["## Layer by layer", ""]
     for f, row in sorted(rows.items()):
         out.append(f"- **{f}** - {', '.join(row.get('authors', []))} - "
-                   f"{', '.join(row.get('licenses', []))}")
+                   f"{', '.join(row.get('licenses', []))} - used under {used_under(row)}")
         for url in row.get("urls", []):
             out.append(f"  - {url}")
     text = "\n".join(out) + "\n"

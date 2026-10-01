@@ -6,13 +6,8 @@ import { expect, test, type BrowserContext, type Page } from "./fixtures";
  * The arithmetic (what a swing pays, what a demolition costs, when the
  * sector opens) is covered by lib/stackacres/land-clearing.test.ts and the
  * service tests. What only a browser can say is the part this spec asserts:
- * the Fold stands open with nothing paid for it, the obstacles are really
- * drawn and really stop the farmer, tapping one opens the swing popup, and
- * a swing takes it down without waiting on the server.
- *
- * The Fold is off the map right now (HOMESTEAD_ONLY in scene.ts), so this
- * spec puts the farmer on it directly rather than walking him through the
- * gate. Everything after that is the real thing.
+ * the Crop Fields' obstacles are really drawn and really stop the farmer,
+ * and a swing takes one down without waiting on the server.
  */
 
 interface Handle {
@@ -58,18 +53,6 @@ function sceneCall<M extends SceneMethod>(page: Page, method: M, ...args: Parame
   ) as Promise<SceneResult<M>>;
 }
 
-/** The ids the Fold's obstacles are dealt under (lib/stackacres/land-clearing.ts). */
-const FOLD_IDS = Array.from({ length: 24 }, (_, i) => `wallow-${String(i + 1).padStart(2, "0")}`);
-
-/** The first obstacle still standing on this map, and where it stands. */
-async function standingObstacle(page: Page): Promise<{ id: string; at: { x: number; y: number } }> {
-  for (const id of FOLD_IDS) {
-    const at = await sceneCall(page, "landObstaclePoint", id);
-    if (at) return { id, at };
-  }
-  throw new Error("nothing is standing on the Fold");
-}
-
 /**
  * Taps an obstacle until it is down. There is no popup: each tap is one swing
  * (at most five, a boulder), and a tap mid-swing is ignored, so each waits for
@@ -82,26 +65,6 @@ async function swingUntilDown(page: Page, id: string, point: { x: number; y: num
   }
   await expect.poll(() => sceneCall(page, "landObstaclePoint", id), { timeout: 10_000 }).toBeNull();
 }
-
-test("what stands on the Fold is drawn, and a swing takes it down", async ({ context, page }) => {
-  await openStackAcres(context, page);
-
-  // Nothing bought, nothing asked for: the farmer is simply on it.
-  await sceneCall(page, "placeFarmer", "fold", { x: 24, y: 184 });
-  await page.waitForTimeout(600);
-
-  const target = await standingObstacle(page);
-  // It is really standing there: the farmer cannot walk through it.
-  expect(await sceneCall(page, "isBlockedAt", target.at)).toBe(true);
-
-  await sceneCall(page, "placeFarmer", "fold", { x: target.at.x, y: target.at.y + 40 });
-  await page.waitForTimeout(400);
-  const point = await sceneCall(page, "clientPointFor", target.at.x, target.at.y);
-  await page.mouse.click(point.x, point.y);
-
-  await swingUntilDown(page, target.id, point);
-  expect(await sceneCall(page, "isBlockedAt", target.at)).toBe(false);
-});
 
 /** The Crop Fields' own obstacle ids: 80 of them (lib/stackacres/land-clearing.ts). */
 const CROP_FIELD_IDS = Array.from({ length: 80 }, (_, i) => `cropfields-${String(i + 1).padStart(2, "0")}`);

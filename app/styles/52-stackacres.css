@@ -959,22 +959,6 @@
   line-height: 1.2;
 }
 
-.sa-map-place-note {
-  color: var(--sa-ink-soft);
-  font-size: 10.5px;
-  font-weight: 650;
-  line-height: 1.25;
-}
-
-/* Shut land reads as somewhere you cannot work yet, not as a dead button:
-   tapping still walks you to its gate, which is what says how to open it. */
-.sa-map-place.is-shut {
-  background: var(--sa-paint-fill-open);
-  color: var(--sa-ink-soft);
-  filter: grayscale(1);
-  opacity: .62;
-}
-
 /* Where the farmer is standing. */
 .sa-map-place.is-here {
   border-color: var(--sa-corn-side);

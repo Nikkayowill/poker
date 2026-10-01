@@ -1,5 +1,10 @@
 # StackAcres areas
 
+**Superseded 2026-09-26.** The Fold, Cattle Pasture, Coastal Market, The Ancestral Oak, Mine
+Entrance and Town Square were removed from the game, along with their gates on the Homestead.
+The Homestead's only way off the map now is the west bridge to the Far Field. What follows is
+kept as history.
+
 Every place a player can visit in the top-down rewrite, how the places connect, and what
 opens each one. Written 2026-09-16 and checked against the live code in
 `lib/stackacres/` on that date. Map page: https://claude.ai/artifact/LFQwLCCQNfBTaku9CMnqov

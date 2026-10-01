@@ -1,10 +1,10 @@
 /**
  * Who does what on the farm, and when: the routines npc-routine.ts turns into walks and chores.
  *
- * Ray keeps the place going. He walks in from town in the morning, draws water at the well, tends
- * the greenhouse beds, minds his counter in the barn, feeds the hens at noon, picks berries in the
- * afternoon, sits on the porch at dusk and walks home to town at night. The Pixel Pilgrim fishes off
- * the dock, wanders the grove by the workshop, rests by the well and camps in the oak woods overnight.
+ * Ray keeps the place going. He draws water at the well in the morning, tends the greenhouse beds,
+ * minds his counter in the barn, feeds the hens at noon, picks berries in the afternoon, sits on the
+ * porch at dusk and turns in at the barn at night. The Pixel Pilgrim fishes off the dock, wanders the
+ * grove by the workshop, rests by the well and camps in the west clearing overnight.
  *
  * Every spot is a map point on open ground (npc-schedules.test.ts checks each one against the
  * exported area.json, and that every walk between them can be made). When the Homestead is redrawn,
@@ -17,9 +17,8 @@ import type { Routine, Spot, Station } from "./npc-routine";
 const spot = (x: number, y: number, facing: Spot["facing"], chore: Spot["chore"], ms: number): Spot => ({ x, y, facing, chore, ms });
 
 export const NPC_STATIONS: Record<string, Station> = {
-  // Ray's home is in town. HOMESTEAD_ONLY keeps the player out of the Town Square for now, so the
-  // player sees him leave by the east road at night and come back along it in the morning.
-  "ray-home": { area: "townsquare", spots: [spot(120, 200, "down", "idle", 60_000)] },
+  // Ray sleeps at the barn, in the corner away from his counter.
+  "ray-home": { area: "barn", spots: [spot(72, 120, "down", "idle", 60_000)] },
   "ray-well": {
     area: "homestead",
     spots: [spot(430, 318, "up", "water", 7000), spot(452, 322, "left", "idle", 3000)],
@@ -69,8 +68,8 @@ export const NPC_STATIONS: Record<string, Station> = {
     area: "homestead",
     spots: [spot(412, 322, "up", "idle", 10_000), spot(372, 330, "right", "idle", 6000)],
   },
-  // He sleeps out under the oaks, west of the Homestead.
-  "pilgrim-camp": { area: "oak", spots: [spot(300, 200, "down", "idle", 60_000)] },
+  // He sleeps out in the clearing by the west edge.
+  "pilgrim-camp": { area: "homestead", spots: [spot(104, 424, "down", "idle", 60_000)] },
 
   // Two of the travelers who stay on the Homestead once they've arrived. They keep to their corner.
   "pierre-yard": {

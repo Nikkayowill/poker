@@ -25,4 +25,15 @@ describe("the Crop Fields' overgrowth", () => {
   it("deals the same field every time", () => {
     expect(cropFieldObstaclePlacements()).toBe(placements);
   });
+
+  // Players' cleared obstacles are saved by id, so a re-export that changes the wild or walkable tiles
+  // would move every one of them. If this fails after touching the Homestead, the map change did that.
+  it("keeps every obstacle where live farms already have it", () => {
+    expect(placements.slice(0, 3).map((p) => [p.id, p.tx, p.ty])).toEqual([
+      ["cropfields-01", 20, 42],
+      ["cropfields-02", 56, 12],
+      ["cropfields-03", 8, 8],
+    ]);
+    expect(placements.reduce((sum, p, i) => sum + (i + 1) * (p.tx * 100 + p.ty), 0)).toBe(41977375);
+  });
 });

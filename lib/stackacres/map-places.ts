@@ -8,18 +8,14 @@
  * ... shouldnt even be there if the onboarding is good. all theyll need is
  * the map of this world to click on with their indicator").
  *
- * The grid below is not a drawing decision: it mirrors each area's own exits
- * in public/stackacres-td/areas/<area>/area.json. The Homestead sits in the
- * middle, and every other place sits on the side its gate is on -- the Crop
- * Fields through the north lane, the Mine off the north-east, the Oak west,
- * Town Square east, the Fold south-east with the Pasture beyond it, and the
- * Coast south. `map-places.test.ts` pins that against the area files, so a
- * re-laid map cannot leave this quietly wrong.
+ * North is up: the Crop Fields are the wild land round the yard, so they sit
+ * above the Homestead. The Far Field is left off. It is its own map, reached
+ * over the west bridge, not a part of this one.
  */
 
 import type { ZoneId } from "./zones";
 
-/** Somewhere on the map. Every area is a zone except the Crop Fields, which
+/** Somewhere on the map. Every place is a zone except the Crop Fields, which
  *  are ground inside the Homestead rather than a district of their own. */
 export type MapPlaceId = ZoneId | "cropfields";
 
@@ -31,17 +27,10 @@ export interface MapPlace {
   readonly row: number;
 }
 
-export const MAP_COLUMNS = 4;
-export const MAP_ROWS = 3;
+export const MAP_COLUMNS = 1;
+export const MAP_ROWS = 2;
 
-/** North is up. Every cell here is a place; the gaps are just grass. */
 export const MAP_PLACES: readonly MapPlace[] = [
-  { id: "cropfields", label: "Crop Fields", col: 1, row: 0 },
-  { id: "mine", label: "Mine Entrance", col: 2, row: 0 },
-  { id: "oak", label: "The Ancestral Oak", col: 0, row: 1 },
-  { id: "farmstead", label: "The Homestead", col: 1, row: 1 },
-  { id: "townsquare", label: "Town Square", col: 2, row: 1 },
-  { id: "coast", label: "Coastal Market", col: 1, row: 2 },
-  { id: "wallow", label: "The Fold", col: 2, row: 2 },
-  { id: "oxfields", label: "Cattle Pasture", col: 3, row: 2 },
+  { id: "cropfields", label: "Crop Fields", col: 0, row: 0 },
+  { id: "farmstead", label: "The Homestead", col: 0, row: 1 },
 ];

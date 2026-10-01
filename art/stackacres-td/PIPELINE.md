@@ -17,8 +17,7 @@ art/stackacres-td/            (in the repo; generated output is gitignored)
     rig/                kit.py (terrain + the Homestead's sprites), area.py (the Area class),
                         props.py (places, gates, water, smoke), creatures.py (animals), crops.py,
                         people.py (the cast list), sheet.py (contact sheets), build_all.py, and
-                        one script per area: homestead.py oldfields.py fold.py pasture.py
-                        coast.py oak.py mine.py townsquare.py
+                        homestead.py, the one outdoor area
     tileset.png         shared 16x16 terrain tileset
     <area>/             <area>.png, <area>-2x.png, views/*.png and views/*.gif (animated), per area
     sheets/             props.png creatures.png crops.png cast.png

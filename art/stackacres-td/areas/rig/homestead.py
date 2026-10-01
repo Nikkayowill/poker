@@ -6,8 +6,8 @@ A lake runs along the whole north edge and off the top of the map, reached by a
 path and dock between the workshop and the house. Everything else inside the
 treeline is wild land: grass the Crop Fields' clearing rules cover with trees,
 boulders and scrub (lib/stackacres/crop-field-obstacles.ts deals them onto the
-tiles `area.wild` names), to clear and build on. Trails lead out through the
-wild to the gates at the map's edges.
+tiles `area.wild` names), to clear and build on. The only way off the map is the
+bridge on the west edge to the Far Field.
 
 The design this is built from, with a later-on version of the same farm:
 art/stackacres-td/farm-map/.
@@ -37,13 +37,12 @@ BORDER = 2                                              # tiles of treeline roun
 
 
 # The hill in the north-east corner: a rise of wooded land the lake stops short of, with its earth face
-# looking south over the mine trail. Tiles, inclusive; the face's foot is the row under HILL_ROWS.
+# looking south. Tiles, inclusive; the face's foot is the row under HILL_ROWS.
 HILL_X0, HILL_ROWS = 52, 9
 HILL_FOOT = (HILL_ROWS + 1) * T
-CAVE_X = 976                                            # the middle of the cave mouth: the way to the mine
 
-# The terrace: the yard stands a level above the fields, and the wooden stair between the house and the south
-# gate is the only way between them. Rows of the face, inclusive; its foot is the row under them.
+# The terrace: the yard stands a level above the fields, and the stair under the house is the only way
+# between them. Rows of the face, inclusive; its foot is the row under them.
 TERRACE_ROWS = (31, 35)
 TERRACE_FOOT = (TERRACE_ROWS[1] + 1) * T
 STAIRS = (29, 34)                                       # tile columns of the stair, inclusive: under the house
@@ -67,7 +66,7 @@ def _terrain(a):
         for vx in range(MW + 1):
             if vy * T < lake_line(vx * T):
                 a.verts["water"].add((vx, vy))
-    # No roads (Kayo, 2026-09-23): the yard, the lake and the gates are all reached over the grass.
+    # No roads (Kayo, 2026-09-23): the yard and the lake are reached over the grass.
     roads = []
     for x0, y0, x1, y1 in roads:
         a.rect("path", x0, y0, x1, y1)
@@ -161,32 +160,22 @@ def _cleared(tx, ty):
 
 
 def _gates(a):
-    """The ways out, each shut until its place opens. Same destinations and arrival spots as before."""
-    a.add(kit.broken_cart(), 1000, 336, (18, 4), tag="locked:townsquare")
-    a.exit("townsquare", 1014, 304, 10, 32, (22, 216))
-    a.add(props.brambles(), 26, 334, (20, 3), tag="locked:oak")
-    a.exit("oak", 0, 304, 10, 32, (492, 216))
-    a.add(props.rockfall(), CAVE_X, HILL_FOOT + 12, (24, 4), tag="locked:mine")
-    a.exit("mine", CAVE_X - 16, HILL_FOOT - 4, 32, 12, (88, 334))
-    a.add(props.hedge_overgrown(), 1000, 494, (16, 3), tag="locked:wallow")
-    a.exit("fold", 1014, 464, 10, 32, (22, 184))
-    a.add(props.boardwalk_washed(), 512, MH * T - 14, tag="locked:coast")
-    a.exit("coast", 496, MH * T - 10, 32, 10, (312, 22))
-    # The bridge onto the empire district, on the west edge (docs/stackacres-second-map-direction.md 6a).
+    """The one way out: the bridge onto the empire district, on the west edge (docs/stackacres-second-map-direction.md 6a)."""
     a.exit("empire", 0, 448, 10, 32, (48, 240))
 
 
-GAPS = {"east": [(304, 336), (464, 496)], "west": [(304, 336), (448, 480)], "south": [(496, 528)]}
+GAPS = {"west": [(448, 480)]}
+# Where the gates to the old districts used to be. The treeline there is planted from its own seeds, after the
+# rest, so every other crown keeps the seed it had and the wild land dealt round them doesn't move.
+OLD_GAPS = {"east": [(304, 336), (464, 496)], "west": [(304, 336)], "south": [(496, 528)]}
 
 
 def _hill(a):
-    """The north-east hill: its face along the top of the mine trail, the cave mouth the trail ends at,
-    and the trees standing on top of it. The land it covers never walks."""
+    """The north-east hill: its face and the trees standing on top of it. The land it covers never walks."""
     x0 = HILL_X0 * T
     width = MW * T - x0
-    a.add(lpc_cliffs.hill_face(width * 2, cave_at=(CAVE_X - x0) * 2), x0, HILL_FOOT, ground=True)
+    a.add(lpc_cliffs.hill_face(width * 2), x0, HILL_FOOT, ground=True)
     a.wall(HILL_X0, 0, MW - 1, HILL_ROWS)
-    # Kept clear of the cave, so the way in is always in plain sight.
     for i, (x, y) in enumerate(((838, 156), (884, 60), (922, 104), (940, 52), (1010, 46), (868, 20), (990, 12), (850, 70))):
         a.add(lpc_trees.crown(i * 5 + 1), x, y, (12, 4))
 
@@ -214,25 +203,37 @@ def _on_terrace(ty):
 def _treeline(a):
     """Pine crowns round the west, east and south edges, and along the top where the lake doesn't reach.
     The engine's forest carries on past the map's edge, so this is the near side of it."""
-    def gap(side, v):
-        return any(lo - 24 <= v <= hi + 24 for lo, hi in GAPS.get(side, ()))
+    def gap(side, v, gaps=GAPS):
+        return any(lo - 24 <= v <= hi + 24 for lo, hi in gaps.get(side, ()))
 
     seed = 0
+    later = []
     for y in range(40, MH * T + 20, 30):
         for side, x in (("west", 8), ("west", 24), ("east", MW * T - 8), ("east", MW * T - 24)):
-            if gap(side, y) or (side == "east" and y < HILL_FOOT + 96):     # the hill stands there, and a tree
-                continue                                                    # below it would hang over the cave
+            if gap(side, y) or (side == "east" and y < HILL_FOOT + 24):     # the hill stands there
+                continue
+            at = (x + int(kit.hash2(x, y, 31) * 8) - 4, y)
+            if gap(side, y, OLD_GAPS) or (side == "east" and y < HILL_FOOT + 96):  # where the cave was
+                if x in (8, MW * T - 8):
+                    later.append(at)
+                continue
             seed += 1
-            a.add(lpc_trees.crown(seed), x + int(kit.hash2(x, y, 31) * 8) - 4, y, (11, 4))
+            a.add(lpc_trees.crown(seed), *at, (11, 4))
     for x in range(20, MW * T, 30):
         for y in (MH * T - 6, MH * T - 22):
             if gap("south", x):
                 continue
+            at = (x + int(kit.hash2(x, y, 32) * 8) - 4, y - int(kit.hash2(x, y, 33) * 8))
+            if gap("south", x, OLD_GAPS):
+                later.append(at)
+                continue
             seed += 1
-            a.add(lpc_trees.crown(seed), x + int(kit.hash2(x, y, 32) * 8) - 4, y - int(kit.hash2(x, y, 33) * 8), (11, 4))
+            a.add(lpc_trees.crown(seed), *at, (11, 4))
         if lake_line(x) < 8:                            # the corners the lake doesn't reach
             seed += 1
             a.add(lpc_trees.crown(seed), x, 24, (11, 4))
+    for i, at in enumerate(later):
+        a.add(lpc_trees.crown(500 + i), *at, (11, 4))
     for tx in range(MW):
         for ty in range(MH):
             edge = tx < BORDER or tx >= MW - BORDER or ty >= MH - BORDER

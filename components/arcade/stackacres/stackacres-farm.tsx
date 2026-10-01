@@ -90,7 +90,6 @@ import {
 import {
   HOME_SECTOR,
   isSectorUnlocked,
-  sectorClearCheck,
   sectorLabel,
   type SectorId,
 } from "@/lib/stackacres/sectors";
@@ -2772,29 +2771,8 @@ export function StackAcresFarm() {
     setShowMap(true);
   }, []);
 
-  /** Every place, in map order, with whose gate is shut and what opens it.
-   *  Only the Homestead and its own Crop Fields are on the map right now --
-   *  the other districts are staying off the map while polish focuses on the
-   *  Homestead alone (Kayo, 2026-09-22). */
-  const mapPlaces = useMemo(
-    () =>
-      mapPlaceStates(
-      mapHere,
-      // The Crop Fields are always walkable now; nothing is bought to open
-      // them, so they never carry a locked label either.
-      (id) => id === "cropfields" || isSectorUnlocked(id, sectors),
-      (id) => {
-        // Never reached for the Crop Fields -- they are open above -- but the
-        // map's id space is wider than a district's, so it is said here.
-        if (id === "cropfields") return null;
-        const traveler = WILD_AREA_TRAVELER[id];
-        if (traveler) return `Opens when ${TRAVELER_CATALOGUE[traveler].name} arrives`;
-        const check = sectorClearCheck(id, { unlocked: sectors, unitCount: units.length });
-        return `Clear for ${check.cost.toLocaleString()} Gold`;
-      },
-    ).filter((place) => place.id === "farmstead" || place.id === "cropfields"),
-    [mapHere, sectors, units.length],
-  );
+  /** Every place, in map order: the Homestead and its own Crop Fields. */
+  const mapPlaces = useMemo(() => mapPlaceStates(mapHere), [mapHere]);
 
   // The view moving under whatever is pinned to it closes both screen-
   // anchored panels the same way -- neither is anchored to the world, so
@@ -3217,22 +3195,6 @@ export function StackAcresFarm() {
     },
     [act],
   );
-
-  /**
-   * A finger landed on land nobody has cleared. There is nothing standing
-   * there to act on, so this is a question rather than an action: what is
-   * under the growth, what it costs, and what is still in the way.
-   *
-   * A full modal rather than the radial menu the fenced ground gets, and
-   * deliberately: the seed menu is a fast, repeatable choice between things
-   * you already understand, and this is a permanent purchase with conditions
-   * on it. It is worth stopping for.
-   */
-  const onWorldLockedTap = useCallback((zone: ZoneId) => {
-    panelSound();
-    setPlace(zone);
-    setClearing(zone);
-  }, []);
 
   /**
    * The town board's two actions, handed down as promises rather than as
@@ -4209,8 +4171,6 @@ export function StackAcresFarm() {
               onTravelerTap={onWorldTravelerTap}
               onSecretZoneTap={onWorldSecretZoneTap}
               onQuestPlaceTap={onWorldQuestPlaceTap}
-              sectors={sectors}
-              onLockedSectorTap={onWorldLockedTap}
               onViewMoved={onViewMoved}
               onPlaceEntered={onPlaceEntered}
               soilTiles={mergedSoilTiles}

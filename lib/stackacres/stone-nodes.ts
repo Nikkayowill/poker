@@ -1,7 +1,7 @@
 /**
- * Stone mining nodes: the Mine's three tagged boulders
- * (public/stackacres-td/areas/mine/area.json's `p8_0`/`p9_0`/`p10_0`, tagged
- * `stone:mine-1`/`stone:mine-2`/`stone:mine-3`), tracked server-side the same
+ * Stone mining nodes: the old Mine map's three tagged boulders (`stone:mine-1`/
+ * `stone:mine-2`/`stone:mine-3`). The Mine is gone from the game, so nothing
+ * draws them now, but the server still tracks them the same
  * way a felled tree would be -- see lib/server/stone-node-store.ts for the
  * version-guarded row each one owns.
  *

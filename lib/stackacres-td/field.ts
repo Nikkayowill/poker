@@ -32,19 +32,13 @@ import { CROP_FIELD_BEDS, penFeedSpot, type WorldPoint } from "@/lib/stackacres/
 
 export type TopdownArea =
   | "homestead"
-  | "fold"
-  | "pasture"
-  | "coast"
-  | "oak"
-  | "mine"
-  | "townsquare"
   | "barn"
   | "workshop"
   | "farmhouse"
   // The second map's own district (docs/stackacres-second-map-direction.md
   // section 6a): reached by crossing a bridge off the Homestead, gated by
-  // EMPIRE_ENABLED in scene.ts rather than the SectorId/ZoneId ladder --
-  // there is nothing to clear or buy here yet, just a bridge to walk.
+  // EMPIRE_ENABLED in scene.ts. There is nothing to clear or buy here yet,
+  // just a bridge to walk.
   | "empire"
   // The city grocery (docs/stackacres-second-map-direction.md): drawn and simulated, loaded only in
   // development until the city it stands in exists.
@@ -70,9 +64,6 @@ export const FIELD_SIZE = CROP_FIELD_BEDS.width;
  *  end of the lake dock (art/stackacres-td/areas/rig/homestead.py). */
 export const HOMESTEAD_TROUGH = { x: 640, y: 464 } as const;
 export const HOMESTEAD_DOCK_END = { x: 416, y: 34 } as const;
-/** The Fold's and the Cattle Pasture's pen troughs, where a feed drag lands. */
-export const FOLD_TROUGH = { x: 240, y: 300 } as const;
-export const PASTURE_TROUGH = { x: 470, y: 300 } as const;
 
 export function inCropField(world: WorldPoint): boolean {
   return (
@@ -121,10 +112,6 @@ export function worldToMap(world: WorldPoint): MapPoint | null {
   const trough = penFeedSpot("henhaven");
   if (world.x === trough.x && world.y === trough.y) return { area: "homestead", ...HOMESTEAD_TROUGH };
   if (world.x === FISHING_SPOT.x && world.y === FISHING_SPOT.y) return { area: "homestead", ...HOMESTEAD_DOCK_END };
-  const sheep = penFeedSpot("wallow");
-  if (world.x === sheep.x && world.y === sheep.y) return { area: "fold", ...FOLD_TROUGH };
-  const cattle = penFeedSpot("oxfields");
-  if (world.x === cattle.x && world.y === cattle.y) return { area: "pasture", ...PASTURE_TROUGH };
   const tx = Math.floor(world.x / SOIL_TILE);
   const ty = Math.floor(world.y / SOIL_TILE);
   if (isBedSquare(tx, ty) || inCropField(world)) return { area: "homestead", ...soilWorldToMap(world) };

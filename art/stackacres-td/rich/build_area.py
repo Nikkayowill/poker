@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Renders any area through the rich pipeline for review, next to its DB16 original.
 
-Usage: python3 build_area.py <area> [<area> ...]   (area script names in areas/rig: fold, pasture, coast, oak, mine, townsquare,
-homestead)
+Usage: python3 build_area.py <area> [<area> ...]   (area script names in areas/rig: homestead)
 
 Writes rich/out/areas/<area>/{db16,rich}/: <area>.png, <area>-2x.png and views/*.png at 4x. Every sprite an area script
 uses must have a rich version: the rig's props/creatures functions are swapped for the same-named ones in the area_*.py
@@ -19,7 +18,6 @@ sys.path[:0] = [HERE, RIG]
 
 from PIL import Image  # noqa: E402
 
-import area_coast  # noqa: E402
 import area_farm  # noqa: E402
 import area_town  # noqa: E402
 import area_wild  # noqa: E402
@@ -31,7 +29,7 @@ import props  # noqa: E402
 import scene  # noqa: E402
 import terrain  # noqa: E402
 
-AREA_MODULES = [area_farm, area_coast, area_wild, area_town]
+AREA_MODULES = [area_farm, area_wild, area_town]
 OUT = os.path.join(HERE, "out", "areas")
 
 

@@ -4,7 +4,6 @@ import type { GroceryItemKind, GroceryPlacement } from "@/lib/stackacres/grocery
 import type { Ref } from "react";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
-import type { SectorId } from "@/lib/stackacres/sectors";
 import type { StackAcresCutter } from "@/lib/stackacres/cutters";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
@@ -423,12 +422,6 @@ export interface StackAcresWorldProps {
    *  objective's whole job. Unlike `onSecretZoneTap` there is nothing to
    *  discover here, only a visit to record. */
   onQuestPlaceTap: (placeId: QuestPlaceId, at: TapPoint) => void;
-  /** Land the player may work (lib/stackacres/sectors.ts). Everything else
-   *  is drawn as wild growth and has no farm on it to tap. */
-  sectors: SectorId[];
-  /** A finger landed anywhere on land that has not been cleared -- the offer
-   *  to buy it, answered by the clearing modal in stackacres-farm.tsx. */
-  onLockedSectorTap: (zone: ZoneId, at: TapPoint) => void;
   /** The camera moved, so anything the shell pinned to a screen position is
    *  now pointing at the wrong part of the world. */
   onViewMoved: () => void;
@@ -446,8 +439,7 @@ export interface StackAcresWorldProps {
   viewExpansion: number;
   /** Placed soil beds, ALREADY merged with the starter pair -- the shell owns
    *  that merge (see stackacres-farm.tsx's `applyResponse`), this component
-   *  only ever pushes what it is handed straight into the scene, the same
-   *  "push, never rebuild" contract `sectors` above already follows. */
+   *  only ever pushes what it is handed straight into the scene. */
   soilTiles: readonly SoilTile[];
   api: Ref<StackAcresWorldApi | null>;
 }

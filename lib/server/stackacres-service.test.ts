@@ -51,6 +51,7 @@ import {
   giveStackAcresGift,
   greetStackAcresNpc,
   buyStackAcresSeed,
+  claimStackAcresStarterSeeds,
   gatherStackAcresForage,
   bagStackAcresQuarry,
   catchStackAcresFish,
@@ -161,6 +162,7 @@ import {
   type StackAcresCrop,
   type StackAcresStock,
 } from "@/lib/stackacres/catalogue";
+import { STARTER_SEED_COUNT } from "@/lib/stackacres/starter-seeds";
 import { hungryAtFor } from "@/lib/stackacres/units";
 import {
   __resetStackAcresSeedStockForTest,
@@ -200,7 +202,7 @@ import {
   WHEAT_YIELD_QUANTITY,
 } from "@/lib/stackacres/wheat-plot";
 import { MACHINE_CAP, MACHINE_CATALOGUE, MACHINE_KINDS } from "@/lib/stackacres/machines";
-import { RECIPE_CATALOGUE } from "@/lib/stackacres/recipes";
+import { MAX_RUN_BATCHES, RECIPE_CATALOGUE } from "@/lib/stackacres/recipes";
 import { SYNERGY_PERKS } from "@/lib/stackacres/synergy-perks";
 import {
   HIDDEN_ZONES,
@@ -694,6 +696,29 @@ describe("buyStackAcresSeed — Ray's shelf", () => {
     await expect(
       buyStackAcresSeed(token, { crop: "not-a-real-crop", quantity: 1 }, T0),
     ).rejects.toBeInstanceOf(StackAcresRequestError);
+  });
+});
+
+describe("claimStackAcresStarterSeeds, Ray's first pouch", () => {
+  it("shelves the starter wheat seed and takes no Gold", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresSeedStock(id, "wheat", -1000);
+    const start = await balance(token);
+
+    const view = await claimStackAcresStarterSeeds(token, T0);
+
+    expect(view.seedStock.wheat).toBe(STARTER_SEED_COUNT);
+    expect(await balance(token)).toBe(start);
+  });
+
+  it("gives one pouch for the life of the farm, even from two taps at once", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresSeedStock(id, "wheat", -1000);
+
+    await Promise.all([claimStackAcresStarterSeeds(token, T0), claimStackAcresStarterSeeds(token, T0)]);
+    await claimStackAcresStarterSeeds(token, T0);
+
+    expect((await readStackAcres(token, T0)).seedStock.wheat).toBe(STARTER_SEED_COUNT);
   });
 });
 
@@ -2300,6 +2325,8 @@ describe("the currency wall", () => {
       // rather than an auto-credit precisely so that no OTHER action in
       // this list has to move Gold -- see lib/stackacres/farm-board.ts.
       "claim-farm-board",
+      // Moves no Gold: Ray's one pouch of wheat seed, claimed once per farm through the secret ledger.
+      "claim-starter-seeds",
       "clear",
       "collect",
       "collect-cellar",
@@ -3541,6 +3568,48 @@ describe("recipes", () => {
       expect(done.inventory.flour).toBe(RECIPE_CATALOGUE.flour.output.quantity);
       expect(done.machines[0].status).toBe("idle");
       expect(done.machines[0].recipeId).toBeNull();
+    });
+
+    it("runs a stack of batches from one tap: the whole input leaves once, the wait is N batches, and it pays N batches", async () => {
+      const { token, id } = await funded();
+      await placeStackAcresMachine(token, "mill", T0);
+      const perBatch = RECIPE_CATALOGUE.flour.inputs[0].quantity;
+      await adjustStackAcresInventory(id, "wheat", perBatch * 4 + 1);
+      const gold = await balance(token);
+
+      const result = await processRecipe(id, "flour", T0, 4);
+      expect(result.readyAt).toBe(new Date(T0.getTime() + RECIPE_CATALOGUE.flour.processingMs * 4).toISOString());
+
+      const running = await readStackAcres(token, T0);
+      expect(running.machines[0].unitsProcessing).toBe(RECIPE_CATALOGUE.flour.output.quantity * 4);
+      expect(running.inventory.wheat).toBe(1);
+      expect(await balance(token)).toBe(gold);
+
+      // Not done a moment early, done on the dot, and then it pays the whole stack.
+      const early = await workStackAcres(token, new Date(T0.getTime() + RECIPE_CATALOGUE.flour.processingMs * 4 - 1));
+      expect(early.inventory.flour ?? 0).toBe(0);
+      const done = await workStackAcres(token, new Date(T0.getTime() + RECIPE_CATALOGUE.flour.processingMs * 4));
+      expect(done.inventory.flour).toBe(RECIPE_CATALOGUE.flour.output.quantity * 4);
+    });
+
+    it("refuses a stack the pantry cannot feed and keeps every input", async () => {
+      const { token, id } = await funded();
+      await placeStackAcresMachine(token, "mill", T0);
+      const perBatch = RECIPE_CATALOGUE.flour.inputs[0].quantity;
+      await adjustStackAcresInventory(id, "wheat", perBatch * 3);
+
+      await expect(processRecipe(id, "flour", T0, 4)).rejects.toBeInstanceOf(StackAcresRequestError);
+
+      const view = await readStackAcres(token, T0);
+      expect(view.inventory.wheat).toBe(perBatch * 3);
+      expect(view.machines[0].status).toBe("idle");
+    });
+
+    it("bounds a run and keeps an instant recipe to one batch", async () => {
+      const { id } = await funded();
+      await expect(processRecipe(id, "flour", T0, 0)).rejects.toBeInstanceOf(StackAcresRequestError);
+      await expect(processRecipe(id, "flour", T0, MAX_RUN_BATCHES + 1)).rejects.toBeInstanceOf(StackAcresRequestError);
+      await expect(processRecipe(id, "cheese", T0, 2)).rejects.toBeInstanceOf(StackAcresRequestError);
     });
 
     it("refuses a second batch while the machine is still running the first", async () => {

@@ -29,6 +29,8 @@ const CUE_PORTRAIT: Record<JournalCue["kind"], string> = {
   contract: "ray-happy",
   harvest: "ray-happy",
   water: "ray-thinking",
+  sow: "ray-happy",
+  seeds: "ray-thinking",
   caller: "ray-surprised",
   build: "ray-happy",
   gather: "ray-thinking",

@@ -865,18 +865,19 @@ export function predictStackAcresAction(
       // collects it. The row itself becomes the queue entry, snapshotting
       // the recipe and yield exactly as `startStackAcresMachine` does. Every
       // queued recipe today (only the Mill's Flour) has exactly one input.
+      const batches = body.batches ?? 1;
       let inventory: StackAcresInventory | null = ctx.inventory;
       for (const input of def.inputs) {
-        inventory = removeFromInventory(inventory, input.item, input.quantity);
+        inventory = removeFromInventory(inventory, input.item, input.quantity * batches);
         if (!inventory) return null;
       }
       const working: MachineView = {
         ...machine,
         status: "working",
         startedAt: new Date(ctx.nowMs).toISOString(),
-        readyAt: new Date(ctx.nowMs + def.processingMs).toISOString(),
+        readyAt: new Date(ctx.nowMs + def.processingMs * batches).toISOString(),
         recipeId: body.recipe,
-        unitsProcessing: def.output.quantity,
+        unitsProcessing: def.output.quantity * batches,
         done: false,
         progress: 0,
       };

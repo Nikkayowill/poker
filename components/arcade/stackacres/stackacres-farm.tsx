@@ -72,6 +72,7 @@ import {
   STACKACRES_FEED_SHIPMENTS_PER_PURCHASE,
   STACKACRES_LIVESTOCK,
   STACKACRES_SEED_BAGS_PER_PURCHASE,
+  isLivestock,
   type SeedStock,
   type StackAcresCrop,
   type StackAcresStock,
@@ -204,6 +205,7 @@ import { StackAcresSleepDialogue } from "./stackacres-sleep-dialogue";
 import { StackAcresFriendshipDialogue } from "./stackacres-friendship-dialogue";
 import { StackAcresSectorModal } from "./stackacres-sector-modal";
 import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
+import { StackAcresMillCard } from "./stackacres-mill-card";
 import { StackAcresAwayReport } from "./stackacres-away-report";
 import { buildAwayReport, type AwayReport } from "@/lib/stackacres/away-report";
 import { StackAcresStoryDialogue } from "./stackacres-story-dialogue";
@@ -246,6 +248,7 @@ import { shelfFeedFor } from "@/lib/stackacres/feeding";
 import { StackAcresHouse } from "./stackacres-house";
 import { isActiveStock } from "@/lib/stackacres/scope";
 import { isSeedUnlocked, seedLockLine } from "@/lib/stackacres/seed-unlocks";
+import { SEED_SELLER_NAME } from "@/lib/stackacres/seed-seller";
 import { chapterFinishedBy, chapterViews, currentChapter, type Chapter } from "@/lib/stackacres/chapters";
 import { StackAcresChapterCard } from "./stackacres-chapters";
 import { StackAcresJournalChip, StackAcresJournalSheet } from "./stackacres-journal";
@@ -795,10 +798,9 @@ function StoreShelf({ icon, children }: { icon: PainterName; children: ReactNode
  * Workshop shelf just never listed the sixteen crops or the three raw
  * animal goods. This tab is that missing listing, not a new mechanic.
  */
-type StoreTab = "seeds" | "livestock" | "feed" | "equipment" | "sell";
+type StoreTab = "livestock" | "feed" | "equipment" | "sell";
 
 const STORE_TABS: { id: StoreTab; label: string; icon: PainterName }[] = [
-  { id: "seeds", label: "Seeds", icon: "ico-carrot" },
   { id: "livestock", label: "Livestock", icon: "ico-egg" },
   { id: "feed", label: "Feed", icon: "ico-feed" },
   { id: "equipment", label: "Tools", icon: "ico-scythe" },
@@ -1207,6 +1209,16 @@ export function StackAcresFarm() {
   /** Where the farmer stood when the map was opened, for its "you are here". */
   const [mapHere, setMapHere] = useState<MapPlaceId>("farmstead");
   const [showStore, setShowStore] = useState(false);
+  const [showSeedSeller, setShowSeedSeller] = useState(false);
+  const [showMill, setShowMill] = useState(false);
+  useEffect(() => {
+    if (!showSeedSeller) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowSeedSeller(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [showSeedSeller]);
   // Escape closes the store, same as every sheet that uses useModalDismiss.
   // The store lives inline in this component rather than in its own file, so
   // it carries its own listener instead of that hook.
@@ -1221,7 +1233,7 @@ export function StackAcresFarm() {
   /** Which shelf of the Supply Store is showing. One category on screen at
    *  a time instead of every shelf stacked in one long scroll -- see the
    *  store's own render block below for why. */
-  const [storeTab, setStoreTab] = useState<StoreTab>("seeds");
+  const [storeTab, setStoreTab] = useState<StoreTab>("sell");
   /**
    * The store's own splash-ring taps (the close key, each shelf tab) -- see
    * `.sa-store-card`'s own CSS comment for why this is a real, if brief,
@@ -2807,14 +2819,20 @@ export function StackAcresFarm() {
     [builtKinds, gold, processing.inventory],
   );
   const chapterNow = currentChapter(chapters);
-  /** Ray's seed shelf: open seeds first, then locked ones, each in catalogue order. */
-  const shopSeeds = useMemo(() => {
+  /** Cora's stall: the seeds this farm can buy now, and the rest grouped by what unlocks them. */
+  const { openSeeds, lockedSeedGroups } = useMemo(() => {
     const active = STACKACRES_CROPS.filter(isActiveStock);
-    return [
-      ...active.filter((crop) => isSeedUnlocked(crop, builtKinds)),
-      ...active.filter((crop) => !isSeedUnlocked(crop, builtKinds)),
-    ];
+    const groups = new Map<string, string[]>();
+    for (const crop of active) {
+      const line = seedLockLine(crop, builtKinds);
+      if (line) groups.set(line, [...(groups.get(line) ?? []), STACKACRES_CATALOGUE[crop].label]);
+    }
+    return {
+      openSeeds: active.filter((crop) => isSeedUnlocked(crop, builtKinds)),
+      lockedSeedGroups: [...groups].map(([line, labels]) => ({ line, labels: labels.join(", ") })),
+    };
   }, [builtKinds]);
+  const millMachine = processing.machines.find((machine) => machine.kind === "mill") ?? null;
   const kitchenBuilt = useCallback(
     (kind: MachineKind) => processing.machines.some((machine) => machine.kind === kind),
     [processing.machines],
@@ -3240,6 +3258,12 @@ export function StackAcresFarm() {
     setShowStore(true);
   }, []);
 
+  /** A finger landed on Cora at the city market. Nothing goes to the server. */
+  const onWorldSeedSellerTap = useCallback(() => {
+    panelSound();
+    setShowSeedSeller(true);
+  }, []);
+
   /** A finger landed on the signpost, the Town Board's entryway now that
    *  the places list is gone. Same shape as `onWorldBarnTap`. */
   const onWorldSignpostTap = useCallback(() => {
@@ -3275,8 +3299,11 @@ export function StackAcresFarm() {
    *  as `onWorldBarnTap`. */
   const onWorldWorkshopTap = useCallback(() => {
     panelSound();
-    setShowWorkshop(true);
-  }, []);
+    // Once there is a Mill, the windmill opens the Mill on its own: the everyday wheat-to-flour job without
+    // the whole Workshop sheet. The Workshop is a button away on that card.
+    if (millMachine) setShowMill(true);
+    else setShowWorkshop(true);
+  }, [millMachine]);
 
   /** Fills the watering can. Tapping the yard's well does this, and so does
    *  the ring on a well the player dug. */
@@ -3509,7 +3536,8 @@ export function StackAcresFarm() {
     [workshopAct],
   );
   const onProcessRecipe = useCallback(
-    (recipe: RecipeId) => workshopAct({ action: "process", recipe }),
+    (recipe: RecipeId, batches = 1) =>
+      workshopAct(batches > 1 ? { action: "process", recipe, batches } : { action: "process", recipe }),
     [workshopAct],
   );
   const onWork = useCallback(() => workshopAct({ action: "work" }), [workshopAct]);
@@ -3972,6 +4000,8 @@ export function StackAcresFarm() {
       woodNodes,
       stoneNodes,
       forageNodes,
+      seedStock,
+      water,
       nowMs,
     }),
     [
@@ -3989,6 +4019,8 @@ export function StackAcresFarm() {
       woodNodes,
       stoneNodes,
       forageNodes,
+      seedStock,
+      water,
       nowMs,
     ],
   );
@@ -4243,6 +4275,12 @@ export function StackAcresFarm() {
   // header's own comment for why this is one fragment referenced from either
   // the inline row (desktop/tablet landscape) or StackAcresHudOverflow's
   // drawer (compactNav), never both.
+  // A new farm shows the few pills it can use: the Journal, water, visitors and the guide. Feed waits for
+  // an animal, and the perk, Forge and hybrid badges wait for a first building, so the first hour is a
+  // screen of one job rather than a dashboard.
+  const hasAnimals = liveUnits.some((unit) => isLivestock(unit.stock));
+  const showFeedPill = feed > 0 || hasAnimals;
+  const showLaterPills = builtKinds.size > 0 || hasAnimals;
   const secondaryHud = (
     <>
       {/* The Journal's own entry point -- moved off the persistent left-hand
@@ -4250,11 +4288,13 @@ export function StackAcresFarm() {
           progress bar, always on screen) and folded into this same
           standing-badge row as the Forge and Crossbreeding Bed below it. */}
       <StackAcresJournalChip view={journal} onOpen={() => { journalSound(); setShowGoals(true); }} />
-      <span className="sa-feed" title="Feed servings" data-label="Feed">
-        <StackAcresPixelIcon name="sack" />
-        <strong>{feed}</strong>
-        <span className="sa-sr">feed servings</span>
-      </span>
+      {showFeedPill && (
+        <span className="sa-feed" title="Feed servings" data-label="Feed">
+          <StackAcresPixelIcon name="sack" />
+          <strong>{feed}</strong>
+          <span className="sa-sr">feed servings</span>
+        </span>
+      )}
       <span
         className={clsx("sa-feed sa-water", { "is-empty": water < 1 })}
         title="Water in your can. Fill it at the well."
@@ -4264,11 +4304,13 @@ export function StackAcresFarm() {
         <strong>{water}</strong>
         <span className="sa-sr">of {WATER_CAPACITY} water in your can</span>
       </span>
-      <SynergyBadge
-        unlocked={synergyUnlocked}
-        active={synergyActive}
-        onOpen={() => { panelSound(); setShowSynergy(true); }}
-      />
+      {showLaterPills && (
+        <SynergyBadge
+          unlocked={synergyUnlocked}
+          active={synergyActive}
+          onOpen={() => { panelSound(); setShowSynergy(true); }}
+        />
+      )}
       {/* The Prestige Reset Valve's entry point is off the HUD until the
           valve is redesigned: as it stands it multiplies manual sales only,
           so it pays a player to stop using contracts, the Vat and the Farm
@@ -4278,31 +4320,35 @@ export function StackAcresFarm() {
           as the Prestige valve above it, since a forged enchantment is also
           a permanent, session-spanning upgrade worth a glance rather than a
           buried menu item. */}
-      <button
-        type="button"
-        className="sa-prestige-badge"
-        onClick={() => { panelSound(); setShowForge(true); }}
-        title="The Sunlight Forge"
-        data-label="Forge"
-      >
-        <Wand2 size={13} aria-hidden="true" />
-        <strong>{forge.length}/{Object.keys(FORGE_ENCHANTMENTS).length}</strong>
-      </button>
+      {showLaterPills && (
+        <button
+          type="button"
+          className="sa-prestige-badge"
+          onClick={() => { panelSound(); setShowForge(true); }}
+          title="The Sunlight Forge"
+          data-label="Forge"
+        >
+          <Wand2 size={13} aria-hidden="true" />
+          <strong>{forge.length}/{Object.keys(FORGE_ENCHANTMENTS).length}</strong>
+        </button>
+      )}
       {/* The Crossbreeding Bed's own entry point -- same standing-badge
           posture as the two above it. The count is hybrids bred to date,
           the one number about the bed worth a glance every session. */}
-      <button
-        type="button"
-        className="sa-prestige-badge"
-        onClick={() => { panelSound(); setShowCrossbreed(true); }}
-        title="The Crossbreeding Bed"
-        data-label="Crossbreeding"
-      >
-        <Dna size={13} aria-hidden="true" />
-        <strong>
-          {Object.values(crossbreed.inventory).reduce((sum, qty) => sum + (qty ?? 0), 0)}
-        </strong>
-      </button>
+      {showLaterPills && (
+        <button
+          type="button"
+          className="sa-prestige-badge"
+          onClick={() => { panelSound(); setShowCrossbreed(true); }}
+          title="The Crossbreeding Bed"
+          data-label="Crossbreeding"
+        >
+          <Dna size={13} aria-hidden="true" />
+          <strong>
+            {Object.values(crossbreed.inventory).reduce((sum, qty) => sum + (qty ?? 0), 0)}
+          </strong>
+        </button>
+      )}
       {/* "Who can visit my farm", and what the visitors thought. Same
           standing-badge posture as the three above it: a setting worth a
           glance, not a permanent line of text over the map. */}
@@ -4514,6 +4560,7 @@ export function StackAcresFarm() {
               onGroundTap={onWorldGroundTap}
               onSoilMoveCommitted={onMoveSoilTileGroup}
               onBarnTap={onWorldBarnTap}
+              onSeedSellerTap={onWorldSeedSellerTap}
               onSignpostTap={onWorldSignpostTap}
               onWorkshopTap={onWorldWorkshopTap}
               onWellTap={onWorldWellTap}
@@ -4706,6 +4753,73 @@ export function StackAcresFarm() {
         </div>
       </div>
 
+      {showSeedSeller && (
+        <div
+          className="sa-store-scrim"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Seed seller"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) { panelSound(); setShowSeedSeller(false); }
+          }}
+        >
+          <div className="sa-store-card">
+            <header className="sa-store-head">
+              <h2>{SEED_SELLER_NAME}&rsquo;s Seeds</h2>
+              <button
+                type="button"
+                className="sa-store-close"
+                aria-label="Close"
+                onClick={() => { panelSound(); setShowSeedSeller(false); }}
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </header>
+            <div className="sa-store-panel">
+          <p className="sa-sheet-note">
+            &ldquo;Seed for every bed you can build. Take it back over the bridge, hoe a bed by the house and sow it.&rdquo;
+          </p>
+          <div className="sa-stock-cards">
+            {openSeeds.map((crop) => {
+              const def = STACKACRES_CATALOGUE[crop];
+              const held = seedStock[crop] ?? 0;
+              const pending = isPending(`buy-seed:${crop}`);
+              const wantedFor = wantedForLine(STACKACRES_YIELDS[crop].item);
+              return (
+                <div key={crop} className="sa-stock-card">
+                  <h3>{def.label}</h3>
+                  <p className="sa-stock-yield">
+                    <StoreCost amount={def.seedCost} /> / seed
+                  </p>
+                  {wantedFor && <p className="sa-stock-wanted">{wantedFor}</p>}
+                  <BuyQuantityControls
+                    unitPrice={def.seedCost}
+                    maxQuantity={STACKACRES_SEED_BAGS_PER_PURCHASE}
+                    gold={gold}
+                    pending={pending}
+                    onBuy={(quantity) => {
+                      buySound();
+                      void act({ action: "buy-seed", crop, quantity });
+                    }}
+                  />
+                  <p className="sa-sheet-note">{held} in the barn</p>
+                </div>
+              );
+            })}
+          </div>
+          {lockedSeedGroups.map((group) => (
+            <p key={group.line} className="sa-lock-hint">
+              <Lock size={13} aria-hidden="true" />
+              <span>
+                {group.line}: {group.labels}
+              </span>
+            </p>
+          ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showStore && (
         <div
           className="sa-store-scrim"
@@ -4806,50 +4920,6 @@ export function StackAcresFarm() {
             </div>
 
             <div className="sa-store-panel" role="tabpanel">
-              {storeTab === "seeds" && (
-                <>
-                  <p className="sa-sheet-note">
-                    Buy seeds here, then hoe a bed on the grass by the house and plant them.
-                  </p>
-                  <div className="sa-stock-cards">
-                    {shopSeeds.map((crop) => {
-                      const def = STACKACRES_CATALOGUE[crop];
-                      const held = seedStock[crop] ?? 0;
-                      const pending = isPending(`buy-seed:${crop}`);
-                      const wantedFor = wantedForLine(STACKACRES_YIELDS[crop].item);
-                      const lockLine = seedLockLine(crop, builtKinds);
-                      return (
-                        <div key={crop} className={lockLine ? "sa-stock-card is-locked" : "sa-stock-card"}>
-                          <h3>{def.label}</h3>
-                          <p className="sa-stock-yield">
-                            <StoreCost amount={def.seedCost} /> / seed
-                          </p>
-                          {wantedFor && <p className="sa-stock-wanted">{wantedFor}</p>}
-                          {lockLine ? (
-                            <p className="sa-lock-hint">
-                              <Lock size={13} aria-hidden="true" />
-                              <span>{lockLine}</span>
-                            </p>
-                          ) : (
-                            <BuyQuantityControls
-                              unitPrice={def.seedCost}
-                              maxQuantity={STACKACRES_SEED_BAGS_PER_PURCHASE}
-                              gold={gold}
-                              pending={pending}
-                              onBuy={(quantity) => {
-                                buySound();
-                                void act({ action: "buy-seed", crop, quantity });
-                              }}
-                            />
-                          )}
-                          {held > 0 || !lockLine ? <p className="sa-sheet-note">{held} in the barn</p> : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-
               {storeTab === "livestock" && (
                 <>
                   <p className="sa-sheet-note">
@@ -5231,7 +5301,14 @@ export function StackAcresFarm() {
         />
       )}
 
-      {showWelcome && <StackAcresRayWelcome onClose={dismissWelcome} />}
+      {showWelcome && (
+        <StackAcresRayWelcome
+          onClose={() => {
+            dismissWelcome();
+            void act({ action: "claim-starter-seeds" });
+          }}
+        />
+      )}
       {awayReport && !showWelcome && <StackAcresAwayReport report={awayReport} onClose={() => setAwayReport(null)} />}
       {showGreenhouse && (
         <StackAcresGreenhousePanel
@@ -5260,6 +5337,25 @@ export function StackAcresFarm() {
       {/* The vat's sheet replaces the Workshop while it is up rather than
           stacking a second scrim over it, so one Escape closes one sheet;
           closing the vat lands back in the Workshop. */}
+      {showMill && millMachine && (
+        <StackAcresMillCard
+          mill={millMachine}
+          inventory={processing.inventory}
+          isPending={isPending}
+          onMill={(batches) => void onProcessRecipe("flour", batches)}
+          onCollect={() => void onWork()}
+          onSell={(quantity) => void onSell("flour", quantity)}
+          onOpenWorkshop={() => {
+            panelSound();
+            setShowMill(false);
+            setShowWorkshop(true);
+          }}
+          onClose={() => {
+            panelSound();
+            setShowMill(false);
+          }}
+        />
+      )}
       {showWorkshop && !showVat && (
         <WorkshopModal
           inventory={processing.inventory}

@@ -149,6 +149,7 @@ import { EMPIRE_BUILDINGS, buildingTiles, doorTile, type PlacedEmpireBuilding, t
 import type { BuildGhost, GroceryGhost, GroceryScene } from "../stackacres/world-contract";
 import { Worksite, marketLayout, type MarketArea } from "@/lib/stackacres-td/worksite";
 import { STAFF_SPRITES, STORE_SHOPPERS, STORE_STAFF, staffAtPosts } from "@/lib/stackacres-td/store-cast";
+import { SEED_SELLER } from "@/lib/stackacres/seed-seller";
 import {
   DEFAULT_GROCERY_LAYOUT,
   GROCERY_ITEMS,
@@ -420,6 +421,7 @@ export interface TopdownCallbacks {
   onUseSquare: (square: UseSquare) => void;
   onGroundTap: (zone: ZoneId, at: TapPoint, world: WorldPoint) => void;
   onBarnTap: () => void;
+  onSeedSellerTap: () => void;
   onSignpostTap: () => void;
   onWorkshopTap: () => void;
   onWellTap: (at: TapPoint) => void;
@@ -2572,7 +2574,8 @@ export class TopdownScene extends Phaser.Scene {
       const at = this.mapToCss(node ? { x: node.sprite.x, y: node.sprite.y - 20 } : target.anchor);
       if (target.name === "ray") cb.onRayTap(at);
       else if (target.name === "pilgrim") cb.onMonkTap(at);
-      // The City's townsfolk turn to look at the farmer (talkTo above) but have no story of their own yet.
+      else if (target.name === SEED_SELLER) cb.onSeedSellerTap();
+      // The rest of the City's townsfolk only turn to look at the farmer (talkTo above).
       else if (isTravelerId(target.name)) cb.onTravelerTap(target.name, at);
       return;
     }

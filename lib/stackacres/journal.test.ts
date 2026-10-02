@@ -33,10 +33,13 @@ const FRESH: JournalInput = {
   woodNodes: [],
   stoneNodes: [],
   forageNodes: [],
+  seedStock: {},
   nowMs: Date.parse("2026-09-21T12:00:00.000Z"),
 };
 
-const farm = (patch: Partial<JournalInput> = {}): JournalInput => ({ ...FRESH, ...patch });
+/** A farm with a crop already in the ground. A truly empty one is `FRESH` itself, which is where the
+ *  seed cues live (Ray's pouch, then Cora). */
+const farm = (patch: Partial<JournalInput> = {}): JournalInput => ({ ...FRESH, units: [unit("working")], ...patch });
 
 const unit = (state: StackAcresUnitState, stock: StackAcresStock = "wheat"): StackAcresUnitSnapshot => ({
   id: `u-${state}-${stock}`,
@@ -83,8 +86,32 @@ const holding = (item: string, quantity: number): StackAcresInventory => ({ [ite
 const cueFor = (patch: Partial<JournalInput>): JournalCueKind => journalView(farm(patch)).now.kind;
 
 describe("the one line", () => {
-  it("points a brand new farm at its first building, and says where the Wood comes from", () => {
-    const cue = journalView(FRESH).now;
+  it("tells a farm with seed and nothing planted to sow first, before any building", () => {
+    const cue = journalView(farm({ units: [], seedStock: { wheat: 12 } })).now;
+    expect(cue.kind).toBe("sow");
+    expect(cue.line).toContain("sow");
+  });
+
+  it("sends a farm with nothing planted and no seed to Cora in the city", () => {
+    const cue = journalView(farm({ units: [], seedStock: {} })).now;
+    expect(cue.kind).toBe("seeds");
+    expect(cue.line).toContain("Cora");
+    expect(cue.where).toBe("The City");
+  });
+
+  it("points at the next building rather than at Cora while there is wheat to mill", () => {
+    const cue = journalView(farm({ units: [], seedStock: {}, inventory: holding("wheat", 20) })).now;
+    expect(cue.kind).not.toBe("seeds");
+  });
+
+  it("stops asking for seed once a crop is in the ground", () => {
+    const cue = journalView(farm({ seedStock: { wheat: 12 } })).now;
+    expect(cue.kind).not.toBe("sow");
+    expect(cue.kind).not.toBe("seeds");
+  });
+
+  it("points a farm with a crop planted at its first building, and says where the Wood comes from", () => {
+    const cue = journalView(farm()).now;
     expect(cue.kind).toBe("gather");
     expect(cue.line).toContain("Mill");
     expect(cue.line).toContain("Wood");
@@ -153,14 +180,20 @@ describe("the one line", () => {
     expect(cueFor({ contract: order("flour", 4), inventory: holding("flour", 3) })).not.toBe("contract");
   });
 
+  it("says to fill the can when a bed is dry and the can is empty", () => {
+    const cue = journalView(farm({ units: [unit("dry")], water: 0 })).now;
+    expect(cue.kind).toBe("water");
+    expect(cue.line).toContain("well");
+  });
+
   it("counts the beds that have gone dry", () => {
     const cue = journalView(farm({ units: [unit("dry"), unit("dry", "carrot")], gold: 200, inventory: holding("wood", 15) })).now;
     expect(cue.kind).toBe("water");
     expect(cue.line).toContain("2 beds");
   });
 
-  // A traveler's line is optional; the farm is not.
-  it("keeps a waiting traveler below the player's own next building", () => {
+  // The people are how the game teaches itself, so one waiting to be met comes before the next building.
+  it("puts a waiting traveler ahead of the player's own next building", () => {
     const story = {
       level: 1,
       items: [],
@@ -172,9 +205,15 @@ describe("the one line", () => {
         ]),
       ),
     } as unknown as StackAcresStoryView;
-    expect(cueFor({ story })).toBe("gather");
-    expect(cueFor({ story, gold: 200, inventory: holding("wood", 15) })).toBe("build");
+    expect(cueFor({ story })).toBe("caller");
+    expect(cueFor({ story, gold: 200, inventory: holding("wood", 15) })).toBe("caller");
     expect(cueFor({ story, built: new Set(CHAPTERS.flatMap((chapter) => chapter.steps)) })).toBe("caller");
+    // Once Ray has been met and has a quest still running, the building leads again.
+    const met = {
+      ...story,
+      travelers: { ...story.travelers, ray: { ...story.travelers.ray, met: true, quest: { index: 0, total: 3, title: "First Furrows", objectives: [] } } },
+    } as unknown as StackAcresStoryView;
+    expect(cueFor({ story: met })).toBe("gather");
     expect(journalView(farm({ story })).callers).toEqual([
       { traveler: "ray", name: "Ray", state: "waiting", detail: null },
     ]);
@@ -222,7 +261,7 @@ describe("the one line", () => {
   // The chip is one nowrap line, so it takes the first sentence and the sheet
   // keeps the rest. A one-sentence cue is its own short form.
   it("gives the chip the first sentence and the sheet the whole line", () => {
-    const gather = journalView(FRESH).now;
+    const gather = journalView(farm()).now;
     expect(gather.line).toBe("The Mill still wants 15 more Wood. Chop the trees around the farm.");
     expect(gather.short).toBe("The Mill still wants 15 more Wood.");
     const build = journalView(farm({ gold: 200, inventory: holding("wood", 15) })).now;

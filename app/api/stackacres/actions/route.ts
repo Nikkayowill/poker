@@ -9,7 +9,7 @@ import {
 } from "@/lib/stackacres/catalogue";
 import { PEN_ZONE_IDS, ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import { MACHINE_KINDS } from "@/lib/stackacres/machines";
-import { RECIPE_IDS } from "@/lib/stackacres/recipes";
+import { MAX_RUN_BATCHES, RECIPE_IDS } from "@/lib/stackacres/recipes";
 import { FOOD_ITEMS } from "@/lib/stackacres/energy";
 import { CELLAR_ITEMS } from "@/lib/stackacres/aging";
 import { FARM_KITCHEN_RECIPES } from "@/lib/stackacres/farm-kitchen";
@@ -56,6 +56,7 @@ import {
   buyStackAcresCutter,
   waterStackAcres,
   waterStackAcresGroup,
+  claimStackAcresStarterSeeds,
   drawStackAcresWater,
   bagStackAcresQuarry,
   chopStackAcresWoodTree,
@@ -275,6 +276,8 @@ const bodySchema = z.discriminatedUnion("action", [
   }),
   // Fills the watering can. Moves no Gold.
   z.object({ action: z.literal("draw-water") }),
+  // Ray's starter pouch of wheat seed. Once per farm, moves no Gold.
+  z.object({ action: z.literal("claim-starter-seeds") }),
   // The dock's cast, completed. Fills the shelf, same as a harvest -- moves
   // no Gold. Which fish is the server's own dice roll.
   // `bait` spends one Radish for better odds.
@@ -348,6 +351,8 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("process"),
     recipe: z.enum(RECIPE_IDS as unknown as [string, ...string[]]),
+    // A run of this many batches in one tap, for a machine that runs on a clock. Absent means one.
+    batches: z.number().int().min(1).max(MAX_RUN_BATCHES).optional(),
   }),
   z.object({ action: z.literal("request-contract") }),
   z.object({ action: z.literal("fulfill-contract") }),
@@ -660,6 +665,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
         : waterStackAcres(token, action.unitId, now);
     case "draw-water":
       return drawStackAcresWater(token, now);
+    case "claim-starter-seeds":
+      return claimStackAcresStarterSeeds(token, now);
     case "catch-fish":
       return catchStackAcresFish(token, action.bait, action.cast, now);
     case "eat":
@@ -685,7 +692,7 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "sell":
       return sellStackAcresItem(token, { item: action.item, quantity: action.quantity }, now);
     case "process":
-      return processStackAcresRecipeAction(token, action.recipe, now);
+      return processStackAcresRecipeAction(token, action.recipe, now, action.batches ?? 1);
     case "request-contract":
       return requestStackAcresContract(token, now);
     case "fulfill-contract":

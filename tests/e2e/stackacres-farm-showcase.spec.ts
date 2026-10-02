@@ -50,6 +50,7 @@ const FRIEND_FARM = {
     units: [],
     soilTiles: [],
     fences: [],
+    guardDogs: [],
     empireBuildings: [],
     woodNodes: [],
     stoneNodes: [],

@@ -153,14 +153,14 @@ const SCRIPTS: Readonly<Record<TravelerId, TravelerScript>> = {
   ivy: {
     locked: "Not yet! My nursery grid's not initialised and neither is your farm.",
     hello:
-      "Ivy. I programmed a nursery where every seed was a tidy square and every cross was a lookup table. Ray's crops don't follow ANY table. I need to see what they do when you cross them.",
+      "Ivy. I programmed a nursery where every seed was a tidy square and every plant was a lookup table. Ray's crops don't follow ANY table. I need to see how they really grow.",
     quests: [
       {
-        progress: "One harvest from the Crossbreeding Bed. Anything. I just want to see an outcome I didn't write.",
+        progress: "Bring in twelve crops. Any kind. I just want to see an outcome I didn't write.",
         done: "That's not in my table. That's not in ANY table. This is the best day of my career.",
       },
       {
-        progress: "Three more crosses. I'm building a new table from scratch and I need the data.",
+        progress: "Now water twenty of them. I'm building a new table from scratch and I need the data.",
         done: "Table's done and it's beautiful and it's wrong in six places. Take these seeds. Perfect squares. Don't ask me how.",
       },
     ],

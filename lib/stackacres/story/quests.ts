@@ -42,8 +42,6 @@ export type StoryObjective =
   | { readonly kind: "clear-sector"; readonly target: number }
   | { readonly kind: "soil"; readonly target: number }
   | { readonly kind: "contracts"; readonly target: number }
-  | { readonly kind: "forge"; readonly target: number }
-  | { readonly kind: "crossbreed"; readonly target: number }
   | { readonly kind: "deliver"; readonly item: MachineItemId; readonly target: number }
   | { readonly kind: "hold-tool"; readonly tool: StackAcresToolTier; readonly target: 1 }
   | { readonly kind: "reach-place"; readonly place: QuestPlaceId; readonly target: 1 }
@@ -62,9 +60,8 @@ export type StoryObjectiveKind = StoryObjective["kind"];
 /**
  * Objectives read off the farm rather than counted from the event stream.
  *
- * `deliver` and `hold-tool` always were. The other four are work a player can
- * only finish ONCE: clear a district, lay the beds, forge an enchantment,
- * breed a hybrid. Counting those strands the quest for anyone who did them
+ * `deliver` and `hold-tool` always were. The other two are work a player can
+ * only finish ONCE: clear a district, lay the beds. Counting those strands the quest for anyone who did them
  * before the quest was offered, because there is then nothing left to do.
  * See `StoryFacts` in ./state.ts.
  */
@@ -73,8 +70,6 @@ export const LIVE_OBJECTIVE_KINDS: readonly StoryObjectiveKind[] = [
   "hold-tool",
   "clear-sector",
   "soil",
-  "forge",
-  "crossbreed",
 ];
 
 /** Objectives the event stream advances. The rest are read at turn-in. */
@@ -111,10 +106,6 @@ export function objectiveAdvance(objective: StoryObjective, event: StoryEvent): 
       return event.kind === "soil-placed" ? event.count : 0;
     case "contracts":
       return event.kind === "contract-fulfilled" ? 1 : 0;
-    case "forge":
-      return event.kind === "enchantment-forged" ? 1 : 0;
-    case "crossbreed":
-      return event.kind === "crossbreed-harvested" ? 1 : 0;
     case "reach-place":
       return event.kind === "place-reached" && event.placeId === objective.place ? 1 : 0;
     case "chop":
@@ -171,10 +162,6 @@ export function objectiveLabel(objective: StoryObjective): string {
       return `Lay ${objective.target} soil beds`;
     case "contracts":
       return objective.target === 1 ? "Fill an order for the town" : `Fill ${objective.target} orders for the town`;
-    case "forge":
-      return objective.target === 1 ? "Forge an enchantment" : `Forge ${objective.target} enchantments`;
-    case "crossbreed":
-      return `Harvest ${objective.target} from the Crossbreeding Bed`;
     case "deliver":
       return `Bring ${machineItemLabel(objective.item, objective.target)}`;
     case "hold-tool":
@@ -339,15 +326,15 @@ export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>
   ivy: [
     {
       id: "ivy.q1",
-      title: "First Cross",
-      objectives: [{ kind: "crossbreed", target: 1 }],
-      turnInLabel: "Show her the hybrid",
+      title: "Real Roots",
+      objectives: [{ kind: "harvest-any-crop", target: 12 }],
+      turnInLabel: "Show her the harvest",
     },
     {
       id: "ivy.q2",
-      title: "Maritime Strains",
-      objectives: [{ kind: "crossbreed", target: 3 }],
-      turnInLabel: "Show her the results",
+      title: "Field Data",
+      objectives: [{ kind: "water", target: 20 }],
+      turnInLabel: "Show her the beds",
     },
   ],
 };

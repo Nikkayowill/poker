@@ -19,26 +19,10 @@
  *  starting cutter in the data, which is untouched. */
 export const UNBUILT_CUTTERS: readonly string[] = ["scythe", "mower"];
 
-/** Perks whose effect nothing reads. Automated Logistics speeds a farmhand,
- *  and the live world has no farmhand. */
-export const UNBUILT_PERKS: readonly string[] = ["automated_logistics"];
-
-/** Enchantments whose effect nothing reads. Quickened Haft lengthens a
- *  scythe's reach, and the scythe is not on the belt. */
-export const UNBUILT_ENCHANTMENTS: readonly string[] = ["quickened_haft"];
-
 /** The Forage Drone: buyable at 1.2M, and its hangar and forage hooks are
  *  no-ops, so it can never bring anything back. */
 export const DRONE_IS_UNBUILT = true;
 
 export function isUnbuiltCutter(id: string): boolean {
   return UNBUILT_CUTTERS.includes(id);
-}
-
-export function isUnbuiltPerk(id: string): boolean {
-  return UNBUILT_PERKS.includes(id);
-}
-
-export function isUnbuiltEnchantment(id: string): boolean {
-  return UNBUILT_ENCHANTMENTS.includes(id);
 }

@@ -2,15 +2,12 @@
 
 import { useState, type SyntheticEvent } from "react";
 import clsx from "clsx";
-import { ArrowLeft, Backpack, Dna } from "lucide-react";
+import { ArrowLeft, Backpack } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
-import type { CrossbreedItem } from "@/lib/stackacres/crossbreed-items";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
-import type { MachineItemId } from "@/lib/stackacres/machine-items";
 import {
   GUIDE_DESTINATION_LABELS,
   GUIDE_ITEM_IDS,
-  isCrossbreedGuideItem,
   isObtainable,
   resourceGuideEntry,
   type GuideDestinationId,
@@ -31,7 +28,6 @@ import type { PainterName } from "./stackacres-art";
 
 export interface ResourceGuideSheetProps {
   inventory: StackAcresInventory;
-  crossbreedInventory: Partial<Record<CrossbreedItem, number>>;
   /** Open straight onto one item, e.g. from a row in the Workshop. */
   initialItem?: GuideItemId | null;
   /** The farm closes this sheet and opens the screen. */
@@ -46,19 +42,16 @@ function contain<E extends SyntheticEvent>(handler?: (event: E) => void) {
   };
 }
 
-function heldOf(item: GuideItemId, inventory: StackAcresInventory, crossbreed: Partial<Record<CrossbreedItem, number>>) {
-  return isCrossbreedGuideItem(item) ? (crossbreed[item] ?? 0) : inventoryQuantity(inventory, item as MachineItemId);
+function heldOf(item: GuideItemId, inventory: StackAcresInventory) {
+  return inventoryQuantity(inventory, item);
 }
 
 function ItemIcon({ entry, size }: { entry: ResourceGuideEntry; size: number }) {
-  // The hybrids have no painted icon yet.
-  if (isCrossbreedGuideItem(entry.item)) return <Dna size={size} aria-hidden="true" />;
   return <StackAcresIcon name={entry.icon as PainterName} size={size} />;
 }
 
 export function ResourceGuideSheet({
   inventory,
-  crossbreedInventory,
   initialItem = null,
   onOpenDestination,
   onClose,
@@ -67,10 +60,10 @@ export function ResourceGuideSheet({
   const [showAll, setShowAll] = useState(false);
   const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(onClose);
 
-  const held = GUIDE_ITEM_IDS.filter((item) => heldOf(item, inventory, crossbreedInventory) > 0);
+  const held = GUIDE_ITEM_IDS.filter((item) => heldOf(item, inventory) > 0);
   const listed = showAll ? GUIDE_ITEM_IDS : held;
   const entry = selected ? resourceGuideEntry(selected) : null;
-  const quantity = selected ? heldOf(selected, inventory, crossbreedInventory) : 0;
+  const quantity = selected ? heldOf(selected, inventory) : 0;
 
   return (
     <div
@@ -174,7 +167,7 @@ export function ResourceGuideSheet({
               <ul className="sa-guide-list">
                 {listed.map((item) => {
                   const row = resourceGuideEntry(item);
-                  const count = heldOf(item, inventory, crossbreedInventory);
+                  const count = heldOf(item, inventory);
                   return (
                     <li key={item}>
                       <button

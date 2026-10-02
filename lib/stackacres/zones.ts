@@ -44,7 +44,7 @@
  *
  * THE FARMSTEAD MOVED AS A RIGID BODY, by exactly (-760, +416). Its rect is
  * still 420x470, and every hand-placed literal inside it -- the barn, the
- * windmill, the well, Ray, the monk's shrine, the greenhouse plot, the wheat
+ * windmill, the well, Ray, the greenhouse plot, the wheat
  * field, the three secret zones, the props, the whole pond -- is its old value
  * plus that delta. That is why every relative assertion about the yard still
  * holds: nothing inside it moved with respect to anything else inside it.
@@ -176,7 +176,7 @@ export const ZONE_FEATHER = 88;
  * the road is what carries you across. */
 export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
   // Riverside Village on the proposal. The house, the barn, the pond, Ray,
-  // the monk's shrine, the greenhouse and the windmill -- the densest place
+  // the greenhouse and the windmill -- the densest place
   // on the map, and the one the proposal does not actually draw, since it
   // shows barns inside the pens instead. Sited where the village is so the
   // pond stays on its west verge exactly as it always has.

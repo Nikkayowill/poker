@@ -155,9 +155,8 @@ export function applyStoryEvent(story: StoredStory, event: StoryEvent): StoredSt
  * What a turn-in reads beyond the inventory. Permanent facts only.
  *
  * Counters only tick while a quest is open, so anything a player can finish
- * ONCE is a trap if it is counted: clear both districts before Ray asks, or
- * forge all three enchantments before Brayden does, and there is nothing left
- * to do and no way to finish. Those objectives read the farm itself instead,
+ * ONCE is a trap if it is counted: clear both districts before Ray asks and
+ * there is nothing left to do and no way to finish. Those objectives read the farm itself instead,
  * the same way `deliver` and `hold-tool` always have, so work already done
  * counts and no order of play can strand a quest.
  */
@@ -167,10 +166,6 @@ export interface StoryFacts {
   readonly sectorsCleared: number;
   /** Soil beds bought and laid. */
   readonly soilBeds: number;
-  /** Permanent enchantments forged. */
-  readonly enchantments: number;
-  /** Hybrids brought in off the Crossbreeding Bed. */
-  readonly crossbreeds: number;
 }
 
 /** How much of one objective the player has right now. Counters are the
@@ -192,10 +187,6 @@ export function objectiveHave(
       return facts.sectorsCleared;
     case "soil":
       return facts.soilBeds;
-    case "forge":
-      return facts.enchantments;
-    case "crossbreed":
-      return facts.crossbreeds;
     default:
       return count;
   }

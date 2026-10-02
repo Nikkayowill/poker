@@ -15,10 +15,8 @@ import { describe, expect, it } from "vitest";
  * with a single `"(profile.id"` regex over that array literal. Since
  * `stackacres_read_batch` (migration 20260914011736, widened by
  * 20260928232207), the live-Supabase path collapses nearly all of those into
- * ONE round trip; only three reads stay separate -- two because they are
- * already their own aggregate/idle-sweep RPCs, not a plain per-table select,
- * and Stone's because it's a GLOBAL table, not per-profile (see the
- * migration's own header). Memory mode has
+ * ONE round trip; only Stone's read stays separate, because it's a GLOBAL
+ * table, not per-profile (see the migration's own header). Memory mode has
  * no batch to speak of -- there is no network round trip to save there in
  * the first place -- and still runs every original individual read, so THAT
  * list is what a new farm table's read actually has to be added to; the
@@ -34,7 +32,7 @@ describe("the StackAcres read budget", () => {
   // latest file is the live definition -- point this at the new file
   // whenever one of them redefines it again.
   const MIGRATION = readFileSync(
-    join(process.cwd(), "supabase/migrations/20261001204826_stackacres_acres.sql"),
+    join(process.cwd(), "supabase/migrations/20261002200000_stackacres_cut_fantasy_systems.sql"),
     "utf8",
   );
 
@@ -58,40 +56,37 @@ describe("the StackAcres read budget", () => {
     return body.slice(start, end);
   };
 
-  it("the memory-mode fallback still reads a player's farm in 42 per-profile round trips", () => {
+  it("the memory-mode fallback still reads a player's farm in 35 per-profile round trips", () => {
     // One line per read, so this counts the reads rather than the tables --
     // two of them (the secret ledger, friendship) are nested Promise.all's
     // over a list that is length 1 today and will not stay that way.
     // Meaningless for latency in memory mode (no network round trip exists
     // to save), but this is still the list a new farm table's read has to
     // join, or it silently only reads with a live Supabase configured.
-    expect(fallbackArray().split("(profile.id").length - 1).toBe(42);
+    expect(fallbackArray().split("(profile.id").length - 1).toBe(35);
   });
 
-  it("the live-Supabase branch reads the same farm in one batch call plus exactly three exceptions", () => {
+  it("the live-Supabase branch reads the same farm in one batch call plus Stone's global read", () => {
     const body = fanOut();
     // Exactly one call: the whole point is that this replaces the ~37-way
     // fan-out above with a single round trip when Supabase is configured.
     expect(body.split("readStackAcresBatch(").length - 1).toBe(1);
-    // Exactly three reads stay outside the batch: two are already their own
-    // aggregate/idle-sweep RPCs (not a plain per-table select), and Stone's
-    // is a GLOBAL table with no profile id to key a batch RPC on. Asserting
-    // the count, not just presence, is what catches a new table's read being
-    // added here instead of folded into the batch -- the exact drift that
-    // let this list grow from three exceptions to eleven unnoticed before
-    // the Far Field migration (20260928232207) folded six of them back in.
-    // 3, not 2: this also counts the batch call itself (`readStackAcresBatch(profile.id, ...)`).
+    // Only Stone's read stays outside the batch: it is a GLOBAL table with
+    // no profile id to key a batch RPC on. Asserting the count, not just
+    // presence, is what catches a new table's read being added here instead
+    // of folded into the batch -- the exact drift that let this list grow
+    // from three exceptions to eleven unnoticed before the Far Field
+    // migration (20260928232207) folded six of them back in.
+    // 1: the batch call itself (`readStackAcresBatch(profile.id, ...)`).
     const preFallback = body.slice(0, body.indexOf(": Promise.all([\n"));
-    expect(preFallback.split("(profile.id").length - 1).toBe(3);
-    expect(preFallback).toContain("listActiveSynergyArchetypes(profile.id)");
-    expect(preFallback).toContain("readStackAcresLifetimeGross(profile.id)");
+    expect(preFallback.split("(profile.id").length - 1).toBe(1);
     expect(preFallback).toContain("readAllStoneNodes(now)");
   });
 
   it("still issues every branch's reads in parallel", () => {
     // Round-trip counts above are meaningless if a `for` loop turned any of
-    // them serial. The outer `Promise.all` covers the batch fetch and the
-    // three RPC exceptions together; the inner one covers the memory-mode
+    // them serial. The outer `Promise.all` covers the batch fetch and
+    // Stone's read together; the inner one covers the memory-mode
     // fallback's own per-table reads.
     const body = fanOut();
     expect(body).toContain("await Promise.all([");
@@ -109,16 +104,17 @@ describe("the StackAcres read budget", () => {
     // Far Field migration that redefines it also creates its own tables.
     const batchFn = MIGRATION.slice(MIGRATION.indexOf("create or replace function public.stackacres_read_batch"));
     const keys = batchFn.match(/^\s{4}'[a-z_]+', /gm) ?? [];
-    // 46: the Far Field migration's 42, plus the Daily Farm Board's two
+    // 38: the Far Field migration's 42, plus the Daily Farm Board's two
     // period rows (20261001180411), plus the guard dogs (20261001195736)
-    // carried forward, plus the farm's acres (20261001204826).
+    // carried forward, plus the farm's acres (20261001204826), minus the
+    // eight keys the fantasy systems cut took out (20261002200000).
     // The acres and the dogs ARE in the fallback array above. The board is NOT in the fallback array
     // above, and deliberately: its read is a conditional draw rather than a
     // plain per-table select (it writes a row on the period's first read),
     // so it lives in farmBoardView beside the other exceptions' reasoning.
     // It still belongs in the batch, or a live-Supabase farm would draw a
     // board it then could not see.
-    expect(keys.length).toBe(46);
+    expect(keys.length).toBe(38);
     expect(batchFn).toContain("'guard_dogs'");
     expect(batchFn).toContain("'acres'");
     expect(batchFn).toContain("'farm_board_daily'");

@@ -19,8 +19,7 @@ import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { StackAcresIcon } from "./stackacres-icon";
 
 /** The farm canvas sits under every sheet and listens for pointers of its
- *  own, so a tap that lands on this panel must not also reach it. Same
- *  guard, for the same reason, as CrossbreedBedSheet's. */
+ *  own, so a tap that lands on this panel must not also reach it. */
 function contain<E extends SyntheticEvent>(handler?: (event: E) => void) {
   return (event: E) => {
     event.stopPropagation();

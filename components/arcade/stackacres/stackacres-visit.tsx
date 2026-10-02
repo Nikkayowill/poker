@@ -198,10 +198,6 @@ export function StackAcresVisit({ profileId }: { profileId: string }) {
               </dd>
             </div>
             <div>
-              <dt>Prestige</dt>
-              <dd>{showcase.stats.prestigeCount}</dd>
-            </div>
-            <div>
               <dt>Mostly raising</dt>
               <dd>
                 {showcase.stats.favoriteProduction
@@ -237,7 +233,6 @@ export function StackAcresVisit({ profileId }: { profileId: string }) {
               tool="inspect"
               cutter={STACKACRES_STARTING_CUTTER}
               useKeyLabel=""
-              farmhandSpeedMultiplier={1}
               viewExpansion={1}
               celebrate={null}
               buildMode={false}
@@ -263,7 +258,6 @@ export function StackAcresVisit({ profileId }: { profileId: string }) {
               onForageTap={noop}
               onLandTap={noop}
               onGreenhouseTap={noop}
-              onMonkTap={noop}
               onRayTap={noop}
               onHouseTap={noop}
               onBedTap={noop}

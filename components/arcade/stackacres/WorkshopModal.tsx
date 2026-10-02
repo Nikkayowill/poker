@@ -68,9 +68,8 @@ import type { PainterName } from "./stackacres-art";
  * Optimistic: `place-machine`, `process` and `sell`'s inventory
  * half are all predicted in lib/stackacres/optimistic-actions.ts and rolled
  * back by the farm on a refusal, so a press answers before the round trip.
- * `sell`'s Gold and `work` both wait for the real answer -- a Mill's double
- * output and the Prestige multiplier are both dice/state this sheet cannot
- * honestly guess.
+ * `sell`'s Gold and `work` both wait for the real answer -- Land Maintenance
+ * and a machine's own clock are state this sheet cannot honestly guess.
  *
  * Pointer containment: every handler is wrapped in `contain`, same as every
  * other StackAcres sheet. See TownContractsModal's header for why.

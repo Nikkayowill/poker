@@ -63,7 +63,7 @@ test("a new farm shows chapter 1 on the chip, with the Mill's own shortfall", as
   await openMore(page);
 
   // The chip is a compact badge now (icon + "1/6"), same standing-badge
-  // posture as the Forge and Crossbreeding Bed -- the chapter/step detail
+  // posture as the other HUD pills -- the chapter/step detail
   // that used to sit in its own text is in its title and the sheet it opens.
   const chip = page.getByTitle(/^Chapter 1/);
   await expect(chip).toContainText("1/6");

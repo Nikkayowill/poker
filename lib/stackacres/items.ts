@@ -135,7 +135,7 @@ export function itemSellPrice(item: StackAcresItem): number {
   return STACKACRES_ITEM_CATALOGUE[item].sellPrice;
 }
 
-/** What a finished unit of `stock` would sell for, before any synergy. */
+/** What a finished unit of `stock` would sell for. */
 export function yieldValue(stock: StackAcresStock): number {
   const produce = STACKACRES_YIELDS[stock];
   return itemSellPrice(produce.item) * produce.quantity;

@@ -15,8 +15,6 @@
  *   pipe-placed          <- place-pipe
  *   soil-placed          <- place-soil-tile
  *   contract-fulfilled   <- fulfill-contract
- *   enchantment-forged   <- forge-enchantment
- *   crossbreed-harvested <- harvest-crossbreed
  *   place-reached        <- reach-quest-place
  *   wood-chopped         <- chop-tree (the Wood a landed swing paid)
  *   stone-mined          <- mine-stone (the Stone a landed swing paid)
@@ -26,7 +24,6 @@
  */
 
 import type { StackAcresStock } from "../catalogue";
-import type { CrossbreedItem } from "../crossbreed-items";
 import type { FishSpecies } from "../fishing";
 import type { RecipeId } from "../recipes";
 import type { HiddenZoneId } from "../secrets";
@@ -45,8 +42,6 @@ export type StoryEvent =
   | { readonly kind: "sector-cleared"; readonly sector: SectorId }
   | { readonly kind: "soil-placed"; readonly count: number }
   | { readonly kind: "contract-fulfilled" }
-  | { readonly kind: "enchantment-forged" }
-  | { readonly kind: "crossbreed-harvested"; readonly item: CrossbreedItem }
   | { readonly kind: "place-reached"; readonly placeId: QuestPlaceId }
   // The three gathering actions. Added for the Daily Farm Board
   // (../farm-board.ts), which needs the early-game actions a new farm can

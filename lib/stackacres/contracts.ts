@@ -36,6 +36,7 @@ import type { StackAcresInventory } from "./inventory";
 import type { MachineProcessedItem } from "./machine-items";
 import type { MachineKind } from "./machines";
 import { RECIPE_CATALOGUE, recipesForMachine } from "./recipes";
+import { isSeedUnlocked } from "./seed-unlocks";
 
 export interface ContractDef {
   item: MachineProcessedItem;
@@ -135,10 +136,10 @@ export function contractPassSpent(lastPassDay: string | null, today: string): bo
  * cattle would be handed a Cheese order it can never fill, and with one open contract
  * and one pass a day that is a stuck board (see the header).
  *
- * An input is within reach when the farm already holds some, when it is a crop's
- * produce (seed can always be had), when a kind of livestock the farm owns yields it,
- * or when another recipe the farm can run makes it. That last one is why this runs
- * to a fixed point: Cake needs Flour, and Flour needs a Mill.
+ * An input is within reach when the farm already holds some, when it is the produce of
+ * a crop whose seed Ray sells this farm (see ./seed-unlocks.ts), when a kind of
+ * livestock the farm owns yields it, or when another recipe the farm can run makes it.
+ * That last one is why this runs to a fixed point: Cake needs Flour, and Flour needs a Mill.
  */
 export function contractableItems(farm: {
   machineKinds: readonly MachineKind[];
@@ -146,7 +147,10 @@ export function contractableItems(farm: {
   inventory: StackAcresInventory;
 }): MachineProcessedItem[] {
   const reachable = new Set<string>();
-  for (const stock of STACKACRES_STOCK) if (!isLivestock(stock)) reachable.add(STACKACRES_YIELDS[stock].item);
+  const built = new Set(farm.machineKinds);
+  for (const stock of STACKACRES_STOCK) {
+    if (!isLivestock(stock) && isSeedUnlocked(stock, built)) reachable.add(STACKACRES_YIELDS[stock].item);
+  }
   for (const stock of farm.ownedStocks) if (isLivestock(stock)) reachable.add(STACKACRES_YIELDS[stock].item);
   for (const [item, quantity] of Object.entries(farm.inventory)) if ((quantity ?? 0) > 0) reachable.add(item);
 

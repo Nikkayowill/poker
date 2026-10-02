@@ -78,6 +78,20 @@ describe("contractableItems", () => {
     expect(contractableItems({ ...farm, ownedStocks: [...farm.ownedStocks], machineKinds: ["dairy", "mill"] })).toContain("cake");
   });
 
+  it("holds back a good whose crop seed is still locked", () => {
+    // Celery seed needs the Stew Pot and the Counter, so a Counter alone cannot grow it.
+    const counterOnly = contractableItems({ machineKinds: ["counter"], ownedStocks: [], inventory: {} });
+    expect(counterOnly).toContain("sauerkraut");
+    expect(counterOnly).not.toContain("pickles");
+    const both = contractableItems({ machineKinds: ["counter", "stew_pot"], ownedStocks: [], inventory: {} });
+    expect(both).toContain("pickles");
+  });
+
+  it("still offers a good made from a locked crop the farm already holds", () => {
+    const items = contractableItems({ machineKinds: ["counter"], ownedStocks: [], inventory: { celery: 2 } });
+    expect(items).toContain("pickles");
+  });
+
   it("never lists a good twice", () => {
     const items = contractableItems({ machineKinds: ["mill", "mill", "dairy"], ownedStocks: ["cattle"], inventory: {} });
     expect(new Set(items).size).toBe(items.length);

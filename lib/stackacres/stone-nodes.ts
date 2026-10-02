@@ -32,9 +32,10 @@ export const STONE_PER_SWING = 2;
 
 /** Iron Ore paid to whoever lands the swing that breaks a node. The nodes are
  *  shared by every player and regrow every REGROW_MS, so this is the whole
- *  world's ore supply: at most 3 breaks per 18 minutes. The Smelter turns 2
- *  ore into 1 Metal and the Far Field Barn asks for 10 Metal. Nothing else
- *  pays ore. */
+ *  mines' ore supply: at most 3 breaks per 18 minutes. The Smelter turns 2
+ *  ore into 1 Metal and the Far Field Barn asks for 10 Metal. Breaking a boulder
+ *  in the wild land pays the same (./land-clearing.ts), which is each farm's own
+ *  supply. */
 export const ORE_PER_BREAK = 2;
 
 /** Ore a swing pays: only the one that breaks the node. */

@@ -1,5 +1,6 @@
 import { cropFieldObstaclePlacements } from "./crop-field-obstacles";
 import { isWildMapTile, mapToSoilTile } from "./hoeable";
+import { ORE_PER_BREAK } from "./stone-nodes";
 import { acreAtMapTile } from "./acres";
 import { isFenceableMapTile } from "./fences";
 import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "./homestead-ground";
@@ -997,6 +998,15 @@ describe("clearing land", () => {
     expect(guessed?.cleared).toBe(false);
     // No Gold moves on the way to owning land.
     expect(patch?.profile).toBeUndefined();
+  });
+
+  it("pays ore for the swing that breaks a boulder and not before", () => {
+    const boulder = LAND_OBSTACLES.cropfields.find((o) => o.kind === "boulder")!;
+    const energy = { level: 50, updatedAt: NOW.toISOString() };
+    const standing = ctx({ energy, landObstacles: [landObstacleSnapshot(boulder, { hitsRemaining: 2, clearedAt: null })] });
+    expect(predictStackAcresAction({ action: "work-land", obstacleId: boulder.id }, standing)?.inventory?.iron_ore).toBeUndefined();
+    const last = ctx({ energy, landObstacles: [landObstacleSnapshot(boulder, { hitsRemaining: 1, clearedAt: null })] });
+    expect(predictStackAcresAction({ action: "work-land", obstacleId: boulder.id }, last)?.inventory?.iron_ore).toBe(ORE_PER_BREAK);
   });
 
   it("refuses a swing nobody has the energy for", () => {

@@ -605,6 +605,8 @@ interface StackAcresResponse {
     ground: ClearingGround;
     item: MachineItemId | null;
     quantity: number;
+    /** Iron Ore the blow also paid, for the swing that breaks a boulder. */
+    ore?: number;
     cleared: boolean;
     sectorOpened: boolean;
   } | null;
@@ -2340,7 +2342,8 @@ export function StackAcresFarm() {
         // the strike and the pieces bursting into his hands. Only a sector
         // opening gets a line of its own.
         if (data.landCleared) {
-          const { sectorOpened, ground } = data.landCleared;
+          const { sectorOpened, ground, ore } = data.landCleared;
+          if (ore && anchor) world.current?.floatAt(anchor, `+${ore} Iron Ore`, "gain");
           if (sectorOpened && isClearableSector(ground)) setLastCollect({ text: `${sectorLabel(ground)} is yours!`, nonce: Date.now() });
         }
         // The zone's own optimistic puff already fired on the press (see

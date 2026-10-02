@@ -15,6 +15,7 @@
  */
 
 import { AXE_DAMAGE, type AxeLevel } from "./axe";
+import { ORE_PER_BREAK } from "./stone-nodes";
 import type { MachineRawItem } from "./machine-items";
 import type { SectorId } from "./sectors";
 import { seededRandom } from "./world";
@@ -169,6 +170,15 @@ export function swingAtLandObstacle(
     quantity,
     cleared,
   };
+}
+
+/**
+ * Iron Ore the swing that breaks a boulder pays, the same as breaking a mine node
+ * (./stone-nodes.ts). This is how a farm gets Metal without the shared mines: every
+ * boulder in the wild land is a bar once it is smelted.
+ */
+export function landOreForSwing(kind: LandObstacleKind, cleared: boolean): number {
+  return kind === "boulder" && cleared ? ORE_PER_BREAK : 0;
 }
 
 /** What one swing takes off an obstacle of this kind. Trees and scrub take the

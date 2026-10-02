@@ -1739,7 +1739,7 @@ describe("Land Maintenance", () => {
     expect(await balance(token)).toBe(before - fee);
 
     await adjustStackAcresInventory(id, "eggs", 3);
-    const sold = await sellStackAcresItem(token, { item: "eggs", quantity: 3 }, HEN_READY);
+    const sold = await sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity: 3 }, HEN_READY);
     expect(await balance(token)).toBe(before - fee + sold.sold.gold);
   });
 

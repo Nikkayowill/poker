@@ -53,6 +53,7 @@ import ripe_crops  # noqa: E402
 import scene  # noqa: E402
 import sprites  # noqa: E402
 import terrain  # noqa: E402
+import tractor  # noqa: E402
 import water_film  # noqa: E402
 import area as area_mod  # noqa: E402
 from area import T  # noqa: E402
@@ -615,6 +616,8 @@ def export_common(out_root):
         named.append((f"dog_{side}", area_farm.dog(left)[0]))
         named.append((f"cattle_{side}", area_farm.cattle(left, patches=True)[0]))
         named.append((f"cattle_{side}_plain", area_farm.cattle(left, patches=False)[0]))
+        named.append((f"cattle_{side}_hereford", area_farm.cattle(left, hereford=True)[0]))
+        named.append((f"hog_{side}", area_farm.hog(left)[0]))
         named.append((f"hen_{side}", sprites.hen(left)[0]))
         named.append((f"hen_{side}_peck", sprites.hen(left, peck=True)[0]))
     for kind, grid in EMOTES.items():
@@ -646,6 +649,11 @@ def export_common(out_root):
     fence_pieces.fence_sheet(kit).save(os.path.join(out, "fence.png"))
     with open(os.path.join(out, "sprites.json"), "w") as fh:
         json.dump(atlas_json, fh, separators=(",", ":"))
+    # The tractor is its own atlas: sixteen 64x54 frames the common sheet shouldn't carry for a player who has none.
+    tractor_sheet, tractor_json = rig_export.atlas(tractor.frames(), "tractor.png")
+    tractor_sheet.save(os.path.join(out, "tractor.png"))
+    with open(os.path.join(out, "tractor.json"), "w") as fh:
+        json.dump(tractor_json, fh, separators=(",", ":"))
     print("common ->", out, "|", len(named), "frames")
 
 

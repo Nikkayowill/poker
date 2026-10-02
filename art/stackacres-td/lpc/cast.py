@@ -267,6 +267,16 @@ CAST.update({
                          ("torso_clothes_longsleeve2_buttoned", "tan"), ("legs_pants2", "brown"), ("feet_boots_revised", "walnut")],
                   palette={"body": "brown", "hair": "black", "eye": "brown"}),
 })
+# Earl, the hired hand on the farm (1950s): chambray work shirt, red suspenders, jeans, a red kerchief that
+# reads as a feed cap. Kept off the farmer's straw hat and overalls and Ray's flat cap so the three tell apart.
+CAST.update({
+    "earl": dict(items=[BODY, ("heads_human_male", None), ("hair_plain", None), ("torso_clothes_longsleeve2_buttoned", "sky"),
+                        ("torso_aprons_suspenders", "red"), ("legs_pants", "navy"), ("feet_boots_revised", "walnut"),
+                        ("hat_bandana", "red")],
+                 palette={"body": "taupe", "hair": "black", "eye": "brown"}),
+})
+# Farm hands walk the map on chores, so they get the eight frame stride and a carry walk with what they haul.
+FARM_HANDS = {"earl": "crate"}
 # What each carries in their arms at work, and who takes the apron off to sit on a break.
 STORE_STAFF = {"june": None, "omar": None, "nell": None, "theo": None, "rosa": "produce", "ines": "produce", "kofi": "produce",
                "dale": "crate", "cole": "crate",

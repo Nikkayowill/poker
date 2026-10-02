@@ -476,6 +476,7 @@ import { feedingToast, servingBonusEggs, shelfFeedOrder, type ServingSource } fr
 import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/feed-silo";
 import { isFarmKitchenRecipe, planFarmKitchen } from "@/lib/stackacres/farm-kitchen";
 import { isSeedUnlocked, seedLockedMessage } from "@/lib/stackacres/seed-unlocks";
+import { TOWN_BUYERS, buyerTakes, isTownBuyer, townBuyerFor } from "@/lib/stackacres/town-buyers";
 import { STARTER_SEED_COUNT, STARTER_SEED_CROP, STARTER_SEEDS_LEDGER_KEY } from "@/lib/stackacres/starter-seeds";
 import { QUARRY_CATALOGUE, pickQuarry, type QuarrySpecies } from "@/lib/stackacres/hunting";
 import { WOOD_NODE_IDS, isWoodNodeId, type WoodNodeId } from "@/lib/stackacres/tree-nodes";
@@ -6757,7 +6758,7 @@ const FARM_BOARD_REFUSALS: Record<"unknown" | "unfinished" | "already-claimed" |
  */
 export async function sellStackAcresItem(
   token: string,
-  input: { item: string; quantity: number },
+  input: { item: string; quantity: number; buyer: string },
   now = new Date(),
 ): Promise<StackAcresView & { sold: { item: MachineItemId; quantity: number; gold: number } }> {
   const profile = await ensureProfile(token);
@@ -6772,6 +6773,18 @@ export async function sellStackAcresItem(
     throw new StackAcresRequestError("Sell a positive amount.", 400, {
       round: await snapshots(profile.id, now),
     });
+  }
+
+  // Each item has one buyer in town (lib/stackacres/town-buyers.ts). The
+  // wrong one turns it away before anything moves.
+  if (!isTownBuyer(input.buyer) || !buyerTakes(input.buyer, item)) {
+    const right = TOWN_BUYERS[townBuyerFor(item)];
+    const asked = isTownBuyer(input.buyer) ? TOWN_BUYERS[input.buyer].name : "They";
+    throw new StackAcresRequestError(
+      `${asked} doesn't buy ${machineItemNoun(item, 2)}. ${right.name} does, at ${right.place}.`,
+      400,
+      { round: await snapshots(profile.id, now) },
+    );
   }
 
   // Step 1: the goods leave first.

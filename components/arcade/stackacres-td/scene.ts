@@ -150,6 +150,7 @@ import type { BuildGhost, GroceryGhost, GroceryScene } from "../stackacres/world
 import { Worksite, marketLayout, type MarketArea } from "@/lib/stackacres-td/worksite";
 import { STAFF_SPRITES, STORE_SHOPPERS, STORE_STAFF, staffAtPosts } from "@/lib/stackacres-td/store-cast";
 import { SEED_SELLER } from "@/lib/stackacres/seed-seller";
+import { townBuyerOfNpc, type TownBuyerId } from "@/lib/stackacres/town-buyers";
 import {
   DEFAULT_GROCERY_LAYOUT,
   GROCERY_ITEMS,
@@ -422,6 +423,7 @@ export interface TopdownCallbacks {
   onGroundTap: (zone: ZoneId, at: TapPoint, world: WorldPoint) => void;
   onBarnTap: () => void;
   onSeedSellerTap: () => void;
+  onTownBuyerTap: (buyer: TownBuyerId) => void;
   onSignpostTap: () => void;
   onWorkshopTap: () => void;
   onWellTap: (at: TapPoint) => void;
@@ -2048,7 +2050,10 @@ export class TopdownScene extends Phaser.Scene {
     for (const [name, node] of this.npcSprites) {
       if (!node.sprite.visible) continue;
       const box = new Phaser.Geom.Rectangle(node.sprite.x - 9, node.sprite.y - 30, 18, 32);
-      if (box.contains(map.x, map.y)) consider({ kind: "npc", name, anchor: { x: node.sprite.x, y: node.sprite.y + 10 }, face: { x: node.sprite.x, y: node.sprite.y } }, node.sprite.depth);
+      // Someone who trades (Cora, the town's buyers) wins over a prop drawn in front of them, so Dale is
+      // still tappable behind the quay's crane.
+      const trades = name === SEED_SELLER || townBuyerOfNpc(name) !== null;
+      if (box.contains(map.x, map.y)) consider({ kind: "npc", name, anchor: { x: node.sprite.x, y: node.sprite.y + 10 }, face: { x: node.sprite.x, y: node.sprite.y } }, node.sprite.depth + (trades ? 1000 : 0));
     }
     for (const { spec, image } of this.propImages) {
       if (!spec.tag || !image.visible) continue;
@@ -2575,6 +2580,7 @@ export class TopdownScene extends Phaser.Scene {
       if (target.name === "ray") cb.onRayTap(at);
       else if (target.name === "pilgrim") cb.onMonkTap(at);
       else if (target.name === SEED_SELLER) cb.onSeedSellerTap();
+      else if (townBuyerOfNpc(target.name)) cb.onTownBuyerTap(townBuyerOfNpc(target.name) as TownBuyerId);
       // The rest of the City's townsfolk only turn to look at the farmer (talkTo above).
       else if (isTravelerId(target.name)) cb.onTravelerTap(target.name, at);
       return;

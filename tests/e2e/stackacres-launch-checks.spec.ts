@@ -101,8 +101,8 @@ test("refused actions spend nothing", async ({ context }) => {
   await admit(context);
   const before = await read(context);
 
-  expect((await act(context, { action: "sell", item: "flour", quantity: 1 })).ok(), "selling what you do not hold").toBe(false);
-  expect((await act(context, { action: "sell", item: "wood", quantity: 5 })).ok(), "selling Wood you do not hold").toBe(false);
+  expect((await act(context, { action: "sell", buyer: "grain-elevator", item: "flour", quantity: 1 })).ok(), "selling what you do not hold").toBe(false);
+  expect((await act(context, { action: "sell", buyer: "general-store", item: "wood", quantity: 5 })).ok(), "selling Wood you do not hold").toBe(false);
   expect((await act(context, { action: "place-machine", kind: "mill" })).ok(), "a Mill with no Wood").toBe(false);
   expect((await act(context, { action: "place-machine", kind: "loom" })).ok(), "a Loom with no Wood").toBe(false);
 
@@ -118,8 +118,8 @@ test("a double-tapped sale pays once and never goes negative", async ({ context 
   await grant(context, id, "wood", 2);
   const start = (await read(context)).profile.goldBalance;
   const taps = await Promise.all([
-    act(context, { action: "sell", item: "wood", quantity: 2 }),
-    act(context, { action: "sell", item: "wood", quantity: 2 }),
+    act(context, { action: "sell", buyer: "general-store", item: "wood", quantity: 2 }),
+    act(context, { action: "sell", buyer: "general-store", item: "wood", quantity: 2 }),
   ]);
   expect(taps.filter((tap) => tap.ok()), "exactly one of two simultaneous sales lands").toHaveLength(1);
   const doubled = await read(context);
@@ -129,7 +129,7 @@ test("a double-tapped sale pays once and never goes negative", async ({ context 
 
   // The same two Wood sold on their own pay the same, so the double tap paid no extra.
   await grant(context, id, "wood", 2);
-  await must(context, { action: "sell", item: "wood", quantity: 2 });
+  await must(context, { action: "sell", buyer: "general-store", item: "wood", quantity: 2 });
   expect((await read(context)).profile.goldBalance - doubled.profile.goldBalance).toBe(paid);
 });
 

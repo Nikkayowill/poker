@@ -8,6 +8,7 @@ import type { StackAcresTool } from "@/lib/stackacres/tools";
 import type { StackAcresCutter } from "@/lib/stackacres/cutters";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
+import type { TownBuyerId } from "@/lib/stackacres/town-buyers";
 import type { QuestPlaceId } from "@/lib/stackacres/story/places";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
@@ -365,6 +366,8 @@ export interface StackAcresWorldProps {
   onBarnTap: () => void;
   /** A finger landed on Cora, who sells seed at the city market. */
   onSeedSellerTap: () => void;
+  /** A finger landed on one of the City's buyers (lib/stackacres/town-buyers.ts). */
+  onTownBuyerTap: (buyer: TownBuyerId) => void;
   /** A finger landed on the signpost, the Town Board's entryway now that
    *  the places list is gone. */
   onSignpostTap: () => void;

@@ -1576,7 +1576,7 @@ describe("Land Maintenance", () => {
     await adjustStackAcresInventory(id, "eggs", quantity);
     const before = await balance(token);
 
-    const sold = await sellStackAcresItem(token, { item: "eggs", quantity }, HEN_READY);
+    const sold = await sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity }, HEN_READY);
 
     // `sold.gold` stays the sale's full sticker price; only the wallet's
     // actual increase is docked for the day's fee.
@@ -1588,7 +1588,7 @@ describe("Land Maintenance", () => {
     // full and moves upkeep no further.
     await adjustStackAcresInventory(id, "eggs", 5);
     const beforeSecond = await balance(token);
-    const soldAgain = await sellStackAcresItem(token, { item: "eggs", quantity: 5 }, HEN_READY);
+    const soldAgain = await sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity: 5 }, HEN_READY);
     expect(await balance(token)).toBe(beforeSecond + soldAgain.sold.gold);
     expect(await readStackAcresUpkeep(id, DAY)).toBe(fee);
   });
@@ -1601,7 +1601,7 @@ describe("Land Maintenance", () => {
     await adjustStackAcresInventory(id, "eggs", quantity);
 
     const beforeToday = await balance(token);
-    const soldToday = await sellStackAcresItem(token, { item: "eggs", quantity }, HEN_READY);
+    const soldToday = await sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity }, HEN_READY);
     expect(await readStackAcresUpkeep(id, DAY)).toBe(fee);
     expect(await balance(token)).toBe(beforeToday + soldToday.sold.gold - fee);
 
@@ -1612,7 +1612,7 @@ describe("Land Maintenance", () => {
 
     await adjustStackAcresInventory(id, "eggs", quantity);
     const beforeTomorrow = await balance(token);
-    const soldTomorrow = await sellStackAcresItem(token, { item: "eggs", quantity }, tomorrow);
+    const soldTomorrow = await sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity }, tomorrow);
 
     // A fresh bill, assessed independently of what today already paid.
     expect(await readStackAcresUpkeep(id, tomorrowDay)).toBe(feeTomorrow);
@@ -1637,7 +1637,7 @@ describe("Land Maintenance", () => {
     await adjustStackAcresInventory(id, "eggs", 1);
     const savings = await balance(token);
 
-    const sold = await sellStackAcresItem(token, { item: "eggs", quantity: 1 }, HEN_READY);
+    const sold = await sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity: 1 }, HEN_READY);
 
     // The entire gross of that one small sale is skimmed -- nothing reaches
     // the wallet -- but the savings that were sitting there before it are
@@ -1658,7 +1658,7 @@ describe("Land Maintenance", () => {
     const eggPrice = itemSellPrice("eggs");
     await adjustStackAcresInventory(id, "eggs", 3);
 
-    const sold = await sellStackAcresItem(token, { item: "eggs", quantity: 3 }, HEN_READY);
+    const sold = await sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity: 3 }, HEN_READY);
 
     // Nothing is due, so the whole sale reaches the wallet.
     expect(sold.sold.gold).toBe(eggPrice * 3);
@@ -1686,7 +1686,7 @@ describe("Land Maintenance", () => {
 
     // The instant something actually pays Gold, the bill starts coming due.
     await adjustStackAcresInventory(id, "eggs", 1);
-    await sellStackAcresItem(token, { item: "eggs", quantity: 1 }, HEN_READY);
+    await sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity: 1 }, HEN_READY);
     expect(await readStackAcresUpkeep(id, DAY)).toBeGreaterThan(0);
   });
 
@@ -2479,7 +2479,7 @@ describe("the currency wall", () => {
     // `, now` on all four: Chrono-DeLorean Mode threads a resolved `now`
     // through every action (lib/server/chrono-delorean.ts), the payers
     // included.
-    expect(ROUTE).toContain("sellStackAcresItem(token, { item: action.item, quantity: action.quantity }, now)");
+    expect(ROUTE).toContain("sellStackAcresItem(token, { item: action.item, quantity: action.quantity, buyer: action.buyer }, now)");
     expect(ROUTE).toContain("fulfillStackAcresTownContract(token, now)");
     expect(ROUTE).toContain("collectStackAcresVat(token, now)");
     expect(ROUTE).toContain("collectStackAcresCellar(token, now)");
@@ -4474,7 +4474,7 @@ describe("sellStackAcresItem", () => {
     await adjustStackAcresInventory(id, "eggs", 10);
     const before = await balance(token);
 
-    const result = await sellStackAcresItem(token, { item: "eggs", quantity: 4 }, T0);
+    const result = await sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity: 4 }, T0);
 
     expect(result.sold).toEqual({ item: "eggs", quantity: 4, gold: EGG * 4 });
     expect(result.inventory.eggs).toBe(6);
@@ -4485,9 +4485,9 @@ describe("sellStackAcresItem", () => {
     const { token, id } = await funded();
     await adjustStackAcresInventory(id, "cake", 1);
     await adjustStackAcresInventory(id, "wheat", 3);
-    const cake = await sellStackAcresItem(token, { item: "cake", quantity: 1 }, T0);
+    const cake = await sellStackAcresItem(token, { buyer: "general-store", item: "cake", quantity: 1 }, T0);
     expect(cake.sold.gold).toBe(machineItemSellPrice("cake"));
-    const wheat = await sellStackAcresItem(token, { item: "wheat", quantity: 3 }, T0);
+    const wheat = await sellStackAcresItem(token, { buyer: "grain-elevator", item: "wheat", quantity: 3 }, T0);
     expect(wheat.sold.gold).toBe(machineItemSellPrice("wheat") * 3);
   });
 
@@ -4496,7 +4496,7 @@ describe("sellStackAcresItem", () => {
     await adjustStackAcresInventory(id, "eggs", 2);
     const before = await balance(token);
 
-    await expect(sellStackAcresItem(token, { item: "eggs", quantity: 3 }, T0)).rejects.toMatchObject({
+    await expect(sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity: 3 }, T0)).rejects.toMatchObject({
       status: 409,
     });
 
@@ -4510,23 +4510,64 @@ describe("sellStackAcresItem", () => {
     const { prestigeReset } = await prestigeResetStackAcres(token, T0);
     await adjustStackAcresInventory(id, "eggs", 7);
 
-    const result = await sellStackAcresItem(token, { item: "eggs", quantity: 7 }, T0);
+    const result = await sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity: 7 }, T0);
 
     const gold = Math.floor(EGG * 7 * prestigeReset.multiplier);
     expect(result.sold.gold).toBe(gold);
+  });
+
+  it("refuses an item the named buyer does not take, and moves no Gold and no goods", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresInventory(id, "eggs", 4);
+    await adjustStackAcresInventory(id, "wheat", 4);
+    const before = await balance(token);
+
+    await expect(
+      sellStackAcresItem(token, { buyer: "grain-elevator", item: "eggs", quantity: 4 }, T0),
+    ).rejects.toMatchObject({ status: 400, message: expect.stringContaining("Iris") });
+    await expect(
+      sellStackAcresItem(token, { buyer: "general-store", item: "wheat", quantity: 4 }, T0),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      sellStackAcresItem(token, { buyer: "sale-barn", item: "eggs", quantity: 1 }, T0),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      sellStackAcresItem(token, { buyer: "ray", item: "eggs", quantity: 1 }, T0),
+    ).rejects.toMatchObject({ status: 400 });
+
+    expect(await balance(token)).toBe(before);
+    const after = (await readStackAcres(token, T0)).inventory;
+    expect(after.eggs).toBe(4);
+    expect(after.wheat).toBe(4);
+  });
+
+  it("pays the right buyer exactly once, even when the same sale is sent twice at once", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresInventory(id, "wheat", 5);
+    const before = await balance(token);
+    const price = machineItemSellPrice("wheat") * 5;
+
+    const results = await Promise.allSettled([
+      sellStackAcresItem(token, { buyer: "grain-elevator", item: "wheat", quantity: 5 }, T0),
+      sellStackAcresItem(token, { buyer: "grain-elevator", item: "wheat", quantity: 5 }, T0),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(await balance(token)).toBe(before + price);
+    expect((await readStackAcres(token, T0)).inventory.wheat ?? 0).toBe(0);
   });
 
   it("refuses an unknown item or a quantity that is not a positive whole number", async () => {
     const { token, id } = await funded();
     await adjustStackAcresInventory(id, "eggs", 5);
     const before = await balance(token);
-    await expect(sellStackAcresItem(token, { item: "diamonds", quantity: 1 }, T0)).rejects.toMatchObject({
+    await expect(sellStackAcresItem(token, { buyer: "general-store", item: "diamonds", quantity: 1 }, T0)).rejects.toMatchObject({
       status: 400,
     });
-    await expect(sellStackAcresItem(token, { item: "eggs", quantity: 0 }, T0)).rejects.toMatchObject({
+    await expect(sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity: 0 }, T0)).rejects.toMatchObject({
       status: 400,
     });
-    await expect(sellStackAcresItem(token, { item: "eggs", quantity: 1.5 }, T0)).rejects.toMatchObject({
+    await expect(sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity: 1.5 }, T0)).rejects.toMatchObject({
       status: 400,
     });
     expect(await balance(token)).toBe(before);
@@ -4629,7 +4670,7 @@ describe("prestigeResetStackAcres", () => {
     // Added after the reset, which clears the stockpile.
     await adjustStackAcresInventory(id, "eggs", 7);
     const before = await balance(token);
-    const result = await sellStackAcresItem(token, { item: "eggs", quantity: 7 }, T0);
+    const result = await sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity: 7 }, T0);
 
     const expected = Math.floor(itemSellPrice("eggs") * 7 * prestigeReset.multiplier);
     expect(expected).toBeGreaterThan(itemSellPrice("eggs") * 7);
@@ -4767,7 +4808,7 @@ describe("Chapter 1: the bread basket", () => {
     await adjustStackAcresInventory(id, "eggs", 5);
     const credit = vi.spyOn(profileStore, "creditGoldByProfileLedgered").mockRejectedValue(new Error("db down"));
     try {
-      await expect(sellStackAcresItem(token, { item: "eggs", quantity: 5 }, T0)).rejects.toMatchObject({ status: 503 });
+      await expect(sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity: 5 }, T0)).rejects.toMatchObject({ status: 503 });
       expect(credit).toHaveBeenCalledTimes(3);
       const keys = new Set(credit.mock.calls.map((call) => call[2]));
       expect(keys.size).toBe(1);

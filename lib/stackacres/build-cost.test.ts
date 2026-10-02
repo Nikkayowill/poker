@@ -6,7 +6,7 @@ describe("buildCost", () => {
   it("counts Gold and every material the machine spends", () => {
     const cost = buildCost("mill", 500, { wood: 6 });
     expect(cost.lines).toEqual([
-      { label: "Gold", have: 500, need: 200, met: true, source: "Sell crops at the barn" },
+      { label: "Gold", have: 500, need: 200, met: true, source: "Sell your harvest in town. Dale buys grain and Iris buys the rest" },
       { label: "Wood", have: 6, need: 15, met: false, source: "Chop the trees around the farm" },
     ]);
     expect(cost.affordable).toBe(false);
@@ -75,14 +75,14 @@ describe("buildShortfall", () => {
   it("names both when Gold and material are short", () => {
     // Both are at none of what they need, so the tie keeps the listed order.
     expect(buildShortfall(buildCost("mill", 0, {}))).toBe(
-      "You need 200 more Gold and 15 more Wood. Sell crops at the barn. Chop the trees around the farm.",
+      "You need 200 more Gold and 15 more Wood. Sell your harvest in town. Dale buys grain and Iris buys the rest. Chop the trees around the farm.",
     );
   });
 
   it("says where Gold comes from when only Gold is short", () => {
     // The Stew Pot is the first build a new farm cannot pay for out of its starting Gold.
     expect(buildShortfall(buildCost("stew_pot", 1_300, {}))).toBe(
-      "You need 200 more Gold. Sell crops at the barn.",
+      "You need 200 more Gold. Sell your harvest in town. Dale buys grain and Iris buys the rest.",
     );
   });
 

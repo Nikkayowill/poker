@@ -99,7 +99,7 @@ test("StackAcres runs on Gold alone: seeding debits it, and the sell/exchange ac
     // lib/stackacres/exchange.ts's header), and Bushels before it.
     expect(view.exchange).toBeUndefined();
     expect(view.bushels).toBeUndefined();
-    // The processing inventory IS carried: it is what the Sell tab, the
+    // The processing inventory IS carried: it is what the town buyers, the
     // Workshop and the build buttons all read.
     expect(view.inventory).toEqual({});
 
@@ -139,12 +139,12 @@ test("StackAcres runs on Gold alone: seeding debits it, and the sell/exchange ac
     const exchanged = await api.post("/api/stackacres/actions", { data: { action: "exchange", bushels: 10 } });
     expect(exchanged.status()).toBe(400);
 
-    // `sell` came BACK (the Sell tab), so it is a real action again -- and
+    // `sell` came BACK (now to the town's buyers), so it is a real action again -- and
     // selling something never held is refused rather than paid for. That
     // refusal is the hole the wood/stone migration closed: the RPC used to
     // write a zero row and return 0, which every caller read as success.
     const nothing = await api.post("/api/stackacres/actions", {
-      data: { action: "sell", item: "eggs", quantity: 1 },
+      data: { action: "sell", buyer: "general-store", item: "eggs", quantity: 1 },
     });
     expect(nothing.status()).toBe(409);
     expect((await nothing.json()) as { error?: string }).toMatchObject({ error: "Not enough on hand." });

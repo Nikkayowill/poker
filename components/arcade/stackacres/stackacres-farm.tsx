@@ -249,6 +249,8 @@ import { StackAcresHouse } from "./stackacres-house";
 import { isActiveStock } from "@/lib/stackacres/scope";
 import { isSeedUnlocked, seedLockLine } from "@/lib/stackacres/seed-unlocks";
 import { SEED_SELLER_NAME } from "@/lib/stackacres/seed-seller";
+import type { TownBuyerId } from "@/lib/stackacres/town-buyers";
+import { TownBuyerSheet } from "./town-buyer-sheet";
 import { chapterFinishedBy, chapterViews, currentChapter, type Chapter } from "@/lib/stackacres/chapters";
 import { StackAcresChapterCard } from "./stackacres-chapters";
 import { StackAcresJournalChip, StackAcresJournalSheet } from "./stackacres-journal";
@@ -790,21 +792,15 @@ function StoreShelf({ icon, children }: { icon: PainterName; children: ReactNode
  * cattle used to be buyable only by travelling to their own district (Hen
  * Haven, the Fold, Ox Fields).
  *
- * "Sell" is the odd one out: every other tab spends Gold, this one is the
- * only place in the whole store that pays it. It reuses `onSell` wholesale
- * (lib/stackacres/farm-actions.ts's generic "sell" action, already wired to
- * WorkshopModal's shelf for the five processing-track items) rather than a
- * second sell path -- the backend already accepts any `StackAcresItem`, the
- * Workshop shelf just never listed the sixteen crops or the three raw
- * animal goods. This tab is that missing listing, not a new mechanic.
+ * Nothing here pays Gold. Selling happens in town, to the buyer who takes
+ * that good (lib/stackacres/town-buyers.ts, ./town-buyer-sheet.tsx).
  */
-type StoreTab = "livestock" | "feed" | "equipment" | "sell";
+type StoreTab = "livestock" | "feed" | "equipment";
 
 const STORE_TABS: { id: StoreTab; label: string; icon: PainterName }[] = [
   { id: "livestock", label: "Livestock", icon: "ico-egg" },
   { id: "feed", label: "Feed", icon: "ico-feed" },
   { id: "equipment", label: "Tools", icon: "ico-scythe" },
-  { id: "sell", label: "Sell", icon: "ico-gold" },
 ];
 
 /** A bag/serving/seed price, spelled out unambiguously as Gold rather than
@@ -1210,6 +1206,8 @@ export function StackAcresFarm() {
   const [mapHere, setMapHere] = useState<MapPlaceId>("farmstead");
   const [showStore, setShowStore] = useState(false);
   const [showSeedSeller, setShowSeedSeller] = useState(false);
+  /** Which of the City's buyers is open, or null. */
+  const [townBuyer, setTownBuyer] = useState<TownBuyerId | null>(null);
   const [showMill, setShowMill] = useState(false);
   useEffect(() => {
     if (!showSeedSeller) return;
@@ -1233,7 +1231,7 @@ export function StackAcresFarm() {
   /** Which shelf of the Supply Store is showing. One category on screen at
    *  a time instead of every shelf stacked in one long scroll -- see the
    *  store's own render block below for why. */
-  const [storeTab, setStoreTab] = useState<StoreTab>("sell");
+  const [storeTab, setStoreTab] = useState<StoreTab>("livestock");
   /**
    * The store's own splash-ring taps (the close key, each shelf tab) -- see
    * `.sa-store-card`'s own CSS comment for why this is a real, if brief,
@@ -3264,6 +3262,12 @@ export function StackAcresFarm() {
     setShowSeedSeller(true);
   }, []);
 
+  /** A finger landed on one of the City's buyers. Nothing goes to the server. */
+  const onWorldTownBuyerTap = useCallback((buyer: TownBuyerId) => {
+    panelSound();
+    setTownBuyer(buyer);
+  }, []);
+
   /** A finger landed on the signpost, the Town Board's entryway now that
    *  the places list is gone. Same shape as `onWorldBarnTap`. */
   const onWorldSignpostTap = useCallback(() => {
@@ -3284,10 +3288,6 @@ export function StackAcresFarm() {
         break;
       case "contracts":
         setShowContracts(true);
-        break;
-      case "store-sell":
-        setStoreTab("sell");
-        setShowStore(true);
         break;
       case "crossbreed":
         setShowCrossbreed(true);
@@ -3549,9 +3549,9 @@ export function StackAcresFarm() {
     [workshopAct],
   );
   const onSell = useCallback(
-    (item: MachineItemId, quantity: number) => {
+    (buyer: TownBuyerId, item: MachineItemId, quantity: number) => {
       sellSound();
-      return workshopAct({ action: "sell", item, quantity });
+      return workshopAct({ action: "sell", buyer, item, quantity });
     },
     [workshopAct],
   );
@@ -4563,6 +4563,7 @@ export function StackAcresFarm() {
               onSoilMoveCommitted={onMoveSoilTileGroup}
               onBarnTap={onWorldBarnTap}
               onSeedSellerTap={onWorldSeedSellerTap}
+              onTownBuyerTap={onWorldTownBuyerTap}
               onSignpostTap={onWorldSignpostTap}
               onWorkshopTap={onWorldWorkshopTap}
               onWellTap={onWorldWellTap}
@@ -4820,6 +4821,16 @@ export function StackAcresFarm() {
             </div>
           </div>
         </div>
+      )}
+
+      {townBuyer && (
+        <TownBuyerSheet
+          buyer={townBuyer}
+          inventory={processing.inventory}
+          isPending={isPending}
+          onSell={onSell}
+          onClose={() => { panelSound(); setTownBuyer(null); }}
+        />
       )}
 
       {showStore && (
@@ -5194,49 +5205,6 @@ export function StackAcresFarm() {
                   )}
                 </>
               )}
-
-              {storeTab === "sell" && (
-                <>
-                  <p className="sa-sheet-note">
-                    Turn anything in the barn straight into Gold, any time, at its own shelf
-                    price below -- the same door a harvest already fills.
-                  </p>
-                  <div className="sa-stock-cards">
-                    {STACKACRES_ITEMS.map((item) => {
-                      const def = STACKACRES_ITEM_CATALOGUE[item];
-                      const held = inventoryQuantity(processing.inventory, item);
-                      const price = itemSellPrice(item);
-                      return (
-                        <div key={item} className="sa-stock-card">
-                          <h3>{def.label}</h3>
-                          <p className="sa-stock-yield">
-                            <StoreCost amount={price} /> / each
-                          </p>
-                          <div className="sa-buy-qty-row">
-                            <button
-                              type="button"
-                              className="sa-cta"
-                              disabled={held < 1 || isPending(`sell:${item}:1`)}
-                              onClick={() => void onSell(item, 1)}
-                            >
-                              Sell 1
-                            </button>
-                            <button
-                              type="button"
-                              className="sa-cta"
-                              disabled={held < 1 || isPending(`sell:${item}:${held}`)}
-                              onClick={() => void onSell(item, held)}
-                            >
-                              Sell all ({held})
-                            </button>
-                          </div>
-                          <p className="sa-sheet-note">{itemLabel(item, held)} in the barn</p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
             </div>
           </div>
         </div>
@@ -5345,7 +5313,6 @@ export function StackAcresFarm() {
           isPending={isPending}
           onMill={(batches) => void onProcessRecipe("flour", batches)}
           onCollect={() => void onWork()}
-          onSell={(quantity) => void onSell("flour", quantity)}
           onOpenWorkshop={() => {
             panelSound();
             setShowMill(false);
@@ -5368,7 +5335,6 @@ export function StackAcresFarm() {
           onPlaceMachine={onPlaceMachine}
           onProcess={onProcessRecipe}
           onWork={onWork}
-          onSell={onSell}
           onOpenVat={() => { panelSound(); setShowVat(true); }}
           axe={axe}
           onUpgradeAxe={onUpgradeAxe}

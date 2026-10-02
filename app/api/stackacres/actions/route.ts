@@ -20,6 +20,7 @@ import { FORAGE_NODE_IDS } from "@/lib/stackacres/forage";
 import { SYNERGY_ARCHETYPES, SYNERGY_MAX_ACTIVE_SLOTS } from "@/lib/stackacres/synergy-perks";
 import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
 import { ALL_MACHINE_ITEM_IDS, MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
+import { TOWN_BUYER_IDS } from "@/lib/stackacres/town-buyers";
 import { FORGE_ENCHANTMENT_IDS } from "@/lib/stackacres/forge";
 import { STACKACRES_BUYABLE_CUTTERS } from "@/lib/stackacres/cutters";
 import { CROSSBREED_GRID_COLS, CROSSBREED_GRID_ROWS } from "@/lib/stackacres/crossbreeding";
@@ -318,9 +319,11 @@ const bodySchema = z.discriminatedUnion("action", [
   // Sells any inventory item -- raw harvest or crafted good -- for Gold, at
   // that item's own sell price, any time. See lib/server/
   // stackacres-service.ts's own header for the three actions here that move
-  // Gold -- this, `fulfill-contract`, and `collect-vat`.
+  // Gold -- this, `fulfill-contract`, and `collect-vat`. `buyer` is the
+  // townsperson being sold to; each item has one (lib/stackacres/town-buyers.ts).
   z.object({
     action: z.literal("sell"),
+    buyer: z.enum(TOWN_BUYER_IDS),
     item: z.enum(ALL_MACHINE_ITEM_IDS as unknown as [string, ...string[]]),
     // Generous but not unbounded, the same posture every other body-supplied
     // quantity in this file takes -- an inventory count this high is not
@@ -690,7 +693,7 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "work":
       return workStackAcres(token, now);
     case "sell":
-      return sellStackAcresItem(token, { item: action.item, quantity: action.quantity }, now);
+      return sellStackAcresItem(token, { item: action.item, quantity: action.quantity, buyer: action.buyer }, now);
     case "process":
       return processStackAcresRecipeAction(token, action.recipe, now, action.batches ?? 1);
     case "request-contract":

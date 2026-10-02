@@ -78,14 +78,7 @@ import {
   type StackAcresStock,
 } from "@/lib/stackacres/catalogue";
 import { buyOptionsForZone, lockedLivestock, type BuyOption } from "@/lib/stackacres/district-panel";
-import {
-  STACKACRES_ITEM_CATALOGUE,
-  STACKACRES_ITEMS,
-  STACKACRES_YIELDS,
-  itemLabel,
-  itemSellPrice,
-  type StackAcresItem,
-} from "@/lib/stackacres/items";
+import { STACKACRES_YIELDS, type StackAcresItem } from "@/lib/stackacres/items";
 import {
   SECRET_ITEM_CATALOGUE,
   SECRET_ITEM_IDS,
@@ -109,7 +102,7 @@ import {
 } from "@/lib/stackacres/soil";
 
 import type { StackAcresContractRow } from "@/lib/stackacres/contracts";
-import { emptyInventory, inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
+import { emptyInventory, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import type { MachineKind, StackAcresMachineSnapshot } from "@/lib/stackacres/machines";
 import type { StackAcresWheatPlotSnapshot } from "@/lib/stackacres/wheat-plot";
 import type { VatContainer } from "@/lib/stackacres/aging";

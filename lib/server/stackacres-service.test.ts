@@ -4070,17 +4070,11 @@ describe("hidden secrets", () => {
     });
 
     it("wipes today's owed Land Maintenance and spends the item", async () => {
-      // The Crop Fields stay locked here on purpose: they hold all 22 crop
-      // kinds now (up from the old Farmstead's 2), and `unlockedPlotCount`
-      // only counts their footprint once the standalone flag is set (see its
-      // own header on why the sector list alone can no longer answer this).
-      // Wallow+Ox Fields alone keep this test's actual point (one dice fully
-      // wipes a modest bill) true; unlocking the Crop Fields too would push
-      // the fee well past STACKACRES_DICE_UPKEEP_WIPE (5,000 Gold).
+      // Sheep and cattle land is not charged, so the Crop Fields are what
+      // put a modest bill on this farm for one dice to wipe.
       const { token, id } = await funded(500_000, {
-        land: ["wallow", "oxfields"],
         settled: false,
-        cropFieldsUnlocked: false,
+        cropFieldsUnlocked: true,
       });
       await adjustStackAcresSecretLedger(id, DICE, 1);
       const day = stackacresExchangeDay(T0);

@@ -4003,6 +4003,7 @@ export function StackAcresFarm() {
       seedStock,
       water,
       nowMs,
+      acrePrice: acres.price,
     }),
     [
       gold,
@@ -4022,6 +4023,7 @@ export function StackAcresFarm() {
       seedStock,
       water,
       nowMs,
+      acres.price,
     ],
   );
 
@@ -4923,8 +4925,7 @@ export function StackAcresFarm() {
               {storeTab === "livestock" && (
                 <>
                   <p className="sa-sheet-note">
-                    Buy an animal outright, or Cycle Lease one for a single production run. A greyed
-                    pen is not open yet.
+                    Buy an animal outright, or Cycle Lease one for a single production run.
                   </p>
                   <div className="sa-panel-section">
                     <StackAcresBuySection

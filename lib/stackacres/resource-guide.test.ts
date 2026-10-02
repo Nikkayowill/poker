@@ -110,23 +110,12 @@ describe("gathering sources match the maps", () => {
 /**
  * Things a player must hand over that cannot be got on the live farm today.
  *
- * This is the list as found on 2026-09-30, not a list of things that are fine.
- * Sheep and cattle have no open pen, so the chain from wool and milk is shut.
- * Stone and ore come from the boulders in the wild land. The test fails both ways: a new requirement on
- * one of these items fails it, and so does opening a source, until the entry
- * is deleted.
+ * Empty since sheep and cattle went on sale, which opened wool, milk and
+ * everything made from them. The test fails both ways: a new requirement on
+ * an item nobody can get fails it, and so does opening a source for an entry
+ * listed here.
  */
-const KNOWN_BLOCKED_REQUIREMENTS = [
-  "wool: Cloth at the Loom",
-  "milk: Cheese at the Dairy",
-  "milk: Cake at the Dairy",
-  "cheese: Mythic Ember Spire: Framework",
-  "cheese: Mythic Ember Spire: Spire Crown",
-  "cheese: Town orders",
-  "cheese: Age it in the Fermenting Vat",
-  "cloth: Mythic Ember Spire: Spire Crown",
-  "cloth: Town orders",
-];
+const KNOWN_BLOCKED_REQUIREMENTS: readonly string[] = [];
 
 describe("nothing is required before its source is open", () => {
   it("only asks for unobtainable items where it already did", () => {
@@ -141,9 +130,9 @@ describe("nothing is required before its source is open", () => {
   });
 
   it("follows a crafted item back to its raw inputs", () => {
-    // Cheese has an open recipe, but it needs milk and milk needs a cattle pen.
+    // Cheese needs milk, and milk needs a Cattle Pen from the Store.
     expect(resourceSources("cheese").every((source) => source.open)).toBe(true);
-    expect(isObtainable("cheese")).toBe(false);
+    expect(isObtainable("cheese")).toBe(true);
     expect(isObtainable("flour")).toBe(true);
     expect(isObtainable("wood")).toBe(true);
     expect(isObtainable("trout")).toBe(true);

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { LAND_OBSTACLES } from "./land-clearing";
 import { describe, expect, it } from "vitest";
 import { CROSSBREED_ITEMS } from "./crossbreed-items";
 import {
@@ -95,8 +96,10 @@ describe("gathering sources match the maps", () => {
     expect(tags.some((tag) => tag.startsWith("tree:"))).toBe(GATHER_SOURCES.wood.open);
   });
 
-  it("has boulders on a map exactly when stone is open", () => {
-    expect(tags.some((tag) => tag.startsWith("stone:"))).toBe(GATHER_SOURCES.stone.open);
+  it("has boulders to break exactly when stone is open", () => {
+    // The wild land's boulders are obstacles, not map tags (lib/stackacres/land-clearing.ts).
+    const breakable = LAND_OBSTACLES.cropfields.some((obstacle) => obstacle.kind === "boulder");
+    expect(breakable).toBe(GATHER_SOURCES.stone.open);
   });
 
   it("has a thicket on a map exactly when hunting is open", () => {
@@ -108,8 +111,8 @@ describe("gathering sources match the maps", () => {
  * Things a player must hand over that cannot be got on the live farm today.
  *
  * This is the list as found on 2026-09-30, not a list of things that are fine.
- * Sheep and cattle have no open pen and no map has boulders, so the chain from
- * wool, milk and ore is shut. The test fails both ways: a new requirement on
+ * Sheep and cattle have no open pen, so the chain from wool and milk is shut.
+ * Stone and ore come from the boulders in the wild land. The test fails both ways: a new requirement on
  * one of these items fails it, and so does opening a source, until the entry
  * is deleted.
  */
@@ -117,18 +120,12 @@ const KNOWN_BLOCKED_REQUIREMENTS = [
   "wool: Cloth at the Loom",
   "milk: Cheese at the Dairy",
   "milk: Cake at the Dairy",
-  "stone: Build the Feed Silo",
-  "stone: Build the Preserves Cellar",
-  "stone: Build the Smelter",
-  "stone: Make the Steel Axe",
-  "iron_ore: Metal at the Smelter",
   "cheese: Mythic Ember Spire: Framework",
   "cheese: Mythic Ember Spire: Spire Crown",
   "cheese: Town orders",
   "cheese: Age it in the Fermenting Vat",
   "cloth: Mythic Ember Spire: Spire Crown",
   "cloth: Town orders",
-  "metal: Raise the Barn in the Far Field",
 ];
 
 describe("nothing is required before its source is open", () => {

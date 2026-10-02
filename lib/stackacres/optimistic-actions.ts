@@ -129,6 +129,7 @@ import {
   landClearingProgress,
   landObstacle,
   landObstacleStateOf,
+  landOreForSwing,
   swingAtLandObstacle,
   withLandObstacleState,
   isClearableSector,
@@ -974,8 +975,10 @@ export function predictStackAcresAction(
       const energy = applyEnergyDelta(ctx.energy, -LAND_SWING_ENERGY, now);
       if (!energy) return null;
       const landObstacles = withLandObstacleState(ctx.landObstacles, obstacle, swing.nextState);
-      const inventory =
+      let inventory =
         swing.item && swing.quantity > 0 ? addToInventory(ctx.inventory, swing.item, swing.quantity) : ctx.inventory;
+      const ore = landOreForSwing(obstacle.kind, swing.cleared);
+      if (ore > 0) inventory = addToInventory(inventory, "iron_ore", ore);
       return {
         energy,
         landObstacles,

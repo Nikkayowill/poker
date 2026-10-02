@@ -196,11 +196,7 @@ export const GATHER_SOURCES: Readonly<Record<"fishing" | "hunting" | "wood" | "s
     note: "The brush is not on any map yet.",
   },
   wood: { label: "Chop the trees on the Homestead", open: true },
-  stone: {
-    label: "Mine the boulders",
-    open: false,
-    note: "There are no boulders on any map yet.",
-  },
+  stone: { label: "Break the boulders in the wild land round the yard", open: true },
 };
 
 function isMachineBuildable(kind: MachineKind): boolean {

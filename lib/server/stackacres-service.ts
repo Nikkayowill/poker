@@ -489,6 +489,7 @@ import {
   isClearableSector,
   landObstacleSnapshot,
   swingAtLandObstacle,
+  landOreForSwing,
   landSwingDamage,
   type ClearingGround,
   type LandObstacleSnapshot,
@@ -1882,6 +1883,8 @@ export type StackAcresActionResult = StackAcresView & {
     ground: ClearingGround;
     item: MachineRawItem | null;
     quantity: number;
+    /** Iron Ore the blow also paid: only the one that breaks a boulder. */
+    ore: number;
     cleared: boolean;
     sectorOpened: boolean;
   } | null;
@@ -4883,6 +4886,8 @@ export async function workStackAcresLand(
     if (swing.item === "wood") await recordStoryEvents(profile.id, [{ kind: "wood-chopped", count: swing.quantity }], now);
     if (swing.item === "stone") await recordStoryEvents(profile.id, [{ kind: "stone-mined", count: swing.quantity }], now);
   }
+  const ore = landOreForSwing(obstacle.kind, swing.cleared);
+  if (ore > 0) await adjustStackAcresInventory(profile.id, "iron_ore", ore);
   const opened = swing.cleared ? await openIfCleared(profile.id, obstacle.ground, now) : false;
   return {
     ...(await view(profile, now)),
@@ -4891,6 +4896,7 @@ export async function workStackAcresLand(
       ground: obstacle.ground,
       item: swing.item,
       quantity: swing.quantity,
+      ore,
       cleared: swing.cleared,
       sectorOpened: opened,
     },

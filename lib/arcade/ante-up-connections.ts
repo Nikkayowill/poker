@@ -31,15 +31,17 @@ export const WAGER_MULTIPLIER_BY_MISTAKES: WagerLadder = {
 };
 
 /**
- * How many mistakes end a round at each stake band: 4, 3, 2, then 1. From
- * band 1 up only a clean solve profits, and less room to fish for groups by
- * trial and error is what makes the band harder.
+ * How many mistakes end a round at each stake band: 4, 3, 2, then 2 again.
+ * From band 1 up only a clean solve profits, and less room to fish for groups
+ * by trial and error is what makes the band harder. The top band used to end
+ * on a single mistake, which was too harsh even at top stakes; it now differs
+ * from band 2 by payout only.
  */
 export const CONNECTIONS_MISTAKES_BY_PRESSURE: Readonly<Record<StakePressure, number>> = {
   0: CONNECTIONS_MAX_MISTAKES,
   1: 3,
   2: 2,
-  3: 1,
+  3: 2,
 };
 
 /**
@@ -56,6 +58,9 @@ export const CONNECTIONS_MISTAKES_BY_PRESSURE: Readonly<Record<StakePressure, nu
  *   +2SD       96% 2.31x      60% 2.05x    60% 1.39x    60% 0.96x
  *   +3SD      100% 2.66x      78% 2.58x    78% 1.76x    78% 1.25x
  *
+ * Band 3's 0.2x one-mistake rung, added with its second life, lifts those
+ * EVs by 0.2x the one-mistake share: about 0.03x at most.
+ *
  * A single board can't separate the percentiles by win rate (a clean solve
  * is the finest skill signal it gives), so the clean-solve multiple falls
  * about 0.7x per band to put the 1x break-even at that band's target.
@@ -64,7 +69,7 @@ export const CONNECTIONS_LADDER_BY_PRESSURE: Readonly<Record<StakePressure, Wage
   0: { 0: 3, 1: 1.6, 2: 1.2, 3: 1.05 },
   1: { 0: 3.2, 1: 0.5, 2: 0.2 },
   2: { 0: 2.2, 1: 0.3 },
-  3: { 0: 1.6 },
+  3: { 0: 1.6, 1: 0.2 },
 };
 
 /** What a wager's stake band sets for its round. Copied onto the round at open. */
@@ -85,7 +90,7 @@ export function connectionsStakeRules(wager: number): ConnectionsStakeRules {
 export const CONNECTIONS_PRESSURE_RULES = {
   1: ["3 mistakes end the board instead of 4.", "Only a clean solve profits: 3.2x. One mistake pays back 0.5x."],
   2: ["2 mistakes end the board instead of 4.", "Only a clean solve profits: 2.2x. One mistake pays back 0.3x."],
-  3: ["One mistake ends the board.", "A clean solve pays 1.6x."],
+  3: ["2 mistakes end the board instead of 4.", "Only a clean solve profits: 1.6x. One mistake pays back 0.2x."],
 } as const;
 
 /** The lowest rung, and so the payout for a mistake count the ladder does not name. */

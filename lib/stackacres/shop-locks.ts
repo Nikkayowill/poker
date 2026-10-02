@@ -77,6 +77,10 @@ export function isStackAcresQuestFlag(value: unknown): value is StackAcresQuestF
  * leaf with no runtime imports, and the three names are already fixed by
  * ./zones.ts's own labels (there is a test holding these two in step).
  *
+ * The Fold and the Cattle Pasture have no map of their own any more. Each
+ * opens the first time the farm keeps that animal (`unlockedSectors`), so
+ * their labels name the Store row that does it.
+ *
  * `crop_fields_unlocked` was `cleared_meadow` before the 2026-09-08 map
  * restructure merged that district into the Farmstead, and it was "Unlock
  * the Crop Fields" while that land was still bought for 15,000 Gold. It is
@@ -87,26 +91,19 @@ export function isStackAcresQuestFlag(value: unknown): value is StackAcresQuestF
 export const STACKACRES_QUEST_LABELS: Readonly<Record<StackAcresQuestFlag, string>> = {
   crop_fields_unlocked: "Break ground in the Crop Fields",
   town_trusted: "Fill an order for the town",
-  cleared_wallow: "Clear the Fold (not open yet)",
-  greenhouse_raised: "Raise the Greenhouse (not open yet)",
-  cleared_oxfields: "Clear the Cattle Pasture (not open yet)",
+  cleared_wallow: "Buy a Sheep Pen",
+  greenhouse_raised: "Raise the Greenhouse",
+  cleared_oxfields: "Buy a Cattle Pen",
 };
 
 /**
  * Flags no player can earn on the live world, so no hint may send them there.
  *
- * The Fold and the Cattle Pasture are cleared by walking onto the land and
- * chopping it, and both maps are gone (./sectors.ts). The Greenhouse needs
- * Cloth, which needs Wool, which needs a sheep, which needs the Fold. A hint
- * that names one of these as "next" points at a wall, so `nextReachable...`
- * below skips them and their labels say so. Delete an entry the day the herd
- * has a way back in.
+ * Empty since sheep and cattle went on sale in the Store: buying one opens the
+ * Fold or the Cattle Pasture, and Wool from the sheep makes the Greenhouse's
+ * Cloth. Kept so the next flag that loses its way in can be listed here.
  */
-export const STACKACRES_UNREACHABLE_FLAGS: readonly StackAcresQuestFlag[] = [
-  "cleared_wallow",
-  "greenhouse_raised",
-  "cleared_oxfields",
-];
+export const STACKACRES_UNREACHABLE_FLAGS: readonly StackAcresQuestFlag[] = [];
 
 /* ------------------------------------------------------------------ */
 /* Progress                                                            */

@@ -9,8 +9,8 @@ import { RankJewel } from "./rank-jewel";
  * record on purpose; those stay in private friend matches.
  *
  * Sits directly under the rank strip because it is the reason for the rank:
- * rank is the difficulty-weighted net of exactly these wagers, so a win on a
- * harder band moves the rank further and a loss takes points off it. Numbers
+ * rank counts the wins among exactly these wagers, and a win on a harder band
+ * counts for more. Losses and stake size do not move it. Numbers
  * come from the same ProgressionSnapshot as the strip, so the two cannot
  * disagree.
  */

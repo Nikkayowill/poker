@@ -333,7 +333,7 @@ describe("what holding acres costs", () => {
     const before = (await ensureProfile(token)).goldBalance;
     expect(await readStackAcresUpkeep(id, DAY)).toBe(0);
 
-    const sold = await sellStackAcresItem(token, { item: "eggs", quantity }, T0);
+    const sold = await sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity }, T0);
 
     expect(await readStackAcresUpkeep(id, DAY)).toBe(fee);
     expect((await ensureProfile(token)).goldBalance).toBe(before + sold.sold.gold - fee);

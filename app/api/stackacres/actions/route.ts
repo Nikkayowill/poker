@@ -18,6 +18,7 @@ import { WOOD_NODE_IDS } from "@/lib/stackacres/tree-nodes";
 import { STONE_NODE_IDS } from "@/lib/stackacres/stone-nodes";
 import { FORAGE_NODE_IDS } from "@/lib/stackacres/forage";
 import { ALL_MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
+import { TOWN_BUYER_IDS } from "@/lib/stackacres/town-buyers";
 import { STACKACRES_BUYABLE_CUTTERS } from "@/lib/stackacres/cutters";
 import { FRIENDSHIP_NPCS, GIFTABLE_ITEMS } from "@/lib/stackacres/friendship";
 import { STORY_ITEM_IDS } from "@/lib/stackacres/story/items";
@@ -51,6 +52,7 @@ import {
   waterStackAcres,
   waterStackAcresGroup,
   claimStackAcresStarterSeeds,
+  payStackAcresUpkeep,
   drawStackAcresWater,
   bagStackAcresQuarry,
   chopStackAcresWoodTree,
@@ -249,6 +251,7 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("draw-water") }),
   // Ray's starter pouch of wheat seed. Once per farm, moves no Gold.
   z.object({ action: z.literal("claim-starter-seeds") }),
+  z.object({ action: z.literal("pay-upkeep") }),
   // The dock's cast, completed. Fills the shelf, same as a harvest -- moves
   // no Gold. Which fish is the server's own dice roll.
   // `bait` spends one Radish for better odds.
@@ -289,9 +292,11 @@ const bodySchema = z.discriminatedUnion("action", [
   // Sells any inventory item -- raw harvest or crafted good -- for Gold, at
   // that item's own sell price, any time. See lib/server/
   // stackacres-service.ts's own header for the three actions here that move
-  // Gold -- this, `fulfill-contract`, and `collect-vat`.
+  // Gold -- this, `fulfill-contract`, and `collect-vat`. `buyer` is the
+  // townsperson being sold to; each item has one (lib/stackacres/town-buyers.ts).
   z.object({
     action: z.literal("sell"),
+    buyer: z.enum(TOWN_BUYER_IDS),
     item: z.enum(ALL_MACHINE_ITEM_IDS as unknown as [string, ...string[]]),
     // Generous but not unbounded, the same posture every other body-supplied
     // quantity in this file takes -- an inventory count this high is not
@@ -572,6 +577,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return drawStackAcresWater(token, now);
     case "claim-starter-seeds":
       return claimStackAcresStarterSeeds(token, now);
+    case "pay-upkeep":
+      return payStackAcresUpkeep(token, now);
     case "catch-fish":
       return catchStackAcresFish(token, action.bait, action.cast, now);
     case "eat":
@@ -595,7 +602,7 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "work":
       return workStackAcres(token, now);
     case "sell":
-      return sellStackAcresItem(token, { item: action.item, quantity: action.quantity }, now);
+      return sellStackAcresItem(token, { item: action.item, quantity: action.quantity, buyer: action.buyer }, now);
     case "process":
       return processStackAcresRecipeAction(token, action.recipe, now, action.batches ?? 1);
     case "request-contract":

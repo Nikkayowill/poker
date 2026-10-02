@@ -27,10 +27,12 @@ import {
   machineItemSellPrice,
   type MachineItemId,
 } from "./machine-items";
+import { TOWN_BUYERS, townBuyerFor } from "./town-buyers";
 import { RECIPE_CATALOGUE, RECIPE_IDS, type RecipeId } from "./recipes";
 import { SOIL_ENRICH_USE_LABEL, isSoilEnrichingItem } from "./soil-enrich";
 import { TRAVELER_QUESTS, questFlatObjectives } from "./story/quests";
 import { TRAVELER_IDS } from "./story/travelers";
+import { isHerdStock } from "./herd";
 import { HOME_SECTORS } from "./sectors";
 import { stockZone } from "./world";
 
@@ -41,13 +43,12 @@ export type GuideItemId = MachineItemId;
 export const GUIDE_ITEM_IDS: readonly GuideItemId[] = [...new Set<GuideItemId>(ALL_MACHINE_ITEM_IDS)];
 
 /** A screen the guide can send the player to. The farm maps each to its own opener. */
-export type GuideDestinationId = "workshop" | "house" | "contracts" | "store-sell";
+export type GuideDestinationId = "workshop" | "house" | "contracts";
 
 export const GUIDE_DESTINATION_LABELS: Readonly<Record<GuideDestinationId, string>> = {
   workshop: "Open the Workshop",
   house: "Open the kitchen",
   contracts: "Open the Town Board",
-  "store-sell": "Open the barn shelf",
 };
 
 export type ResourceUseKind =
@@ -184,7 +185,7 @@ function isMachineBuildable(kind: MachineKind): boolean {
 }
 
 function stockIsOpen(stock: StackAcresStock): boolean {
-  if (!isLivestock(stock)) return true;
+  if (!isLivestock(stock) || isHerdStock(stock)) return true;
   return (HOME_SECTORS as readonly string[]).includes(stockZone(stock));
 }
 
@@ -340,7 +341,12 @@ export function resourceUses(item: GuideItemId): ResourceUse[] {
 
   if ((STACKACRES_ITEMS as readonly string[]).includes(item) || item in MACHINE_ITEM_CATALOGUE) {
     const price = machineItemSellPrice(item as MachineItemId);
-    uses.push({ kind: "sell", label: `Sell for ${price.toLocaleString()} Gold each`, destination: "store-sell" });
+    const buyer = TOWN_BUYERS[townBuyerFor(item as MachineItemId)];
+    uses.push({
+      kind: "sell",
+      label: `Sell for ${price.toLocaleString()} Gold each`,
+      detail: `${buyer.name} buys it at ${buyer.place} in town.`,
+    });
   }
 
   return uses;

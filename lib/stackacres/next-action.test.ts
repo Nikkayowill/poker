@@ -11,7 +11,8 @@ import {
   nextAction,
   type NextAction,
 } from "./next-action";
-import { STACKACRES_QUEST_LABELS, STACKACRES_UNREACHABLE_FLAGS } from "./shop-locks";
+import { STACKACRES_QUEST_LABELS } from "./shop-locks";
+import { stackacresStockPrice } from "./market";
 import type { StackAcresContractRow } from "./contracts";
 import type { StackAcresStoryView } from "./story/state";
 import { TRAVELER_IDS } from "./story/travelers";
@@ -193,6 +194,21 @@ describe("picking the objective", () => {
     });
   });
 
+  it("quotes the first acre as the Crop Fields' price", () => {
+    const action = planned({
+      built: ALL_BUILT,
+      gold: 300,
+      inventory: holding("wood", 15),
+      acrePrice: { gold: 300, wood: 15, stone: 5 },
+    });
+    expect(action.title).toBe(STACKACRES_QUEST_LABELS.crop_fields_unlocked);
+    expect(action.requirements).toEqual([
+      { label: "Stone", have: 0, need: 5, source: "Break the boulders in the Crop Fields" },
+      { label: "Gold", have: 300, need: 300, source: null },
+      { label: "Wood", have: 15, need: 15, source: null },
+    ]);
+  });
+
   it("shows nothing at all on a farm with nothing pressing", () => {
     expect(
       plan({
@@ -336,19 +352,18 @@ describe("advancing when the objective is done", () => {
 });
 
 describe("locked content", () => {
-  it("never names a milestone flag that is behind a wall", () => {
-    // The Fold, the Greenhouse and the Cattle Pasture have no way in on the
-    // live world (shop-locks.ts's STACKACRES_UNREACHABLE_FLAGS). A farm that
-    // holds the two reachable flags has nothing left to reach, so the panel
-    // says nothing rather than sending the player at a wall.
-    const action = plan({
+  it("points at the sheep once the two first milestones are done", () => {
+    // Sheep are sold in the Store, so the Fold is the next rung and the panel
+    // quotes the pen's price.
+    const action = planned({
       built: ALL_BUILT,
+      gold: 0,
       progress: { sectors: [], influence: 1, greenhouseBuilt: false, cropFieldsUnlocked: true },
     });
-    expect(action).toBeNull();
-    for (const flag of STACKACRES_UNREACHABLE_FLAGS) {
-      expect(STACKACRES_QUEST_LABELS[flag]).toContain("not open yet");
-    }
+    expect(action.title).toBe(STACKACRES_QUEST_LABELS.cleared_wallow);
+    expect(action.requirements).toEqual([
+      { label: "Gold", have: 0, need: stackacresStockPrice("pig"), source: "Sell your harvest in town. Dale buys grain and Iris buys the rest" },
+    ]);
   });
 
   it("never names a traveler who will not talk yet", () => {

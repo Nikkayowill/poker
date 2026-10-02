@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { STACKACRES_FEED } from "./catalogue";
+import { STACKACRES_CATALOGUE, STACKACRES_FEED } from "./catalogue";
 import { STACKACRES_TOOL_TIER_DEFS, STACKACRES_TOOL_TIERS } from "./equipment";
-import { sectorLabel } from "./sectors";
 import {
   STACKACRES_MAX_MILESTONE,
   STACKACRES_QUEST_FLAGS,
@@ -70,19 +69,17 @@ describe("quest flags", () => {
     expect(isStackAcresQuestFlag("cleared_the_back_forty")).toBe(false);
   });
 
-  it("keeps its district wording in step with the districts themselves", () => {
-    // The labels are written out rather than pulled from `sectorLabel`, so
+  it("names the Store row that opens each herd district", () => {
+    // The labels are written out rather than pulled from the catalogue, so
     // that this file stays a leaf. This is what stops the two drifting: a
-    // renamed district fails here rather than shipping a hint that names a
-    // place the map no longer has.
+    // renamed pen fails here rather than shipping a hint for a row the Store
+    // no longer has.
     const pairs = [
-      ["cleared_wallow", "wallow"],
-      ["cleared_oxfields", "oxfields"],
+      ["cleared_wallow", "pig"],
+      ["cleared_oxfields", "cattle"],
     ] as const;
-    for (const [flag, sector] of pairs) {
-      expect(STACKACRES_QUEST_LABELS[flag].toLowerCase()).toContain(
-        sectorLabel(sector).toLowerCase(),
-      );
+    for (const [flag, stock] of pairs) {
+      expect(STACKACRES_QUEST_LABELS[flag]).toContain(STACKACRES_CATALOGUE[stock].label);
     }
   });
 });
@@ -165,7 +162,7 @@ describe("evaluating a shelf row", () => {
 
   it("names the quest in the hint", () => {
     expect(evaluateStackAcresShopLock({ requiredQuestFlag: "cleared_wallow" }, NEW_FARM).lockHint)
-      .toBe("Requires: Clear the Fold (not open yet)");
+      .toBe("Requires: Buy a Sheep Pen");
   });
 
   it("says how far along a milestone row is, and what to do next", () => {
@@ -186,7 +183,7 @@ describe("evaluating a shelf row", () => {
     // Milestone met, quest not: the quest is the more actionable answer.
     const missingQuest = farm({ sectors: ["farmstead", "wallow"], cropFieldsUnlocked: true });
     expect(evaluateStackAcresShopLock(row, missingQuest).lockHint).toBe(
-      "Requires: Raise the Greenhouse (not open yet)",
+      "Requires: Raise the Greenhouse",
     );
     // Quest met, milestone not.
     const missingMilestone = farm({ greenhouseBuilt: true });
@@ -200,18 +197,17 @@ describe("evaluating a shelf row", () => {
     ).toBe(true);
   });
 
-  it("never names a flag nobody can earn as the next thing to do", () => {
-    // The Crop Fields and the town order are the only flags left on the live
-    // world. With both earned, nothing reachable is next, so the hint stops at
-    // the count instead of pointing at the Fold.
+  it("points at the sheep once the Crop Fields and the town order are done", () => {
+    // Sheep are sold in the Store now, so the Fold is the next rung rather
+    // than a wall.
     const state = evaluateStackAcresShopLock(
       { minimumMilestone: 3 },
       farm({ cropFieldsUnlocked: true, influence: 1 }),
     );
-    expect(state.lockHint).toBe("Requires 3 farm milestones (2 done)");
+    expect(state.lockHint).toBe("Requires 3 farm milestones (2 done) — next: Buy a Sheep Pen");
     expect(
       nextReachableStackAcresMilestone(farm({ cropFieldsUnlocked: true, influence: 1 })),
-    ).toBeNull();
+    ).toBe("cleared_wallow");
   });
 
   it("asks for nothing when the milestone floor is zero or negative", () => {
@@ -222,7 +218,7 @@ describe("evaluating a shelf row", () => {
   it("words the server's refusal off the same hint the shelf shows", () => {
     const state = evaluateStackAcresShopLock({ requiredQuestFlag: "cleared_wallow" }, NEW_FARM);
     expect(stackacresShopLockRefusal("Bulk Shipment", state)).toBe(
-      "Ray won't sell you a Bulk Shipment yet. Requires: Clear the Fold (not open yet).",
+      "Ray won't sell you a Bulk Shipment yet. Requires: Buy a Sheep Pen.",
     );
   });
 });

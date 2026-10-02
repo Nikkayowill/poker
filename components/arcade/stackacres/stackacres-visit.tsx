@@ -233,6 +233,8 @@ export function StackAcresVisit({ profileId }: { profileId: string }) {
               tool="inspect"
               cutter={STACKACRES_STARTING_CUTTER}
               useKeyLabel=""
+              rodHeld={false}
+              onNearWater={noop}
               viewExpansion={1}
               celebrate={null}
               buildMode={false}
@@ -247,6 +249,7 @@ export function StackAcresVisit({ profileId }: { profileId: string }) {
               onGroundTap={noop}
               onBarnTap={noop}
               onSeedSellerTap={noop}
+              onTownBuyerTap={noop}
               onSignpostTap={noop}
               onWorkshopTap={noop}
               onWellTap={noop}

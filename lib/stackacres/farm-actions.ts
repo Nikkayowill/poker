@@ -18,6 +18,7 @@ import type { HiddenZoneId, SecretItemId } from "./secrets";
 import type { NpcId } from "./friendship";
 import type { CellarItem } from "./aging";
 import type { MachineItemId } from "./machine-items";
+import type { TownBuyerId } from "./town-buyers";
 import type { MachineKind } from "./machines";
 import type { RecipeId } from "./recipes";
 import type { FoodItem } from "./energy";
@@ -64,6 +65,8 @@ export type Action =
   | { action: "draw-water" }
   // Ray's starter pouch of wheat seed, once per farm.
   | { action: "claim-starter-seeds" }
+  // Today's land upkeep out of Gold, sent once when the farm opens.
+  | { action: "pay-upkeep" }
   // The dock's cast, completed: which fish it lands is the server's own
   // dice roll, same posture as `collect`'s Gold.
   // `bait` spends one Radish on the hook for better odds.
@@ -90,8 +93,9 @@ export type Action =
   | { action: "buy-feed"; itemId: string; quantity: number }
   // Sells any inventory item -- raw harvest or crafted good -- for Gold, at
   // that item's own sell price, any time. The baseline income path now that
-  // harvest always credits inventory instead of Gold.
-  | { action: "sell"; item: MachineItemId; quantity: number }
+  // harvest always credits inventory instead of Gold. Sold to one of the
+  // town's buyers (./town-buyers.ts), who only takes their own goods.
+  | { action: "sell"; buyer: TownBuyerId; item: MachineItemId; quantity: number }
   | { action: "upgrade-tool" }
   | { action: "upgrade-axe"; pay: AxePayment }
   | { action: "buy-cutter"; cutter: StackAcresBuyableCutter }

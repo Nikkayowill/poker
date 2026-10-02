@@ -311,12 +311,9 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     const plots = sectors.unlockedPlotCount(unlocked, capacity, cropFieldsUnlocked);
     const expectedFee = upkeep.stackacresUpkeepFee(plots);
     console.log("Chrono-DeLorean simulation: plots after Crop Fields+Wallow ->", plots, "fee ->", expectedFee);
-    // Hen Haven(hen) + Wallow(pig) + the Farmstead's own cattle slot = 3
-    // livestock kinds x 3 free slots each = 9 plots. It used to be 54: crops
-    // ran through the same per-kind slot count until 2026-09-11, when they
-    // dropped out of the cap entirely (catalogue.ts's STACKACRES_BASE_CAP
-    // header) and took their sixteen kinds with them.
-    expect(plots).toBe(9);
+    // Hen Haven's three hen slots plus the Crop Fields' flat three = 6 plots.
+    // The Wallow adds nothing: sheep and cattle are not charged land fee.
+    expect(plots).toBe(6);
     expect(expectedFee).toBeGreaterThan(0);
     expect(afterWallow.upkeep.fee).toBe(expectedFee);
 
@@ -350,7 +347,7 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     const beforeSell = await balance();
     const soldDay0 = await service.sellStackAcresItem(
       token,
-      { item: "wool", quantity: saleQuantity },
+      { buyer: "general-store", item: "wool", quantity: saleQuantity },
       readyNow,
     );
     console.log("Chrono-DeLorean simulation: day0 sale skims Land Maintenance ->", {
@@ -372,7 +369,7 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     const beforeSecond = await balance();
     const soldAgainDay0 = await service.sellStackAcresItem(
       token,
-      { item: "wool", quantity: 10 },
+      { buyer: "general-store", item: "wool", quantity: 10 },
       readyNow,
     );
     expect(await balance()).toBe(beforeSecond + soldAgainDay0.sold.gold);
@@ -390,7 +387,7 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     const beforeDay1Sell = await balance();
     const soldDay1 = await service.sellStackAcresItem(
       token,
-      { item: "wool", quantity: saleQuantity },
+      { buyer: "general-store", item: "wool", quantity: saleQuantity },
       t1,
     );
     console.log("Chrono-DeLorean simulation: day1 sale skims a fresh bill ->", {

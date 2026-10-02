@@ -1649,8 +1649,8 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 
 /*
- * Solo earnings: the tracker under the rank strip. Rank is the difficulty-
- * weighted net of exactly these wagers, so it sits directly beneath the tier
+ * Solo earnings: the tracker under the rank strip. Rank counts the wins among
+ * exactly these wagers, weighted by band, so it sits directly beneath the tier
  * it explains. `.rank-stack` owns the gap to the hub grid so the strip and the
  * tracker read as one block; the strip's own bottom margin steps down inside it.
  *

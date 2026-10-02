@@ -4,14 +4,15 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
-import { machineItemLabel, machineItemSellPrice } from "@/lib/stackacres/machine-items";
+import { machineItemLabel } from "@/lib/stackacres/machine-items";
 import { isMachineDone, machineProgress } from "@/lib/stackacres/machines";
 import type { MachineView } from "@/lib/stackacres/optimistic-actions";
 import { RECIPE_CATALOGUE, batchesAvailable, type RecipeId } from "@/lib/stackacres/recipes";
+import { whoBuysLine } from "@/lib/stackacres/town-buyers";
 
 /**
- * The Mill on its own, for a tap on the windmill: wheat in, flour out, and the flour sold, without the whole
- * Workshop sheet. The Workshop is one button away for everything else.
+ * The Mill on its own, for a tap on the windmill: wheat in, flour out, without the whole Workshop sheet.
+ * Flour is sold in town (lib/stackacres/town-buyers.ts). The Workshop is one button away for everything else.
  */
 
 const FLOUR: RecipeId = "flour";
@@ -27,7 +28,6 @@ export function StackAcresMillCard({
   isPending,
   onMill,
   onCollect,
-  onSell,
   onOpenWorkshop,
   onClose,
 }: {
@@ -36,7 +36,6 @@ export function StackAcresMillCard({
   isPending: (intent: string) => boolean;
   onMill: (batches: number) => void;
   onCollect: () => void;
-  onSell: (quantity: number) => void;
   onOpenWorkshop: () => void;
   onClose: () => void;
 }) {
@@ -94,14 +93,9 @@ export function StackAcresMillCard({
           )}
 
           {flour > 0 && (
-            <button
-              type="button"
-              className="sa-cta"
-              disabled={isPending(`sell:flour:${flour}`)}
-              onClick={() => onSell(flour)}
-            >
-              Sell {machineItemLabel("flour", flour)} · {(machineItemSellPrice("flour") * flour).toLocaleString()} Gold
-            </button>
+            <p className="sa-stock-terms">
+              You have {machineItemLabel("flour", flour)}. {whoBuysLine("flour")}
+            </p>
           )}
 
           <button type="button" className="sa-cta" onClick={onOpenWorkshop}>

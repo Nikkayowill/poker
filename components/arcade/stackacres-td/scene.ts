@@ -150,6 +150,7 @@ import type { BuildGhost, GroceryGhost, GroceryScene } from "../stackacres/world
 import { Worksite, marketLayout, type MarketArea } from "@/lib/stackacres-td/worksite";
 import { STAFF_SPRITES, STORE_SHOPPERS, STORE_STAFF, staffAtPosts } from "@/lib/stackacres-td/store-cast";
 import { SEED_SELLER } from "@/lib/stackacres/seed-seller";
+import { townBuyerOfNpc, type TownBuyerId } from "@/lib/stackacres/town-buyers";
 import {
   DEFAULT_GROCERY_LAYOUT,
   GROCERY_ITEMS,
@@ -304,6 +305,8 @@ const DOCK_CAST_SPOT: Point = { x: 416, y: 44 };
  * on the post: the post is at the top of the map, under the HUD bar on a landscape phone.
  */
 const DOCK_PLANKS = new Phaser.Geom.Rectangle(400, 16, 32, 96);
+/** How close to the dock he has to be for the belt to show the rod and the bait. */
+const NEAR_WATER = 64;
 /** Where each pen's animals stand: the area, its spots zone, and how the grid of them is laid out.
  *  Hen Haven is the only pen left (2026-09-28): the Fold's and Cattle Pasture's own rows went with
  *  those two districts. */
@@ -422,6 +425,7 @@ export interface TopdownCallbacks {
   onGroundTap: (zone: ZoneId, at: TapPoint, world: WorldPoint) => void;
   onBarnTap: () => void;
   onSeedSellerTap: () => void;
+  onTownBuyerTap: (buyer: TownBuyerId) => void;
   onSignpostTap: () => void;
   onWorkshopTap: () => void;
   onWellTap: (at: TapPoint) => void;
@@ -470,6 +474,8 @@ export interface TopdownCallbacks {
    *  stands the thumb stick and the Use key down for the duration: they are
    *  refused anyway, and leaving them lit reads as the game having frozen. */
   onInputLocked: (locked: boolean) => void;
+  /** He has walked up to the dock, or away from it. The belt shows the rod and the bait while he is there. */
+  onNearWater: (near: boolean) => void;
   /** A tap while placing a building: the map square it landed on, in the Far Field or the grocery. */
   onBuildTap: (tile: Tile) => void;
   /** The farmer walked up to the grocery's Help Wanted board. */
@@ -574,6 +580,10 @@ export class TopdownScene extends Phaser.Scene {
   private occupiedTiles = new Set<string>();
   /** The Use key is held (use-key.tsx), so stepping onto a new bed works it too. */
   private useDown = false;
+  /** The belt is holding the rod, so the Use key casts instead of working a square. */
+  private rodHeld = false;
+  /** What `onNearWater` last said, so it only fires on a change. */
+  private nearWater = false;
   /** The last bed a held stroke worked, so one step never fires twice. */
   private stroked: string | null = null;
   /** An action animation is playing and must not be trampled by the walk cycle. */
@@ -809,6 +819,7 @@ export class TopdownScene extends Phaser.Scene {
     } else if (this.stick) this.walkByStick(delta);
     else if (this.path.length > 0) this.walk(delta);
     if (this.useDown && this.isWalking()) this.useSquare(true);
+    this.checkNearWater();
     if (this.shake.ms > 0) this.shake.ms = Math.max(0, this.shake.ms - delta);
     this.easeCamera(delta);
     this.easeHeadroom(delta);
@@ -2025,7 +2036,7 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   /** Out along the dock to cast. The face point is due west along the planks, which turns him toward the water. */
-  private dockTarget(spec: PropSpec): Target {
+  private dockTarget(spec: PropSpec): Extract<Target, { kind: "tag" }> {
     return { kind: "tag", tag: "dock", anchor: DOCK_CAST_SPOT, face: { x: spec.x - spec.w, y: DOCK_CAST_SPOT.y } };
   }
 
@@ -2047,7 +2058,10 @@ export class TopdownScene extends Phaser.Scene {
     for (const [name, node] of this.npcSprites) {
       if (!node.sprite.visible) continue;
       const box = new Phaser.Geom.Rectangle(node.sprite.x - 9, node.sprite.y - 30, 18, 32);
-      if (box.contains(map.x, map.y)) consider({ kind: "npc", name, anchor: { x: node.sprite.x, y: node.sprite.y + 10 }, face: { x: node.sprite.x, y: node.sprite.y } }, node.sprite.depth);
+      // Someone who trades (Cora, the town's buyers) wins over a prop drawn in front of them, so Dale is
+      // still tappable behind the quay's crane.
+      const trades = name === SEED_SELLER || townBuyerOfNpc(name) !== null;
+      if (box.contains(map.x, map.y)) consider({ kind: "npc", name, anchor: { x: node.sprite.x, y: node.sprite.y + 10 }, face: { x: node.sprite.x, y: node.sprite.y } }, node.sprite.depth + (trades ? 1000 : 0));
     }
     for (const { spec, image } of this.propImages) {
       if (!spec.tag || !image.visible) continue;
@@ -2573,6 +2587,7 @@ export class TopdownScene extends Phaser.Scene {
       const at = this.mapToCss(node ? { x: node.sprite.x, y: node.sprite.y - 20 } : target.anchor);
       if (target.name === "ray") cb.onRayTap(at);
       else if (target.name === SEED_SELLER) cb.onSeedSellerTap();
+      else if (townBuyerOfNpc(target.name)) cb.onTownBuyerTap(townBuyerOfNpc(target.name) as TownBuyerId);
       // The rest of the City's townsfolk only turn to look at the farmer (talkTo above).
       else if (isTravelerId(target.name)) cb.onTravelerTap(target.name, at);
       return;
@@ -2646,12 +2661,55 @@ export class TopdownScene extends Phaser.Scene {
       } else if (down) this.castTapped();
       return;
     }
+    if (this.rodHeld && this.nearWater) {
+      if (down) this.walkToCast();
+      return;
+    }
     this.useDown = down;
     if (!down) {
       this.stroked = null;
       return;
     }
     this.useSquare(false);
+  }
+
+  /** The belt picked the rod up or put it down. */
+  setRodHeld(on: boolean): void {
+    this.rodHeld = on;
+  }
+
+  private checkNearWater(): void {
+    const dock = this.propImages.find(({ spec }) => spec.tag === "dock");
+    let near = false;
+    if (dock?.image.visible && !this.travelling) {
+      const dx = Math.max(DOCK_PLANKS.left - this.pos.x, 0, this.pos.x - DOCK_PLANKS.right);
+      const dy = Math.max(DOCK_PLANKS.top - this.pos.y, 0, this.pos.y - DOCK_PLANKS.bottom);
+      near = Math.hypot(dx, dy) <= NEAR_WATER;
+    }
+    if (this.cast) near = true;
+    if (near === this.nearWater) return;
+    this.nearWater = near;
+    this.callbacks.onNearWater(near);
+  }
+
+  /** The rod's Use press: out along the dock and cast, the same as a tap on the planks. */
+  private walkToCast(): void {
+    const dock = this.propImages.find(({ spec }) => spec.tag === "dock");
+    if (!dock || this.swing) return;
+    const target = this.dockTarget(dock.spec);
+    this.pending = target;
+    if (Math.hypot(target.anchor.x - this.pos.x, target.anchor.y - this.pos.y) <= REACH) {
+      this.path = [];
+      this.arrive();
+      return;
+    }
+    this.path = findPath(this.grid, this.pos, target.anchor);
+    if (this.path.length === 0) {
+      this.arrive();
+      return;
+    }
+    this.callbacks.onViewMoved();
+    this.drawMarker(this.path[this.path.length - 1]);
   }
 
   /**

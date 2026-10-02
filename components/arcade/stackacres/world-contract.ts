@@ -8,6 +8,7 @@ import type { StackAcresTool } from "@/lib/stackacres/tools";
 import type { StackAcresCutter } from "@/lib/stackacres/cutters";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
+import type { TownBuyerId } from "@/lib/stackacres/town-buyers";
 import type { QuestPlaceId } from "@/lib/stackacres/story/places";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
@@ -345,6 +346,10 @@ export interface StackAcresWorldProps {
   onReady: () => void;
   /** What the belt is holding, so the Use key beside the thumb stick names the job it will do. */
   useKeyLabel: string;
+  /** The belt is holding the rod: the Use key walks him out on the dock and casts. */
+  rodHeld: boolean;
+  /** He walked up to the dock, or away from it. The belt grows a rod and a bait slot while he is there. */
+  onNearWater: (near: boolean) => void;
   /**
    * The farmer is standing on a square with a belt tool in hand: either he
    * walked to a tapped one and arrived, or the Use key fired on the one under
@@ -365,6 +370,8 @@ export interface StackAcresWorldProps {
   onBarnTap: () => void;
   /** A finger landed on Cora, who sells seed at the city market. */
   onSeedSellerTap: () => void;
+  /** A finger landed on one of the City's buyers (lib/stackacres/town-buyers.ts). */
+  onTownBuyerTap: (buyer: TownBuyerId) => void;
   /** A finger landed on the signpost, the Town Board's entryway now that
    *  the places list is gone. */
   onSignpostTap: () => void;

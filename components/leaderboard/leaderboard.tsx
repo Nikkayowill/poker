@@ -186,7 +186,7 @@ export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
               a double hyphen. */}
           <p>
             {board === "global"
-              ? "Ranked by Rank Points from solo wagers. Harder stakes count for far more."
+              ? "Ranked by solo wins. A win at harder stakes counts for far more."
               : "You and your friends, ranked by Rank Points."}{" "}
             Entertainment only &mdash; nothing here can be cashed out.
           </p>

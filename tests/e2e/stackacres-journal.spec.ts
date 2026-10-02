@@ -109,9 +109,9 @@ test("the sheet shows both tracks: the buildings and the reach", async ({ contex
   for (const flag of [
     "Break ground in the Crop Fields",
     "Fill an order for the town",
-    "Clear the Fold",
+    "Buy a Sheep Pen",
     "Raise the Greenhouse",
-    "Clear the Cattle Pasture",
+    "Buy a Cattle Pen",
   ]) {
     await expect(sheet.locator(".sa-journal-reach")).toContainText(flag);
   }
@@ -120,8 +120,9 @@ test("the sheet shows both tracks: the buildings and the reach", async ({ contex
   // (lib/stackacres/story/travelers.ts's own header), so no reach step
   // shows a "Brings" line now.
   await expect(sheet.locator(".sa-journal-reach")).not.toContainText("Brings");
-  // The Fold cannot be cleared on the live world, so it shows no price.
-  await expect(sheet.locator(".sa-journal-reach")).toContainText("Not open yet");
-  await expect(sheet.locator(".sa-journal-reach")).not.toContainText("45,000 Gold");
+  // The first acre prices the Crop Fields, and a sheep prices the Fold.
+  await expect(sheet.locator(".sa-journal-reach")).toContainText("300 Gold + 15 Wood + 5 Stone");
+  await expect(sheet.locator(".sa-journal-reach")).toContainText("15,000 Gold");
+  await expect(sheet.locator(".sa-journal-reach")).not.toContainText("Not open yet");
   await expect(sheet.locator(".sa-journal-foot")).toContainText("Chef Pierre");
 });

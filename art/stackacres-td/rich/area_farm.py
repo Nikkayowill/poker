@@ -110,8 +110,9 @@ def dog(facing_left=False):
     return c.image(), (8, 10)
 
 
-def cattle(facing_left=False, patches=True):
-    """A brown cow (with white patches unless `patches` is off): hide shading, a pale muzzle, horn tips, hooves."""
+def cattle(facing_left=False, patches=True, hereford=False):
+    """A brown cow (with white patches unless `patches` is off): hide shading, a pale muzzle, horn tips, hooves.
+    `hereford` is the beef steer: a red hide with a white face, brisket and tail switch."""
     rows = [
         "......................T.TT",
         ".....NNNNNNNNNNNNNN...TNNT",
@@ -139,7 +140,13 @@ def cattle(facing_left=False, patches=True):
                 if y >= 9:                                         # legs: lit front edge, shaded back
                     lit = 0.5 if x in (5, 13) else 0.15
                 level = 1.8 + lit * 3.2 + (hash2(px, py, 21) - 0.5) * 0.5
-                if k == "W" and patches:
+                if hereford:
+                    white = (head and not (x == 21 and y >= 4)) or (y == 7 and 15 <= x <= 20) or (y == 8 and 16 <= x <= 19)
+                    if white:
+                        c.put(px, py, "linen", (3.4 + lit * 2.6) if head else 3.0)
+                    else:
+                        c.put(px, py, "fencewood", level + 0.3)
+                elif k == "W" and patches:
                     c.put(px, py, "linen", 2.6 + lit * 3.4)
                 else:
                     c.put(px, py, "leather", level)
@@ -149,14 +156,70 @@ def cattle(facing_left=False, patches=True):
                 c.put(px, py, "coal", 0.2)
             elif k == "P":
                 c.put(px, py, "coal", 1.2 if y < 11 else 0.8)
-    c.put(23, 5, "leather", 4.6)                                    # brow
+    c.put(23, 5, "linen" if hereford else "leather", 3.0 if hereford else 4.6)   # brow
     c.put(24, 7, "pink", 2.8)                                       # nostril
-    c.put(3, 11, "leather", 1.6)                                    # tail tuft
-    c.put(3, 12, "coal", 1.4)
+    c.put(3, 11, "linen" if hereford else "leather", 3.4 if hereford else 1.6)   # tail tuft
+    c.put(3, 12, "linen" if hereford else "coal", 2.4 if hereford else 1.4)
     c.outline(rim_amount=0.5, lit_bonus=0.05)
     if facing_left:
         _mirror(c)
     return c.image(), (14, 13)
+
+
+def hog(facing_left=False):
+    """A market hog, side on: a long pale-pink Yorkshire barrel, a crease where the head meets it, a pricked ear tipped
+    forward, a deeper-pink snout disc, a curl of tail, four short legs (the far pair in shade) and dark trotters.
+    Between the sheep and the cattle in size."""
+    rows = [
+        "........BBBBBBB.......",
+        "......BBBBBBBBBBB.EE..",
+        "...BBBBBBBBBBBBBBNEEE.",
+        "..BBBBBBBBBBBBBBNNNE..",
+        ".BBBBBBBBBBBBBBBNNNNN.",
+        ".BBBBBBBBBBBBBBBNNKNSS",
+        ".BBBBBBBBBBBBBBBNNNNSS",
+        ".BBBBBBBBBBBBBBBNNNm..",
+        "..BBBBBBBBBBBBBBBN....",
+        "...BBBBBBBBBBBBBB.....",
+        "...fLL.fLL...fLL.fLL..",
+        "...fHH.fHH...fHH.fHH..",
+    ]
+    c = Canvas(24, 14)
+    body = [(x + 1, y + 1) for y, r in enumerate(rows) for x, k in enumerate(r) if k == "B"]
+    x0, x1 = min(p[0] for p in body), max(p[0] for p in body)
+    y0, y1 = min(p[1] for p in body), max(p[1] for p in body)
+    for y, row in enumerate(rows):
+        for x, k in enumerate(row):
+            px, py = x + 1, y + 1
+            if k == "B":
+                lit = _body_light(px, py, x0, x1, y0, y1)
+                c.put(px, py, "hog", 2.9 + lit * 2.9 + (hash2(px, py, 31) - 0.5) * 0.3)
+            elif k == "N":                                          # the head, lit from above, falling to the jowl
+                c.put(px, py, "hog", 5.2 - (y - 2) * 0.45 - (0.3 if x == 16 else 0))
+            elif k == "E":
+                c.put(px, py, "pink", 3.8 if y == 1 else 2.8)        # the pricked ear, pinker than the hide
+            elif k == "S":
+                c.put(px, py, "pink", 3.2 if y == 5 else 2.4)        # snout disc
+            elif k == "L":
+                c.put(px, py, "hog", 3.6 if x in (4, 15) else 2.6)   # near legs: lit front edge
+            elif k == "f":
+                c.put(px, py, "hog", 1.4)                            # far legs, in shade
+            elif k == "H":
+                c.put(px, py, "coal", 1.4 if x in (4, 15) else 0.9)
+            elif k == "m":
+                c.put(px, py, "pink", 1.6)
+    for y in range(4, 9):                                           # the crease where the head meets the body
+        c.shift(17, y + 1, -1.2)
+    c.put(19, 7, "coal", 0.2)                                       # eye
+    c.put(20, 4, "pink", 2.0)                                       # the ear's shadow on the brow
+    c.put(22, 6, "plum", 1.4)                                       # nostril
+    c.put(22, 7, "plum", 1.6)
+    for x, y, lv in ((1, 4, 3.0), (0, 3, 3.4), (0, 2, 2.6), (1, 1, 3.0)):   # tail curl off the rump
+        c.put(x, y + 1, "pink", lv)
+    c.outline(rim_amount=0.4, lit_bonus=0.05)
+    if facing_left:
+        _mirror(c)
+    return c.image(), (12, 13)
 
 
 def bird(facing_left=False):

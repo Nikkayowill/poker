@@ -81,7 +81,7 @@ export function tierForPoints(points: number): RankTier {
 }
 
 export interface RankProgress {
-  /** Rank points: the difficulty-weighted net of solo wagers, never below 0. */
+  /** Rank points: solo wager wins, weighted by stake band. */
   points: number;
   tier: RankTier;
   /** The tier above, or null at GOAT. */
@@ -124,7 +124,7 @@ export interface TierReward {
  * Every tier crossed going from `fromTier` up to `toTier`, each with its Gold.
  *
  * Plural because one big win can jump several tiers, and each has to pay. Empty
- * when nothing was crossed or the player went down: rank can fall, and a fall
+ * when nothing was crossed. Rank only climbs now, but a lower `toTier` still
  * pays nothing and takes nothing back.
  */
 export function rewardsBetween(fromTier: number, toTier: number): TierReward[] {

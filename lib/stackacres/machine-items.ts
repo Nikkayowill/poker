@@ -254,7 +254,7 @@ export function machineItemLabel(item: MachineItemId, quantity: number): string 
 export function machineItemPurpose(item: MachineItemId): string {
   if (item === "wood" || item === "stone") return "Building material — keep some for farm upgrades.";
   if (item === "bluegill" || item === "trout" || item === "catfish") return "Catch from the pond, then sell for Gold.";
-  if (item === "meat" || item === "pelt") return "Exploration find — sell it from the Workshop shelf.";
-  if (isMachineProcessedItem(item)) return "Use in recipes or town orders, or sell it from the Workshop shelf.";
+  if (item === "meat" || item === "pelt") return "Exploration find. Sell it in town.";
+  if (isMachineProcessedItem(item)) return "Use in recipes or town orders, or sell it in town.";
   return "Use in recipes, animal care, gifts, or town orders.";
 }

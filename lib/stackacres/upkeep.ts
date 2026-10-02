@@ -1,6 +1,10 @@
 /**
  * Land Maintenance: what holding cleared ground costs, per UTC day, in Gold.
  *
+ * CHANGED 2026-10-02 (Kayo): the day's fee now comes out of Gold when the farm
+ * opens (`payStackAcresUpkeep`), so it no longer stands in the HUD as a bill.
+ * The payout skim below still takes whatever that could not cover.
+ *
  * NETTED OFF A GOLD PAYOUT (2026-09-12, Kayo's call), not a standalone wallet
  * debit -- see lib/server/stackacres-service.ts's own header and
  * `netUpkeepFromPayout` there. Skimmed off the top of whatever

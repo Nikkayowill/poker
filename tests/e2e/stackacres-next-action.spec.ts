@@ -76,7 +76,7 @@ test("the planner names the Mill, then advances to the Oven once the Mill is up"
 
   // One objective, why it matters, what is missing, and where the missing
   // thing comes from. Every one of those numbers is the machine catalogue's.
-  await expect(panel.getByRole("heading", { name: "Build the Mill" })).toBeVisible();
+  await expect(panel.getByRole("heading", { name: "Build the Feed Grinder" })).toBeVisible();
   await expect(panel).toContainText("Grow wheat");
   await expect(panel).toContainText("Missing:");
   await expect(panel).toContainText("15 Wood");
@@ -88,7 +88,7 @@ test("the planner names the Mill, then advances to the Oven once the Mill is up"
   // stays on it and only stops asking for anything.
   await grantWood(context, profileId, 15);
   await enterFarm(page);
-  await expect(panel.getByRole("heading", { name: "Build the Mill" })).toBeVisible();
+  await expect(panel.getByRole("heading", { name: "Build the Feed Grinder" })).toBeVisible();
   await expect(panel).toContainText("Everything it needs is in hand");
 
   // The button goes to the room the Mill actually goes up in.
@@ -97,11 +97,11 @@ test("the planner names the Mill, then advances to the Oven once the Mill is up"
   await expect(workshop).toBeVisible();
 
   await workshop
-    .locator(".sa-workshop-machine", { hasText: "Mill" })
+    .locator(".sa-workshop-machine", { hasText: "Feed Grinder" })
     .getByRole("button", { name: /Build/ })
     .first()
     .click();
-  await expect(workshop.locator(".sa-workshop-machine", { hasText: "Mill" }).getByRole("button", { name: /Build/ })).toHaveCount(
+  await expect(workshop.locator(".sa-workshop-machine", { hasText: "Feed Grinder" }).getByRole("button", { name: /Build/ })).toHaveCount(
     0,
     { timeout: 10_000 },
   );
@@ -111,7 +111,7 @@ test("the planner names the Mill, then advances to the Oven once the Mill is up"
   // Nobody asked the panel to refresh: the objective was derived from the
   // snapshot, the snapshot changed, so the panel is already on the next one.
   await expect(panel.getByRole("heading", { name: "Build the Oven" })).toBeVisible({ timeout: 10_000 });
-  await expect(panel.getByRole("heading", { name: "Build the Mill" })).toHaveCount(0);
+  await expect(panel.getByRole("heading", { name: "Build the Feed Grinder" })).toHaveCount(0);
   await expect(panel.getByRole("button", { name: "Open your kitchen" })).toBeVisible();
 });
 

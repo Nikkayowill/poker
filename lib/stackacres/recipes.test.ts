@@ -90,20 +90,27 @@ describe("canStartRecipe", () => {
 
 describe("recipeRawGoldValue", () => {
   it("sums every input's sell price per unit of output", () => {
-    // 3 Wheat at 4.
-    expect(recipeRawGoldValue("flour")).toBe(12);
-    // 3 Milk at 220.
-    expect(recipeRawGoldValue("cheese")).toBe(660);
-    // 4 Fleeces at 76.
-    expect(recipeRawGoldValue("cloth")).toBe(304);
-    // 2 Eggs at 18, 1 Milk at 220, 1 Flour at 16.
-    expect(recipeRawGoldValue("cake")).toBe(2 * 18 + 220 + 16);
+    // 3 Wheat at 7.
+    expect(recipeRawGoldValue("flour")).toBe(21);
+    // 3 Milk at 120.
+    expect(recipeRawGoldValue("cheese")).toBe(360);
+    // 4 Fleeces at 40.
+    expect(recipeRawGoldValue("cloth")).toBe(160);
+    // 2 Eggs at 12, 1 Milk at 120, 1 Flour at 24.
+    expect(recipeRawGoldValue("cake")).toBe(2 * 12 + 120 + 24);
   });
 
-  it("sits under every processed good's own sell price, so crafting never loses to selling raw", () => {
+  it("never sells a made good for less than its inputs, so crafting never loses to selling raw", () => {
     for (const id of RECIPE_IDS) {
       const def = RECIPE_CATALOGUE[id];
-      expect(machineItemSellPrice(def.output.item)).toBeGreaterThan(recipeRawGoldValue(id));
+      expect(machineItemSellPrice(def.output.item), id).toBeGreaterThanOrEqual(recipeRawGoldValue(id));
+    }
+  });
+
+  it("sells every made good for at most 1.15x its raw inputs, so raw goods stay the income", () => {
+    for (const id of RECIPE_IDS) {
+      const def = RECIPE_CATALOGUE[id];
+      expect(machineItemSellPrice(def.output.item), id).toBeLessThanOrEqual(recipeRawGoldValue(id) * 1.15);
     }
   });
 });
@@ -118,14 +125,15 @@ describe("contract pricing", () => {
       return rung.goldReward / (recipeRawGoldValue(recipe) * rung.quantity);
     }).filter((ratio): ratio is number => ratio !== null);
 
-    expect(priced.length).toBeGreaterThan(0);
-    for (const rung of CONTRACT_RUNGS) {
-      if (rung.item === "flour") continue; // priced off seed, see contracts.ts
-      const recipe = recipeForOutput(rung.item)!;
-      const ratio = rung.goldReward / (recipeRawGoldValue(recipe) * rung.quantity);
-      expect(ratio).toBeGreaterThan(1.25);
-      expect(ratio).toBeLessThan(1.35);
+    expect(priced.length).toBe(CONTRACT_RUNGS.length);
+    for (const ratio of priced) {
+      expect(ratio).toBeGreaterThan(1.2);
+      expect(ratio).toBeLessThan(1.3);
     }
+  });
+
+  it("asks for no Cheese or Cloth", () => {
+    expect(CONTRACT_RUNGS.filter((rung) => rung.item === "cheese" || rung.item === "cloth")).toEqual([]);
   });
 
   it("still pays more per unit than Sell does, for every good a contract asks for", () => {

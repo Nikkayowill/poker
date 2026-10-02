@@ -62,11 +62,11 @@ test("a new farm shows chapter 1 on the chip, with the Mill's own shortfall", as
   await openStackAcres(context, page);
   await openMore(page);
 
-  // The chip is a compact badge now (icon + "1/6"), same standing-badge
+  // The chip is a compact badge now (icon + "1/4"), same standing-badge
   // posture as the Forge and Crossbreeding Bed -- the chapter/step detail
   // that used to sit in its own text is in its title and the sheet it opens.
   const chip = page.getByTitle(/^Chapter 1/);
-  await expect(chip).toContainText("1/6");
+  await expect(chip).toContainText("1/4");
   await expect(chip).toHaveAttribute("title", /Chapter 1/);
   await expect(chip).toHaveAttribute("title", /Bread/);
 
@@ -77,7 +77,7 @@ test("a new farm shows chapter 1 on the chip, with the Mill's own shortfall", as
   // the word itself only lives in the chip's title, already checked above.
   await expect(sheet.getByRole("heading", { name: "Bread" })).toBeVisible();
   // 20,000 Gold and no Wood, so the line names the thing actually missing.
-  await expect(sheet).toContainText("Mill");
+  await expect(sheet).toContainText("Feed Grinder");
   await expect(sheet).toContainText("Wood");
 });
 
@@ -98,7 +98,7 @@ test("building the Stew Pot finishes chapter 2 with Ray's card, once", async ({ 
 
   // Built out of order, so the goal is still the first unfinished chapter.
   await openMore(page);
-  await expect(page.getByTitle(/^Chapter 1/)).toContainText("1/6");
+  await expect(page.getByTitle(/^Chapter 1/)).toContainText("1/4");
 
   await enterFarm(page);
   await expect(page.getByRole("dialog", { name: "Stew" })).toHaveCount(0);

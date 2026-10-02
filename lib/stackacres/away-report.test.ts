@@ -60,11 +60,11 @@ describe("buildAwayReport", () => {
     const base = { kind: "mill" as const, standingRecipe: null, kitchenSince: null };
     const done = { ...base, status: "working" as const, recipeId: "flour" as const, readyAt: at(HOUR) };
     const running = { ...base, status: "working" as const, recipeId: "flour" as const, readyAt: at(-HOUR) };
-    expect(run({ machines: [done] })?.lines).toEqual(["The Mill finished Flour."]);
+    expect(run({ machines: [done] })?.lines).toEqual(["The Feed Grinder finished Flour."]);
     expect(run({ machines: [running] })).toBeNull();
   });
 
-  it("reports the Farm Kitchen's banked batches", () => {
+  it("says nothing about a retired Farm Kitchen", () => {
     const kitchen = {
       kind: "farm_kitchen" as const,
       status: "idle" as const,
@@ -73,7 +73,7 @@ describe("buildAwayReport", () => {
       standingRecipe: "bread" as const,
       kitchenSince: at(2 * HOUR),
     };
-    expect(run({ machines: [kitchen] })?.lines).toEqual(["The Farm Kitchen has 4 batches of Bread waiting."]);
+    expect(run({ machines: [kitchen] })).toBeNull();
   });
 });
 

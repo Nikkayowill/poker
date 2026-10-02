@@ -57,10 +57,7 @@ import {
   catchStackAcresFish,
   eatStackAcresFoodAction,
   processStackAcresRecipeAction,
-  sealStackAcresCellar,
   collectStackAcresCellar,
-  sealStackAcresVat,
-  setStackAcresKitchenOrder,
   mineStackAcresStoneNode,
   chopStackAcresWoodTree,
   upgradeStackAcresAxe,
@@ -82,6 +79,8 @@ import {
   adjustStackAcresSecretLedger,
   adjustStackAcresFeed,
   createStackAcresUnit,
+  createStackAcresVatManifest,
+  collectStackAcresUnit,
   feedStackAcresUnit,
   getStackAcresUnit,
   listStackAcresUnits,
@@ -156,6 +155,7 @@ import {
   STACKACRES_CROPS,
   STACKACRES_FEED,
   STACKACRES_MAX_EXTRA_CAP,
+  STACKACRES_MUCK_CHANCE,
   STACKACRES_SEED_BAGS_PER_PURCHASE,
   stackacresCapacityMaterials,
   stackacresCapacityPrice,
@@ -190,7 +190,6 @@ import {
   STACKACRES_STOCK,
   STACKACRES_YIELDS,
   itemSellPrice,
-  netPerCycle,
   yieldValue,
 } from "@/lib/stackacres/items";
 import { STACKACRES_UPKEEP_FREE_PLOTS, stackacresUpkeepFee } from "@/lib/stackacres/upkeep";
@@ -201,7 +200,7 @@ import {
   WHEAT_SEED_COST,
   WHEAT_YIELD_QUANTITY,
 } from "@/lib/stackacres/wheat-plot";
-import { MACHINE_CAP, MACHINE_CATALOGUE, MACHINE_KINDS } from "@/lib/stackacres/machines";
+import { MACHINE_CAP, MACHINE_CATALOGUE, MACHINE_KINDS, isRetiredMachine } from "@/lib/stackacres/machines";
 import { MAX_RUN_BATCHES, RECIPE_CATALOGUE } from "@/lib/stackacres/recipes";
 import { SYNERGY_PERKS } from "@/lib/stackacres/synergy-perks";
 import {
@@ -1476,15 +1475,12 @@ describe("harvesting", () => {
     expect(__stackacresHarvestsForTest()).toHaveLength(2);
   });
 
-  it("sends a mucked unit to mucked with the tier's fee, and never withholds the produce", async () => {
+  it("never mucks a unit now that the muck chance is zero, even on the lowest roll", async () => {
     const { token, id } = await funded();
     const view = await stockStackAcres(token, { stock: "hen" }, T0);
     const unitId = unitOf(view, "hen").id;
     const before = await balance(token);
 
-    // Force the roll. It is the one piece of randomness a free-rung farm has
-    // and it lives behind Math.random in exactly one function -- the equipment
-    // ladder's crit shares the source but cannot fire on the Trowel.
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
     let result;
     try {
@@ -1492,15 +1488,10 @@ describe("harvesting", () => {
     } finally {
       random.mockRestore();
     }
-    expect(result.harvest.mucked).toBe(1);
-
-    // Credited in full regardless: muck is a cost you choose to pay later,
-    // never a deduction from what the unit already grew.
+    expect(result.harvest.mucked).toBe(0);
     expect(result.inventory.eggs).toBe(HEN_YIELD.quantity);
     expect(await balance(token)).toBe(before);
-    const unit = await getStackAcresUnit(id, unitId);
-    expect(unit?.status).toBe("mucked");
-    expect(unit?.muckFee).toBe(HEN.muckFee);
+    expect(await getStackAcresUnit(id, unitId)).toBeNull();
   });
 
   it("removes the unit outright when the roll comes up clean", async () => {
@@ -1731,16 +1722,16 @@ describe("Land Maintenance", () => {
 });
 
 describe("muck", () => {
+  // Nothing rolls muck any more (STACKACRES_MUCK_CHANCE is 0), but a unit
+  // mucked before that still has to be clearable, so the row is written
+  // straight through the store's guarded settlement.
   async function mucked() {
     const { token, id } = await funded();
     const view = await stockStackAcres(token, { stock: "hen" }, T0);
     const unitId = unitOf(view, "hen").id;
-    const random = vi.spyOn(Math, "random").mockReturnValue(0);
-    try {
-      await collectOne(token, unitId, HEN_READY);
-    } finally {
-      random.mockRestore();
-    }
+    const unit = await getStackAcresUnit(id, unitId);
+    if (!unit) throw new Error("no hen");
+    await collectStackAcresUnit(unit, HEN_READY, HEN.muckFee, null);
     return { token, id, unitId };
   }
 
@@ -1776,14 +1767,8 @@ describe("muck", () => {
     expect((await getStackAcresUnit(id, unitId))?.status).toBe("mucked");
   });
 
-  it("keeps every tier's expected muck cost below what that tier earns", () => {
-    // The arithmetic the fee exists to satisfy. A flat fee across tiers an
-    // order of magnitude apart made the cheapest one permanently negative,
-    // which is how this rule got written down.
-    for (const stock of STACKACRES_STOCK) {
-      const def = STACKACRES_CATALOGUE[stock];
-      expect(def.muckFee * 0.2).toBeLessThan(netPerCycle(stock, def.seedCost));
-    }
+  it("never rolls muck on a new harvest", () => {
+    expect(STACKACRES_MUCK_CHANCE).toBe(0);
   });
 });
 
@@ -2392,10 +2377,7 @@ describe("the currency wall", () => {
       "remove-soil-tile",
       "request-contract",
       "retire",
-      "seal-cellar",
-      "seal-vat",
       "sell",
-      "set-kitchen-order",
       // Moves no Gold either way: only the farm clock's offset.
       "sleep",
       "start-blueprint",
@@ -3234,7 +3216,7 @@ describe("wheat and machines", () => {
     const { token, id } = await funded();
     await adjustStackAcresInventory(id, "stone", -((await readStackAcresInventory(id)).stone ?? 0));
     const goldBefore = await balance(token);
-    await expect(placeStackAcresMachine(token, "cellar", T0)).rejects.toBeInstanceOf(
+    await expect(placeStackAcresMachine(token, "smelter", T0)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
     expect(await balance(token)).toBe(goldBefore);
@@ -3251,10 +3233,14 @@ describe("wheat and machines", () => {
   });
 
   it("refuses and refunds once the machine cap is reached", async () => {
-    const { token } = await funded();
+    const { token, id } = await funded();
     // One of each kind, which is exactly MACHINE_CAP of them -- a second Mill
-    // is refused before the total cap is ever the reason.
-    for (const kind of MACHINE_KINDS) await placeStackAcresMachine(token, kind, T0);
+    // is refused before the total cap is ever the reason. Retired kinds can
+    // no longer be placed, so those rows are written the way an old farm has them.
+    for (const kind of MACHINE_KINDS) {
+      if (isRetiredMachine(kind)) await createStackAcresMachine(id, kind, T0);
+      else await placeStackAcresMachine(token, kind, T0);
+    }
     expect(MACHINE_KINDS).toHaveLength(MACHINE_CAP);
     const before = await balance(token);
     await expect(placeStackAcresMachine(token, "mill", T0)).rejects.toBeInstanceOf(
@@ -3279,14 +3265,14 @@ describe("wheat and machines", () => {
 
     // Wheat ripens (yield 4) but is not yet ready: nothing moves.
     const early = await workStackAcres(token, new Date(T0.getTime() + 1));
-    expect(early.work).toEqual({ wheatCollected: 0, machinesStarted: 0, machinesCollected: 0, siloServings: 0, kitchenCooked: null });
+    expect(early.work).toEqual({ wheatCollected: 0, machinesStarted: 0, machinesCollected: 0, siloServings: 0 });
     expect(early.inventory.wheat ?? 0).toBe(0);
 
     // Ripe: collected into inventory, and the same pass starts the mill
     // (input 3, so 4 - 3 = 1 Wheat left over).
     const ripenedAt = new Date(T0.getTime() + WHEAT_DURATION_MS);
     const ripe = await workStackAcres(token, ripenedAt);
-    expect(ripe.work).toEqual({ wheatCollected: 1, machinesStarted: 1, machinesCollected: 0, siloServings: 0, kitchenCooked: null });
+    expect(ripe.work).toEqual({ wheatCollected: 1, machinesStarted: 1, machinesCollected: 0, siloServings: 0 });
     expect(ripe.inventory.wheat).toBe(WHEAT_YIELD_QUANTITY - RECIPE_CATALOGUE.flour.inputs[0].quantity);
     expect(ripe.machines[0].status).toBe("working");
     expect(ripe.wheatPlots).toHaveLength(0);
@@ -3302,7 +3288,7 @@ describe("wheat and machines", () => {
     // Done: the run settles into Flour, and the mill goes back to idle.
     const finishedAt = new Date(ripenedAt.getTime() + RECIPE_CATALOGUE.flour.processingMs);
     const done = await workStackAcres(token, finishedAt);
-    expect(done.work).toEqual({ wheatCollected: 0, machinesStarted: 0, machinesCollected: 1, siloServings: 0, kitchenCooked: null });
+    expect(done.work).toEqual({ wheatCollected: 0, machinesStarted: 0, machinesCollected: 1, siloServings: 0 });
     expect(done.inventory.flour).toBe(RECIPE_CATALOGUE.flour.output.quantity);
     expect(done.machines[0].status).toBe("idle");
   });
@@ -3341,12 +3327,11 @@ describe("Town Contracts", () => {
     await expect(requestStackAcresContract(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
   });
 
-  it("posts a Cheese order once the farm keeps cattle", async () => {
+  it("never posts a Cheese order, even once the farm keeps cattle", async () => {
     const { token } = await funded();
     await placeStackAcresMachine(token, "dairy", T0);
     await stockStackAcres(token, { stock: "cattle" }, T0);
-    const view = await requestStackAcresContract(token, T0);
-    expect(["cheese", "cake"]).toContain(view.contract!.item);
+    await expect(requestStackAcresContract(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
   });
 
   it("posts one open contract and refuses a second while one is open", async () => {
@@ -3678,25 +3663,14 @@ describe("recipes", () => {
   });
 
   describe("the whole loop", () => {
-    it("carries a cow's milk through a Dairy to a fulfilled Cheese contract", async () => {
+    it("fills a Flour order from the Feed Grinder and is paid once", async () => {
       const { token, id } = await funded();
-      await placeStackAcresMachine(token, "dairy", T0);
-
-      // Enough cows for the largest Cheese rung.
-      for (let i = 0; i < 4; i += 1) {
-        const unit = await readyAnimal(id, "cattle");
-        await harvestStackAcres(token, { unitIds: [unit.id] }, T0);
-      }
+      await placeStackAcresMachine(token, "mill", T0);
 
       const opened = await requestStackAcresContract(token, T0);
       const contract = opened.contract!;
-      expect(contract.item).toBe("cheese");
-
-      while ((await readStackAcres(token, T0)).inventory.cheese ?? 0 < contract.quantity) {
-        const held = (await readStackAcres(token, T0)).inventory.cheese ?? 0;
-        if (held >= contract.quantity) break;
-        await processRecipe(id, "cheese", T0);
-      }
+      expect(contract.item).toBe("flour");
+      await adjustStackAcresInventory(id, "flour", contract.quantity);
 
       const before = await balance(token);
       const result = await fulfillStackAcresTownContract(token, T0);
@@ -5260,26 +5234,25 @@ describe("Chapter 5: the town kitchen", () => {
     expect(ate.energy.level).toBe(50);
   });
 
-  it("builds the Preserves Cellar for 25,000 Gold and stores at most 12 jars", async () => {
+  it("no longer builds a Vat, a Preserves Cellar or a Farm Kitchen, and spends nothing trying", async () => {
     const { token, id } = await funded();
+    await adjustStackAcresInventory(id, "stone", 60);
     const before = await balance(token);
-    await placeStackAcresMachine(token, "cellar", T0);
-    expect(await balance(token)).toBe(before - 25_000);
-
-    await adjustStackAcresInventory(id, "pickles", 14);
-    const view = await sealStackAcresCellar(token, "pickles", T0);
-    expect(view.inventory.pickles).toBe(2);
-    expect(view.cellar).toMatchObject({ status: "aging", manifest: { item: "pickles", quantity: 12 } });
-    expect(view.vat).toBeNull();
-
-    await expect(sealStackAcresCellar(token, "pickles", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    const stone = (await readStackAcresInventory(id)).stone;
+    for (const kind of ["vat", "cellar", "farm_kitchen"] as const) {
+      await expect(placeStackAcresMachine(token, kind, T0)).rejects.toMatchObject({ status: 409 });
+    }
+    expect(await balance(token)).toBe(before);
+    expect((await readStackAcresInventory(id)).stone).toBe(stone);
+    expect((await readStackAcres(token, T0)).machines).toEqual([]);
   });
 
-  it("refuses to open the cellar before the first hour, then pays twice the jars' price at four hours", async () => {
+  it("still opens jars sealed in the cellar before it was retired, and pays once", async () => {
     const { token, id } = await funded();
-    await placeStackAcresMachine(token, "cellar", T0);
+    const cellar = await createStackAcresMachine(id, "cellar", T0);
     await adjustStackAcresInventory(id, "pickles", 12);
-    await sealStackAcresCellar(token, "pickles", T0);
+    const sealed = await createStackAcresVatManifest(id, cellar.id, "pickles", 12, 12 * 60, T0, hours(1));
+    expect(sealed.ok).toBe(true);
 
     await expect(collectStackAcresCellar(token, hours(0.5))).rejects.toBeInstanceOf(StackAcresRequestError);
 
@@ -5288,29 +5261,23 @@ describe("Chapter 5: the town kitchen", () => {
     expect(opened.vatCollected).toMatchObject({ quantity: 12, tier: 2, gold: 12 * 60 * 2 });
     expect(await balance(token)).toBe(before + 12 * 60 * 2);
     expect(opened.cellar).toMatchObject({ status: "empty", manifest: null });
+    await expect(collectStackAcresCellar(token, hours(4))).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect(await balance(token)).toBe(before + 12 * 60 * 2);
   });
 
-  it("keeps the Vat's batch and the Cellar's jars apart", async () => {
+  it("keeps an old Vat batch and old Cellar jars apart", async () => {
     const { token, id } = await funded();
-    await placeStackAcresMachine(token, "vat", T0);
-    await placeStackAcresMachine(token, "cellar", T0);
+    const vat = await createStackAcresMachine(id, "vat", T0);
+    const cellar = await createStackAcresMachine(id, "cellar", T0);
     await adjustStackAcresInventory(id, "cheese", 2);
     await adjustStackAcresInventory(id, "sauerkraut", 3);
-    await sealStackAcresVat(token, T0);
-    const both = await sealStackAcresCellar(token, "sauerkraut", T0);
-    expect(both.vat?.manifest?.item).toBe("cheese");
-    expect(both.cellar?.manifest).toMatchObject({ item: "sauerkraut", quantity: 3 });
+    await createStackAcresVatManifest(id, vat.id, "cheese", 2, 2 * 360, T0, hours(1));
+    await createStackAcresVatManifest(id, cellar.id, "sauerkraut", 3, 3 * 15, T0, hours(1));
 
     const opened = await collectStackAcresCellar(token, hours(12));
     expect(opened.vatCollected?.gold).toBe(3 * 15 * 3);
     expect(opened.cellar?.status).toBe("empty");
     expect(opened.vat?.manifest?.item).toBe("cheese");
-  });
-
-  it("says so when there are no jars to store", async () => {
-    const { token } = await funded();
-    await placeStackAcresMachine(token, "cellar", T0);
-    await expect(sealStackAcresCellar(token, "sauerkraut", T0)).rejects.toThrow("You have no Sauerkraut to store.");
   });
 });
 
@@ -5332,43 +5299,13 @@ describe("Chapter 6: feasts", () => {
     expect(ate.energy.level).toBe(ENERGY_MAX);
   });
 
-  it("builds the Farm Kitchen for 60,000 Gold and cooks nothing until it has an order", async () => {
+  it("cooks nothing in the work pass, even for a Farm Kitchen built before it was retired", async () => {
     const { token, id } = await funded();
-    const before = await balance(token);
-    await placeStackAcresMachine(token, "farm_kitchen", T0);
-    expect(await balance(token)).toBe(before - 60_000);
-
+    await createStackAcresMachine(id, "farm_kitchen", T0);
     await adjustStackAcresInventory(id, "celery", 20);
-    const idle = await workStackAcres(token, halfHours(6));
-    expect(idle.work.kitchenCooked).toBeNull();
-    expect(idle.inventory.celery).toBe(20);
-  });
-
-  it("cooks its standing order at double yield for the time banked, and no more", async () => {
-    const { token, id } = await funded();
-    await placeStackAcresMachine(token, "farm_kitchen", T0);
-    const ordered = await setStackAcresKitchenOrder(token, "pickles", T0);
-    expect(ordered.machines.find((machine) => machine.kind === "farm_kitchen")).toMatchObject({
-      standingRecipe: "pickles",
-      kitchenSince: T0.toISOString(),
-    });
-
-    await adjustStackAcresInventory(id, "celery", 20);
-    const cooked = await workStackAcres(token, halfHours(3));
-    expect(cooked.work.kitchenCooked).toEqual({ item: "pickles", quantity: 6 });
-    expect(cooked.inventory.celery).toBe(14);
-    expect(cooked.inventory.pickles).toBe(6);
-
-    // The same moment again: the bank is spent.
-    const again = await workStackAcres(token, halfHours(3));
-    expect(again.work.kitchenCooked).toBeNull();
-    expect(again.inventory.pickles).toBe(6);
-  });
-
-  it("refuses an order the Farm Kitchen can't cook", async () => {
-    const { token } = await funded();
-    await placeStackAcresMachine(token, "farm_kitchen", T0);
-    await expect(setStackAcresKitchenOrder(token, "flour", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    const worked = await workStackAcres(token, halfHours(6));
+    expect(worked.inventory.celery).toBe(20);
+    expect(worked.inventory.pickles ?? 0).toBe(0);
   });
 
   it("makes the Harvest Feast Ray's favorite gift", async () => {

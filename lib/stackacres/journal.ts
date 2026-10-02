@@ -43,7 +43,6 @@ import { RECIPE_CATALOGUE } from "./recipes";
 import { machineItemLabel } from "./machine-items";
 import type { MachineKind, StackAcresMachineSnapshot } from "./machines";
 import { buildingCues, finishedRunCount, roomHasMachines } from "./building-cues";
-import { FARM_KITCHEN_BANK, farmKitchenBanked } from "./farm-kitchen";
 import { FEED_SILO_DAILY_FEEDS } from "./feed-silo";
 import { seedsOpenedLine } from "./seed-unlocks";
 import type { AcrePrice } from "./acres";
@@ -402,8 +401,10 @@ const readyCount = (nodes: readonly { readonly ready: boolean }[]) =>
 function journalWaiting(input: JournalInput): JournalWaiting[] {
   const rows: JournalWaiting[] = [];
 
-  if (input.cellar) {
-    const jars = input.cellar.manifest?.quantity ?? 0;
+  // The Cellar and the Vat take no new batches, so each shows only while an
+  // old one is still inside to collect.
+  if (input.cellar?.manifest) {
+    const jars = input.cellar.manifest.quantity;
     rows.push({
       key: "cellar",
       label: "The cellar",
@@ -418,7 +419,7 @@ function journalWaiting(input: JournalInput): JournalWaiting[] {
     });
   }
 
-  if (input.vat) {
+  if (input.vat?.manifest) {
     rows.push({
       key: "vat",
       label: "The vat",
@@ -453,20 +454,6 @@ function journalWaiting(input: JournalInput): JournalWaiting[] {
             : "Nothing on",
       fill: null,
       ready: finished > 0,
-    });
-  }
-
-  const kitchen = input.machines.find((machine) => machine.kind === "farm_kitchen");
-  if (kitchen) {
-    const banked = farmKitchenBanked(kitchen.kitchenSince, new Date(input.nowMs));
-    rows.push({
-      key: "farm_kitchen",
-      label: "The Farm Kitchen",
-      detail: kitchen.standingRecipe
-        ? `${banked} of ${FARM_KITCHEN_BANK} batches banked`
-        : "No standing order set",
-      fill: banked / FARM_KITCHEN_BANK,
-      ready: banked > 0,
     });
   }
 

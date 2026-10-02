@@ -112,7 +112,7 @@ import type { StackAcresContractRow } from "@/lib/stackacres/contracts";
 import { emptyInventory, inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import type { MachineKind, StackAcresMachineSnapshot } from "@/lib/stackacres/machines";
 import type { StackAcresWheatPlotSnapshot } from "@/lib/stackacres/wheat-plot";
-import type { CellarItem, VatContainer } from "@/lib/stackacres/aging";
+import type { VatContainer } from "@/lib/stackacres/aging";
 import type { RecipeId } from "@/lib/stackacres/recipes";
 import {
   RELIC_CATALOGUE,
@@ -563,7 +563,6 @@ interface StackAcresResponse {
     machinesStarted: number;
     machinesCollected: number;
     siloServings: number;
-    kitchenCooked?: { item: MachineItemId; quantity: number } | null;
   };
   processed?: {
     recipe: RecipeId;
@@ -2835,18 +2834,6 @@ export function StackAcresFarm() {
     (kind: MachineKind) => processing.machines.some((machine) => machine.kind === kind),
     [processing.machines],
   );
-  const onStoreJars = useCallback((item: CellarItem) => act({ action: "seal-cellar", item }), [act]);
-  const farmKitchenRow = processing.machines.find((machine) => machine.kind === "farm_kitchen") ?? null;
-  const onSetKitchenOrder = useCallback(
-    (recipe: RecipeId) => act({ action: "set-kitchen-order", recipe }),
-    [act],
-  );
-  const onRunFarmKitchen = useCallback(async () => {
-    takeProcessingDelta();
-    const result = await act({ action: "work" });
-    if (!result.ok) return { ok: false, message: result.message };
-    return { ok: true, cooked: takeProcessingDelta()?.work?.kitchenCooked ?? null };
-  }, [act, takeProcessingDelta]);
   const onOpenCellar = useCallback(async () => {
     takeProcessingDelta();
     const result = await act({ action: "collect-cellar" });
@@ -3566,7 +3553,6 @@ export function StackAcresFarm() {
     },
     [act, takeProcessingDelta],
   );
-  const onSealVat = useCallback(() => vatAct({ action: "seal-vat" }), [vatAct]);
   const onCollectVat = useCallback(() => vatAct({ action: "collect-vat" }), [vatAct]);
 
   /** The Synergy Tree's two actions, same "hand down as a promise" shape as
@@ -5219,15 +5205,10 @@ export function StackAcresFarm() {
           built={kitchenBuilt}
           goldBalance={profile ? (profile.unlimitedGold ? Infinity : profile.goldBalance) : null}
           busy={isPending}
-          orderBusy={pendingByPrefix("set-kitchen-order")}
           onBuild={onPlaceMachine}
           onMake={onProcessRecipe}
           cellar={cellar}
-          onStoreJars={onStoreJars}
           onOpenCellar={onOpenCellar}
-          farmKitchen={farmKitchenRow}
-          onSetKitchenOrder={onSetKitchenOrder}
-          onRunFarmKitchen={onRunFarmKitchen}
           onEat={onEat}
         />
       )}
@@ -5344,9 +5325,7 @@ export function StackAcresFarm() {
       {showWorkshop && showVat && (
         <FermentingVatModal
           vat={vat}
-          cheeseHeld={processing.inventory.cheese ?? 0}
-          busy={isPending("seal-vat") || isPending("collect-vat")}
-          onSeal={onSealVat}
+          busy={isPending("collect-vat")}
           onCollect={onCollectVat}
           onClose={() => { panelSound(); setShowVat(false); }}
         />

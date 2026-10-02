@@ -6,8 +6,6 @@ import { Coins, Lock, Star } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 import {
   AGING_TIERS,
-  VAT_INPUT_ITEM,
-  VAT_INPUT_QUANTITY,
   vatTierForElapsed,
   nextAgingTier,
   msUntilAgingTier,
@@ -15,12 +13,12 @@ import {
   type AgingTier,
   type VatContainer,
 } from "@/lib/stackacres/aging";
-import { machineItemLabel } from "@/lib/stackacres/machine-items";
 
 /**
  * The Fermenting Vat's own sheet: what is sealed inside right now, how far
- * along the aging ladder it has climbed, and the two buttons that seal a
- * fresh batch or cash one in.
+ * along the aging ladder it has climbed, and the button that cashes it in.
+ * The vat takes no new batches (RETIRED_MACHINE_KINDS in
+ * lib/stackacres/machines.ts), so there is no seal button any more.
  *
  * NOT TAILWIND, ON PURPOSE. This app has no Tailwind pipeline anywhere in
  * it -- every other surface, this one's sibling sheets included
@@ -57,16 +55,10 @@ export type VatActionResult =
   | { readonly ok: false; readonly message: string };
 
 export interface FermentingVatModalProps {
-  /** Null when the player has not placed a Fermenting Vat yet -- the sheet
-   *  still opens (so "place one first" is a real answer, not a dead button)
-   *  but shows no ladder and offers no seal/collect action. */
+  /** Null when the player has no Fermenting Vat. */
   vat: VatContainer | null;
-  /** Cheese currently on the shelf, straight off the last server response. */
-  cheeseHeld: number;
   /** Something else on the page is already talking to the server. */
   busy: boolean;
-  /** Posts `seal-vat`. Resolves once this browser knows the outcome. */
-  onSeal: () => Promise<VatActionResult>;
   /** Posts `collect-vat`. Resolves once this browser knows the outcome. */
   onCollect: () => Promise<VatActionResult>;
   onClose: () => void;
@@ -106,9 +98,7 @@ function tierRowState(
 
 export function FermentingVatModal({
   vat,
-  cheeseHeld,
   busy,
-  onSeal,
   onCollect,
   onClose,
 }: FermentingVatModalProps) {
@@ -135,29 +125,7 @@ export function FermentingVatModal({
   const target = nextAgingTier(reachedTier);
   const msToTarget = manifest && target ? msUntilAgingTier(elapsedMs, target) : null;
   const collectibleGold = manifest && reachedTier ? agedGoldValue(manifest.baseGoldValue, reachedTier) : 0;
-  const canSeal = !manifest && cheeseHeld >= VAT_INPUT_QUANTITY;
   const canCollect = Boolean(manifest && reachedTier);
-
-  const handleSeal = useCallback(async () => {
-    if (busy || working || manifest || !canSeal) return;
-    setNote(null);
-    setWorking(true);
-    try {
-      const result = await onSeal();
-      if (!result.ok) {
-        setNote({ tone: "refused", text: result.message });
-        return;
-      }
-      setNote({
-        tone: "paid",
-        text: `Sealed ${machineItemLabel(VAT_INPUT_ITEM, VAT_INPUT_QUANTITY)}. Come back once it is Aged.`,
-      });
-    } catch {
-      setNote({ tone: "refused", text: "That did not go through. Nothing was sealed." });
-    } finally {
-      setWorking(false);
-    }
-  }, [busy, working, manifest, canSeal, onSeal]);
 
   const handleCollect = useCallback(async () => {
     if (busy || working || !canCollect) return;
@@ -225,15 +193,13 @@ export function FermentingVatModal({
 
         {!vat ? (
           <p className="sa-sheet-note">
-            <Lock size={13} aria-hidden="true" /> Place a Fermenting Vat to start aging Cheese into a
-            far richer batch. The longer a seal rides, the more it is worth when you crack it open.
+            <Lock size={13} aria-hidden="true" /> The Fermenting Vat isn&apos;t built any more.
           </p>
         ) : (
           <>
             <p className="sa-sheet-note">
-              Seal {machineItemLabel(VAT_INPUT_ITEM, VAT_INPUT_QUANTITY)} inside, then wait. Collecting
-              is legal from the moment it reaches Aged quality, and every tier past that doubles what
-              the batch pays.
+              The vat takes no new batches. Whatever is sealed inside can still be collected once it
+              reaches Aged.
             </p>
 
             {note && (
@@ -301,18 +267,6 @@ export function FermentingVatModal({
             </ul>
 
             <div className="sa-vat-actions">
-              {!manifest && (
-                <button
-                  type="button"
-                  className="sa-cta"
-                  disabled={working_ || !canSeal}
-                  onClick={contain(() => void handleSeal())}
-                >
-                  {canSeal
-                    ? `Seal ${machineItemLabel(VAT_INPUT_ITEM, VAT_INPUT_QUANTITY)}`
-                    : `Needs ${machineItemLabel(VAT_INPUT_ITEM, VAT_INPUT_QUANTITY)}`}
-                </button>
-              )}
               {manifest && (
                 <button
                   type="button"

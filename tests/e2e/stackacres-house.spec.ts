@@ -92,9 +92,12 @@ test("Ray never opens the kitchen, and the counter inside the house does", async
   await enter(page, HOUSE);
   const house = page.getByRole("dialog", { name: "Your House" });
   await expect(house).toBeVisible();
-  for (const tab of ["Cook", "Eat", "Cellar", "Farm Kitchen"]) {
+  for (const tab of ["Cook", "Eat"]) {
     await expect(house.getByRole("tab", { name: tab })).toBeVisible();
   }
+  // The Cellar and the Farm Kitchen are retired; a new farm has nothing in a cellar to collect.
+  await expect(house.getByRole("tab", { name: "Cellar" })).toHaveCount(0);
+  await expect(house.getByRole("tab", { name: "Farm Kitchen" })).toHaveCount(0);
   await house.getByRole("button", { name: "Close" }).click();
   await expect(house).toBeHidden();
 });

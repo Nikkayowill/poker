@@ -128,7 +128,7 @@ export function StackAcresFriendshipDialogue({
             </div>
             {heldItems.length === 0 ? (
               <p className="sa-gift-dialogue-prompt">
-                Nothing on hand to give {npcLabel} right now -- the Mill, Dairy or Loom might fix that.
+                Nothing on hand to give {npcLabel} right now -- the Feed Grinder, the Cream Separator or the Loom might fix that.
               </p>
             ) : (
               <>

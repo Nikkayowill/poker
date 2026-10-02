@@ -54,13 +54,13 @@ test("the chip's title and the sheet's line are the same line", async ({ context
   await openStackAcres(context, page);
   await openMore(page);
 
-  // The chip is a compact badge now (icon + "1/6"); the line it used to show
+  // The chip is a compact badge now (icon + "1/4"); the line it used to show
   // in its own text lives in the title and in the sheet, not duplicated on
   // screen. The title is "<chapter>: <now line>".
   const chip = page.getByTitle(/^Chapter 1/);
   const title = (await chip.getAttribute("title")) ?? "";
   const line = title.split(": ").slice(1).join(": ");
-  expect(line).toContain("Mill");
+  expect(line).toContain("Feed Grinder");
   expect(line).toContain("Wood");
 
   await chip.click();
@@ -92,9 +92,9 @@ test("the sheet shows both tracks: the buildings and the reach", async ({ contex
   const sheet = page.getByRole("dialog", { name: "The Journal" });
   await expect(sheet).toBeVisible();
 
-  // The production track: all six chapters, and the Mill's real cost, where
+  // The production track: every chapter, and the Mill's real cost, where
   // it goes up, where the Wood comes from and what it opens.
-  for (const title of ["Bread", "Stew", "Fresh Greens", "Feed the Herd", "Jars and Pickles", "Harvest Feast"]) {
+  for (const title of ["Bread", "Stew", "Fresh Greens", "Feed the Herd"]) {
     await expect(sheet.getByRole("heading", { name: title })).toBeVisible();
   }
   // Chapter 1's first step. Locate it by position, not by the word "Mill".

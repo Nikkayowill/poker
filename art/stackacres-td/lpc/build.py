@@ -173,7 +173,7 @@ def stepped(walk, stand):
 # stride is his. Everyone else keeps the 112 frame sheet the game already loads, except the grocery's
 # people, who walk the shop floor all day and are only loaded where the shop is.
 STORE_PEOPLE = set(cast.STORE_STAFF) | set(cast.STORE_SHOPPERS)
-STRIDES = {"farmer"} | STORE_PEOPLE
+STRIDES = {"farmer"} | STORE_PEOPLE | set(cast.FARM_HANDS)
 
 # What the grocery's people do, cut from LPC poses (lib/stackacres-td/work-board.ts `Act`): reaching out
 # (stocking a shelf, picking produce, taking something off a shelf) is the thrust with the arm out; handing
@@ -323,6 +323,12 @@ def frames_for(name, height):
             if name in cast.STORE_STAFF:               # shoppers don't take breaks on the staff chair
                 sit = unaproned.frames("sit", d)
                 out.append(("sit", d, [place(sit[0], height)] * 4, SIT_MS))
+    if name in cast.FARM_HANDS:
+        who = dressed([])
+        thing = carried(cast.FARM_HANDS[name])
+        for d in DIRS:
+            stand = who.frames("idle", d)[0]
+            out.append(("carry", d, strided(held_walk(who, d, thing), stand, d, height), [STRIDE_MS] * 8))
     if name in HOLDERS:
         src = dressed([]).frames(HOLD["anim"], "down")
         out.append(("hold", "down", [place(src[c], height) for c in HOLD["cols"]], HOLD_MS))

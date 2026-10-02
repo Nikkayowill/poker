@@ -6,7 +6,6 @@ import type { Action } from "@/lib/stackacres/farm-actions";
 import { herdKey, isHerdStock, isPlaced, unplacedHerd, type HerdUnit } from "@/lib/stackacres/herd";
 import { GUARD_DOG_CAP, GUARD_DOG_GOLD, GUARD_DOG_RANGE, type GuardDog } from "@/lib/stackacres/guard-dog";
 import type { Tile } from "@/lib/stackacres/empire-buildings";
-import { StackAcresPixelIcon } from "./stackacres-pixel-icon";
 import type { ContractActionResult } from "./TownContractsModal";
 
 /**
@@ -15,9 +14,9 @@ import type { ContractActionResult } from "./TownContractsModal";
  *
  * A sheep or cow you have bought but not set down waits to be placed: the bar
  * opens by itself, and each tap on open grass puts the next one there. With
- * nothing waiting, the Herd key opens the same bar to move what stands: a tap on
- * an animal lifts it, and the next tap sets it back down. A tap on a dog lifts
- * the dog the same way.
+ * nothing waiting, "Move animals" in the Animals sheet opens the same bar to move
+ * what stands: a tap on an animal lifts it, and the next tap sets it back down. A
+ * tap on a dog lifts the dog the same way. There is no standing key on the map.
  *
  * The Dog key on the bar buys a dog: the next tap on open grass is where it
  * goes, and that tap is what spends the Gold. Nothing is spent until the square
@@ -42,6 +41,8 @@ export interface HerdPlace {
   buildMode: boolean;
   onBuildTap: (tile: Tile) => void;
   controls: React.ReactNode;
+  /** Opens the bar, for the Animals sheet. Null off the Homestead or with no herd to move. */
+  open: (() => void) | null;
 }
 
 /** Something standing on a square that a tap can lift. */
@@ -136,8 +137,8 @@ export function useHerdPlace({ active, units, dogs, act }: HerdPlaceProps): Herd
   else say = dogs.length > 0 ? "Tap an animal or your dog to pick it up and move it." : "Tap an animal to pick it up and move it.";
 
   let controls: React.ReactNode = null;
-  if (active && herd.length > 0) {
-    controls = open ? (
+  if (open) {
+    controls = (
       <div className="sa-build-bar" role="toolbar" aria-label="Herd">
         <p className={clsx("sa-build-say", notice && "is-problem")}>{notice ?? say}</p>
         <div className="sa-build-keys">
@@ -166,13 +167,8 @@ export function useHerdPlace({ active, units, dogs, act }: HerdPlaceProps): Herd
           </button>
         </div>
       </div>
-    ) : (
-      <button type="button" className="sa-build-open" onClick={() => setMode("open")}>
-        <StackAcresPixelIcon name="build" />
-        <span>{waiting.length > 0 ? `Place (${waiting.length})` : "Herd"}</span>
-      </button>
     );
   }
 
-  return { buildMode: open, onBuildTap, controls };
+  return { buildMode: open, onBuildTap, controls, open: active && herd.length > 0 ? () => setMode("open") : null };
 }

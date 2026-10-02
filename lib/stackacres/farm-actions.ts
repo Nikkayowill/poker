@@ -66,6 +66,8 @@ export type Action =
   | { action: "draw-water" }
   // Ray's starter pouch of wheat seed, once per farm.
   | { action: "claim-starter-seeds" }
+  // Today's land upkeep out of Gold, sent once when the farm opens.
+  | { action: "pay-upkeep" }
   // The dock's cast, completed: which fish it lands is the server's own
   // dice roll, same posture as `collect`'s Gold.
   // `bait` spends one Radish on the hook for better odds.

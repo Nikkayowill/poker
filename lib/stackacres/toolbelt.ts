@@ -31,7 +31,10 @@ import { acreGateMessage, type AcreGate } from "./acres";
 /** The belt, in the order it is drawn. `hand` is the resting slot every session starts in. */
 export const BELT_TOOLS = ["hand", "hoe", "can", "seeds", "fence"] as const;
 
-export type BeltTool = (typeof BELT_TOOLS)[number];
+/** Slots the belt only shows while he stands by the dock. */
+export const WATER_TOOLS = ["rod"] as const;
+
+export type BeltTool = (typeof BELT_TOOLS)[number] | (typeof WATER_TOOLS)[number];
 
 export interface BeltToolDef {
   /** What the slot says, and what a screen reader announces. */
@@ -70,6 +73,11 @@ export const BELT_TOOL_DEFS: Readonly<Record<BeltTool, BeltToolDef>> = {
     label: "Fence",
     hint: `Put up a fence piece for ${FENCE_WOOD_COST} Wood. Use it on a fence to take it down and get the Wood back.`,
     icon: "ico-fence",
+  },
+  rod: {
+    label: "Rod",
+    hint: "Press Use to walk out on the dock and cast.",
+    icon: "ico-rod",
   },
 };
 
@@ -171,6 +179,9 @@ export function resolveBeltAction(tool: BeltTool, target: BeltTarget, ctx: BeltC
       return seedAction(target, ctx);
     case "fence":
       return fenceAction(target, ctx);
+    // The rod's Use press casts in the world (scene.ts `walkToCast`); a square it walks to is just a walk.
+    case "rod":
+      return { kind: "idle" };
   }
 }
 

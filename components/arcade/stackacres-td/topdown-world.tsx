@@ -89,6 +89,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
     buildGhost,
     grocery,
     groceryGhost,
+    rodHeld,
     api,
   } = props;
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -200,6 +201,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onViewMoved: () => p().onViewMoved(),
           onPlaceEntered: (name) => p().onPlaceEntered(name),
           onInputLocked: setCastLocked,
+          onNearWater: (near) => p().onNearWater(near),
           onBuildTap: (tile) => p().onBuildTap(tile),
           onJobBoardTap: () => p().onJobBoardTap(),
           onStoreDeskTap: () => p().onStoreDeskTap(),
@@ -254,6 +256,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       scene.setBuildGhost(now.buildGhost);
       scene.setGrocery(now.grocery);
       scene.setGroceryGhost(now.groceryGhost);
+      scene.setRodHeld(p().rodHeld);
       scene.setClockSource(() => p().clockHour());
       scene.setDaySource(() => p().clockDay());
 
@@ -460,6 +463,10 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   useLayoutEffect(() => {
     sceneRef.current?.setBuildMode(buildMode);
   }, [buildMode]);
+
+  useLayoutEffect(() => {
+    sceneRef.current?.setRodHeld(rodHeld);
+  }, [rodHeld]);
 
   useEffect(() => {
     sceneRef.current?.setBuildGhost(buildGhost);

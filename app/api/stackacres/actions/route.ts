@@ -56,6 +56,7 @@ import {
   waterStackAcres,
   waterStackAcresGroup,
   claimStackAcresStarterSeeds,
+  payStackAcresUpkeep,
   drawStackAcresWater,
   bagStackAcresQuarry,
   chopStackAcresWoodTree,
@@ -274,6 +275,7 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("draw-water") }),
   // Ray's starter pouch of wheat seed. Once per farm, moves no Gold.
   z.object({ action: z.literal("claim-starter-seeds") }),
+  z.object({ action: z.literal("pay-upkeep") }),
   // The dock's cast, completed. Fills the shelf, same as a harvest -- moves
   // no Gold. Which fish is the server's own dice roll.
   // `bait` spends one Radish for better odds.
@@ -653,6 +655,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return drawStackAcresWater(token, now);
     case "claim-starter-seeds":
       return claimStackAcresStarterSeeds(token, now);
+    case "pay-upkeep":
+      return payStackAcresUpkeep(token, now);
     case "catch-fish":
       return catchStackAcresFish(token, action.bait, action.cast, now);
     case "eat":

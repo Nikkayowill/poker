@@ -105,6 +105,10 @@ test("Ray never opens the kitchen, and the counter inside the house does", async
 test("the barn's Livestock tab sells sheep and cattle pens with no land to clear", async ({ context, page }) => {
   await openStackAcres(context, page);
 
+  // From the spawn the barn door sits under the Next card in the top-right corner; stood in
+  // front of it, the camera has the door in the open middle of the screen.
+  await page.evaluate(() => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.placeFarmer("homestead", { x: 640, y: 330 }));
+  await page.waitForTimeout(800);
   await enter(page, BARN);
   const store = page.getByRole("dialog", { name: "Supply store" });
   await expect(store).toBeVisible();

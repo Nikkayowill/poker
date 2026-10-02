@@ -221,6 +221,21 @@ export function MobileShell({
    * the same page turn no longer takes as long to finish as it does to start.
    */
   const [settleMs, setSettleMs] = useState(BASE_SETTLE_MS);
+  /*
+   * True from the start of a slide (tab tap or horizontal drag) until it lands.
+   * Off-screen panes are only painted while this is true, and the track is
+   * only promoted to its own layer while this is true. With all four
+   * scrolling panes painted on a permanently promoted track, the installed iOS
+   * app showed panes blank or frozen mid-slide until touched.
+   */
+  const [moving, setMoving] = useState(false);
+
+  useEffect(() => {
+    if (!moving || drag !== null) return;
+    // A frame past the transition, so the landing frame is never cut short.
+    const timer = window.setTimeout(() => setMoving(false), settleMs + 50);
+    return () => window.clearTimeout(timer);
+  }, [moving, drag, page, settleMs]);
 
   useEffect(() => {
     try {
@@ -258,13 +273,14 @@ export function MobileShell({
     const target = clampPage(next, TAB_COUNT);
     reach(target);
     setSettleMs(BASE_SETTLE_MS); // a tab tap always travels the full pane width
-    setPage((current) => {
+    if (target !== page) {
       // `select`, not `tap`: a tab is a choice, and it changes what is on screen.
-      if (target !== current) selectSound();
-      return target;
-    });
+      selectSound();
+      setMoving(true);
+      setPage(target);
+    }
     setDrag(null);
-  }, [reach]);
+  }, [page, reach]);
 
   const onPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "mouse" && event.buttons !== 1) return;
@@ -303,6 +319,7 @@ export function MobileShell({
      */
     if (gesture.axis !== "horizontal" && move.gesture.axis === "horizontal") {
       event.currentTarget.setPointerCapture(event.pointerId);
+      setMoving(true);
     }
     gestureRef.current = move.gesture;
     setDrag(move.offset);
@@ -336,6 +353,9 @@ export function MobileShell({
   }, [drag, page]);
 
   const offset = drag ?? 0;
+  /** Off-screen panes go unpainted between slides; see `moving`. */
+  const paneClass = (index: number) =>
+    `mshell-pane${index !== page && !moving ? " mshell-pane-parked" : ""}`;
 
   return (
     <div className="mshell">
@@ -347,7 +367,7 @@ export function MobileShell({
         onPointerCancel={endGesture}
       >
         <div
-          className={`mshell-track${drag === null ? " mshell-track-settling" : ""}`}
+          className={`mshell-track${drag === null ? " mshell-track-settling" : ""}${moving ? " mshell-track-moving" : ""}`}
           style={{
             transform: `translateX(calc(${-page * 100}% + ${Math.round(offset)}px))`,
             // Longhand wins over the class's `transition` shorthand for just
@@ -357,8 +377,9 @@ export function MobileShell({
         >
           {/* Panes off-screen stay in the document, so they'd still be in
               the tab order and still read out. `inert` is what actually takes
-              them out of both; hiding them would break the slide. */}
-          <section className="mshell-pane" aria-label="Texas Hold'em" inert={page !== 0}>
+              them out of both. They are only hidden between slides
+              (`paneClass`), never during one, or the slide would break. */}
+          <section className={paneClass(0)} aria-label="Texas Hold'em" inert={page !== 0}>
             <PlayPane
               profile={profile}
               loading={loading}
@@ -382,12 +403,12 @@ export function MobileShell({
             />
           </section>
 
-          <section className="mshell-pane" aria-label="Ante Up" inert={page !== 1}>
+          <section className={paneClass(1)} aria-label="Ante Up" inert={page !== 1}>
             {/* The route's own component, not a copy of it */}
             <ArcadeFloor profile={profile} embedded />
           </section>
 
-          <section className="mshell-pane" aria-label="Leaderboard" inert={page !== 2}>
+          <section className={paneClass(2)} aria-label="Leaderboard" inert={page !== 2}>
             {/* The route's own leaderboard, embedded. Its game tabs, season
                 toggle, kicker and fetch all come with it, so this pane adds
                 no header above it, and the fetch is why it waits until this
@@ -396,7 +417,7 @@ export function MobileShell({
             {(reached[2] ?? true) && <Leaderboard embedded />}
           </section>
 
-          <section className="mshell-pane" aria-label="Profile" inert={page !== 3}>
+          <section className={paneClass(3)} aria-label="Profile" inert={page !== 3}>
             <YouPane
               profile={profile}
               onSignOut={onSignOut}

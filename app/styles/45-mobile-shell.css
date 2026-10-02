@@ -149,6 +149,11 @@
   .mshell-track {
     display: flex;
     height: 100%;
+  }
+
+  /* Promoted only while sliding. With it on permanently the installed iOS
+     app showed panes blank or frozen mid-slide until touched. */
+  .mshell-track-moving {
     will-change: transform;
   }
 
@@ -196,6 +201,11 @@
      reader or the tab key -- it is off-screen, not hidden, so neither notices
      without help. `inert` on the element does the rest. */
   .mshell-pane[inert] { pointer-events: none; }
+
+  /* Off-screen and not mid-slide, so there is nothing to see. Not painting it
+     keeps iOS from holding stale layers for scrollers it cannot show. It keeps
+     its scroll position, and comes back the moment a slide starts. */
+  .mshell-pane-parked { visibility: hidden; }
 
   /* ---- the two borrowed page shells ------------------------------------ */
 

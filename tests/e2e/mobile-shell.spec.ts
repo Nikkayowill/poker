@@ -80,6 +80,29 @@ test.describe("phone lobby", () => {
     await expect(pane(page, "Texas Hold'em")).toHaveAttribute("inert", /.*/);
   });
 
+  /* Off-screen panes stay unpainted between slides, which is what keeps iOS
+     from showing a pane blank or frozen mid-slide. They must still be painted
+     during the slide itself. A held drag is a slide that has not landed. */
+  test("off-screen panes are parked once a slide lands", async ({ page }) => {
+    await enterAsGuest(page);
+    await expect(pane(page, "Ante Up")).toHaveCSS("visibility", "hidden");
+
+    const box = await page.locator(".mshell-viewport").boundingBox();
+    if (!box) throw new Error("no swipe viewport");
+    await page.mouse.move(box.x + box.width - 40, box.y + 60);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width - 90, box.y + 60, { steps: 5 });
+    await expect(pane(page, "Ante Up")).toHaveCSS("visibility", "visible");
+    await expect(page.locator(".mshell-track-moving")).toHaveCount(1);
+    await page.mouse.up();
+
+    await tabBar(page).getByRole("button", { name: "Profile", exact: true }).click();
+    await expect(pane(page, "Profile")).toHaveCSS("visibility", "visible");
+    await expect(pane(page, "Texas Hold'em")).toHaveCSS("visibility", "hidden");
+    await expect(pane(page, "Ante Up")).toHaveCSS("visibility", "hidden");
+    await expect(page.locator(".mshell-track-moving")).toHaveCount(0);
+  });
+
   test("a horizontal drag turns the page", async ({ page }) => {
     await enterAsGuest(page);
     const nav = tabBar(page);

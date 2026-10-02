@@ -182,7 +182,7 @@ describe("predictStackAcresAction: the processing track", () => {
   it("sells: the goods leave the shelf at once, the Gold waits for the server", () => {
     const contract = { id: "c1", status: "open" } as FarmPredictContext["contract"];
     const patch = predictStackAcresAction(
-      { action: "sell", item: "eggs", quantity: 3 },
+      { action: "sell", buyer: "general-store", item: "eggs", quantity: 3 },
       ctx({ inventory: { eggs: 5, milk: 2 }, contract }),
     );
     expect(patch?.inventory).toEqual({ eggs: 2, milk: 2 });
@@ -193,9 +193,9 @@ describe("predictStackAcresAction: the processing track", () => {
 
   it("refuses to sell more than the shelf holds", () => {
     expect(
-      predictStackAcresAction({ action: "sell", item: "cake", quantity: 2 }, ctx({ inventory: { cake: 1 } })),
+      predictStackAcresAction({ action: "sell", buyer: "general-store", item: "cake", quantity: 2 }, ctx({ inventory: { cake: 1 } })),
     ).toBeNull();
-    expect(predictStackAcresAction({ action: "sell", item: "milk", quantity: 1 }, ctx())).toBeNull();
+    expect(predictStackAcresAction({ action: "sell", buyer: "general-store", item: "milk", quantity: 1 }, ctx())).toBeNull();
   });
 
   it("bakes a Cake on an idle Dairy, spending every input at once", () => {

@@ -44,7 +44,7 @@ const SOURCE: Partial<Record<MachineItemId, string>> = {
 
 /** A new farm runs out of Gold right after Chapter 1 (the Stew Pot is 1,500),
  *  so a short Gold line says where more comes from too. */
-const GOLD_SOURCE = "Sell crops at the barn";
+const GOLD_SOURCE = "Sell your harvest in town. Dale buys grain and Iris buys the rest";
 
 export interface BuildLine {
   /** "Gold", "Wood", "Stone". Already singular or plural to match `need`. */

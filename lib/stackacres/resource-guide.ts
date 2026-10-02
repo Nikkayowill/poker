@@ -34,6 +34,7 @@ import {
   machineItemSellPrice,
   type MachineItemId,
 } from "./machine-items";
+import { TOWN_BUYERS, townBuyerFor } from "./town-buyers";
 import { RECIPE_CATALOGUE, RECIPE_IDS, type RecipeId } from "./recipes";
 import { SOIL_ENRICH_USE_LABEL, isSoilEnrichingItem } from "./soil-enrich";
 import { TRAVELER_QUESTS, questFlatObjectives } from "./story/quests";
@@ -53,13 +54,12 @@ export function isCrossbreedGuideItem(item: GuideItemId): item is CrossbreedItem
 }
 
 /** A screen the guide can send the player to. The farm maps each to its own opener. */
-export type GuideDestinationId = "workshop" | "house" | "contracts" | "store-sell" | "crossbreed";
+export type GuideDestinationId = "workshop" | "house" | "contracts" | "crossbreed";
 
 export const GUIDE_DESTINATION_LABELS: Readonly<Record<GuideDestinationId, string>> = {
   workshop: "Open the Workshop",
   house: "Open the kitchen",
   contracts: "Open the Town Board",
-  "store-sell": "Open the barn shelf",
   crossbreed: "Open the Crossbreeding Bed",
 };
 
@@ -402,7 +402,12 @@ export function resourceUses(item: GuideItemId): ResourceUse[] {
 
   if ((STACKACRES_ITEMS as readonly string[]).includes(item) || item in MACHINE_ITEM_CATALOGUE) {
     const price = machineItemSellPrice(item as MachineItemId);
-    uses.push({ kind: "sell", label: `Sell for ${price.toLocaleString()} Gold each`, destination: "store-sell" });
+    const buyer = TOWN_BUYERS[townBuyerFor(item as MachineItemId)];
+    uses.push({
+      kind: "sell",
+      label: `Sell for ${price.toLocaleString()} Gold each`,
+      detail: `${buyer.name} buys it at ${buyer.place} in town.`,
+    });
   }
 
   return uses;

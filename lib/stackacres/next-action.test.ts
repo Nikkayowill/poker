@@ -362,7 +362,7 @@ describe("locked content", () => {
     });
     expect(action.title).toBe(STACKACRES_QUEST_LABELS.cleared_wallow);
     expect(action.requirements).toEqual([
-      { label: "Gold", have: 0, need: stackacresStockPrice("pig"), source: "Sell crops at the barn" },
+      { label: "Gold", have: 0, need: stackacresStockPrice("pig"), source: "Sell your harvest in town. Dale buys grain and Iris buys the rest" },
     ]);
   });
 

@@ -117,6 +117,7 @@ import type { Action } from "./farm-actions";
 import { WATER_CAPACITY } from "./water-can";
 import { stockZone } from "./world";
 import { addToInventory, removeFromInventory, type StackAcresInventory } from "./inventory";
+import { buyerTakes } from "./town-buyers";
 import { acreGate } from "./acres";
 import { isHoeableSoilTile, isWildSoilTile, mapToSoilTile, soilToMapTile } from "./hoeable";
 import { herdKey, herdPlacementProblem, herdSquares, isHerdStock } from "./herd";
@@ -1023,7 +1024,9 @@ export function predictStackAcresAction(
     }
     case "sell": {
       // Known-insufficient is a real refusal, not a guess -- refuse locally
-      // rather than optimistically show a sale that cannot happen.
+      // rather than optimistically show a sale that cannot happen. So is the
+      // wrong buyer.
+      if (!buyerTakes(body.buyer, body.item)) return null;
       const inventory = removeFromInventory(ctx.inventory, body.item, body.quantity);
       if (!inventory) return null;
       // Gold is not predicted -- see this module's own header on why `sell`

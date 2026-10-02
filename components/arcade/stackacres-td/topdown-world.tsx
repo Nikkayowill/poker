@@ -179,6 +179,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onGroundTap: (zone, at, world) => p().onGroundTap(zone, at, world),
           onBarnTap: () => p().onBarnTap(),
           onSeedSellerTap: () => p().onSeedSellerTap(),
+          onTownBuyerTap: (buyer) => p().onTownBuyerTap(buyer),
           onSignpostTap: () => p().onSignpostTap(),
           onWorkshopTap: () => p().onWorkshopTap(),
           onWellTap: (at) => p().onWellTap(at),

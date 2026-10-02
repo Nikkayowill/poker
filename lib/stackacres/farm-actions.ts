@@ -19,6 +19,7 @@ import type { SynergyArchetype } from "./synergy-perks";
 import type { NpcId } from "./friendship";
 import type { CellarItem } from "./aging";
 import type { MachineItemId } from "./machine-items";
+import type { TownBuyerId } from "./town-buyers";
 import type { MachineKind } from "./machines";
 import type { RecipeId } from "./recipes";
 import type { FoodItem } from "./energy";
@@ -94,8 +95,9 @@ export type Action =
   | { action: "buy-feed"; itemId: string; quantity: number }
   // Sells any inventory item -- raw harvest or crafted good -- for Gold, at
   // that item's own sell price, any time. The baseline income path now that
-  // harvest always credits inventory instead of Gold.
-  | { action: "sell"; item: MachineItemId; quantity: number }
+  // harvest always credits inventory instead of Gold. Sold to one of the
+  // town's buyers (./town-buyers.ts), who only takes their own goods.
+  | { action: "sell"; buyer: TownBuyerId; item: MachineItemId; quantity: number }
   | { action: "upgrade-tool" }
   | { action: "upgrade-axe"; pay: AxePayment }
   | { action: "buy-cutter"; cutter: StackAcresBuyableCutter }

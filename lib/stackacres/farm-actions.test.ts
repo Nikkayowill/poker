@@ -10,9 +10,9 @@ describe("intentOf: the processing track", () => {
   });
 
   it("keys a sale on its item and quantity, so selling eggs never blocks selling milk", () => {
-    expect(intentOf({ action: "sell", item: "eggs", quantity: 4 })).toBe("sell:eggs:4");
-    expect(intentOf({ action: "sell", item: "milk", quantity: 4 })).toBe("sell:milk:4");
-    expect(intentOf({ action: "sell", item: "cake", quantity: 1 })).toBe("sell:cake:1");
+    expect(intentOf({ action: "sell", buyer: "general-store", item: "eggs", quantity: 4 })).toBe("sell:eggs:4");
+    expect(intentOf({ action: "sell", buyer: "general-store", item: "milk", quantity: 4 })).toBe("sell:milk:4");
+    expect(intentOf({ action: "sell", buyer: "general-store", item: "cake", quantity: 1 })).toBe("sell:cake:1");
   });
 
   it("keys the field-wide passes on the action alone", () => {

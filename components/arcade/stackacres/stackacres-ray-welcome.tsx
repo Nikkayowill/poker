@@ -51,7 +51,7 @@ export function StackAcresRayWelcome({ onClose }: { onClose: () => void }) {
           <p>
             &ldquo;Here&rsquo;s a pouch of wheat seed to start you off. Break ground with the hoe, sow
             it, and water it from the well. Cora sells every other seed at the market in town, over the
-            west bridge.&rdquo;
+            west bridge. When the wheat comes in, Dale buys it down by the river.&rdquo;
           </p>
           <button type="button" className="sa-cta" onClick={onClose}>
             Thanks, Ray

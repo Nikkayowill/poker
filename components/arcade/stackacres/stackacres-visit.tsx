@@ -254,6 +254,7 @@ export function StackAcresVisit({ profileId }: { profileId: string }) {
               onGroundTap={noop}
               onBarnTap={noop}
               onSeedSellerTap={noop}
+              onTownBuyerTap={noop}
               onSignpostTap={noop}
               onWorkshopTap={noop}
               onWellTap={noop}

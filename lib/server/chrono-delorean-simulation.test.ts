@@ -347,7 +347,7 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     const beforeSell = await balance();
     const soldDay0 = await service.sellStackAcresItem(
       token,
-      { item: "wool", quantity: saleQuantity },
+      { buyer: "general-store", item: "wool", quantity: saleQuantity },
       readyNow,
     );
     console.log("Chrono-DeLorean simulation: day0 sale skims Land Maintenance ->", {
@@ -369,7 +369,7 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     const beforeSecond = await balance();
     const soldAgainDay0 = await service.sellStackAcresItem(
       token,
-      { item: "wool", quantity: 10 },
+      { buyer: "general-store", item: "wool", quantity: 10 },
       readyNow,
     );
     expect(await balance()).toBe(beforeSecond + soldAgainDay0.sold.gold);
@@ -387,7 +387,7 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     const beforeDay1Sell = await balance();
     const soldDay1 = await service.sellStackAcresItem(
       token,
-      { item: "wool", quantity: saleQuantity },
+      { buyer: "general-store", item: "wool", quantity: saleQuantity },
       t1,
     );
     console.log("Chrono-DeLorean simulation: day1 sale skims a fresh bill ->", {

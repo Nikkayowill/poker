@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { stackacresStockPrice } from "./market";
 import {
   journalCue,
   journalView,
@@ -385,14 +386,22 @@ describe("the expansion track", () => {
     expect(view.reach.find((step) => step.flag === "town_trusted")?.done).toBe(true);
   });
 
-  it("shows no price for land the live world cannot clear", () => {
-    const view = journalView(FRESH);
-    expect(view.reach.find((step) => step.flag === "cleared_wallow")?.cost).toBe("Not open yet");
-    expect(view.reach.find((step) => step.flag === "cleared_oxfields")?.cost).toBe("Not open yet");
-    // The other three are acts, not purchases.
-    expect(view.reach.find((step) => step.flag === "town_trusted")?.cost).toBeNull();
+  it("prices every rung that is bought", () => {
+    const view = journalView({ ...FRESH, acrePrice: { gold: 300, wood: 15, stone: 5 } });
+    const cost = (flag: string) => view.reach.find((step) => step.flag === flag)?.cost;
+    // The first wild bed needs a bought acre, so the acre is the Crop Fields' price.
+    expect(cost("crop_fields_unlocked")).toBe("300 Gold + 15 Wood + 5 Stone");
+    // The first sheep or cow opens its district.
+    expect(cost("cleared_wallow")).toBe(`${stackacresStockPrice("pig").toLocaleString()} Gold`);
+    expect(cost("cleared_oxfields")).toBe(`${stackacresStockPrice("cattle").toLocaleString()} Gold`);
+    // The other two are acts, not purchases.
+    expect(cost("town_trusted")).toBeNull();
+    expect(cost("greenhouse_raised")).toBeNull();
+  });
+
+  it("shows no acre price once every acre is owned", () => {
+    const view = journalView({ ...FRESH, acrePrice: null });
     expect(view.reach.find((step) => step.flag === "crop_fields_unlocked")?.cost).toBeNull();
-    expect(view.reach.find((step) => step.flag === "greenhouse_raised")?.cost).toBe("Not open yet");
   });
 
   it("names the travelers pinned to a particular flag on that flag", () => {

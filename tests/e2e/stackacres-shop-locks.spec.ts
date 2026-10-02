@@ -83,13 +83,13 @@ test("Ray refuses a locked row over HTTP, not just in the browser", async ({ bro
     const before = await goldOf(api);
 
     // The volume feed. Well-formed, real item id, plenty of Gold -- and the
-    // Fold is still under wild growth.
+    // farm has never kept a sheep.
     const bulk = await api.post("/api/stackacres/actions", {
       data: { action: "buy-feed", itemId: "bulk_shipment", quantity: 1 },
     });
     expect(bulk.status()).toBe(409);
     expect((await bulk.json()) as { error?: string }).toMatchObject({
-      error: "Ray won't sell you a Bulk Shipment yet. Requires: Clear the Fold (not open yet).",
+      error: "Ray won't sell you a Bulk Shipment yet. Requires: Buy a Sheep Pen.",
     });
 
     // The equipment ladder names no rung in its request -- the server walks
@@ -167,7 +167,7 @@ test("the supply store shows a locked row greyed, named and told what it wants",
     const bulk = sheet.locator(".sa-stock-card", { hasText: "Bulk Shipment" });
     await expect(bulk).toBeVisible();
     await expect(bulk).toHaveClass(/is-locked/);
-    await expect(bulk.getByText("Requires: Clear the Fold")).toBeVisible();
+    await expect(bulk.getByText("Requires: Buy a Sheep Pen")).toBeVisible();
     // Priced while locked, on purpose -- you cannot decide to save up for a
     // number you have never been shown.
     await expect(bulk.locator(".sa-store-cost").first()).toHaveText("280");

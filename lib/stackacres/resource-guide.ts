@@ -38,6 +38,7 @@ import { RECIPE_CATALOGUE, RECIPE_IDS, type RecipeId } from "./recipes";
 import { SOIL_ENRICH_USE_LABEL, isSoilEnrichingItem } from "./soil-enrich";
 import { TRAVELER_QUESTS, questFlatObjectives } from "./story/quests";
 import { TRAVELER_IDS } from "./story/travelers";
+import { isHerdStock } from "./herd";
 import { HOME_SECTORS } from "./sectors";
 import { stockZone } from "./world";
 
@@ -204,7 +205,7 @@ function isMachineBuildable(kind: MachineKind): boolean {
 }
 
 function stockIsOpen(stock: StackAcresStock): boolean {
-  if (!isLivestock(stock)) return true;
+  if (!isLivestock(stock) || isHerdStock(stock)) return true;
   return (HOME_SECTORS as readonly string[]).includes(stockZone(stock));
 }
 

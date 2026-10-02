@@ -29,7 +29,7 @@
  *
  * IT NEVER NAMES SOMETHING THAT CANNOT BE DONE. That falls out of reusing the
  * Journal: `candidateCues` only pushes a cue the farm can truthfully show,
- * `nextReachableStackAcresMilestone` already skips the three flags behind a
+ * `nextReachableStackAcresMilestone` already skips any flag behind a
  * wall (./shop-locks.ts's `STACKACRES_UNREACHABLE_FLAGS`), and a locked
  * traveler is never a caller. The one thing added here is the same care about
  * DESTINATIONS: a rung whose work happens on the map in front of the player
@@ -40,6 +40,7 @@
  * own, no store, nothing that moves Gold.
  */
 
+import type { BuildLine } from "./build-cost";
 import { machineItemLabel } from "./machine-items";
 import type { MapPlaceId } from "./map-places";
 import { SEED_SELLER_WHERE } from "./seed-seller";
@@ -125,6 +126,18 @@ function byShortfall(a: NextActionRequirement, b: NextActionRequirement): number
   return a.have / a.need - b.have / b.need;
 }
 
+/** Cost lines as panel requirements. A met line needs no "where to get it". */
+function requirementsFrom(lines: readonly BuildLine[]): NextActionRequirement[] {
+  return lines
+    .map((line) => ({
+      label: line.label,
+      have: line.have,
+      need: line.need,
+      source: line.met ? null : line.source,
+    }))
+    .sort(byShortfall);
+}
+
 /** The room a building goes up in, as a button. ./build-cost.ts's
  *  `BuildPlace` is the only thing that decides this, so the panel and the
  *  Journal's own place chip can never disagree. */
@@ -142,14 +155,7 @@ function buildAction(cue: JournalCueKind, step: JournalStep, chapterBlurb: strin
     cue,
     title: `Build the ${step.name}`,
     why: step.opens ? `${chapterBlurb} ${step.opens}.` : chapterBlurb,
-    requirements: step.lines
-      .map((line) => ({
-        label: line.label,
-        have: line.have,
-        need: line.need,
-        source: line.met ? null : line.source,
-      }))
-      .sort(byShortfall),
+    requirements: requirementsFrom(step.lines),
     button: roomButton(step.place),
   };
 }
@@ -336,7 +342,7 @@ export function nextAction(input: JournalInput, view: JournalView): NextAction |
           opens.length > 0
             ? `It raises your Standing, which opens ${opens.join(", ")}.`
             : "It raises your Standing, and another rung of Ray's shelf with it.",
-        requirements: [],
+        requirements: requirementsFrom(rung?.lines ?? []),
         button: FLAG_BUTTON[flag] ?? null,
       };
     }

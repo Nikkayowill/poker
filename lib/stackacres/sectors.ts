@@ -43,6 +43,7 @@
  */
 
 import { STACKACRES_BASE_CAP, STACKACRES_STOCK, capFor, isStackAcresCrop, type StackAcresStock } from "./catalogue";
+import { isHerdStock } from "./herd";
 import { nearPath } from "./paths";
 import type { StackAcresUnitSnapshot } from "./units";
 import { seededRandom, stockZone, type SceneryKind, type WorldRect } from "./world";
@@ -360,6 +361,10 @@ export function sectorClearCheck(
  * Fields is now ONE sector-clearing event, charged like any other sector's
  * minimum footprint (`CROP_FIELDS_UPKEEP_PLOTS`) -- so a seventeenth crop
  * can ship without silently moving the bill again.
+ *
+ * Sheep and cattle are not charged either. Buying one opens its old district,
+ * which used to add three slots each to the fee. They stand in the yard now,
+ * on ground the acres already pay for.
  */
 export const CROP_FIELDS_UPKEEP_PLOTS = STACKACRES_BASE_CAP;
 
@@ -370,6 +375,7 @@ export function unlockedPlotCount(
 ): number {
   const stockTotal = STACKACRES_STOCK.reduce((total, stock) => {
     if (isStackAcresCrop(stock)) return total; // charged once, flat, below
+    if (isHerdStock(stock)) return total;
     const zone = stockZone(stock);
     if (!isSectorUnlocked(zone, unlocked)) return total;
     return total + capFor(capacity[stock] ?? 0);

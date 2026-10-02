@@ -35,13 +35,16 @@ const PLACE: Record<MachineKind, BuildPlace> = {
   farm_kitchen: "House",
 };
 
-/** Where a material comes from, in the words a player can act on. Gold has no
- *  entry: a player always knows where Gold comes from. */
+/** Where a material comes from, in the words a player can act on. */
 const SOURCE: Partial<Record<MachineItemId, string>> = {
   wood: "Chop the trees around the farm",
   stone: "Break the boulders in the Crop Fields",
   metal: "Smelt Iron Ore at the Smelter",
 };
+
+/** A new farm runs out of Gold right after Chapter 1 (the Stew Pot is 1,500),
+ *  so a short Gold line says where more comes from too. */
+const GOLD_SOURCE = "Sell crops at the barn";
 
 export interface BuildLine {
   /** "Gold", "Wood", "Stone". Already singular or plural to match `need`. */
@@ -49,7 +52,7 @@ export interface BuildLine {
   have: number;
   need: number;
   met: boolean;
-  /** Where to get more, when this line is short. Null for Gold. */
+  /** Where to get more, when this line is short. */
   source: string | null;
 }
 
@@ -75,7 +78,7 @@ export function costLines(
   inventory: StackAcresInventory,
 ): BuildLine[] {
   const lines: BuildLine[] = [
-    { label: "Gold", have: gold, need: goldNeed, met: gold >= goldNeed, source: null },
+    { label: "Gold", have: gold, need: goldNeed, met: gold >= goldNeed, source: GOLD_SOURCE },
   ];
   for (const material of materials) {
     const have = inventoryQuantity(inventory, material.item);
@@ -122,7 +125,7 @@ export function shortLines(cost: { lines: readonly BuildLine[] }): BuildLine[] {
     .sort((a, b) => a.have / a.need - b.have / b.need);
 }
 
-/** One sentence saying what is missing and where to get it, or null when the
+/** What is missing and where to get each part, or null when the
  *  player can afford it now. */
 export function buildShortfall(cost: { lines: readonly BuildLine[] }): string | null {
   const short = shortLines(cost);
@@ -130,6 +133,6 @@ export function buildShortfall(cost: { lines: readonly BuildLine[] }): string | 
   const parts = short.map((line) => `${(line.need - line.have).toLocaleString()} more ${line.label}`);
   const needed =
     parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
-  const source = short.find((line) => line.source)?.source;
-  return source ? `You need ${needed}. ${source}.` : `You need ${needed}.`;
+  const sources = [...new Set(short.flatMap((line) => (line.source ? [line.source] : [])))];
+  return [`You need ${needed}.`, ...sources.map((source) => `${source}.`)].join(" ");
 }

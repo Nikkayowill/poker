@@ -2,8 +2,8 @@ import { expect, test, type BrowserContext, type Page } from "./fixtures";
 
 /**
  * The player's house and Ray are two separate taps. Ray opens only his own
- * dialogue, never the kitchen. Also checks the barn's Livestock tab shows the
- * locked pens greyed.
+ * dialogue, never the kitchen. Also checks the barn's Livestock tab sells
+ * every pen.
  *
  * The house, the barn and the workshop are WALK-IN interiors: a tap on the
  * building walks the farmer through its door (scene.ts's `tapAt` treats a tag
@@ -99,7 +99,7 @@ test("Ray never opens the kitchen, and the counter inside the house does", async
   await expect(house).toBeHidden();
 });
 
-test("the barn's Livestock tab shows the sheep and cattle pens greyed until their land is cleared", async ({ context, page }) => {
+test("the barn's Livestock tab sells sheep and cattle pens with no land to clear", async ({ context, page }) => {
   await openStackAcres(context, page);
 
   await enter(page, BARN);
@@ -108,11 +108,9 @@ test("the barn's Livestock tab shows the sheep and cattle pens greyed until thei
   await store.getByRole("tab", { name: "Livestock" }).click();
 
   await expect(store.getByText("Hen Coop")).toBeVisible();
-  await expect(store.locator(".sa-locked-pen", { hasText: "Sheep Pen" })).toBeVisible();
-  await expect(store.locator(".sa-locked-pen", { hasText: "Cattle Pen" })).toBeVisible();
-
-  await store.getByRole("button", { name: "Unlock The Fold" }).click();
-  await expect(page.getByText("Uncleared land")).toBeVisible();
+  await expect(store.getByText("Sheep Pen")).toBeVisible();
+  await expect(store.getByText("Cattle Pen")).toBeVisible();
+  await expect(store.locator(".sa-locked-pen")).toHaveCount(0);
 });
 
 test("the bed in the house is slept in by night and turns you away by day", async ({ context, page }) => {

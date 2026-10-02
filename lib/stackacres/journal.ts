@@ -33,7 +33,7 @@
 
 import { CHAPTERS } from "./chapters";
 import type { FarmBoardLine, FarmBoardView } from "./farm-board";
-import { buildCost, buildPlace, costLines, costSummary, type BuildCost, type BuildPlace } from "./build-cost";
+import { buildCost, buildPlace, costLines, costSummary, type BuildCost, type BuildLine, type BuildPlace } from "./build-cost";
 import { STACKACRES_CATALOGUE, isLivestock, type SeedStock } from "./catalogue";
 import { SEED_SELLER_WHERE } from "./seed-seller";
 import { canFulfillContract, type StackAcresContractRow } from "./contracts";
@@ -46,12 +46,12 @@ import { buildingCues, finishedRunCount, roomHasMachines } from "./building-cues
 import { FARM_KITCHEN_BANK, farmKitchenBanked } from "./farm-kitchen";
 import { FEED_SILO_DAILY_FEEDS } from "./feed-silo";
 import { seedsOpenedLine } from "./seed-unlocks";
-import { STACKACRES_SECTORS, type SectorId } from "./sectors";
+import type { AcrePrice } from "./acres";
+import { stackacresStockPrice } from "./market";
 import {
   STACKACRES_QUEST_FLAGS,
   STACKACRES_QUEST_LABELS,
   nextReachableStackAcresMilestone,
-  STACKACRES_UNREACHABLE_FLAGS,
   stackacresMilestone,
   stackacresQuestFlags,
   type StackAcresQuestFlag,
@@ -160,10 +160,12 @@ export interface JournalReachStep {
   /** The imperative label the shop and the traveler bubbles already use. */
   readonly label: string;
   readonly done: boolean;
-  /** "45,000 Gold + 30 Wood" for a flag that is a land clear, else null.
-   *  The expansion track's two big rungs are purchases, and a rung a player
-   *  is told to reach without being told the price is not a goal. */
+  /** "300 Gold + 15 Wood + 5 Stone" for a flag that is bought, else null.
+   *  A rung a player is told to reach without the price is not a goal. */
   readonly cost: string | null;
+  /** What that price asks for, line by line, against what the farm holds.
+   *  Empty when the flag is not bought. */
+  readonly lines: readonly BuildLine[];
   /** Travelers who arrive on this flag by name, rather than on a count. */
   readonly brings: readonly string[];
 }
@@ -252,6 +254,10 @@ export interface JournalInput {
    *  truth, passed in rather than derived, the same posture `story` above
    *  takes -- nothing here can work out what today's draw was. */
   readonly farmBoard: FarmBoardView | null;
+  /** The next acre's price off the last snapshot. Breaking ground in the
+   *  Crop Fields needs a bought acre, so this is that milestone's price.
+   *  Null or left out when the farm owns every acre. */
+  readonly acrePrice?: AcrePrice | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -326,27 +332,39 @@ function opensAtMilestone(count: number): string[] {
   return opens;
 }
 
-/** The two flags that are land clears, so their price can be shown. The
- *  other three are acts, not purchases. */
-const FLAG_SECTOR: Partial<Record<StackAcresQuestFlag, SectorId>> = {
-  cleared_wallow: "wallow",
-  cleared_oxfields: "oxfields",
-};
+/** What a flag costs to earn, or no lines when it is an act rather than a
+ *  purchase. The Crop Fields need a bought acre, and the Fold and the Cattle
+ *  Pasture open with the first sheep or cow. */
+function reachLines(flag: StackAcresQuestFlag, input: JournalInput): BuildLine[] {
+  switch (flag) {
+    case "crop_fields_unlocked": {
+      const price = input.acrePrice;
+      if (!price) return [];
+      const materials = [
+        { item: "wood", quantity: price.wood },
+        { item: "stone", quantity: price.stone },
+      ] as const;
+      return costLines(price.gold, materials, input.gold, input.inventory);
+    }
+    case "cleared_wallow":
+      return costLines(stackacresStockPrice("pig"), [], input.gold, input.inventory);
+    case "cleared_oxfields":
+      return costLines(stackacresStockPrice("cattle"), [], input.gold, input.inventory);
+    default:
+      return [];
+  }
+}
 
 function journalReach(input: JournalInput): JournalReachStep[] {
   const earned = stackacresQuestFlags(input.progress);
   return STACKACRES_QUEST_FLAGS.map((flag) => {
-    const sector = FLAG_SECTOR[flag];
-    const def = sector ? STACKACRES_SECTORS[sector] : null;
+    const lines = reachLines(flag, input);
     return {
       flag,
       label: STACKACRES_QUEST_LABELS[flag],
       done: earned.has(flag),
-      cost: STACKACRES_UNREACHABLE_FLAGS.includes(flag)
-        ? "Not open yet"
-        : def
-          ? `${def.clearCost.toLocaleString()} Gold`
-          : null,
+      cost: lines.length > 0 ? costSummary({ lines }) : null,
+      lines,
       brings: travelersOnFlag(flag),
     };
   });
@@ -573,13 +591,15 @@ function candidateCues(input: JournalInput, chapters: readonly JournalChapter[])
     if (step.affordable) {
       cues.push(cue("build", `You can put up the ${step.name} now.`, step.place));
     } else {
-      const short = step.lines.find((line) => !line.met && line.source !== null);
+      // A short material leads, since it is gathered by hand. Gold is the first line.
+      const short = step.lines.find((line, index) => index > 0 && !line.met && line.source !== null);
+      const gold = step.lines[0];
       cues.push(
         short
           ? cue("gather", `The ${step.name} still wants ${short.need - short.have} more ${short.label}. ${short.source}.`)
           : cue(
               "gather",
-              `The ${step.name} is ${(step.lines[0].need - step.lines[0].have).toLocaleString()} Gold away.`,
+              `The ${step.name} is ${(gold.need - gold.have).toLocaleString()} Gold away. ${gold.source}.`,
               step.place,
             ),
       );

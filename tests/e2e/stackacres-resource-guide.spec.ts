@@ -74,15 +74,14 @@ test("a resource guide opens from the inventory and leads to the screen that use
   await expect(page.getByRole("dialog", { name: "The Workshop" })).toBeVisible();
 });
 
-test("an item whose source is shut says so instead of pointing at it", async ({ context, page }) => {
+test("Stone names the boulders it comes from, now that they are on the map", async ({ context, page }) => {
   await openStackAcresWithWood(context, page);
 
   const guide = await openGuide(page);
   await guide.getByRole("button", { name: /^Show all \d+ items$/ }).click();
   await guide.getByRole("button", { name: /^Stone, 0 held$/ }).click();
 
-  const detail = page.getByRole("dialog", { name: "Stone" });
-  const sources = detail.getByRole("list", { name: "Sources" });
-  await expect(sources.getByText(/Not open yet/)).toBeVisible();
-  await expect(sources.getByRole("button")).toHaveCount(0);
+  const sources = page.getByRole("dialog", { name: "Stone" }).getByRole("list", { name: "Sources" });
+  await expect(sources.getByText(/boulders/)).toBeVisible();
+  await expect(sources.getByText(/Not open yet/)).toHaveCount(0);
 });

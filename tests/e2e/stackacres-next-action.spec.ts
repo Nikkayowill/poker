@@ -17,6 +17,20 @@ const ADMIN_SECRET = "playwright-admin-secret";
  *  "why it matters" line rather than dropping it for a short phone. */
 test.use({ viewport: { width: 1280, height: 720 } });
 
+/** Gets one crop into the ground so the farm is past the seed cues and on to its first building. A truly
+ *  empty farm is told to sow or to see Cora instead (stackacres-seed-seller.spec.ts). */
+async function plantOneCrop(context: BrowserContext) {
+  const act = (data: Record<string, unknown>) => context.request.post("/api/stackacres/actions", { data });
+  expect((await act({ action: "buy-seed", crop: "wheat", quantity: 1 })).ok()).toBe(true);
+  expect((await act({ action: "place-soil-tile", tx: -6, ty: 2 })).ok()).toBe(true);
+  expect((await act({ action: "stock", stock: "wheat", tx: -6, ty: 2 })).ok()).toBe(true);
+  // Ray is how a new player is first pointed at things, so meet him; a person waiting to be met would lead the panel.
+  expect((await act({ action: "story-meet", traveler: "ray" })).ok()).toBe(true);
+  // A seed starts dry, and a dry bed is its own cue, so water it.
+  const farm = (await (await context.request.get("/api/stackacres")).json()) as { units: { id: string }[] };
+  expect((await act({ action: "water", unitId: farm.units[0].id })).ok()).toBe(true);
+}
+
 async function openStackAcres(context: BrowserContext, page: Page) {
   const created = await context.request.post("/api/profile");
   expect(created.ok()).toBe(true);
@@ -34,6 +48,7 @@ async function openStackAcres(context: BrowserContext, page: Page) {
     })).ok(),
   ).toBe(true);
 
+  await plantOneCrop(context);
   await page.addInitScript(() => window.localStorage.setItem("sa-ray-welcomed", "1"));
   await enterFarm(page);
   return profile.id;

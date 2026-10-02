@@ -34,10 +34,12 @@
 import { CHAPTERS } from "./chapters";
 import type { FarmBoardLine, FarmBoardView } from "./farm-board";
 import { buildCost, buildPlace, costLines, costSummary, type BuildCost, type BuildPlace } from "./build-cost";
-import { STACKACRES_CATALOGUE, isLivestock } from "./catalogue";
+import { STACKACRES_CATALOGUE, isLivestock, type SeedStock } from "./catalogue";
+import { SEED_SELLER_WHERE } from "./seed-seller";
 import { canFulfillContract, type StackAcresContractRow } from "./contracts";
 import { STACKACRES_TOOL_TIERS, STACKACRES_TOOL_TIER_DEFS } from "./equipment";
 import { inventoryQuantity, type StackAcresInventory } from "./inventory";
+import { RECIPE_CATALOGUE } from "./recipes";
 import { machineItemLabel } from "./machine-items";
 import type { MachineKind, StackAcresMachineSnapshot } from "./machines";
 import { buildingCues, finishedRunCount, roomHasMachines } from "./building-cues";
@@ -81,6 +83,10 @@ export type JournalCueKind =
   | "harvest"
   /** Beds have gone dry, so nothing in them is growing. */
   | "water"
+  /** Seed in the barn and nothing planted: Ray's pouch, ready to go in the ground. */
+  | "sow"
+  /** Nothing planted and no seed left: Cora sells it at the city market. */
+  | "seeds"
   /** The next building is affordable. */
   | "build"
   /** The next building is short of something, and we know where it comes from. */
@@ -98,13 +104,16 @@ const CUE_ORDER: readonly JournalCueKind[] = [
   "contract",
   "harvest",
   "water",
+  "sow",
+  "seeds",
+  // Above the farm's own next building. Ray, Pierre and Ivy are how the game teaches itself: a person
+  // waiting to be met, or holding a finished quest, is worth more than another line about Wood. Only a
+  // traveler who is waiting or ready lands here; a quest still in progress never outranks the building
+  // it may depend on. Their lines stay optional (./story/quests.ts), and the Journal sheet still lists
+  // every building the farm needs.
+  "caller",
   "build",
   "gather",
-  // Below the farm's own next step on purpose. A traveler's line is optional
-  // from the first tap to the last (see ./story/quests.ts's header) and the
-  // farm is the game, so a player who never talks to anybody must still be
-  // told what their own buildings need.
-  "caller",
   "reach",
   "idle",
 ];
@@ -235,6 +244,10 @@ export interface JournalInput {
   readonly woodNodes: readonly { readonly ready: boolean }[];
   readonly stoneNodes: readonly { readonly ready: boolean }[];
   readonly forageNodes: readonly { readonly ready: boolean }[];
+  /** Seed held and not yet planted, by crop. */
+  readonly seedStock: SeedStock;
+  /** Water left in the can. Left out, the can counts as full. */
+  readonly water?: number;
   /** The board off the last snapshot, or null before one has landed. Server
    *  truth, passed in rather than derived, the same posture `story` above
    *  takes -- nothing here can work out what today's draw was. */
@@ -522,8 +535,24 @@ function candidateCues(input: JournalInput, chapters: readonly JournalChapter[])
   const dry = input.units.filter((unit) => unit.state === "dry").length;
   if (dry > 0) {
     cues.push(
-      cue("water", dry === 1 ? "A bed has gone dry, and nothing grows dry." : `${dry} beds have gone dry, and nothing grows dry.`),
+      input.water !== undefined && input.water < 1
+        ? cue("water", "Your can is empty and a bed has gone dry. Fill the can at the well.", "The well")
+        : cue("water", dry === 1 ? "A bed has gone dry, and nothing grows dry." : `${dry} beds have gone dry, and nothing grows dry.`),
     );
+  }
+
+  // Nothing planted at all: the first thing to do is get a crop in the ground, and Ray's pouch (or Cora's
+  // stall once it is used up) is where the seed comes from.
+  const planted = input.units.some((unit) => !isLivestock(unit.stock));
+  if (!planted) {
+    const seedCount = Object.values(input.seedStock).reduce((sum, held) => sum + (held ?? 0), 0);
+    // Wheat in the barn is work in hand (the Mill), so it is not "out of seed" until that is used up too.
+    const wheatToMill = inventoryQuantity(input.inventory, "wheat") >= RECIPE_CATALOGUE.flour.inputs[0].quantity;
+    if (seedCount > 0) {
+      cues.push(cue("sow", "Hoe a bed on the grass by the house, sow your seed and water it from the well."));
+    } else if (!wheatToMill) {
+      cues.push(cue("seeds", `You're out of seed. Cora sells it at ${SEED_SELLER_WHERE}.`, "The City"));
+    }
   }
 
   const callers = journalCallers(input.story);

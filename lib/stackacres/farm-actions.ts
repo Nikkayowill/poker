@@ -64,6 +64,8 @@ export type Action =
   | { action: "water"; unitId: string; unitIds?: string[] }
   // Fills the watering can at the well.
   | { action: "draw-water" }
+  // Ray's starter pouch of wheat seed, once per farm.
+  | { action: "claim-starter-seeds" }
   // The dock's cast, completed: which fish it lands is the server's own
   // dice roll, same posture as `collect`'s Gold.
   // `bait` spends one Radish on the hook for better odds.
@@ -100,7 +102,7 @@ export type Action =
   | { action: "place-machine"; kind: MachineKind }
   // One batch. Instant for a Dairy or a Loom; a Mill enqueues and `work`
   // collects it.
-  | { action: "process"; recipe: RecipeId }
+  | { action: "process"; recipe: RecipeId; batches?: number }
   | { action: "seal-vat" }
   | { action: "collect-vat" }
   | { action: "seal-cellar"; item: CellarItem }

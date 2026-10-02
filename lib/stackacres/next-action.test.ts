@@ -36,10 +36,13 @@ const FRESH: JournalInput = {
   woodNodes: [],
   stoneNodes: [],
   forageNodes: [],
+  seedStock: {},
   nowMs: Date.parse("2026-09-21T12:00:00.000Z"),
 };
 
-const farm = (patch: Partial<JournalInput> = {}): JournalInput => ({ ...FRESH, ...patch });
+/** A farm with a crop already in the ground. A truly empty one is `FRESH` itself, which is where the
+ *  seed cues live (Ray's pouch, then Cora). */
+const farm = (patch: Partial<JournalInput> = {}): JournalInput => ({ ...FRESH, units: [unit("working")], ...patch });
 
 /** The whole derivation, exactly the way the panel gets it. */
 const plan = (patch: Partial<JournalInput> = {}): NextAction | null => {
@@ -112,6 +115,30 @@ const storyWith = (unlocked: readonly string[], patch: Record<string, unknown> =
 /* ------------------------------------------------------------------ */
 
 describe("picking the objective", () => {
+  it("tells a farmer with an empty can and a dry bed to fill the can first", () => {
+    const action = planned({ units: [unit("dry")], water: 0 });
+    expect(action.cue).toBe("water");
+    expect(action.title).toBe("Fill your can at the well");
+  });
+
+  it("tells a brand new farm to plant its wheat, with no button because it happens on the map", () => {
+    const action = planned({ units: [], seedStock: { wheat: 12 } });
+    expect(action.cue).toBe("sow");
+    expect(action.title).toBe("Plant your wheat");
+    expect(action.button).toBeNull();
+  });
+
+  it("says seed rather than wheat when the seed held is something else", () => {
+    expect(planned({ units: [], seedStock: { carrot: 3 } }).title).toBe("Plant your seed");
+  });
+
+  it("sends a farm out of seed to Cora, with a button to the city", () => {
+    const action = planned({ units: [], seedStock: {} });
+    expect(action.cue).toBe("seeds");
+    expect(action.title).toContain("Cora");
+    expect(action.button?.target).toEqual({ kind: "travel", place: "city" });
+  });
+
   it("points a brand new farm at chapter 1's Mill, and says why it matters", () => {
     const action = planned();
     expect(action.cue).toBe("gather");
@@ -331,17 +358,14 @@ describe("locked content", () => {
     expect(action.cue).toBe("reach");
   });
 
-  it("names the unlocked traveler nobody has spoken to yet, below the farm's own work", () => {
+  it("names the unlocked traveler nobody has spoken to yet, ahead of the next building", () => {
     const story = storyWith(["ray"]);
-    // Below the next building, deliberately: a traveler's line is optional.
-    expect(planned({ story }).cue).toBe("gather");
+    // The people teach the game, so a traveler waiting to be met leads the building.
+    expect(planned({ story }).cue).toBe("caller");
     const action = planned({ built: ALL_BUILT, story });
     expect(action.cue).toBe("caller");
     expect(action.title).toBe("Talk to Ray");
-    expect(action.button).toEqual({
-      label: "Go to the Homestead",
-      target: { kind: "travel", place: "farmstead" },
-    });
+    expect(action.button).toBeNull();
   });
 
   it("names the quest a traveler is holding, with its own objective counts", () => {

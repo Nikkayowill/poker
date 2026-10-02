@@ -476,6 +476,7 @@ import { feedingToast, servingBonusEggs, shelfFeedOrder, type ServingSource } fr
 import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/feed-silo";
 import { isFarmKitchenRecipe, planFarmKitchen } from "@/lib/stackacres/farm-kitchen";
 import { isSeedUnlocked, seedLockedMessage } from "@/lib/stackacres/seed-unlocks";
+import { STARTER_SEED_COUNT, STARTER_SEED_CROP, STARTER_SEEDS_LEDGER_KEY } from "@/lib/stackacres/starter-seeds";
 import { QUARRY_CATALOGUE, pickQuarry, type QuarrySpecies } from "@/lib/stackacres/hunting";
 import { WOOD_NODE_IDS, isWoodNodeId, type WoodNodeId } from "@/lib/stackacres/tree-nodes";
 import {
@@ -619,6 +620,7 @@ import {
 import {
   RECIPE_CATALOGUE,
   isInstantRecipe,
+  MAX_RUN_BATCHES,
   isRecipeId,
   recipesForMachine,
   type RecipeId,
@@ -3665,6 +3667,28 @@ export async function feedStackAcresPen(
   return { ...(await view(profile, now)), ...fedResult(sources) };
 }
 
+/**
+ * Ray's starter pouch of wheat seed (lib/stackacres/starter-seeds.ts). No Gold moves.
+ *
+ * The claim comes first and is the whole guard: `adjustStackAcresSecretLedger` hands back 1 to exactly one
+ * of two simultaneous requests, so a second tap never gets a second pouch. If the seed then fails to land the
+ * claim is handed back so Ray can try again, the same order a purchase keeps.
+ */
+export async function claimStackAcresStarterSeeds(token: string, now = new Date()): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const claimed = await adjustStackAcresSecretLedger(profile.id, STARTER_SEEDS_LEDGER_KEY, 1);
+  if (claimed === 1) {
+    try {
+      const held = await adjustStackAcresSeedStock(profile.id, STARTER_SEED_CROP, STARTER_SEED_COUNT);
+      if (held === null) throw new Error("Could not shelve the starter seed.");
+    } catch (error) {
+      await adjustStackAcresSecretLedger(profile.id, STARTER_SEEDS_LEDGER_KEY, -1).catch(() => null);
+      throw error;
+    }
+  }
+  return view(profile, now);
+}
+
 /** The secret-ledger key one of Ray's care-gift rungs is claimed under. The
  *  ledger is the free-form per-player flag counter its own migration says it
  *  is; see the barn-routine migration for why this needs no table. */
@@ -6376,8 +6400,16 @@ export async function processRecipe(
   profileId: string,
   recipeId: RecipeId,
   now = new Date(),
+  batches = 1,
 ): Promise<ProcessRecipeResult> {
   const def = RECIPE_CATALOGUE[recipeId];
+  if (!Number.isInteger(batches) || batches < 1 || batches > MAX_RUN_BATCHES) {
+    throw new StackAcresRequestError(`Run between 1 and ${MAX_RUN_BATCHES} batches at a time.`, 400);
+  }
+  // An instant recipe settles in one transaction, so it is always one batch.
+  if (isInstantRecipe(recipeId) && batches > 1) {
+    throw new StackAcresRequestError("That makes one batch at a time.", 400);
+  }
 
   const machines = await listStackAcresMachines(profileId);
   const machine = machines.find(
@@ -6395,8 +6427,8 @@ export async function processRecipe(
 
   const shortfall = () =>
     new StackAcresRequestError(
-      `Not enough. One batch takes ${def.inputs
-        .map((input) => machineItemLabel(input.item, input.quantity))
+      `Not enough. ${batches > 1 ? `${batches} batches take` : "One batch takes"} ${def.inputs
+        .map((input) => machineItemLabel(input.item, input.quantity * batches))
         .join(" + ")}.`,
       409,
     );
@@ -6421,7 +6453,7 @@ export async function processRecipe(
   const debited: { item: MachineItemId; quantity: number }[] = [];
   let short = false;
   for (const input of def.inputs) {
-    const afterDebit = await adjustStackAcresInventory(profileId, input.item, -input.quantity);
+    const afterDebit = await adjustStackAcresInventory(profileId, input.item, -input.quantity * batches);
     if (afterDebit === null) {
       short = true;
       break;
@@ -6430,23 +6462,25 @@ export async function processRecipe(
   }
   if (short) {
     for (const input of debited) {
-      await adjustStackAcresInventory(profileId, input.item, input.quantity).catch(() => null);
+      await adjustStackAcresInventory(profileId, input.item, input.quantity * batches).catch(() => null);
     }
     throw shortfall();
   }
 
-  const readyAt = new Date(now.getTime() + def.processingMs);
+  // A run of N batches takes N times as long and pays N times the output when collected: the same wait as N
+  // single taps, started with one.
+  const readyAt = new Date(now.getTime() + def.processingMs * batches);
   const started = await startStackAcresMachine(
     machine,
     now,
     readyAt,
     recipeId,
-    def.output.quantity,
+    def.output.quantity * batches,
   );
   if (!started) {
     // Lost the race to start this exact machine; give every input back.
     for (const input of def.inputs) {
-      await adjustStackAcresInventory(profileId, input.item, input.quantity).catch(() => null);
+      await adjustStackAcresInventory(profileId, input.item, input.quantity * batches).catch(() => null);
     }
     throw new StackAcresRequestError("That machine just started something else.", 409);
   }
@@ -6460,10 +6494,11 @@ export async function processStackAcresRecipeAction(
   token: string,
   recipeInput: string,
   now = new Date(),
+  batches = 1,
 ): Promise<StackAcresView & { processed: ProcessRecipeResult }> {
   if (!isRecipeId(recipeInput)) throw new StackAcresRequestError("Not a real recipe.", 400);
   const profile = await ensureProfile(token);
-  const processed = await processRecipe(profile.id, recipeInput, now);
+  const processed = await processRecipe(profile.id, recipeInput, now, batches);
   // An instant recipe is made right here; a queued one is counted when
   // `workStackAcres` collects it, so it is never counted twice.
   if (processed.produced !== null) {

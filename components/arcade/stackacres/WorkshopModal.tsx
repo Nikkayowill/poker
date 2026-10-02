@@ -36,7 +36,7 @@ import {
 } from "@/lib/stackacres/machines";
 import type { MachineView } from "@/lib/stackacres/optimistic-actions";
 import { seedsOpenedLine } from "@/lib/stackacres/seed-unlocks";
-import { RECIPE_CATALOGUE, RECIPE_VERB, isInstantRecipe, recipesForMachine, type RecipeId } from "@/lib/stackacres/recipes";
+import { RECIPE_CATALOGUE, RECIPE_VERB, batchesAvailable, isInstantRecipe, recipesForMachine, type RecipeId } from "@/lib/stackacres/recipes";
 import { FEED_SILO_DAILY_FEEDS } from "@/lib/stackacres/feed-silo";
 import { STACKACRES_WORKSHOP_SHELF_ITEMS, isActiveMachine } from "@/lib/stackacres/scope";
 import { WHEAT_YIELD_QUANTITY } from "@/lib/stackacres/wheat-plot";
@@ -108,7 +108,8 @@ export interface WorkshopModalProps {
    *  pending set, so one key greys on its own action only. */
   isPending: (intent: string) => boolean;
   onPlaceMachine: (kind: MachineKind) => Promise<WorkshopActionResult>;
-  onProcess: (recipe: RecipeId) => Promise<WorkshopActionResult>;
+  /** `batches` queues a stack on a machine that runs on a clock, in one tap. */
+  onProcess: (recipe: RecipeId, batches?: number) => Promise<WorkshopActionResult>;
   onWork: () => Promise<WorkshopActionResult>;
   /** Sells everything currently held of `item` -- the shelf's own "Sell all"
    *  button, one tap per item rather than a quantity stepper. */
@@ -376,13 +377,15 @@ export function WorkshopModal({
     [run, onPlaceMachine],
   );
   const handleProcess = useCallback(
-    (recipe: RecipeId) =>
+    (recipe: RecipeId, batches = 1) =>
       run(
-        () => onProcess(recipe),
+        () => onProcess(recipe, batches),
         (result) => {
           const produced = result.processed?.produced;
           if (produced) return `Made ${machineItemLabel(produced.item, produced.quantity)}.`;
-          return `${RECIPE_CATALOGUE[recipe].label} is on. Come back for it.`;
+          return batches > 1
+            ? `${batches} batches of ${RECIPE_CATALOGUE[recipe].label} are on. Come back for them.`
+            : `${RECIPE_CATALOGUE[recipe].label} is on. Come back for it.`;
         },
       ),
     [run, onProcess],
@@ -649,6 +652,8 @@ export function WorkshopModal({
                       recipes.map((recipe) => {
                         const missing = shortfalls(recipe, inventory);
                         const output = RECIPE_CATALOGUE[recipe].output;
+                        // The whole stack the pantry can feed, started in one tap.
+                        const batches = Math.max(1, batchesAvailable(recipe, (item) => inventoryQuantity(inventory, item)));
                         const sources = [
                           ...new Set(missing.map((entry) => ITEM_SOURCE[entry.item]).filter((v): v is string => !!v)),
                         ];
@@ -659,10 +664,10 @@ export function WorkshopModal({
                               type="button"
                               className="sa-cta"
                               disabled={isPending(`process:${recipe}`) || missing.length > 0}
-                              onClick={contain(() => void handleProcess(recipe))}
+                              onClick={contain(() => void handleProcess(recipe, batches))}
                             >
                               {missing.length === 0
-                                ? `${RECIPE_VERB[recipe]} ${machineItemLabel(output.item, output.quantity)}`
+                                ? `${RECIPE_VERB[recipe]} ${machineItemLabel(output.item, output.quantity * batches)}`
                                 : `Need ${missing
                                     .map((entry) => `${entry.short} more ${machineItemNoun(entry.item, entry.short)}`)
                                     .join(" + ")}`}

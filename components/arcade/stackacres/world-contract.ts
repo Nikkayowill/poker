@@ -363,6 +363,8 @@ export interface StackAcresWorldProps {
   onSoilMoveCommitted?: (tx: number, ty: number, toTx: number, toTy: number) => void;
   /** A finger landed on the barn -- Ray's Supply Store's own entryway. */
   onBarnTap: () => void;
+  /** A finger landed on Cora, who sells seed at the city market. */
+  onSeedSellerTap: () => void;
   /** A finger landed on the signpost, the Town Board's entryway now that
    *  the places list is gone. */
   onSignpostTap: () => void;

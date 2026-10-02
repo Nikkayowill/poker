@@ -285,6 +285,22 @@ export function isInstantRecipe(recipe: RecipeId): boolean {
   return RECIPE_CATALOGUE[recipe].processingMs === 0;
 }
 
+/** The most batches one tap may queue on a machine that runs on a clock. Each batch still takes its own
+ *  `processingMs`, so a run of N is the same wait as N single taps, only without the N taps. */
+export const MAX_RUN_BATCHES = 20;
+
+/** How many whole batches of `recipe` this inventory can feed, up to {@link MAX_RUN_BATCHES}. Zero when short.
+ *  An instant recipe is always one batch at a time. */
+export function batchesAvailable(
+  recipe: RecipeId,
+  held: (item: MachineItemId) => number,
+): number {
+  const def = RECIPE_CATALOGUE[recipe];
+  if (isInstantRecipe(recipe)) return def.inputs.every((input) => held(input.item) >= input.quantity) ? 1 : 0;
+  const fits = Math.min(...def.inputs.map((input) => Math.floor(held(input.item) / input.quantity)));
+  return Math.max(0, Math.min(MAX_RUN_BATCHES, fits));
+}
+
 /** Every recipe a machine of `kind` can run, in catalogue order. Derived
  *  rather than listed on the machine so the two can never disagree. */
 export function recipesForMachine(kind: MachineKind): readonly RecipeId[] {

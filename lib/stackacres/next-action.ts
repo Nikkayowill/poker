@@ -42,6 +42,7 @@
 
 import { machineItemLabel } from "./machine-items";
 import type { MapPlaceId } from "./map-places";
+import { SEED_SELLER_WHERE } from "./seed-seller";
 import {
   STACKACRES_QUEST_LABELS,
   nextReachableStackAcresMilestone,
@@ -243,14 +244,42 @@ export function nextAction(input: JournalInput, view: JournalView): NextAction |
         button: null,
       };
 
-    case "water":
+    case "water": {
+      const canEmpty = input.water !== undefined && input.water < 1;
       return {
-        id: "water",
+        id: canEmpty ? "water:fill" : "water",
         cue,
-        title: "Water the beds that have gone dry",
-        why: "A dry bed stops growing altogether, and the time it stands dry is never credited back.",
+        title: canEmpty ? "Fill your can at the well" : "Water the beds that have gone dry",
+        why: canEmpty
+          ? "The can is empty, and a dry bed stops growing altogether. Tap the well, then water the beds."
+          : "A dry bed stops growing altogether, and the time it stands dry is never credited back.",
         requirements: [],
         button: null,
+      };
+    }
+
+    case "sow": {
+      const wheat = (input.seedStock.wheat ?? 0) > 0;
+      return {
+        id: "sow",
+        cue,
+        title: wheat ? "Plant your wheat" : "Plant your seed",
+        why: wheat
+          ? "Wheat is the first crop on the farm. It grows while you chop, and the Mill turns it into flour."
+          : "Hoe a bed on the grass by the house, sow the seed and water it from the well.",
+        requirements: [],
+        button: null,
+      };
+    }
+
+    case "seeds":
+      return {
+        id: "seeds",
+        cue,
+        title: "Buy seed from Cora",
+        why: `Cora sells seed at ${SEED_SELLER_WHERE}. Every crop you grow starts there.`,
+        requirements: [],
+        button: { label: "Go to the City", target: { kind: "travel", place: "city" } },
       };
 
     case "build":
@@ -288,9 +317,9 @@ export function nextAction(input: JournalInput, view: JournalView): NextAction |
                 need: objective.need,
                 source: null,
               })),
-        // Travelers stand around the Homestead and nothing in the catalogue
-        // says where, so this points at the map rather than at a door.
-        button: { label: "Go to the Homestead", target: { kind: "travel", place: "farmstead" } },
+        // Travelers live on the Homestead, which is the only place the panel shows, so they are already
+        // in sight and a button to travel there would go nowhere.
+        button: null,
       };
     }
 

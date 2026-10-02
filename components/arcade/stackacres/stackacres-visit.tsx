@@ -237,6 +237,8 @@ export function StackAcresVisit({ profileId }: { profileId: string }) {
               tool="inspect"
               cutter={STACKACRES_STARTING_CUTTER}
               useKeyLabel=""
+              rodHeld={false}
+              onNearWater={noop}
               farmhandSpeedMultiplier={1}
               viewExpansion={1}
               celebrate={null}

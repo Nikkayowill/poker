@@ -124,6 +124,8 @@ export interface StackAcresBarnPanelProps {
   busy: boolean;
   hasBarn: boolean;
   onTend: (unitId: string) => void;
+  /** Closes the sheet and opens the herd bar to move animals around. Null when there is no herd out on the Homestead. */
+  onMoveAnimals: (() => void) | null;
   onClose: () => void;
 }
 
@@ -134,6 +136,7 @@ export function StackAcresBarnPanel({
   busy,
   hasBarn,
   onTend,
+  onMoveAnimals,
   onClose,
 }: StackAcresBarnPanelProps) {
   const close = useCallback(() => onClose(), [onClose]);
@@ -198,14 +201,21 @@ export function StackAcresBarnPanel({
             </p>
             <h2 id="sa-barn-title">Who lives here</h2>
           </div>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            className="sa-sheet-close"
-            onClick={contain(close)}
-          >
-            Done
-          </button>
+          <div className="sa-sheet-head-keys">
+            {onMoveAnimals && (
+              <button type="button" className="sa-sheet-close" onClick={contain(onMoveAnimals)}>
+                Move animals
+              </button>
+            )}
+            <button
+              ref={closeButtonRef}
+              type="button"
+              className="sa-sheet-close"
+              onClick={contain(close)}
+            >
+              Done
+            </button>
+          </div>
         </header>
 
         <p className="sa-sheet-note">

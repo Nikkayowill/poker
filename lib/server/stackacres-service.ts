@@ -2200,6 +2200,57 @@ async function netUpkeepFromPayout(profileId: string, now: Date, grossGold: numb
 }
 
 /**
+ * Today's land upkeep, taken from Gold when the farm opens (Kayo, 2026-10-02).
+ * The fee itself is unchanged: cleared plots past the free three, plus each
+ * bought acre. A sale's own cut (`netUpkeepFromPayout`) still covers whatever
+ * this could not, so a player short on Gold is never put into debt.
+ *
+ * Takes at most what the player holds. Keyed by day and target, so a second tab
+ * or a retry finds its debit already made and does not take it again. The debit
+ * goes first; if raising the paid total then loses or fails, the Gold goes back.
+ */
+export async function payStackAcresUpkeep(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresView & { upkeepCharged: number }> {
+  const profile = await ensureProfile(token);
+  const day = stackacresUpkeepDay(now);
+  const [upkeepPaid, { sectors }, capacity, cropFieldsUnlocked, acres] = await Promise.all([
+    readStackAcresUpkeep(profile.id, day),
+    readLand(profile.id),
+    readStackAcresCapacity(profile.id),
+    readStackAcresCropFieldsUnlocked(profile.id),
+    listStackAcresAcres(profile.id),
+  ]);
+  const due = stackacresUpkeepDue(
+    unlockedPlotCount(sectors, capacity, cropFieldsUnlocked),
+    upkeepPaid,
+    boughtAcreCount(acres),
+  );
+  const charge = profile.unlimitedGold ? due : Math.min(due, Math.max(0, profile.goldBalance));
+  if (charge <= 0) return { ...(await view(profile, now)), upkeepCharged: 0 };
+
+  const target = upkeepPaid + charge;
+  const correlation = `upkeep:${profile.id}:${day}:${target}`;
+  const paid = await spendGoldByProfileLedgered(profile.id, charge, correlation, "stackacres_upkeep");
+  // Not enough Gold after all (spent in another tab), or this exact charge was already made.
+  if (!paid.success || paid.alreadyApplied) return { ...(await view(await ensureProfile(token), now)), upkeepCharged: 0 };
+
+  let raised: boolean;
+  try {
+    raised = await raiseStackAcresUpkeep(profile.id, day, target);
+  } catch (error) {
+    await refundGoldLedgered(profile.id, charge, correlation);
+    throw error;
+  }
+  if (!raised) {
+    await refundGoldLedgered(profile.id, charge, correlation);
+    return { ...(await view(await ensureProfile(token), now)), upkeepCharged: 0 };
+  }
+  return { ...(await view(await ensureProfile(token), now)), upkeepCharged: charge };
+}
+
+/**
  * What Ray's shop is allowed to know about this farm before it sells
  * anything -- see lib/stackacres/shop-locks.ts.
  *

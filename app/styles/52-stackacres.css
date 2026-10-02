@@ -3299,27 +3299,6 @@
    it read as broken art, which is exactly the impression the whole approach
    exists to avoid. */
 
-/* Bushels owed on land already held. Only rendered when something is actually
-   owed, so the roof red here is genuinely "deal with this" rather than a
-   permanent alarm colour in the HUD. */
-.sa-upkeep {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 38px;
-  padding: 0 11px;
-  border: 2px solid var(--sa-paint-line);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-tint-roof);
-  box-shadow: var(--sa-paint-rim-sm), var(--sa-drop);
-  color: var(--sa-lit-roof);
-  font-family: var(--sa-font);
-  font-size: 15px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
-.sa-upkeep .sa-ico { width: 20px; height: 20px; }
 /* The clearing offer. Ray's counter re-used wholesale -- it is the same
    surface, and a second sheet shape for the one purchase that is not made at
    the store would be a new thing to learn for no reason. */
@@ -4799,32 +4778,6 @@
 /* The bed's card borrows the Pixel Pilgrim's; only the pin turns night blue. */
 .sa-sleep-dialogue .sa-monk-dialogue-pin { background: #3d4a86; }
 
-/* Sits beside the energy chip, which fishing spends, so both read as the
-   cast's own settings. */
-.sa-bait-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 38px;
-  padding: 0 11px;
-  border: 2px solid var(--sa-paint-line);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-paint-fill-open);
-  box-shadow: var(--sa-paint-rim-sm), var(--sa-drop);
-  color: var(--sa-ink);
-  font-family: var(--sa-font);
-  font-size: 13px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.sa-bait-toggle input {
-  width: 18px;
-  height: 18px;
-  margin: 0;
-  accent-color: var(--sa-leaf);
-}
-
 /* ---- the player's house: the kitchen -----------------------------------
  * Rides the barn store's popup (`.sa-store-scrim`/`.sa-store-card`), so the
  * rules here are only what the kitchen adds: an energy pill in the head, and
@@ -5499,7 +5452,6 @@
 .sa-theme .htp-trigger,
 .sa-theme .gold-balance.floor-wallet,
 .sa-feed,
-.sa-upkeep,
 .sa-energy,
 .sa-prestige-badge,
 .sa-music-toggle {
@@ -5516,7 +5468,6 @@
 .sa-theme .htp-trigger,
 .sa-theme .gold-balance.floor-wallet,
 .sa-feed,
-.sa-upkeep,
 .sa-energy,
 .sa-prestige-badge { padding: 0 4px 2px; }
 .sa-music-toggle { width: 44px; padding: 0 0 2px; }
@@ -5531,7 +5482,6 @@
 }
 .sa-theme .gold-balance.floor-wallet strong,
 .sa-feed strong,
-.sa-upkeep strong,
 .sa-energy strong,
 .sa-prestige-badge strong {
   font-family: var(--sa-font-pixel);
@@ -5806,8 +5756,7 @@
   .sa-theme .htp-trigger,
   .sa-theme .gold-balance.floor-wallet,
   .sa-feed,
-  .sa-upkeep,
-  .sa-energy,
+    .sa-energy,
   .sa-prestige-badge { min-height: 40px; }
   .sa-music-toggle { width: 40px; min-height: 40px; }
   .sa-toolbelt { gap: 3px; }
@@ -6271,6 +6220,9 @@
   .sa-barn-state { grid-column: 1 / -1; }
 }
 
+/* "Move animals" beside Done in the sheet's head. */
+.sa-sheet-head-keys { display: flex; flex: none; gap: 6px; }
+
 /* Ray's own line, when a care streak earns one of his three gifts
    (lib/stackacres/barn.ts). A quotation, not a number: quieter than
    .sa-toast, and it holds long enough to actually be read. It fires three
@@ -6315,3 +6267,135 @@
   88% { opacity: 1; transform: translate(-50%, 0); }
   100% { opacity: 0; transform: translate(-50%, -6px); }
 }
+
+/* ---- the HUD grid ------------------------------------------------------
+   One spacing rule for everything pinned over the map. Every box sits the same
+   distance in from its screen edge, every tag and belt slot is one height, and
+   the gap between neighbours is one size. The belt starts one gap under the
+   top row, the Next card starts at the same line, and the stick and Use key
+   share the bottom line. Earlier sections still own colours and art; this one
+   owns where things sit and how big they are. */
+.sa-shell {
+  --hud-edge: 10px;
+  --hud-gap: 6px;
+  --hud-u: 44px;
+  --hud-top: max(var(--hud-edge), var(--safe-top));
+  --hud-left: max(var(--hud-edge), var(--safe-left));
+  --hud-right: max(var(--hud-edge), var(--safe-right));
+  --hud-bottom: max(var(--hud-edge), var(--safe-bottom));
+  /* The line under the top row. Toasts, the place sign and Ray's line hang off it. */
+  --sa-header-h: calc(var(--hud-top) + var(--hud-u));
+  --hud-below-top: calc(var(--sa-header-h) + var(--hud-gap));
+  /* Room the stick and the Use key take at the bottom corners. */
+  --hud-thumb: 100px;
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  .sa-shell {
+    --hud-edge: 8px;
+    --hud-u: 40px;
+    --hud-thumb: 84px;
+  }
+}
+
+/* The top row. */
+.sa-theme .floor-bar { padding: var(--hud-top) var(--hud-right) 0 var(--hud-left); }
+.sa-theme .floor-bar-left,
+.sa-hud { gap: var(--hud-gap); align-items: stretch; }
+.sa-theme .floor-back,
+.sa-theme .htp-trigger,
+.sa-theme .gold-balance.floor-wallet,
+.sa-feed,
+.sa-energy,
+.sa-prestige-badge,
+.sa-music-toggle,
+.sa-clock {
+  box-sizing: border-box;
+  height: var(--hud-u);
+  min-height: var(--hud-u);
+}
+.sa-music-toggle { width: var(--hud-u); }
+
+/* The clock is a tag in the row like Energy and Gold, not a glass pill under it. */
+.sa-clock {
+  position: static;
+  min-width: 0;
+  padding: 0 4px 2px;
+  border: 10px solid transparent;
+  border-image: var(--sa-9-chip) 5 fill / 10px stretch;
+  border-radius: 0;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+  font-family: var(--sa-font-pixel);
+  font-size: 15px;
+  font-weight: 700;
+  image-rendering: pixelated;
+}
+
+/* The belt: slots alone down the left edge, the same height as the tags above.
+   Five rows; by the dock the rod and the bait start a second column beside it. */
+.sa-toolbelt {
+  top: var(--hud-below-top);
+  left: var(--hud-left);
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(5, var(--hud-u));
+  grid-auto-columns: var(--hud-u);
+  gap: var(--hud-gap);
+  border-image-source: none;
+}
+.sa-belt-slot {
+  box-sizing: border-box;
+  width: var(--hud-u);
+  height: var(--hud-u);
+  border-width: 10px;
+  border-image-width: 10px;
+}
+.sa-belt-slot.is-held { transform: none; }
+.sa-belt-slot .sa-px-lg { margin: -6px; }
+.sa-belt-bait.is-on { border-image-source: var(--sa-9-slot-on); }
+.sa-belt-bait:disabled { cursor: default; }
+.sa-belt-count { right: -8px; bottom: -8px; }
+
+/* The seed wheel opens beside the pouch, the fourth slot. */
+.sa-seed-wheel {
+  top: calc(var(--hud-below-top) + 3 * (var(--hud-u) + var(--hud-gap)));
+  left: calc(var(--hud-left) + var(--hud-u) + var(--hud-gap));
+}
+
+/* The Next card and its reopen tag start on the belt's line, against the right edge. */
+.sa-next,
+.sa-next-reopen {
+  top: var(--hud-below-top);
+  right: var(--hud-right);
+}
+.sa-next-reopen { height: var(--hud-u); min-height: var(--hud-u); }
+
+/* The thumb controls share the bottom line. */
+.sa-joystick {
+  right: var(--hud-right);
+  bottom: var(--hud-bottom);
+}
+.sa-use-key {
+  left: var(--hud-left);
+  bottom: var(--hud-bottom);
+}
+
+/* Bottom centre, between the two thumb controls: placing animals or buildings,
+   and Harvest when something is ready. */
+.sa-build-open,
+.sa-build-bar {
+  bottom: var(--hud-bottom);
+}
+.sa-build-bar {
+  width: min(520px, calc(100vw - 2 * (var(--hud-edge) + var(--hud-thumb) + var(--hud-gap))));
+}
+.sa-harvest-all {
+  position: absolute;
+  left: 50%;
+  bottom: var(--hud-bottom);
+  z-index: 3;
+  transform: translateX(-50%);
+}
+.sa-harvest-all:not(:disabled):active { transform: translate(-50%, 2px); }

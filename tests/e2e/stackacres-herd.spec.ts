@@ -146,9 +146,16 @@ test("the herd bar opens on its own and a tap on grass sets the sheep down", asy
   await page.waitForTimeout(800);
   await page.screenshot({ path: testInfo.outputPath("herd-placed.png") });
 
-  // Done closes the bar and leaves a Herd key; a reload keeps the sheep where it stands.
+  // Done closes the bar and leaves no key on the map; the Animals sheet opens it again.
   await bar.getByRole("button", { name: "Done" }).click();
-  await expect(page.getByRole("button", { name: "Herd" })).toBeVisible();
+  await expect(bar).toBeHidden();
+  await expect(page.getByRole("button", { name: "Herd" })).toHaveCount(0);
+  // A phone on its side keeps the Animals badge in the More drawer.
+  await page.getByRole("button", { name: "More" }).click();
+  await page.locator('[data-label="Animals"]').click();
+  await page.getByRole("button", { name: "Move animals" }).click();
+  await expect(bar).toBeVisible();
+  // A reload keeps the sheep where it stands.
   await page.reload();
   await page.getByRole("button", { name: "Play", exact: true }).click({ timeout: 15_000 });
   await page.waitForFunction(() => Boolean((window as unknown as { __stackacres?: unknown }).__stackacres), null, { timeout: 60_000 });

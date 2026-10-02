@@ -345,6 +345,10 @@ export interface StackAcresWorldProps {
   onReady: () => void;
   /** What the belt is holding, so the Use key beside the thumb stick names the job it will do. */
   useKeyLabel: string;
+  /** The belt is holding the rod: the Use key walks him out on the dock and casts. */
+  rodHeld: boolean;
+  /** He walked up to the dock, or away from it. The belt grows a rod and a bait slot while he is there. */
+  onNearWater: (near: boolean) => void;
   /**
    * The farmer is standing on a square with a belt tool in hand: either he
    * walked to a tapped one and arrived, or the Use key fired on the one under

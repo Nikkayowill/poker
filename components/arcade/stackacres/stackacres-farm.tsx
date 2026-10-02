@@ -93,7 +93,7 @@ import {
   type SecretItemId,
 } from "@/lib/stackacres/secrets";
 import { HOME_SECTOR, isSectorUnlocked, sectorLabel, type SectorId } from "@/lib/stackacres/sectors";
-import { upkeepState, type StackAcresUpkeepState } from "@/lib/stackacres/upkeep";
+import { stackacresUpkeepDay, upkeepState, type StackAcresUpkeepState } from "@/lib/stackacres/upkeep";
 import { withLocalClockUnit, type StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
 import { findCascadeTargets } from "@/lib/stackacres/harvest-cascade";
@@ -531,6 +531,8 @@ interface StackAcresResponse {
     critBonus: { item: StackAcresItem; quantity: number }[];
   };
   upgraded?: { from: StackAcresToolTier; to: StackAcresToolTier };
+  /** Gold `pay-upkeep` just took for today's land upkeep. */
+  upkeepCharged?: number;
   /* The processing track -- wheat, mills, stores, and the one open Town
    * Contract. Deliberately NOT folded into `units`: none of it is a
    * `homestead_units` row, and the harvest sweep that pays Gold must never be
@@ -1185,7 +1187,15 @@ export function StackAcresFarm() {
    * Use key and a tap on a square do, which is what replaced tapping a thing
    * and then dragging a token onto it.
    */
+  /** He is standing by the dock, so the belt shows the rod and the bait (scene.ts `onNearWater`). */
+  const [nearWater, setNearWater] = useState(false);
   const [belt, setBelt] = useState<BeltTool>("hand");
+  // Walking away from the dock puts the rod down: its slot is gone, so the hand is what is held.
+  const [wasNearWater, setWasNearWater] = useState(nearWater);
+  if (nearWater !== wasNearWater) {
+    setWasNearWater(nearWater);
+    if (!nearWater && belt === "rod") setBelt("hand");
+  }
   /** The crop the seed pouch sows, and whether its wheel is open. */
   const [seed, setSeed] = useState<StackAcresCrop | null>(null);
   const [seedWheelOpen, setSeedWheelOpen] = useState(false);
@@ -1500,6 +1510,7 @@ export function StackAcresFarm() {
    *  Radish, and only sent as bait while they still do. */
   const [useBait, setUseBait] = useState(false);
   const baitOnHook = useRef(false);
+
   /** The fish `catch-fish` just landed, kept until the gauge is off the
    *  screen and the map can show it jumping out (see `onWorldFishHooked`). */
   const landedFish = useRef<FishSpecies | null>(null);
@@ -2286,6 +2297,9 @@ export function StackAcresFarm() {
             world.current?.celebrateCrit(single, total > bonus ? total / (total - bonus) : 1 + bonus);
           }
         }
+        if (body.action === "pay-upkeep" && data.upkeepCharged) {
+          setLastCollect({ text: `Land upkeep paid: ${data.upkeepCharged.toLocaleString()} Gold`, nonce: Date.now() });
+        }
         if (body.action === "upgrade-tool" && data.upgraded) {
           goldSound();
           setLastCollect({
@@ -2547,6 +2561,7 @@ export function StackAcresFarm() {
   useEffect(() => {
     flushBatchRef.current = flushBatch;
   }, [flushBatch]);
+
 
   /**
    * A water or harvest press, coalesced.
@@ -3011,6 +3026,7 @@ export function StackAcresFarm() {
     farmerTile,
   });
   const herdPlace = useHerdPlace({ active: onHomesteadMap, units: liveUnits, dogs: guardDogs, act });
+  const openHerd = herdPlace.open;
   const acreDeed = useAcreDeed({
     active: onHomesteadMap,
     acres,
@@ -4229,6 +4245,20 @@ export function StackAcresFarm() {
 
   const bootPhase = useMinHoldFade(!loaded || !worldReady, { minMs: 500, fadeMs: 320 });
 
+  // Today's land upkeep comes out of Gold once the farm is on screen (past Play
+  // and the loading board, so the line saying so is seen), instead of standing
+  // in the HUD as a bill. Asked once per day per visit; the server takes at
+  // most what is held and never twice for the same day.
+  const upkeepAskedFor = useRef<string | null>(null);
+  const canPayUpkeep = hasStarted && bootPhase === "hidden" && upkeep.due > 0 && gold > 0;
+  useEffect(() => {
+    if (!canPayUpkeep) return;
+    const day = stackacresUpkeepDay(new Date(nowMs));
+    if (upkeepAskedFor.current === day) return;
+    upkeepAskedFor.current = day;
+    void act({ action: "pay-upkeep" });
+  }, [canPayUpkeep, nowMs, act]);
+
   // After every hook above, same position poker-table.tsx gates its own
   // render at. A full replacement, not an overlay -- the farm itself never
   // mounts in portrait, so there is nothing underneath to half-render or to
@@ -4481,19 +4511,11 @@ export function StackAcresFarm() {
             nothing here mounts twice. */}
         <div className="sa-hud">
           {!compactNav && secondaryHud}
-          {/* Only when something is actually owed. A land fee of zero is the
-              normal state for a small farm, and a permanent "0" in the HUD
-              would be a bill where there is no bill. */}
-          {upkeep.due > 0 && (
-            <span
-              className="sa-upkeep"
-              title={`Land maintenance on ${upkeep.plots} plots. Comes out of your next sale, contract or vat batch.`}
-            >
-              <StackAcresPixelIcon name="coin" />
-              <strong>-{upkeep.due.toLocaleString()}</strong>
-              <span className="sa-sr">Gold of land maintenance due</span>
-            </span>
-          )}
+          {/* The farm clock, in the row with Energy and Gold rather than hanging under it. */}
+          <p className="sa-clock" title="Time on the farm. A day lasts 13 minutes. Sleep in your bed from 6 PM.">
+            {isNightHour(clockHour) ? <Moon size={14} aria-hidden="true" /> : <Sun size={14} aria-hidden="true" />}
+            <strong>{clockLabel(clockHour)}</strong>
+          </p>
           <span
             className="sa-energy"
             title="Energy. Fishing, chopping and clearing land use it. Eat at your house to fill it up."
@@ -4506,12 +4528,6 @@ export function StackAcresFarm() {
             <strong>{energyAt(energy, new Date(nowMs))}</strong>
             <span className="sa-sr">of {ENERGY_MAX} energy</span>
           </span>
-          {radishesHeld > 0 && (
-            <label className="sa-bait-toggle" title="Spend a Radish per cast to catch trout and catfish more often.">
-              <input type="checkbox" checked={useBait} onChange={(event) => setUseBait(event.target.checked)} />
-              <span>Use radish bait ({radishesHeld})</span>
-            </label>
-          )}
           <span className="gold-balance floor-wallet" data-tour="sa-gold-balance" title="Gold">
             <StackAcresPixelIcon name="coin" />
             {/* A profile that never arrived (the paired land/unit fetch threw,
@@ -4552,7 +4568,9 @@ export function StackAcresFarm() {
               onStoreDeskTap={onStoreDeskTap}
               onStaffTap={onStaffTap}
               onUseSquare={onUseSquare}
-              useKeyLabel={BELT_TOOL_DEFS[belt].label}
+              useKeyLabel={belt === "rod" ? "Cast" : BELT_TOOL_DEFS[belt].label}
+              rodHeld={belt === "rod"}
+              onNearWater={setNearWater}
               tool={tool}
               cutter={cutter}
               farmhandSpeedMultiplier={farmhandSpeedMultiplier}
@@ -4611,14 +4629,6 @@ export function StackAcresFarm() {
               tree, just with no visual footprint to reclaim the space for. */}
           <h1 className="sr-only">StackAcres</h1>
 
-          {/* The farm clock, pinned under the top bar's right end. The bar is
-              already full on a narrow landscape phone, so the clock hangs
-              below it instead of pushing the Gold pill off screen. */}
-          <p className="sa-clock" title="Time on the farm. A day lasts 13 minutes. Sleep in your bed from 6 PM.">
-            {isNightHour(clockHour) ? <Moon size={14} aria-hidden="true" /> : <Sun size={14} aria-hidden="true" />}
-            <strong>{clockLabel(clockHour)}</strong>
-          </p>
-
           {lastCollect && (
             <p key={lastCollect.nonce} className="sa-toast" role="status">
               {lastCollect.text}
@@ -4663,6 +4673,13 @@ export function StackAcresFarm() {
             onOpenSeeds={() => {
               panelSound();
               setSeedWheelOpen(true);
+            }}
+            nearWater={nearWater && onHomesteadMap}
+            baitOn={useBait}
+            baitHeld={radishesHeld}
+            onToggleBait={() => {
+              toolSound();
+              setUseBait((on) => !on);
             }}
           />
 
@@ -4840,9 +4857,8 @@ export function StackAcresFarm() {
                 plus a whole status card (the daily Gold ceiling and Land
                 Maintenance) sitting above the tabs -- StackAcres dropped that
                 ceiling entirely (lib/stackacres/exchange.ts), and Land
-                Maintenance already has its own HUD pill (`.sa-upkeep` above)
-                whenever it is actually owed, so neither needed a second home
-                here. */}
+                Maintenance is paid out of Gold when the farm opens, so
+                neither needed a home here. */}
             <header className="sa-store-head">
               <img src="/stackacres/sprites/grandfather-ray-portrait.webp" alt="" className="sa-store-mark" />
               <h2>StackAcres Supply Co.</h2>
@@ -5437,6 +5453,15 @@ export function StackAcresFarm() {
           busy={pendingByPrefix("care")}
           hasBarn={hasBarn}
           onTend={onTendAnimal}
+          onMoveAnimals={
+            openHerd
+              ? () => {
+                  panelSound();
+                  setShowBarn(false);
+                  openHerd();
+                }
+              : null
+          }
           onClose={() => { panelSound(); setShowBarn(false); }}
         />
       )}

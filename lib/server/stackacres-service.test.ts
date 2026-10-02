@@ -44,6 +44,7 @@ import {
   passStackAcresContract,
   fulfillStackAcresTownContract,
   sellStackAcresItem,
+  payStackAcresUpkeep,
   processRecipe,
   getPrestigeMultiplier,
   prestigeResetStackAcres,
@@ -1531,7 +1532,8 @@ describe("harvesting", () => {
 
 /**
  * Land Maintenance, end to end. The curve is pinned in
- * lib/stackacres/upkeep.test.ts; what matters here is that it is skimmed off
+ * lib/stackacres/upkeep.test.ts. Opening the farm pays it from Gold
+ * (`payStackAcresUpkeep`, the tests at the end); otherwise it is skimmed off
  * a Gold payout (2026-09-12, Kayo's call), charged at most once a day, and
  * clamped at the payout itself rather than the wallet. It runs off nothing
  * but the actions that pay Gold -- Sell, Fulfill Contract, and opening the
@@ -1727,6 +1729,58 @@ describe("Land Maintenance", () => {
     expect(view.upkeep.plots).toBe(
       unlockedPlotCount(view.sectors, view.capacity, view.cropFieldsUnlocked),
     );
+  });
+
+  it("comes out of Gold once a day when the farm opens, and the day's sales then land in full", async () => {
+    const { token, id } = await unpaid();
+    const fee = (await readStackAcres(token, HEN_READY)).upkeep.fee;
+    expect(fee).toBeGreaterThan(0);
+    const before = await balance(token);
+
+    const paid = await payStackAcresUpkeep(token, HEN_READY);
+    expect(paid.upkeepCharged).toBe(fee);
+    expect(paid.upkeep.due).toBe(0);
+    expect(await balance(token)).toBe(before - fee);
+    expect(await readStackAcresUpkeep(id, DAY)).toBe(fee);
+
+    // A second open the same day takes nothing.
+    expect((await payStackAcresUpkeep(token, HEN_READY)).upkeepCharged).toBe(0);
+    expect(await balance(token)).toBe(before - fee);
+
+    await adjustStackAcresInventory(id, "eggs", 3);
+    const sold = await sellStackAcresItem(token, { item: "eggs", quantity: 3 }, HEN_READY);
+    expect(await balance(token)).toBe(before - fee + sold.sold.gold);
+  });
+
+  it("takes only what the player holds and leaves the rest for a sale, never debt", async () => {
+    const { token, id } = await unpaid(100);
+    const fee = (await readStackAcres(token, HEN_READY)).upkeep.fee;
+    expect(fee).toBeGreaterThan(100);
+
+    const paid = await payStackAcresUpkeep(token, HEN_READY);
+    expect(paid.upkeepCharged).toBe(100);
+    expect(await balance(token)).toBe(0);
+    expect(paid.upkeep.due).toBe(fee - 100);
+
+    // Broke: nothing more to take.
+    expect((await payStackAcresUpkeep(token, HEN_READY)).upkeepCharged).toBe(0);
+    expect(await balance(token)).toBe(0);
+    expect(await readStackAcresUpkeep(id, DAY)).toBe(100);
+  });
+
+  it("moves no Gold when nothing is owed", async () => {
+    const { token } = await funded();
+    const before = await balance(token);
+    expect((await payStackAcresUpkeep(token, HEN_READY)).upkeepCharged).toBe(0);
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("gives the Gold back when another tab settled the day first", async () => {
+    const { token } = await unpaid();
+    const before = await balance(token);
+    vi.mocked(raiseStackAcresUpkeep).mockResolvedValueOnce(false);
+    expect((await payStackAcresUpkeep(token, HEN_READY)).upkeepCharged).toBe(0);
+    expect(await balance(token)).toBe(before);
   });
 });
 
@@ -2369,6 +2423,8 @@ describe("the currency wall", () => {
       // Moves no Gold either way: turning an order down and drawing another
       // is the release valve on a one-slot board, capped at one a UTC day.
       "pass-contract",
+      // SPENDS Gold: today's land upkeep, at most what is held, refunded if the day was already settled.
+      "pay-upkeep",
       // Moves no Gold either way, and refunds nothing: a sheep or cow lifted so it can be set down elsewhere.
       "pick-up-animal",
       // Moves no Gold either way: an owned building going back into storage.

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 // Farm SQL that moves Gold inside its own transaction can't follow the farm into a
 // separate database. The last two that did went with the systems they belonged to
-// (20261002200000); farm Gold goes through profile-store's ledgered functions from
+// (20261003030350); farm Gold goes through profile-store's ledgered functions from
 // TypeScript instead.
 const KNOWN_FARM_GOLD_FUNCTIONS: string[] = [];
 

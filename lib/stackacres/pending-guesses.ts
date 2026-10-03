@@ -202,11 +202,6 @@ export function layFarmField<F extends GuessField>(
   return sameJson(prev, laid) ? prev : laid;
 }
 
-/** Whether a whole-field value (one with no parts to claim) takes `next`. */
-export function takesNext(field: GuessField, mode: LayMode): boolean {
-  return mode.base === "next" ? !mode.keys.has(field) : mode.keys.has(field);
-}
-
 /**
  * Refcounted claims, since two guesses can hold the same thing at once
  * (watering a crop, then picking it).

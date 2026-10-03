@@ -149,7 +149,7 @@ export type TravelerUnlocks = Readonly<Record<TravelerId, boolean>>;
 export type FarmerAction = "water" | "harvest" | "hoe" | "plant" | "fence";
 
 /** Who an emote bubble pops up over: the farmer, or a person on the map by their rig name. */
-export type EmoteTarget = "farmer" | "ray" | "pilgrim" | TravelerId;
+export type EmoteTarget = "farmer" | "ray" | TravelerId;
 /** Stardew's emote set is the reference; each is a small icon bubble in the common atlas. */
 export type EmoteKind = "heart" | "exclaim" | "question" | "note" | "sleep" | "sweat" | "sparkle";
 
@@ -427,10 +427,6 @@ export interface StackAcresWorldProps {
   /** A finger landed on the Greenhouse's own footprint: the shell's cue to
    *  open its panel, which shows either the build screen or the slots. */
   onGreenhouseTap: () => void;
-  /** A finger landed on the Pixel Pilgrim himself. Fires no bow and
-   *  reaches no server by itself -- this is only the cue to open his
-   *  dialogue; see stackacres-farm.tsx's `onWorldMonkTap`. */
-  onMonkTap: (at: TapPoint) => void;
   /** A finger landed on Ray himself, not the barn behind him --
    *  see stackacres-farm.tsx's `onWorldRayTap`. */
   onRayTap: (at: TapPoint) => void;
@@ -467,10 +463,6 @@ export interface StackAcresWorldProps {
   onPlaceEntered: (name: string) => void;
   /** The cutter in hand, which sets the mow swathe and how long it stays cut. */
   cutter: StackAcresCutter;
-  /** The Synergy Tree's `automated_logistics` multiplier on the farmhand's
-   *  walk speed -- `StackAcresView.synergy.farmhandSpeedMultiplier`, 1 with
-   *  no active perk. */
-  farmhandSpeedMultiplier: number;
   /** How much wider than the arrival window the camera frames a district --
    *  `HUD_VIEW_EXPANSION` while the signpost rail is collapsed into the
    *  compass quick-nav, 1 otherwise. */

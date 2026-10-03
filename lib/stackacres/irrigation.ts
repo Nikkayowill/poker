@@ -48,8 +48,7 @@ export const PIPE_TILE = STACKACRES_TILE;
  * sink (place) and no new payer -- see the actions route's own header for
  * the count that has to stay true.
  *
- * Lives here, not in lib/server/stackacres-service.ts, for the same reason
- * lib/stackacres/prestige.ts's client-safe shapes live outside that
+ * Lives here, not in lib/server/stackacres-service.ts, because that is an
  * `import "server-only"` file: a client component (the placement ring) has
  * to show this price without pulling a server-only module into the browser
  * bundle. `placeStackAcresPipeTile` imports it back from here so there is

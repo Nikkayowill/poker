@@ -70,13 +70,13 @@ describe("wordStackDailyBonusMultiplier", () => {
 
 describe("wordStackStakeRules", () => {
   it.each([
-    [0, false, 0],
-    [9_999, false, 0],
-    [10_000, true, 1],
-    [100_000, true, 2],
-    [1_000_000, true, 3],
-  ] as const)("a %i wager: hard mode %s, band %i ladder", (wager, hardMode, band) => {
-    expect(wordStackStakeRules(wager)).toEqual({ hardMode, ladder: WORD_STACK_LADDER_BY_PRESSURE[band] });
+    [0, null, 0],
+    [9_999, null, 0],
+    [10_000, 1, 1],
+    [100_000, 2, 2],
+    [1_000_000, 3, 3],
+  ] as const)("a %i wager: word tier %s, band %i ladder", (wager, wordTier, band) => {
+    expect(wordStackStakeRules(wager)).toEqual({ wordTier, ladder: WORD_STACK_LADDER_BY_PRESSURE[band] });
   });
 
   it("keeps today's ladder for small stakes", () => {

@@ -245,14 +245,6 @@ import {
   type SecretItemId,
 } from "@/lib/stackacres/secrets";
 import {
-  DEVOTION_LADDER,
-  DEVOTION_RUNG_THRESHOLDS,
-  devotionView,
-  previousUtcDay,
-  type RelicId,
-  type StackAcresDevotionView,
-} from "@/lib/stackacres/devotion";
-import {
   FRIENDSHIP_LADDER,
   FRIENDSHIP_NPCS,
   FRIENDSHIP_RUNG_THRESHOLDS,
@@ -355,11 +347,6 @@ import {
   readStackAcresCropFieldsUnlocked,
   recordStackAcresCropFieldsUnlocked,
   countGreenhouseStackAcresUnits,
-  readStackAcresPrestige,
-  readStackAcresLifetimeGross,
-  resetStackAcresPrestige,
-  readStackAcresDevotion,
-  prayAtStackAcresShrine as prayAtStackAcresShrine_store,
   readStackAcresFriendship,
   giveStackAcresGift as giveStackAcresGift_store,
   greetStackAcresNpc as greetStackAcresNpc_store,
@@ -380,10 +367,8 @@ import {
   stackAcresSecretLedgerQtyFromBatchRows,
   stackAcresGreenhouseFromBatchRow,
   stackAcresCropFieldsUnlockedFromBatchRow,
-  stackAcresPrestigeFromBatchRow,
   stackAcresCuttersFromBatchRows,
   stackAcresStoryFromBatchRow,
-  stackAcresDevotionFromBatchRow,
   stackAcresFriendshipFromBatchRows,
   wheatPlotFromRow,
   machineFromRow,
@@ -415,18 +400,10 @@ import {
   type LandObstacleDbRow,
   type ForageNodeDbRow,
   type StoredMachine,
-  type StoredDevotionRow,
   type StoredFriendshipRow,
   type StoredVatManifest,
   type StoredStoryRow,
 } from "./stackacres-store";
-import {
-  prestigeGoldRemaining,
-  type StackAcresPrestigeState,
-  type StackAcresPrestigeView,
-  type StackAcresPrestigeResetResult,
-} from "@/lib/stackacres/prestige";
-export type { StackAcresPrestigeView, StackAcresPrestigeResetResult } from "@/lib/stackacres/prestige";
 import {
   claimStackAcresIntent,
   completeStackAcresIntent,
@@ -479,7 +456,7 @@ import {
 } from "@/lib/stackacres/energy";
 import { NOT_SLEEPY, canSleepAt, gameHourAt, offsetAfterSleep } from "@/lib/stackacres/clock";
 import { isActiveStock } from "@/lib/stackacres/scope";
-import { isUnbuiltCutter, isUnbuiltEnchantment, isUnbuiltPerk } from "@/lib/stackacres/unbuilt";
+import { isUnbuiltCutter } from "@/lib/stackacres/unbuilt";
 import { feedingToast, servingBonusEggs, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
 import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/feed-silo";
 import { isSeedUnlocked, seedLockedMessage } from "@/lib/stackacres/seed-unlocks";
@@ -555,7 +532,6 @@ import {
   isMachineDone,
   isMachineKind,
   isRetiredMachine,
-  rollMillDoubleOutput,
   toMachineSnapshot,
   type MachineKind,
   type StackAcresMachineSnapshot,
@@ -569,49 +545,6 @@ import {
   type AgingTier,
   type VatContainer,
 } from "@/lib/stackacres/aging";
-import {
-  SYNERGY_PERKS,
-  applySynergyEffects,
-  isSynergyArchetype,
-  type SynergyArchetype,
-} from "@/lib/stackacres/synergy-perks";
-import {
-  activateSynergyPerk,
-  applySynergyBuffs,
-  listActiveSynergyArchetypes,
-  listUnlockedSynergyArchetypes,
-  synergyArchetypesFromOwned,
-  unlockSynergyPerk,
-} from "./stackacres-synergy-service";
-import { stackAcresOwnedPerksFromBatchRows } from "./stackacres-synergy-store";
-import {
-  forgeEnchantment,
-  forgeEnchantmentIdsFromOwned,
-  forgedToolStatsFor,
-  listOwnedForgeEnchantmentIds,
-} from "./stackacres-forge-service";
-import { stackAcresOwnedEnchantmentsFromBatchRows } from "./stackacres-forge-store";
-import { FORGE_ENCHANTMENTS, isForgeEnchantmentId } from "@/lib/stackacres/forge";
-import {
-  harvestCrossbreedBed,
-  plantCrossbreedBed,
-  type CrossbreedHarvestSettlement,
-  type StoredCrossbreedPlot,
-} from "./stackacres-crossbreeding-service";
-import {
-  listStackAcresCrossbreedPlots,
-  readStackAcresCrossbreedInventory,
-  stackAcresCrossbreedInventoryFromBatchRows,
-  stackAcresCrossbreedPlotFromBatchRow,
-  type CrossbreedPlotDbRow,
-} from "./stackacres-crossbreeding-store";
-import {
-  isInCrossbreedGrid,
-  toCrossbreedPlotView,
-  type CrossbreedBedView,
-  type CrossbreedPlotView,
-} from "@/lib/stackacres/crossbreeding";
-import type { CrossbreedItem } from "@/lib/stackacres/crossbreed-items";
 import {
   canFulfillContract,
   contractPassSpent,
@@ -633,15 +566,6 @@ import {
   type MachineItemId,
   type MachineProcessedItem,
 } from "@/lib/stackacres/machine-items";
-import type { BlueprintId } from "@/lib/stackacres/blueprints";
-import {
-  blueprintsView,
-  blueprintsViewFromStates,
-  contributeToBlueprint,
-  startBlueprintForProfile,
-  type BlueprintView,
-} from "./stackacres-blueprint-service";
-import { stackAcresAllBlueprintsFromBatchRows } from "./stackacres-blueprint-store";
 import {
   evaluateStackAcresShopLock,
   stackacresShopLockRefusal,
@@ -691,17 +615,11 @@ import { applyInfluenceDiscount } from "@/lib/stackacres/influence-tiers";
  *     `collectStackAcresVat`, the Fermenting Vat's own aged-Cheese payout
  *     (lib/stackacres/aging.ts). Nothing else here may credit Gold.
  *
- * THE CRITICAL HARVEST and THE PRESTIGE RESET VALVE both used to ride inside
- * the harvest's own Gold payout. Neither pays Gold any more, for the same
- * reason harvest itself does not:
- *
- *   * A crit (`critBonusQuantity`, lib/stackacres/equipment.ts) now adds bonus
- *     UNITS to a settled line, credited into the same inventory line as the
- *     rest of that line's produce -- extra Eggs, not extra Gold.
- *   * The Prestige Reset Valve's permanent multiplier moved to
- *     `sellStackAcresItem`, applied to the Gold a sale yields, before that
- *     Gold is reserved against the ceiling -- see lib/stackacres/prestige.ts's
- *     own header for why that ordering is load-bearing rather than cosmetic.
+ * THE CRITICAL HARVEST used to ride inside the harvest's own Gold payout. It
+ * does not pay Gold any more, for the same reason harvest itself does not: a
+ * crit (`critBonusQuantity`, lib/stackacres/equipment.ts) adds bonus UNITS to
+ * a settled line, credited into the same inventory line as the rest of that
+ * line's produce -- extra Eggs, not extra Gold.
  *
  * Every refund goes through `refundGold` rather than calling
  * `creditGoldByProfile` directly, so that the credit function has exactly
@@ -773,25 +691,6 @@ export class StackAcresRequestError extends ArcadeRequestError<StackAcresRoundSn
   readonly name = "StackAcresRequestError";
 }
 
-/**
- * The Synergy Tree, as the client renders it. See
- * lib/server/stackacres-synergy-service.ts's own header for the ownership
- * vs. loadout split -- `unlocked` is "ever bought", `active` is "slotted for
- * this session", and an id can be in the first without being in the second.
- */
-export interface StackAcresSynergyView {
-  unlocked: SynergyArchetype[];
-  active: SynergyArchetype[];
-  /**
-   * The multiplier the client applies to its own FARMHAND_SPEED constant.
-   * Computed here against a base of 1 rather than sent as an absolute speed
-   * -- the farmhand's walk is presentation-only and lives entirely
-   * client-side (lib/stackacres/farmhand-path.ts), so this is the one number
-   * that seam actually needs. 1 when `automated_logistics` is not active.
-   */
-  farmhandSpeedMultiplier: number;
-}
-
 export interface StackAcresView {
   units: StackAcresUnitSnapshot[];
   profile: PlayerProfile;
@@ -841,9 +740,6 @@ export interface StackAcresView {
    *  lib/stackacres/secrets.ts's own header for why a secret item is its own
    *  small registry rather than a member of `StackAcresItem`. */
   secretDonations: Record<SecretItemId, boolean>;
-  /** The Synergy Tree: which archetypes are unlocked/active, and what that
-   *  currently does to the farmhand's presentation-only walk speed. */
-  synergy: StackAcresSynergyView;
   /** Whether this player has built the Greenhouse (lib/stackacres/greenhouse.ts).
    *  Permanent once true; gates the `inGreenhouse` option on `stock`. */
   greenhouseBuilt: boolean;
@@ -853,29 +749,6 @@ export interface StackAcresView {
    *  `sectors` above -- see that module's own header on the 2026-09-08
    *  district merge that made this a standalone flag instead. */
   cropFieldsUnlocked: boolean;
-  /** Ray's Mythic Blueprints: one entry per structure in the catalogue,
-   *  present whether or not the player has started it (see
-   *  lib/server/stackacres-blueprint-service.ts's `blueprintsView`) --
-   *  the same "every key present, missing means never started" posture
-   *  `secretDonations` above already takes for a never-donated item. */
-  blueprints: Record<BlueprintId, BlueprintView>;
-  /** The Prestige Reset Valve's permanent state: how many times it has been
-   *  pulled, the live harvest multiplier it bought, and how much further
-   *  gross production is needed before it can be pulled again. See
-   *  lib/stackacres/prestige.ts's own header for what "gross" means here and
-   *  why it is immune to the daily Gold ceiling. */
-  prestige: StackAcresPrestigeView;
-  /** The Sunlight Forge: catalogue ids (FORGE_ENCHANTMENTS keys, not the
-   *  versioned `enchant_..._v1` wrapper) this player has permanently
-   *  forged. Applies to whichever equipment tier `tool` above currently
-   *  holds -- there is no per-tool-instance row, see lib/stackacres/
-   *  forge.ts's own header for why that is deliberate. */
-  forge: readonly string[];
-  /** The Crossbreeding Bed: every planted cell on its own fixed 4x4 grid,
-   *  readiness already derived by this server's clock, and the hybrids bred
-   *  so far. See lib/stackacres/crossbreeding.ts's own header for why this
-   *  is its own grid and not a revival of the dead plot grid. */
-  crossbreed: CrossbreedBedView;
   /** The irrigation pipe network: every placed tile with its recomputed
    *  connector frame and hydration (lib/stackacres/irrigation.ts). The scene
    *  renders straight off this; a crop a hydrated pipe waters is already
@@ -889,12 +762,8 @@ export interface StackAcresView {
    *  (`homestead_seed_stock`). A missing crop and 0 mean the same thing.
    *  Livestock is never a key here -- see SeedStock's own doc comment. */
   seedStock: SeedStock;
-  /** The Pixel Pilgrim's devotion: this player's UTC-day prayer streak and
-   *  progress up his relic ladder. See lib/stackacres/devotion.ts. */
-  devotion: StackAcresDevotionView;
   /** NPC friendship: this player's gift points and claimed keepsake ladder
-   *  with every NPC that has one (FRIENDSHIP_NPCS -- Ray, for
-   *  now). A SEPARATE mechanic from `devotion` above -- see
+   *  with every NPC that has one (FRIENDSHIP_NPCS). See
    *  lib/stackacres/friendship.ts's own header. */
   friendship: Record<NpcId, StackAcresFriendshipView>;
   /** The Fermenting Vat: null until the player has placed one (see
@@ -918,8 +787,7 @@ export interface StackAcresView {
    *  lib/stackacres/tree-nodes.ts): whether it can be chopped right now, how
    *  many swings are left in this cycle, and (while regrowing) how far along
    *  its respawn clock is. One entry per `WOOD_NODE_IDS`, always present --
-   *  the same "every key present" posture `blueprints` above takes for a
-   *  structure nobody has started. */
+   *  the same "every key present" posture `secretDonations` above takes. */
   woodNodes: WoodNodeSnapshot[];
   /** Every Stone boulder's current mine state (lib/stackacres/stone-nodes.ts):
    *  whether it can be mined right now, how many swings are left before it
@@ -1222,8 +1090,8 @@ function bumpRevisionOnce(scope: RevisionScope): Promise<number | null> {
  * trip when Supabase is configured (`stackacres_read_batch`, migration
  * 20260914011736, widened by 20260928232207) instead of ~37 separate
  * PostgREST round trips -- see that migration's own header for exactly which
- * reads this covers and which two it deliberately leaves as their own RPC
- * calls (plus Stone's global read, which isn't per-profile at all). Memory
+ * reads this covers. Stone's global read stays outside it, since it isn't
+ * per-profile at all. Memory
  * mode has no batch to speak of (there is no network round trip to save
  * there in the first place) and keeps running every one of the original
  * individual reads, unchanged -- this function's whole job is choosing
@@ -1238,13 +1106,11 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   const day = stackacresExchangeDay(now);
   const supabase = adminClient();
 
-  // Two reads never come from the batch (they're already their own
-  // aggregate/idle-sweep RPCs, not a plain per-table select), so they're
+  // Stone's three GLOBAL boulders (not per-profile; see
+  // lib/server/stone-node-store.ts's own header) never come from the batch --
+  // a global table has no profile id to key a batch RPC on -- so they are
   // kicked off up front alongside the batch fetch, and nothing here waits on
-  // anything else. Stone's three GLOBAL boulders (not per-profile; see
-  // lib/server/stone-node-store.ts's own header) read the same way, for the
-  // same reason -- a global table has no profile id to key a batch RPC on.
-  // Everything else that used to ride alongside these (wood/forage/land-
+  // anything else. Everything else that used to ride alongside them (wood/forage/land-
   // obstacle/fences/axe/empire buildings/grocery) was folded into the batch
   // RPC by the Far Field migration (20260928232207); see that migration for
   // why. Drones ARE in the batch (its own `drones` key) -- the fallback slot
@@ -1254,10 +1120,8 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   // called a second time here, or every live-Supabase view() pays for a
   // real, wasted extra round trip whose result nothing reads.
   // Equipment is read on its own too: its table is newer than the batch RPC.
-  const [batch, activeSynergies, lifetimeGross, stoneNodeRows, fallback, equipment] = await Promise.all([
+  const [batch, stoneNodeRows, fallback, equipment] = await Promise.all([
     supabase ? readStackAcresBatch(profile.id, day) : Promise.resolve(null),
-    listActiveSynergyArchetypes(profile.id),
-    readStackAcresLifetimeGross(profile.id),
     readAllStoneNodes(now),
     supabase
       ? Promise.resolve(null)
@@ -1282,18 +1146,11 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
           // tuple overload needs a fixed-length literal to keep each position's own
           // type. Nesting keeps this array a fixed-length literal.
           Promise.all(SECRET_ITEM_IDS.map((itemId) => readStackAcresSecretLedgerQty(profile.id, itemId))),
-          listUnlockedSynergyArchetypes(profile.id),
           readStackAcresGreenhouse(profile.id),
           readStackAcresCropFieldsUnlocked(profile.id),
-          blueprintsView(profile.id),
-          readStackAcresPrestige(profile.id),
-          listOwnedForgeEnchantmentIds(profile.id),
-          listStackAcresCrossbreedPlots(profile.id),
-          readStackAcresCrossbreedInventory(profile.id),
           listStackAcresPipes(profile.id),
           listStackAcresSoilTiles(profile.id),
           readStackAcresSeedStock(profile.id),
-          readStackAcresDevotion(profile.id),
           // Nested Promise.all for the same reason SECRET_ITEM_IDS's own read
           // above is: FRIENDSHIP_NPCS is variable-length, and spreading it into
           // this array literal would widen every sibling element's inferred type.
@@ -1333,18 +1190,11 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   let influence: number;
   let boostArmedQty: number;
   let heldQtys: number[];
-  let unlockedSynergies: SynergyArchetype[];
   let greenhouseBuilt: boolean;
   let cropFieldsUnlocked: boolean;
-  let blueprints: Record<BlueprintId, BlueprintView>;
-  let prestige: StackAcresPrestigeState;
-  let forgedEnchantments: string[];
-  let crossbreedPlots: StoredCrossbreedPlot[];
-  let crossbreedInventory: Partial<Record<CrossbreedItem, number>>;
   let pipeRows: StoredPipe[];
   let soilTiles: StoredSoilTile[];
   let seedStock: SeedStock;
-  let storedDevotion: StoredDevotionRow;
   let storedFriendships: StoredFriendshipRow[];
   let agingManifests: StoredVatManifest[];
   let cutters: StackAcresCutter[];
@@ -1378,33 +1228,11 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     const secretLedgerRows = batch.secret_ledger as { item_id: string; quantity: number | string }[];
     boostArmedQty = stackAcresSecretLedgerQtyFromBatchRows(secretLedgerRows, STACKACRES_DICE_BOOST_ARMED_KEY);
     heldQtys = SECRET_ITEM_IDS.map((itemId) => stackAcresSecretLedgerQtyFromBatchRows(secretLedgerRows, itemId));
-    unlockedSynergies = synergyArchetypesFromOwned(
-      stackAcresOwnedPerksFromBatchRows(batch.perk_unlocks as { item_id: string; quantity: number | string }[]),
-    );
     greenhouseBuilt = stackAcresGreenhouseFromBatchRow(batch.greenhouse);
     cropFieldsUnlocked = stackAcresCropFieldsUnlockedFromBatchRow(batch.crop_fields);
-    blueprints = blueprintsViewFromStates(
-      stackAcresAllBlueprintsFromBatchRows(
-        batch.blueprints as { structure_id: string; current_stage: number | string; status: string; completed_at: string | null }[],
-        batch.blueprint_progress as { structure_id: string; stage_index: number | string; item: string; contributed: number | string }[],
-      ),
-    );
-    prestige = stackAcresPrestigeFromBatchRow(
-      batch.prestige as { prestige_count: number | string; multiplier: number | string; lifetime_gross_at_reset: number | string } | null,
-    );
-    forgedEnchantments = forgeEnchantmentIdsFromOwned(
-      stackAcresOwnedEnchantmentsFromBatchRows(batch.tool_enchantments as { item_id: string; quantity: number | string }[]),
-    );
-    crossbreedPlots = (batch.crossbreed_plots as unknown as CrossbreedPlotDbRow[]).map(stackAcresCrossbreedPlotFromBatchRow);
-    crossbreedInventory = stackAcresCrossbreedInventoryFromBatchRows(
-      batch.crossbreed_inventory as { item: string; quantity: number | string }[],
-    );
     pipeRows = (batch.pipes as unknown as PipeDbRow[]).map(stackAcresPipeFromBatchRow);
     soilTiles = (batch.soil_tiles as unknown as SoilTileDbRow[]).map(stackAcresSoilTileFromBatchRow);
     seedStock = stackAcresSeedStockFromBatchRows(batch.seed_stock as { crop: string; quantity: number | string }[]);
-    storedDevotion = stackAcresDevotionFromBatchRow(
-      batch.devotion as { streak: number | string; last_prayed_day: string | null; claimed_rungs: number[] | null } | null,
-    );
     const friendshipRows = batch.friendship as {
       npc: string;
       points: number | string;
@@ -1457,18 +1285,11 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       influence,
       boostArmedQty,
       heldQtys,
-      unlockedSynergies,
       greenhouseBuilt,
       cropFieldsUnlocked,
-      blueprints,
-      prestige,
-      forgedEnchantments,
-      crossbreedPlots,
-      crossbreedInventory,
       pipeRows,
       soilTiles,
       seedStock,
-      storedDevotion,
       storedFriendships,
       agingManifests,
       cutters,
@@ -1487,9 +1308,8 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     ] = fallback as [
       StoredStackAcresUnit[], number, number, Partial<Record<StackAcresStock, number>>, SectorId[], number,
       string[], StackAcresToolTier, StoredWheatPlot[], StoredMachine[], StackAcresInventory, StoredContract | null,
-      number, number, number[], SynergyArchetype[], boolean, boolean, Record<BlueprintId, BlueprintView>,
-      StackAcresPrestigeState, string[], StoredCrossbreedPlot[], Partial<Record<CrossbreedItem, number>>,
-      StoredPipe[], StoredSoilTile[], SeedStock, StoredDevotionRow, StoredFriendshipRow[],
+      number, number, number[], boolean, boolean,
+      StoredPipe[], StoredSoilTile[], SeedStock, StoredFriendshipRow[],
       StoredVatManifest[], StackAcresCutter[], StoredStoryRow,
       StoredStackAcresEnergy | null,
       number,
@@ -1579,34 +1399,11 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     influence,
     secrets: { held, boostArmed: boostArmedQty >= 1 },
     secretDonations,
-    synergy: {
-      unlocked: unlockedSynergies,
-      active: activeSynergies,
-      // Base 1, not the real FARMHAND_SPEED constant: farmhand.ts owns that
-      // number and lives client-side, so the multiplier is what actually
-      // crosses the wire -- see StackAcresSynergyView's own comment.
-      farmhandSpeedMultiplier: applySynergyEffects(
-        { harvestCritChance: 0, farmhandSpeed: 1, millDoubleOutputChance: 0 },
-        activeSynergies,
-      ).farmhandSpeed,
-    },
     greenhouseBuilt,
     cropFieldsUnlocked,
-    blueprints,
-    prestige: {
-      prestigeCount: prestige.prestigeCount,
-      multiplier: prestige.multiplier,
-      goldToNextPrestige: prestigeGoldRemaining(prestige, lifetimeGross),
-    },
-    forge: forgedEnchantments,
-    crossbreed: {
-      plots: crossbreedPlots.map((row) => toCrossbreedPlotView(row, now.getTime())),
-      inventory: crossbreedInventory,
-    },
     irrigation: [...irrigationGrid.nodes],
     soilTiles: mergedSoilTiles(soilTiles),
     seedStock,
-    devotion: devotionView(storedDevotion, now),
     friendship,
     vat,
     cellar,
@@ -1622,8 +1419,6 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
         tool,
         sectorsCleared: cleared.length,
         soilBeds: soilTiles.length,
-        enchantments: forgedEnchantments.length,
-        crossbreeds: Object.values(crossbreedInventory).reduce((sum, n) => sum + (n ?? 0), 0),
       },
       friendshipPointsByNpc(friendship),
     ),
@@ -1655,28 +1450,6 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     },
     grocery: groceryOwnershipEnabled() ? groceryView(groceryState, profile.id, now) : null,
   };
-}
-
-/**
- * The Prestige Reset Valve's calculation hook: loads a profile's stored
- * permanent multiplier and hands back the bare number `settleHarvest` needs.
- *
- * Nothing here reaches into harvest logic itself -- see harvest.ts's own
- * header for why the multiplier is a PARAMETER to that pure function rather
- * than something it fetches for itself. This is the one function that closes
- * the loop: it is the only place `readStackAcresPrestige` is called with the
- * express purpose of pricing a harvest, as opposed to rendering the farm view
- * (`view()`, above) or reporting a reset's own result
- * (`prestigeResetStackAcres`, below).
- *
- * Defaults to STACKACRES_PRESTIGE_BASE_MULTIPLIER (1) for a profile that has
- * never reset, which is exactly what `readStackAcresPrestige` already
- * returns for a missing row -- this function adds no second fallback on top
- * of that one.
- */
-export async function getPrestigeMultiplier(profileId: string): Promise<number> {
-  const state = await readStackAcresPrestige(profileId);
-  return state.multiplier;
 }
 
 /**
@@ -1815,11 +1588,9 @@ async function markSoilEnriched(profileId: string, slot: number): Promise<void> 
 }
 
 /**
- * Everything any action can add to the view. Two actions return anything
- * beyond the farm itself now -- a harvest, which has to say what it brought
- * in and what it paid, and a prestige reset, which has to say what it just
- * bought -- which is why a replayed intent only has to remember this much
- * (see `replayDelta`).
+ * Everything any action can add to the view, beyond the farm itself -- a
+ * harvest, for one, has to say what it brought in and what it paid. A
+ * replayed intent only has to remember this much (see `replayDelta`).
  */
 export type StackAcresActionResult = StackAcresView & {
   harvest?: unknown;
@@ -1828,33 +1599,6 @@ export type StackAcresActionResult = StackAcresView & {
   /** Set (to an item id or null) by `tapStackAcresSecretZone`; every other
    *  action leaves this undefined. */
   discovery?: unknown;
-  /** Set by `unlockStackAcresSynergyPerk`/`activateStackAcresSynergyPerk`;
-   *  every other action leaves these undefined. `synergy` on the view itself
-   *  already carries the resulting state, so these are only the "what did
-   *  this specific call just do" confirmation a toast reads off of. */
-  synergyUnlock?: unknown;
-  synergyActivate?: unknown;
-  /** Set by `prestigeResetStackAcres` to what THIS reset just bought -- never
-   *  named `prestige`, which is StackAcresView's own always-present current
-   *  standing and would collide with it in this intersection. */
-  prestigeReset?: unknown;
-  /** Set by `forgeStackAcresToolEnchantment` to what THIS forge just bought
-   *  -- never named `forge`, which is StackAcresView's own always-present
-   *  owned-list and would collide with it in this intersection. */
-  forgeResult?: unknown;
-  /** Set by `plantStackAcresCrossbreedBed`/`harvestStackAcresCrossbreedBed`
-   *  to what THIS call just did -- never named `crossbreed`, which is
-   *  StackAcresView's own always-present bed and would collide with it in
-   *  this intersection. */
-  crossbreedResult?: unknown;
-  /** Set by `prayAtStackAcresShrine` to what THIS prayer just did -- never
-   *  named `devotion`, which is StackAcresView's own always-present current
-   *  standing and would collide with it in this intersection. */
-  prayer?: {
-    streak: number;
-    alreadyPrayedToday: boolean;
-    grantedRelic: RelicId | null;
-  };
   /** Set by `giveStackAcresGift` to what THIS gift just did -- never named
    *  `friendship`, which is StackAcresView's own always-present current
    *  standing and would collide with it in this intersection. */
@@ -1957,12 +1701,6 @@ function replayDelta(result: StackAcresActionResult): Record<string, unknown> | 
   const delta: Record<string, unknown> = {};
   if (result.harvest !== undefined) delta.harvest = result.harvest;
   if (result.discovery !== undefined) delta.discovery = result.discovery;
-  if (result.synergyUnlock !== undefined) delta.synergyUnlock = result.synergyUnlock;
-  if (result.synergyActivate !== undefined) delta.synergyActivate = result.synergyActivate;
-  if (result.prestigeReset !== undefined) delta.prestigeReset = result.prestigeReset;
-  if (result.forgeResult !== undefined) delta.forgeResult = result.forgeResult;
-  if (result.crossbreedResult !== undefined) delta.crossbreedResult = result.crossbreedResult;
-  if (result.prayer !== undefined) delta.prayer = result.prayer;
   if (result.gift !== undefined) delta.gift = result.gift;
   if (result.vatCollected !== undefined) delta.vatCollected = result.vatCollected;
   if (result.fishCaught !== undefined) delta.fishCaught = result.fishCaught;
@@ -2288,8 +2026,8 @@ async function readShopProgress(profileId: string): Promise<StackAcresShopProgre
  * moves.
  *
  * THIS IS THE SECURITY BOUNDARY, not the greyed-out card. The shelf disables
- * a locked row, but the shelf is a browser: a hand-rolled POST, a tab left
- * open across a prestige reset, or a replayed request all arrive here with a
+ * a locked row, but the shelf is a browser: a hand-rolled POST, a stale tab
+ * or a replayed request all arrive here with a
  * perfectly well-formed body naming a real item. So the check sits on the
  * near side of `spendGoldByProfile` in every gated path -- refusing after the
  * debit would mean a refund, and a refund is a second money path where a
@@ -2708,217 +2446,6 @@ export async function buyStackAcresEquipment(
     throw new StackAcresRequestError("That was already bought.", 409, { round: await snapshots(profile.id, now) });
   }
   return { ...(await view(await ensureProfile(token), now)), boughtEquipment: kind };
-}
-
-/**
- * Permanently unlocks a Synergy Tree archetype, with Gold. The debit and the
- * grant are one atomic step server-side -- `unlockSynergyPerk` (which this
- * wraps) delegates whole to `unlock_stackacres_perk`, so there is no second
- * "rule 1: debit first" to restate here the way every other Gold sink in
- * this file has to: that ordering is the RPC's job, not this function's.
- */
-export async function unlockStackAcresSynergyPerk(
-  token: string,
-  archetypeInput: string,
-  now = new Date(),
-): Promise<StackAcresView & { synergyUnlock: { archetype: SynergyArchetype; success: boolean } }> {
-  if (!isSynergyArchetype(archetypeInput) || isUnbuiltPerk(archetypeInput)) {
-    throw new StackAcresRequestError("Not a real archetype.", 400);
-  }
-  const archetype = archetypeInput;
-  const profile = await ensureProfile(token);
-  const { outcome } = await unlockSynergyPerk(profile.id, archetype);
-  if (!outcome.success) {
-    const label = SYNERGY_PERKS[archetype].label;
-    const message =
-      outcome.reason === "already_owned"
-        ? `You already own ${label}.`
-        : `${label} costs ${SYNERGY_PERKS[archetype].unlockCostGold.toLocaleString()} Gold.`;
-    throw new StackAcresRequestError(message, outcome.reason === "already_owned" ? 409 : 400, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  return { ...(await view(profile, now)), synergyUnlock: { archetype, success: true } };
-}
-
-/**
- * Slots an already-unlocked archetype into the current session's loadout.
- * Moves no Gold -- ownership was already paid for by `unlockStackAcresSynergyPerk`,
- * this only changes which owned perks are actively contributing.
- */
-export async function activateStackAcresSynergyPerk(
-  token: string,
-  archetypeInput: string,
-  slot: number,
-  now = new Date(),
-): Promise<StackAcresView & { synergyActivate: { archetype: SynergyArchetype; success: boolean } }> {
-  if (!isSynergyArchetype(archetypeInput)) {
-    throw new StackAcresRequestError("Not a real archetype.", 400);
-  }
-  const archetype = archetypeInput;
-  const profile = await ensureProfile(token);
-  const outcome = await activateSynergyPerk(profile.id, archetype, slot);
-  if (!outcome.success) {
-    const message =
-      outcome.reason === "invalid_slot" ? "That is not a real loadout slot." : "You have not unlocked that yet.";
-    throw new StackAcresRequestError(message, 400, { round: await snapshots(profile.id, now) });
-  }
-  return { ...(await view(profile, now)), synergyActivate: { archetype, success: true } };
-}
-
-/**
- * Permanently forges one Sunlight Forge enchantment, spending Gold and a
- * processing-track material in one call -- see `forgeEnchantment`'s own
- * header for why this needs a single atomic RPC rather than two ordered
- * spends. `enchantmentId` is the bare catalogue key (FORGE_ENCHANTMENTS'
- * own keys), matching every other client-facing id in this file (a Synergy
- * archetype, a secret item id) rather than the versioned wrapper the store
- * persists.
- */
-export async function forgeStackAcresToolEnchantment(
-  token: string,
-  enchantmentId: string,
-  now = new Date(),
-): Promise<StackAcresView & { forgeResult: { enchantmentId: string; success: true } }> {
-  if (!isForgeEnchantmentId(enchantmentId) || isUnbuiltEnchantment(enchantmentId)) {
-    throw new StackAcresRequestError("Not a real enchantment.", 400);
-  }
-  const profile = await ensureProfile(token);
-  const outcome = await forgeEnchantment(profile.id, enchantmentId);
-  if (!outcome.success) {
-    const def = FORGE_ENCHANTMENTS[enchantmentId];
-    const message =
-      outcome.reason === "already_owned"
-        ? `You already forged ${def.label}.`
-        : outcome.reason === "insufficient_material"
-          ? `Needs ${def.materialQuantity.toLocaleString()} ${machineItemLabel(def.materialItem, def.materialQuantity)}.`
-          : `${def.label} costs ${def.goldCost.toLocaleString()} Gold.`;
-    throw new StackAcresRequestError(message, outcome.reason === "already_owned" ? 409 : 400, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  await recordStoryEvents(profile.id, [{ kind: "enchantment-forged" }], now);
-  return {
-    ...(await view(profile, now)),
-    forgeResult: { enchantmentId: outcome.enchantmentId, success: true },
-  };
-}
-
-/** Puts back whatever `plantStackAcresCrossbreedBed` took for `stock` (the
- *  seed for a crop, the Gold for livestock) when the cell it paid for never
- *  came to exist. Same split, same two calls, as stockStackAcres's own
- *  refund branch. */
-async function refundCrossbreedStake(profileId: string, stock: StackAcresStock): Promise<void> {
-  if (isLivestock(stock)) {
-    await refundGold(profileId, STACKACRES_CATALOGUE[stock].seedCost);
-  } else {
-    await adjustStackAcresSeedStock(profileId, stock, 1).catch(() => null);
-  }
-}
-
-/**
- * Plants one cell of the Crossbreeding Bed (lib/stackacres/crossbreeding.ts).
- *
- * Pays exactly the way `stockStackAcres` does, for the same reason: a crop
- * spends one seed off Ray's shelf (its Gold already left at the shop), and
- * livestock spends its seed cost in Gold since there is no "hen seed". Rule 1
- * either way -- paid before the row exists, refunded if the cell turns out
- * taken or the insert refuses. The bed has no capacity row of its own: the
- * (profile, row, col) unique index IS the cap, so "already planted" is the
- * store's own null here, never a count read ahead of the insert.
- */
-export async function plantStackAcresCrossbreedBed(
-  token: string,
-  input: { row: number; col: number; stock: string },
-  now = new Date(),
-): Promise<StackAcresView & { crossbreedResult: { planted: CrossbreedPlotView } }> {
-  if (!isStackAcresStock(input.stock)) throw new StackAcresRequestError("Not a real stock.", 400);
-  if (!isInCrossbreedGrid(input.row, input.col)) {
-    throw new StackAcresRequestError("That cell is not on the bed.", 400);
-  }
-  const stock: StackAcresStock = input.stock;
-  const def = STACKACRES_CATALOGUE[stock];
-  const profile = await ensureProfile(token);
-
-  // The zone livestock lives in has to be cleared, and a crop cell still
-  // wants the Crop Fields milestone -- which is now "this farm has broken
-  // ground out there", not "this farm bought the land".
-  const land = await readLand(profile.id);
-  requireOpenSector(land.sectors, stockZone(stock), `${def.label}s`);
-  if (!isLivestock(stock) && !(await readStackAcresCropFieldsUnlocked(profile.id))) {
-    throw new StackAcresRequestError(
-      "Break some ground in the Crop Fields before the bed will take a crop.",
-      409,
-      { round: await snapshots(profile.id, now) },
-    );
-  }
-
-  let debited: PlayerProfile;
-  if (isLivestock(stock)) {
-    const paid = await spendGoldByProfile(profile.id, def.seedCost);
-    if (!paid) {
-      throw new StackAcresRequestError(
-        `${def.label} seed costs ${def.seedCost.toLocaleString()} Gold.`,
-        400,
-        { round: await snapshots(profile.id, now) },
-      );
-    }
-    debited = paid;
-  } else {
-    const heldSeeds = await adjustStackAcresSeedStock(profile.id, stock, -1);
-    if (heldSeeds === null) {
-      throw new StackAcresRequestError(
-        `You have no ${def.label} seeds. Buy some from Ray's shop first.`,
-        400,
-        { round: await snapshots(profile.id, now) },
-      );
-    }
-    debited = profile;
-  }
-
-  let planted: StoredCrossbreedPlot | null;
-  try {
-    planted = await plantCrossbreedBed(profile.id, input.row, input.col, stock, now);
-  } catch (error) {
-    await refundCrossbreedStake(profile.id, stock);
-    throw error;
-  }
-  if (!planted) {
-    await refundCrossbreedStake(profile.id, stock);
-    throw new StackAcresRequestError("That cell is already planted.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  return {
-    ...(await view(debited, now)),
-    crossbreedResult: { planted: toCrossbreedPlotView(planted, now.getTime()) },
-  };
-}
-
-/**
- * Brings in one ripe cell of the Crossbreeding Bed. Moves no Gold: a plain
- * harvest clears the row and yields nothing, a cross clears both rows and
- * credits the one hybrid -- see harvestCrossbreedBed for the evaluate, roll,
- * commit sequence and the RPC's own migration comment for the race it
- * guards. A null settlement is a lost race or a not-yet-ripe tap, never
- * "produced nothing".
- */
-export async function harvestStackAcresCrossbreedBed(
-  token: string,
-  plotId: string,
-  now = new Date(),
-): Promise<StackAcresView & { crossbreedResult: CrossbreedHarvestSettlement }> {
-  const profile = await ensureProfile(token);
-  const settled = await harvestCrossbreedBed(profile.id, plotId, now);
-  if (!settled) {
-    throw new StackAcresRequestError("That row is not ripe yet, or was already brought in.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  if (settled.hybridItem !== null) {
-    await recordStoryEvents(profile.id, [{ kind: "crossbreed-harvested", item: settled.hybridItem }], now);
-  }
-  return { ...(await view(profile, now)), crossbreedResult: settled };
 }
 
 /**
@@ -5589,8 +5116,7 @@ export interface StackAcresHarvestResult {
    *  contributed. */
   tally: { item: StackAcresItem; quantity: number }[];
   /** Every settled unit's yield valued at today's sell price, before any
-   *  bonus -- a production figure for the ledger and Prestige eligibility,
-   *  not Gold paid (a harvest pays none) and not what landed in inventory
+   *  bonus -- a production figure for the ledger, not Gold paid (a harvest pays none) and not what landed in inventory
    *  (see `tally` for that). */
   gross: number;
   /** How many of the settled units came up weather-worn. */
@@ -5705,12 +5231,6 @@ export async function harvestStackAcres(
   // Gold, so there is no reservation to size ahead of it any more -- see
   // lib/stackacres/equipment.ts's own header.
   const tool = await readStackAcresToolTier(profile.id);
-  // The Sunlight Forge's own permanent enchantments (lib/stackacres/forge.ts)
-  // -- computed BEFORE the Synergy Tree's session buffs below, per that
-  // file's own header: forged stats are what "the tool's own odds" means
-  // from here on, and the Synergy layer composes on top of them, not
-  // instead of them.
-  const forgedStats = await forgedToolStatsFor(profile.id, stackacresToolTierDef(tool));
 
   // Step 2. Bought stock never mucks and never leaves: the animal stays and
   // starts its next cycle the moment you take what it made. Muck is the cost
@@ -5772,20 +5292,7 @@ export async function harvestStackAcres(
     diceBoostArmed &&
     (await adjustStackAcresSecretLedger(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY, -1).catch(() => null)) !==
       null;
-  // The Synergy Tree's `sunlight_harvester` perk (lib/stackacres/synergy-perks.ts)
-  // is the same shape of boost as the dice: it widens the odds, never the
-  // bonus, so it layers on top here, additive with the dice for the same
-  // reason two flat bonuses always are.
-  const critChance = (
-    await applySynergyBuffs(
-      {
-        harvestCritChance: effectiveCritChance(forgedStats.critChance, diceBoost),
-        farmhandSpeed: 1,
-        millDoubleOutputChance: 0,
-      },
-      profile.id,
-    )
-  ).harvestCritChance;
+  const critChance = effectiveCritChance(stackacresToolTierDef(tool).critChance, diceBoost);
 
   // Step 3. The crit, rolled ONCE for the sweep and only now -- after the
   // guarded writes, beside the muck roll, for the identical reason: anything
@@ -5805,7 +5312,7 @@ export async function harvestStackAcres(
   const critBonusTally = new Map<StackAcresItem, number>();
   if (critical) {
     for (const line of actual.lines) {
-      const bonus = critBonusQuantity(line.quantity, tool, forgedStats.critBonus);
+      const bonus = critBonusQuantity(line.quantity, tool);
       if (bonus > 0) critBonusTally.set(line.item, (critBonusTally.get(line.item) ?? 0) + bonus);
     }
   }
@@ -6185,13 +5692,6 @@ export async function workStackAcres(
   // What each collected run made, for the travelers' story (see the end).
   const processedEvents: StoryEvent[] = [];
   const machines = await listStackAcresMachines(profile.id);
-  // Read once for the whole pass rather than per machine -- a loadout does
-  // not change mid-request, and this moves no Gold either way (see the
-  // header above), so there is no reservation this needs to line up with.
-  const { millDoubleOutputChance } = await applySynergyBuffs(
-    { harvestCritChance: 0, farmhandSpeed: 1, millDoubleOutputChance: 0 },
-    profile.id,
-  );
   for (const machine of machines) {
     if (machine.status === "idle") {
       // INSTANT recipes are never auto-started here. They have no run to
@@ -6260,13 +5760,7 @@ export async function workStackAcres(
         continue;
       }
       const output = RECIPE_CATALOGUE[machine.recipeId].output.item;
-      // Rolled AFTER the guarded collect above has already landed, the same
-      // discipline `rollHarvestCrit` is held to and for the same reason:
-      // anything reachable from a read can be re-rolled by pulling to
-      // refresh. `high_yield_processing` (lib/stackacres/synergy-perks.ts).
-      const doubled =
-        millDoubleOutputChance > 0 && rollMillDoubleOutput(millDoubleOutputChance, Math.random);
-      const credited = doubled ? machine.unitsProcessing * 2 : machine.unitsProcessing;
+      const credited = machine.unitsProcessing;
       try {
         await adjustStackAcresInventory(profile.id, output, credited);
         machinesCollected += 1;
@@ -6690,10 +6184,8 @@ const FARM_BOARD_REFUSALS: Record<"unknown" | "unfinished" | "already-claimed" |
  *   1. The goods leave inventory first, under `adjustStackAcresInventory`'s
  *      own row lock -- a sale can never leave the player owing more than they
  *      held.
- *   2. Gold, multiplied by the Prestige Reset Valve's permanent multiplier
- *      (see lib/stackacres/prestige.ts's own header for why the multiplier
- *      moved here from harvest), has today's Land Maintenance netted off the
- *      top (`netUpkeepFromPayout`) and is credited.
+ *   2. Gold has today's Land Maintenance netted off the top
+ *      (`netUpkeepFromPayout`) and is credited.
  */
 export async function sellStackAcresItem(
   token: string,
@@ -6734,115 +6226,16 @@ export async function sellStackAcresItem(
     });
   }
 
-  // Step 2: net Land Maintenance off the top, then credit the Gold,
-  // prestige-multiplied. `sold.gold` below stays the sale's sticker price;
-  // netUpkeepFromPayout only changes what actually lands in the wallet.
-  const basePrice = machineItemSellPrice(item) * input.quantity;
-  const prestigeMultiplier = await getPrestigeMultiplier(profile.id);
-  // FLOORED, same posture settleHarvest's own prestige step used to take: a
-  // multiplier may not invent a Gold piece out of a rounding rule.
-  const gold = Math.floor(basePrice * Math.max(1, prestigeMultiplier));
+  // Step 2: net Land Maintenance off the top, then credit the Gold.
+  // `sold.gold` below stays the sale's sticker price; netUpkeepFromPayout
+  // only changes what actually lands in the wallet.
+  const gold = machineItemSellPrice(item) * input.quantity;
   const netGold = await netUpkeepFromPayout(profile.id, now, gold);
   await payOutGold(profile.id, netGold, `stackacres-sell:${profile.id}:${randomUUID()}`, "stackacres_sell");
 
   return {
     ...(await view(await ensureProfile(token), now)),
     sold: { item, quantity: input.quantity, gold },
-  };
-}
-
-/**
- * Ray's Mythic Blueprints. MOVES NO GOLD -- see
- * lib/server/stackacres-blueprint-service.ts's own header for why this
- * feature carries none of the daily Gold ceiling's risk and needs no
- * reservation step the way `fulfillStackAcresTownContract` above does.
- *
- * Both resolve the profile exactly once and hand the profileId straight to
- * the profileId-taking core (`startBlueprintForProfile`,
- * `contributeToBlueprint`) rather than through their own token-resolving
- * wrappers, so composing the full farm view below never pays a second
- * profile lookup for one action -- see `startBlueprintForProfile`'s own
- * comment on why that redundant-resolve shape is worth avoiding on purpose.
- */
-export async function startStackAcresMythicBlueprint(
-  token: string,
-  structureId: string,
-  now = new Date(),
-): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
-  await startBlueprintForProfile(profile.id, structureId);
-  return view(profile, now);
-}
-
-export async function contributeToStackAcresMythicBlueprint(
-  token: string,
-  structureId: string,
-  itemId: string,
-  amount: number,
-  now = new Date(),
-): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
-  await contributeToBlueprint(profile.id, structureId, itemId, amount);
-  return view(profile, now);
-}
-
-/* -------------------------------------------------------------------- */
-/* Prestige Reset Valve                                                  */
-/* -------------------------------------------------------------------- */
-
-/**
- * Pulls the Prestige Reset Valve for the caller's own farm.
- *
- * MOVES NO GOLD AT ALL -- this action joins neither list in the module
- * header's payer/spender inventory. What it moves is irreversible instead:
- * on success, every unit, wheat plot, inventory line, feed serving, today's
- * Land Maintenance total and any open Town Contract are gone. See
- * `reset_stackacres_prestige`'s own migration comment
- * (20260905120642_stackacres_prestige_reset.sql) for the exact table list
- * and, as importantly, for what survives it -- land cleared, purchased
- * capacity, placed machines, Synergy Tree perks, the donation register and
- * Town Influence are all untouched.
- *
- * A refusal (not enough gross production since the last reset) is an
- * ordinary outcome, not a database failure -- same posture every other
- * Gold-gated refusal in this file takes -- so it surfaces as a
- * StackAcresRequestError (409) with the current farm still intact, never as
- * a thrown database error.
- *
- * Takes no argument beyond the token, on purpose, the same reason
- * `upgradeStackAcresTool` does: there is nothing for the client to name. The
- * server alone decides whether the valve turns, from what it already knows
- * about this profile's own history.
- */
-export async function prestigeResetStackAcres(
-  token: string,
-  now = new Date(),
-): Promise<StackAcresView & { prestigeReset: StackAcresPrestigeResetResult }> {
-  const profile = await ensureProfile(token);
-  const gain = await resetStackAcresPrestige(profile.id);
-
-  if (!gain.eligible) {
-    throw new StackAcresRequestError(
-      `This farm needs to gross ${gain.eligibleGross.toLocaleString()} more Gold since your last reset before the valve will turn -- ${(
-        gain.nextMultiplier - gain.gainedMultiplier
-      ).toFixed(4)}x stays where it is.`,
-      409,
-      { round: await snapshots(profile.id, now) },
-    );
-  }
-
-  // Read AFTER the reset commits, same pattern harvestStackAcres and
-  // fulfillStackAcresTownContract already use for their own post-write view:
-  // a fresh read is guaranteed to reflect the write that just happened,
-  // where reusing a value computed before it would not be.
-  const freshView = await view(profile, now);
-  return {
-    ...freshView,
-    prestigeReset: {
-      prestigeCount: freshView.prestige.prestigeCount,
-      multiplier: freshView.prestige.multiplier,
-      gainedMultiplier: gain.gainedMultiplier,
-    },
   };
 }
 
@@ -7211,42 +6604,6 @@ export async function removeStackAcresSoilTile(
 }
 
 /**
- * Prays with the Pixel Pilgrim -- the only write his shrine makes. No spend,
- * no version guard on a row: the RPC's own row-locking upsert
- * (`pray_at_homestead_shrine`) is the whole idempotency story for a UTC day,
- * and `runStackAcresAction`'s intent-key wrapper (see the route) covers a
- * duplicated request the same way every other action here is covered.
- *
- * Called only from the dialogue's own "yes" -- stackacres-farm.tsx never
- * sends this action from the tap itself, so a decline costs the player
- * nothing and touches no state at all.
- *
- * A null back from the store means the write could not be recorded (a lost
- * race): reported as no advance and no relic, never as a successful prayer,
- * same rule every other ledger write in this file follows.
- */
-export async function prayAtStackAcresShrine(token: string, now = new Date()): Promise<StackAcresActionResult> {
-  const profile = await ensureProfile(token);
-  const today = stackacresExchangeDay(now);
-  const yesterday = previousUtcDay(today);
-
-  const result = await prayAtStackAcresShrine_store(profile.id, today, yesterday, DEVOTION_RUNG_THRESHOLDS);
-  if (result === null) {
-    const current = await readStackAcresDevotion(profile.id);
-    return {
-      ...(await view(profile, now)),
-      prayer: { streak: current.streak, alreadyPrayedToday: false, grantedRelic: null },
-    };
-  }
-
-  const grantedRelic = result.grantedRung === null ? null : DEVOTION_LADDER[result.grantedRung].relic;
-  return {
-    ...(await view(profile, now)),
-    prayer: { streak: result.streak, alreadyPrayedToday: result.alreadyPrayedToday, grantedRelic },
-  };
-}
-
-/**
  * Gives one unit of a processing-track item to an NPC as a gift, advancing
  * friendship with them for the UTC day. No spend against Gold or the daily
  * ceiling either way -- see lib/stackacres/friendship.ts's own header for
@@ -7433,14 +6790,12 @@ export async function turnInStackAcresTravelerQuest(
     // The durable half of `StoryFacts`: work a player can only do once is
     // read off the farm here rather than counted, so doing it before the
     // quest was accepted still counts. See StoryFacts' own header.
-    const [current, inventory, tool, cleared, soilTiles, enchantments, crossbreeds, friendshipRows] = await Promise.all([
+    const [current, inventory, tool, cleared, soilTiles, friendshipRows] = await Promise.all([
       readStackAcresStory(profile.id),
       readStackAcresInventory(profile.id),
       readStackAcresToolTier(profile.id),
       readStackAcresSectors(profile.id),
       listStackAcresSoilTiles(profile.id),
-      listOwnedForgeEnchantmentIds(profile.id),
-      readStackAcresCrossbreedInventory(profile.id),
       Promise.all(FRIENDSHIP_NPCS.map((npc) => readStackAcresFriendship(profile.id, npc))),
     ]);
     const friendshipPoints = {} as Record<NpcId, number>;
@@ -7455,8 +6810,6 @@ export async function turnInStackAcresTravelerQuest(
         tool,
         sectorsCleared: cleared.length,
         soilBeds: soilTiles.length,
-        enchantments: forgeEnchantmentIdsFromOwned(enchantments).length,
-        crossbreeds: Object.values(crossbreeds).reduce((sum, n) => sum + (n ?? 0), 0),
       },
       chosenReward,
       friendshipPoints,

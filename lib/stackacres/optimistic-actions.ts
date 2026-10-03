@@ -15,16 +15,16 @@
  *
  * WHAT IS NOT PREDICTED, and why:
  *   - `collect` payout, `tap-secret-zone`, `request-contract`, `work`: the
- *     server rolls dice the client cannot reproduce (muck, crit, discovery,
- *     the drawn contract, a mill's double-output). `collect` still gets an
+ *     server rolls dice or reads clocks the client cannot reproduce (muck,
+ *     crit, discovery, the drawn contract, a machine's run). `collect` still gets an
  *     optimistic unit removal (that part is deterministic); the Gold it pays
  *     waits for the real number rather than flashing one that then corrects
  *     downward. stackacres-farm.tsx's `act` does show a numberless "on its
  *     way" toast the instant this predictor applies, so the tap still gets
  *     an immediate answer -- it just never promises a figure it might have
  *     to walk back.
- *   - anything the client keeps no state for (blueprints, prestige): there
- *     is nothing on screen to move.
+ *   - anything the client keeps no state for: there is nothing on screen to
+ *     move.
  *
  * `place-pipe`/`remove-pipe` ARE predicted. Irrigation earned the exception
  * once the pipe tool's own drag gesture (lib/stackacres/tools.ts's `pipe`)
@@ -50,10 +50,10 @@
  * and the Workshop sheet is a scrim over the map, so a press that waited on a
  * round trip would have nothing else on screen to hide behind. `sell`'s
  * inventory debit is predicted the same way, but its Gold is not, for the
- * identical reason `collect`'s Gold is not: the server applies the Prestige
- * multiplier and the daily ceiling, and a guess that then corrected downward
+ * identical reason `collect`'s Gold is not: the server applies the daily
+ * ceiling, and a guess that then corrected downward
  * would be worse than showing nothing until the real number lands. `work`
- * stays unpredicted (a Mill's double-output roll), and so do
+ * stays unpredicted (the server settles every machine on its own clock), and so does
  * `collect-vat` -- the vat's own sheet awaits the answer and says
  * so in its own note, the same way the town board does.
  *
@@ -76,13 +76,6 @@ import { stackacresStockOwnableOutright, stackacresStockPrice } from "./market";
 import type { StackAcresContractRow } from "./contracts";
 import type { SectorId } from "./sectors";
 import { decrementHeldSecret, nextUpkeepPaidAfterDiceTrade, type SecretItemId } from "./secrets";
-import {
-  SYNERGY_MAX_ACTIVE_SLOTS,
-  SYNERGY_PERKS,
-  applySynergyEffects,
-  nextActiveLoadout,
-  type SynergyArchetype,
-} from "./synergy-perks";
 import { nextToolTier, toolUpgradePrice, type StackAcresToolTier } from "./equipment";
 import { ownedStackAcresCutters, stackacresCutterDef, type StackAcresCutter } from "./cutters";
 import { applyInfluenceDiscount } from "./influence-tiers";
@@ -187,9 +180,6 @@ export interface FarmPredictContext {
   upkeep: StackAcresUpkeepState;
   influence: number;
   contract: StackAcresContractRow | null;
-  synergyUnlocked: SynergyArchetype[];
-  synergyActive: SynergyArchetype[];
-  farmhandSpeedMultiplier: number;
   secrets: { held: Partial<Record<SecretItemId, number>>; boostArmed: boolean };
   secretDonations: Record<SecretItemId, boolean>;
   greenhouseBuilt: boolean;
@@ -253,11 +243,6 @@ export interface FarmStatePatch {
   machines?: MachineView[];
   secrets?: { held: Partial<Record<SecretItemId, number>>; boostArmed: boolean };
   secretDonations?: Record<SecretItemId, boolean>;
-  synergy?: {
-    unlocked: SynergyArchetype[];
-    active: SynergyArchetype[];
-    farmhandSpeedMultiplier: number;
-  };
 }
 
 /** The bed a press of the hoe on (tx, ty) would dig, or null where the server would refuse it. */
@@ -720,31 +705,6 @@ export function predictStackAcresAction(
       if (!profile) return null;
       return { cutters: ownedStackAcresCutters([...ctx.cutters, body.cutter]), profile };
     }
-    case "unlock-synergy-perk": {
-      if (ctx.synergyUnlocked.includes(body.archetype)) return null;
-      const profile = debited(ctx, SYNERGY_PERKS[body.archetype].unlockCostGold);
-      if (!profile) return null;
-      return {
-        synergy: {
-          unlocked: [...ctx.synergyUnlocked, body.archetype],
-          active: ctx.synergyActive,
-          farmhandSpeedMultiplier: ctx.farmhandSpeedMultiplier,
-        },
-        profile,
-      };
-    }
-    case "activate-synergy-perk": {
-      if (ctx.synergyActive.includes(body.archetype)) return null;
-      if (body.slot !== ctx.synergyActive.length || ctx.synergyActive.length >= SYNERGY_MAX_ACTIVE_SLOTS) {
-        return null;
-      }
-      const active = nextActiveLoadout(ctx.synergyActive, body.archetype, body.slot);
-      const farmhandSpeedMultiplier = applySynergyEffects(
-        { harvestCritChance: 0, farmhandSpeed: 1, millDoubleOutputChance: 0 },
-        active,
-      ).farmhandSpeed;
-      return { synergy: { unlocked: ctx.synergyUnlocked, active, farmhandSpeedMultiplier } };
-    }
     case "donate-secret-item": {
       if ((ctx.secrets.held[body.itemId] ?? 0) < 1) return null;
       return {
@@ -1045,7 +1005,7 @@ export function predictStackAcresAction(
     // own Gold, `tap-secret-zone`, `request-contract`, `work`), await their
     // own sheet's answer (`collect-vat`), or move nothing the
     // client keeps state for (`build-greenhouse`'s materials aside from the
-    // flag itself, blueprints, prestige). See this module's own header.
+    // flag itself). See this module's own header.
     default:
       return null;
   }

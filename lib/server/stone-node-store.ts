@@ -16,8 +16,7 @@ import { adminClient } from "./supabase-admin";
  * the world, so two players racing the same node's last swing must not both
  * be able to break it.
  *
- * Same two-branch shape as every other StackAcres store (see
- * lib/server/stackacres-blueprint-store.ts's own header for the convention):
+ * Same two-branch shape as every other StackAcres store:
  * a real Supabase project reaches `mine_stackacres_stone_node`, the
  * version-guarded compare-and-swap in the `stackacres_stone_nodes` migration;
  * an absent one falls back to an in-process Map, guarded the same way memory

@@ -49,8 +49,7 @@ describe("isNpcId", () => {
     expect(isNpcId("ray")).toBe(true);
     expect(isNpcId("pierre")).toBe(true);
     expect(isNpcId("ivy")).toBe(true);
-    expect(isNpcId("pilgrim")).toBe(false);
-    expect(isNpcId("monk")).toBe(false);
+    expect(isNpcId("stranger")).toBe(false);
     expect(isNpcId("")).toBe(false);
   });
 });

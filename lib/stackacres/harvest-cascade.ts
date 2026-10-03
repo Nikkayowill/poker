@@ -71,8 +71,7 @@
  * a decade-dead standalone inventory table with no relationship to
  * StackAcres. See lib/server/stackacres-store.ts's own header and
  * lib/stackacres/farmhand-machine.ts's near-identical warning: this exact
- * collision has nearly shipped before, and shipped once already as a wrong
- * brief on the Sunlight Forge feature.)
+ * collision has nearly shipped before.)
  */
 
 import type { StackAcresUnitSnapshot } from "./units";

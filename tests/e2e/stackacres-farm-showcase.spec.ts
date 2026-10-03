@@ -43,7 +43,6 @@ const FRIEND_FARM = {
     farmLevel: 3,
     chapter: { number: 2, title: "Stew" },
     chaptersDone: 1,
-    prestigeCount: 4,
     favoriteProduction: { stock: "carrot", label: "Carrot", count: 12 },
   },
   world: {
@@ -153,13 +152,13 @@ test("a friend's farm is read-only, and a reaction sends once", async ({ context
   await page.goto(`/games/stackacres/visit/${FRIEND_ID}`);
   await waitForWorld(page);
 
-  // The header: who, and the five lines the spec asked for.
+  // The header: who, and the lines the spec asked for.
   const card = page.locator(".sa-visit-card");
   await expect(card.getByRole("heading", { level: 1 })).toHaveText("Marisol");
   await expect(card).toContainText("Nothing here can be touched");
-  // The four stat values in order, read off the values rather than off the
+  // The three stat values in order, read off the values rather than off the
   // card's whole text -- "3" appears in an accent colour and a timestamp too.
-  await expect(card.locator("dd")).toHaveText(["3", "2 · Stew", "4", "Carrot · 12"]);
+  await expect(card.locator("dd")).toHaveText(["3", "2 · Stew", "Carrot · 12"]);
 
   // Read-only, in the two places a visitor could otherwise act: the thumb
   // stick and the Use key are the whole input surface of the farm, and

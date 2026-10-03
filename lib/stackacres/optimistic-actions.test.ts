@@ -11,7 +11,6 @@ import { stackacresStockPrice } from "./market";
 import { HOME_SECTOR } from "./sectors";
 import type { StackAcresUnitSnapshot } from "./units";
 import { WATER_CAPACITY } from "./water-can";
-import { SYNERGY_PERKS } from "./synergy-perks";
 import { MACHINE_CATALOGUE } from "./machines";
 import { RECIPE_CATALOGUE } from "./recipes";
 import { STACKACRES_FEED } from "./catalogue";
@@ -80,9 +79,6 @@ function ctx(overrides: Partial<FarmPredictContext> = {}): FarmPredictContext {
     upkeep: { plots: 0, fee: 0, paidToday: 0, due: 0 },
     influence: 0,
     contract: null,
-    synergyUnlocked: [],
-    synergyActive: [],
-    farmhandSpeedMultiplier: 1,
     secrets: { held: {}, boostArmed: false },
     secretDonations: {} as FarmPredictContext["secretDonations"],
     greenhouseBuilt: false,
@@ -834,37 +830,6 @@ describe("predictStackAcresAction: the rest of the shop", () => {
       ctx({ profile: profile({ goldBalance: 1_000_000 }), cutters: ["scythe", "mower"] }),
     );
     expect(again).toBeNull();
-  });
-
-  it("unlocks a synergy perk once, never twice", () => {
-    const archetype = Object.keys(SYNERGY_PERKS)[0] as keyof typeof SYNERGY_PERKS;
-    const patch = predictStackAcresAction(
-      { action: "unlock-synergy-perk", archetype },
-      ctx({ profile: profile({ goldBalance: 1_000_000 }) }),
-    );
-    expect(patch?.synergy?.unlocked).toEqual([archetype]);
-
-    const already = predictStackAcresAction(
-      { action: "unlock-synergy-perk", archetype },
-      ctx({ profile: profile({ goldBalance: 1_000_000 }), synergyUnlocked: [archetype] }),
-    );
-    expect(already).toBeNull();
-  });
-
-  it("activates a perk into the next open slot only", () => {
-    const archetype = Object.keys(SYNERGY_PERKS)[0] as keyof typeof SYNERGY_PERKS;
-    const patch = predictStackAcresAction(
-      { action: "activate-synergy-perk", archetype, slot: 0 },
-      ctx({ synergyUnlocked: [archetype] }),
-    );
-    expect(patch?.synergy?.active).toEqual([archetype]);
-
-    // Skipping ahead to slot 1 with nothing in slot 0 is refused.
-    const skip = predictStackAcresAction(
-      { action: "activate-synergy-perk", archetype, slot: 1 },
-      ctx({ synergyUnlocked: [archetype] }),
-    );
-    expect(skip).toBeNull();
   });
 
   it("donates a held secret item exactly once", () => {

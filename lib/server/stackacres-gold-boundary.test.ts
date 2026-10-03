@@ -3,12 +3,10 @@ import { join } from "path";
 import { describe, expect, it } from "vitest";
 
 // Farm SQL that moves Gold inside its own transaction can't follow the farm into a
-// separate database. These two predate the rule; new farm Gold goes through
-// profile-store's ledgered functions from TypeScript instead.
-const KNOWN_FARM_GOLD_FUNCTIONS = [
-  "forge_stackacres_enchantment",
-  "unlock_stackacres_perk",
-];
+// separate database. The last two that did went with the systems they belonged to
+// (20261002200000); farm Gold goes through profile-store's ledgered functions from
+// TypeScript instead.
+const KNOWN_FARM_GOLD_FUNCTIONS: string[] = [];
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 
@@ -32,7 +30,7 @@ function liveFunctionBodies(): Map<string, string> {
 }
 
 describe("StackAcres Gold boundary", () => {
-  it("no farm SQL function moves Gold beyond the five known ones", () => {
+  it("no farm SQL function moves Gold", () => {
     const touchesFarm = /\b(homestead|stackacres)_\w+/i;
     const touchesGold = /spend_gold|credit_gold|adjust_gold|gold_balance/i;
     const offenders = [...liveFunctionBodies()]

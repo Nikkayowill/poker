@@ -44,12 +44,6 @@ import {
 } from "@/lib/stackacres/forage";
 import { isRecipeId, type RecipeId } from "@/lib/stackacres/recipes";
 import type { AgingManifest } from "@/lib/stackacres/aging";
-import {
-  computePrestigeGain,
-  STACKACRES_PRESTIGE_DEFAULT_STATE,
-  type StackAcresPrestigeGain,
-  type StackAcresPrestigeState,
-} from "@/lib/stackacres/prestige";
 import type { NpcId } from "@/lib/stackacres/friendship";
 import { freshStory, type StoredStory } from "@/lib/stackacres/story/state";
 import { WATER_CAPACITY } from "@/lib/stackacres/water-can";
@@ -122,8 +116,6 @@ declare global {
   var __riverRoomStackAcresSecretLedger: Map<string, number> | undefined;
   var __riverRoomStackAcresGreenhouse: Set<string> | undefined;
   var __riverRoomStackAcresCropFields: Set<string> | undefined;
-  var __riverRoomStackAcresPrestige: Map<string, StackAcresPrestigeState> | undefined;
-  var __riverRoomStackAcresDevotion: Map<string, StoredDevotionRow> | undefined;
   var __riverRoomStackAcresFriendship: Map<string, StoredFriendshipRow> | undefined;
   var __riverRoomStackAcresWater: Map<string, number> | undefined;
   var __riverRoomStackAcresEnergy: Map<string, StoredStackAcresEnergy> | undefined;
@@ -251,24 +243,10 @@ globalThis.__riverRoomStackAcresGreenhouse = memoryGreenhouse;
 const memoryCropFields = globalThis.__riverRoomStackAcresCropFields ?? new Set<string>();
 globalThis.__riverRoomStackAcresCropFields = memoryCropFields;
 
-/** The Prestige Reset Valve's permanent state, keyed by profileId. A missing
- *  entry means "never reset" -- see STACKACRES_PRESTIGE_DEFAULT_STATE --
- *  which needs no backfill, the same convention memoryTool's missing-entry
- *  (the free starting Trowel) already follows. */
-const memoryPrestige = globalThis.__riverRoomStackAcresPrestige ?? new Map<string, StackAcresPrestigeState>();
-globalThis.__riverRoomStackAcresPrestige = memoryPrestige;
-
-/** The Pixel Pilgrim's devotion, keyed by profileId -- see
- *  `readStackAcresDevotion`/`prayAtStackAcresShrine` below. A missing entry
- *  is `freshDevotion()`, the same "no row yet" convention every other
- *  memory-mode ledger in this file uses. */
-const memoryDevotion = globalThis.__riverRoomStackAcresDevotion ?? new Map<string, StoredDevotionRow>();
-globalThis.__riverRoomStackAcresDevotion = memoryDevotion;
-
 /** NPC friendship, keyed by `${profileId}:${npc}` -- see
  *  `readStackAcresFriendship`/`giveStackAcresGift` below. A missing entry is
- *  `freshFriendship()`, the same "no row yet" convention memoryDevotion
- *  uses. Keyed as one string rather than nested per-NPC maps since
+ *  `freshFriendship()`, the same "no row yet" convention every other
+ *  memory-mode ledger in this file uses. Keyed as one string rather than nested per-NPC maps since
  *  FRIENDSHIP_NPCS holds exactly one member today and a second NPC is just
  *  another key, not a reason to restructure this. */
 const memoryFriendship = globalThis.__riverRoomStackAcresFriendship ?? new Map<string, StoredFriendshipRow>();
@@ -276,7 +254,7 @@ globalThis.__riverRoomStackAcresFriendship = memoryFriendship;
 
 /** Choppable tree nodes (lib/stackacres/wood.ts), keyed `${profileId}:${nodeId}`.
  *  A missing entry is `freshWoodNodeState()` at version 1, the same "no row
- *  yet" convention memoryDevotion/memoryFriendship use above. */
+ *  yet" convention memoryFriendship uses above. */
 const memoryWoodNodes = globalThis.__riverRoomStackAcresWoodNodes ?? new Map<string, StoredWoodNode>();
 globalThis.__riverRoomStackAcresWoodNodes = memoryWoodNodes;
 
@@ -311,8 +289,6 @@ export function __resetStackAcresForTest(): void {
   memoryInfluence.clear();
   memoryStackAcresSecretLedger.clear();
   memoryGreenhouse.clear();
-  memoryPrestige.clear();
-  memoryDevotion.clear();
   memoryFriendship.clear();
   memoryWoodNodes.clear();
   memoryForageNodes.clear();
@@ -2916,287 +2892,17 @@ export async function adjustStackAcresInfluence(profileId: string, delta: number
 }
 
 /* ------------------------------------------------------------------ */
-/* Prestige Reset Valve                                                 */
-/* ------------------------------------------------------------------ */
-
-/**
- * The permanent multiplier state for one profile. A profile that has never
- * pulled the valve has no row at all -- returned as
- * STACKACRES_PRESTIGE_DEFAULT_STATE (multiplier 1, count 0), needing no
- * backfill, the same convention `readStackAcresToolTier`'s missing-row-means-
- * the-free-starting-rung already follows.
- */
-/** Same "missing row means the default state" logic `readStackAcresPrestige`
- *  runs below, pulled out for the batch RPC path. */
-export function stackAcresPrestigeFromBatchRow(
-  row: { prestige_count: number | string; multiplier: number | string; lifetime_gross_at_reset: number | string } | null,
-): StackAcresPrestigeState {
-  if (!row) return STACKACRES_PRESTIGE_DEFAULT_STATE;
-  return {
-    prestigeCount: Number(row.prestige_count),
-    multiplier: Number(row.multiplier),
-    lifetimeGrossAtReset: Number(row.lifetime_gross_at_reset),
-  };
-}
-
-export async function readStackAcresPrestige(profileId: string): Promise<StackAcresPrestigeState> {
-  const supabase = adminClient();
-  if (!supabase) return memoryPrestige.get(profileId) ?? STACKACRES_PRESTIGE_DEFAULT_STATE;
-
-  const { data, error } = await supabase
-    .from("homestead_prestige_state")
-    .select("prestige_count, multiplier, lifetime_gross_at_reset")
-    .eq("profile_id", profileId)
-    .maybeSingle();
-  if (error) throw new Error(`Could not read your prestige standing: ${error.message}`);
-  return stackAcresPrestigeFromBatchRow(
-    data as { prestige_count: number | string; multiplier: number | string; lifetime_gross_at_reset: number | string } | null,
-  );
-}
-
-/**
- * The read-only counterpart to what `resetStackAcresPrestige` computes
- * internally: every Gold this profile's farm has ever grossed, across every
- * reset. A read, never a write -- this exists so the client can render "how
- * much further to the next reset" without pulling the valve to find out.
- *
- * Aggregated in the database (stackacres_lifetime_gross), not by fetching
- * every homestead_harvests row for this profile and summing in Node: this is
- * called on every farm-view load, and the ledger only ever grows.
- */
-export async function readStackAcresLifetimeGross(profileId: string): Promise<number> {
-  const supabase = adminClient();
-  if (!supabase) {
-    return memoryHarvests
-      .filter((entry) => entry.profileId === profileId)
-      .reduce((total, entry) => total + entry.payout, 0);
-  }
-
-  const { data, error } = await supabase.rpc("stackacres_lifetime_gross", { p_profile_id: profileId });
-  if (error) throw new Error(`Could not read your farm's history: ${error.message}`);
-  return Number(data ?? 0);
-}
-
-/**
- * Pulls the valve: wipes the grid and every resource stockpile riding on it,
- * and raises the permanent multiplier by what the profile's gross farm
- * production since the last reset actually earned. See
- * 20260905120642_stackacres_prestige_reset.sql's own header for exactly
- * which tables this sweeps and which it deliberately leaves untouched (land
- * cleared, purchased capacity, placed machines, Synergy Tree perks, the
- * donation register and Town Influence all survive -- none of them is a
- * memory-mode analog this function needs to sweep here either).
- *
- * Returns `eligible: false` rather than throwing when there is not enough
- * gross yet -- a refusal here is an ordinary outcome the caller renders as
- * copy, not a failure, the same convention `unlock_stackacres_perk` uses on
- * the SQL side for "already_owned".
- */
-export async function resetStackAcresPrestige(profileId: string): Promise<StackAcresPrestigeGain> {
-  const supabase = adminClient();
-
-  if (!supabase) {
-    const current = memoryPrestige.get(profileId) ?? STACKACRES_PRESTIGE_DEFAULT_STATE;
-    const totalGross = memoryHarvests
-      .filter((entry) => entry.profileId === profileId)
-      .reduce((total, entry) => total + entry.payout, 0);
-    const gain = computePrestigeGain(current, totalGross);
-    if (!gain.eligible) return gain;
-
-    memoryPrestige.set(profileId, {
-      prestigeCount: current.prestigeCount + 1,
-      multiplier: gain.nextMultiplier,
-      lifetimeGrossAtReset: totalGross,
-    });
-
-    // THE SWEEP, memory-mode twin of the migration's DELETE statements.
-    // Unconditional on profileId alone, same reasoning as the SQL side: a
-    // permanent (Gold-bought) unit is grid state and does not survive a
-    // prestige, unlike the tables this function does not touch above.
-    //
-    // No memoryPlots/memoryHomesteadInventory entry is cleared here, and
-    // that is not an omission: this file never modeled either table in
-    // memory mode in the first place (see this file's own top-of-file
-    // header on why `homestead_plots` and the barn-era `homestead_inventory`
-    // are both left "untouched and unread from here on"), so there is
-    // nothing to sweep. `memoryInventory` below is this file's stand-in for
-    // `homestead_processing_inventory` (the Mill's wheat/flour store, a
-    // wholly different table despite the similar name) and IS cleared.
-    // The SQL side's compliance mirror into `homestead_inventory`
-    // (`prestige_multiplier_bp`, see the migration's own COMPLIANCE
-    // ADDENDUM) has no memory-mode counterpart for the same reason: it is a
-    // write-only record satisfying an external directive against a table
-    // this codebase already treats as dead, nothing anywhere reads it back,
-    // and fabricating a memory map solely to hold it would be complexity
-    // with no observable effect on a profile running without Supabase.
-    for (const [id, unit] of memoryUnits) if (unit.profileId === profileId) memoryUnits.delete(id);
-    for (const [id, plot] of memoryWheatPlots) if (plot.profileId === profileId) memoryWheatPlots.delete(id);
-    for (const key of [...memoryInventory.keys()]) {
-      if (key.startsWith(`${profileId}:`)) memoryInventory.delete(key);
-    }
-    memoryFeed.delete(profileId);
-    for (const key of [...memoryUpkeep.keys()]) {
-      if (key.startsWith(`${profileId}:`)) memoryUpkeep.delete(key);
-    }
-    for (const [id, contract] of memoryContracts) {
-      if (contract.profileId === profileId && contract.status === "open") memoryContracts.delete(id);
-    }
-
-    return gain;
-  }
-
-  const { data, error } = await supabase
-    .rpc("reset_stackacres_prestige", { p_profile_id: profileId })
-    .maybeSingle();
-  if (error) throw new Error(`Could not pull the prestige valve: ${error.message}`);
-  if (!data) throw new Error("Could not pull the prestige valve: the database returned nothing.");
-
-  const row = data as {
-    success: boolean;
-    reason: string;
-    prestige_count: number | string;
-    multiplier: number | string;
-    gained_multiplier: number | string;
-    eligible_gross: number | string;
-  };
-
-  return {
-    eligible: row.success,
-    reason: row.success ? "reset" : "not_enough_lifetime_gross",
-    eligibleGross: Number(row.eligible_gross),
-    gainedMultiplier: Number(row.gained_multiplier),
-    nextMultiplier: Number(row.multiplier),
-  };
-}
-
-/* ------------------------------------------------------------------ */
-/* The Pixel Pilgrim's devotion                                        */
-/* ------------------------------------------------------------------ */
-
-/**
- * `homestead_devotion` and its `pray_at_homestead_shrine` RPC -- a fresh
- * table, same posture as `homestead_secret_ledger`'s own header: a per-
- * player streak record has no existing table to reuse and inventing one
- * that overloads an unrelated ledger would be the mistake this codebase has
- * already made and undone once (see that ledger's own doc comment).
- *
- * The rollover math (same-day no-op, consecutive-day increment, any-gap
- * reset to 1, at most one ladder rung claimed per prayer) lives once, in
- * lib/stackacres/devotion.ts's pure `applyPrayer` -- the RPC below is a SQL
- * restatement of that exact function so the two branches agree, the same
- * discipline `stepFarmhandAutomation` and its scene caller are held to.
- * Keep them in step if the ladder or rollover rule ever changes.
- */
-
-export interface StoredDevotionRow {
-  streak: number;
-  lastPrayedDay: string | null;
-  claimedRungs: readonly number[];
-}
-
-const FRESH_DEVOTION: StoredDevotionRow = { streak: 0, lastPrayedDay: null, claimedRungs: [] };
-
-/** The stored devotion record for a profile, or a fresh one if it has never
- *  prayed. Read-only -- `prayAtStackAcresShrine` is the only writer. */
-/** Same "missing row means fresh" logic `readStackAcresDevotion` runs
- *  below, pulled out for the batch RPC path. */
-export function stackAcresDevotionFromBatchRow(
-  row: { streak: number | string; last_prayed_day: string | null; claimed_rungs: number[] | null } | null,
-): StoredDevotionRow {
-  if (!row) return FRESH_DEVOTION;
-  return {
-    streak: Number(row.streak),
-    lastPrayedDay: row.last_prayed_day,
-    claimedRungs: row.claimed_rungs ?? [],
-  };
-}
-
-export async function readStackAcresDevotion(profileId: string): Promise<StoredDevotionRow> {
-  const supabase = adminClient();
-  if (!supabase) return memoryDevotion.get(profileId) ?? FRESH_DEVOTION;
-
-  const { data, error } = await supabase
-    .from("homestead_devotion")
-    .select("streak, last_prayed_day, claimed_rungs")
-    .eq("profile_id", profileId)
-    .maybeSingle();
-  if (error) throw new Error(`Could not read your devotion: ${error.message}`);
-  return stackAcresDevotionFromBatchRow(
-    data as { streak: number | string; last_prayed_day: string | null; claimed_rungs: number[] | null } | null,
-  );
-}
-
-/**
- * Advances the caller's devotion streak for one UTC day and claims at most
- * one newly-earned ladder rung, atomically. Returns null only when the
- * write could not be recorded (a lost race) -- the caller must never treat
- * that as a successful prayer, same rule every other ledger write in this
- * file follows.
- *
- * `today`/`yesterday` are `YYYY-MM-DD` strings the service computes once
- * (lib/stackacres/exchange.ts's `stackacresExchangeDay` and
- * lib/stackacres/devotion.ts's `previousUtcDay`) and hands down, so this
- * function never reads a clock itself. `rungThresholds` is
- * `DEVOTION_RUNG_THRESHOLDS` -- service-owned data the RPC has no other way
- * to know, the same pattern a secret zone's roll is handed its own odds.
- */
-export async function prayAtStackAcresShrine(
-  profileId: string,
-  today: string,
-  yesterday: string,
-  rungThresholds: readonly number[],
-): Promise<{ streak: number; alreadyPrayedToday: boolean; grantedRung: number | null } | null> {
-  const supabase = adminClient();
-  if (!supabase) {
-    const stored = memoryDevotion.get(profileId) ?? FRESH_DEVOTION;
-    if (stored.lastPrayedDay === today) {
-      return { streak: stored.streak, alreadyPrayedToday: true, grantedRung: null };
-    }
-    const streak = stored.lastPrayedDay === yesterday ? stored.streak + 1 : 1;
-    let grantedRung: number | null = null;
-    for (let i = 0; i < rungThresholds.length; i++) {
-      if (streak >= rungThresholds[i] && !stored.claimedRungs.includes(i)) {
-        grantedRung = i;
-        break;
-      }
-    }
-    const claimedRungs = grantedRung === null ? stored.claimedRungs : [...stored.claimedRungs, grantedRung];
-    memoryDevotion.set(profileId, { streak, lastPrayedDay: today, claimedRungs });
-    return { streak, alreadyPrayedToday: false, grantedRung };
-  }
-
-  const { data, error } = await supabase
-    .rpc("pray_at_homestead_shrine", {
-      p_profile_id: profileId,
-      p_today: today,
-      p_yesterday: yesterday,
-      p_rung_thresholds: rungThresholds,
-    })
-    .maybeSingle();
-  if (error) throw new Error(`Could not pray with him: ${error.message}`);
-  if (!data) return null;
-  const row = data as { streak: number | string; already_prayed_today: boolean; granted_rung: number | string | null };
-  return {
-    streak: Number(row.streak),
-    alreadyPrayedToday: row.already_prayed_today,
-    grantedRung: row.granted_rung === null ? null : Number(row.granted_rung),
-  };
-}
-
-/* ------------------------------------------------------------------ */
 /* NPC friendship                                                      */
 /* ------------------------------------------------------------------ */
 
 /**
  * `homestead_friendship` and its `give_homestead_gift` RPC -- a fresh
- * table, same reasoning `homestead_devotion`'s own header gives: a
- * per-(player, NPC) points record has no existing table to reuse.
+ * table: a per-(player, NPC) points record has no existing table to reuse.
  *
  * The rollover math (same-day refusal before any spend, points accumulate
  * with no lapse, at most one ladder rung claimed per gift) lives once in
  * lib/stackacres/friendship.ts's pure `applyGift` -- the RPC below is a SQL
- * restatement of that exact function so the two branches agree, the same
- * discipline pray_at_homestead_shrine's own header holds itself to. Keep
+ * restatement of that exact function so the two branches agree. Keep
  * them in step if the ladder or gift scoring ever changes.
  */
 
@@ -3273,9 +2979,8 @@ export async function readStackAcresFriendship(profileId: string, npc: NpcId): P
  *  "insufficient-item" (the day gate passed but the item was already
  *  spent -- a lost race, since the client only ever offers items it still
  *  holds) as well as the ordinary "gifted" success; there is no null case
- *  here the way devotion's own RPC has one, because every outcome this
- *  function can reach is a real, reportable answer rather than a lost race
- *  the caller must silently re-derive. */
+ *  here: every outcome this function can reach is a real, reportable
+ *  answer rather than a lost race the caller must silently re-derive. */
 export interface GiftAttemptResult {
   points: number;
   outcome: "gifted" | "already-gifted-today" | "insufficient-item";
@@ -3292,7 +2997,7 @@ export interface GiftAttemptResult {
  * (lib/stackacres/exchange.ts's `stackacresExchangeDay`) and hands down, so
  * this function never reads a clock itself. `points`/`rungThresholds` are
  * service-owned data from lib/stackacres/friendship.ts this function has no
- * other way to know, the same pattern `prayAtStackAcresShrine` already sets.
+ * other way to know.
  */
 export async function giveStackAcresGift(
   profileId: string,
@@ -3672,8 +3377,7 @@ function woodNodeFromRow(row: WoodNodeDbRow): StoredWoodNode {
 
 /** Reads one node's state, creating a fresh standing-tree row the first time
  *  a profile ever taps it -- the same lazy-create-on-first-read shape
- *  ./secrets.ts's discovery ledger and the Sunlight Forge's tool tier
- *  already take, rather than seeding every node for every profile up front. */
+ *  ./secrets.ts's discovery ledger and the tool tier already take, rather than seeding every node for every profile up front. */
 export async function getOrCreateStackAcresWoodNode(
   profileId: string,
   nodeId: WoodNodeId,

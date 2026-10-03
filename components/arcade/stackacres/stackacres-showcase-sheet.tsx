@@ -171,8 +171,7 @@ export function StackAcresShowcaseSheet({
   );
 }
 
-/** The sheet's entry point, in the same standing-badge row as the Journal,
- *  the Forge and the Crossbreeding Bed. */
+/** The sheet's entry point, in the same standing-badge row as the Journal. */
 export function StackAcresShowcaseChip({ onOpen }: { onOpen: () => void }) {
   return (
     <button

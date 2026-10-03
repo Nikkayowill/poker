@@ -14,8 +14,8 @@
  *
  * NO CLOCK HERE, the same posture ./units.ts takes: every function is handed
  * `today` or `now`. The care day is `stackacresExchangeDay`'s UTC day, the
- * boundary ./devotion.ts, ./friendship.ts and ./feed-silo.ts already share,
- * so a player's whole farm rolls over at one instant rather than four.
+ * boundary ./friendship.ts and ./feed-silo.ts already share, so a player's
+ * whole farm rolls over at one instant rather than three.
  *
  * OFFLINE IS DERIVED, NEVER SIMULATED. A streak is stored as "the last day
  * tended" plus a count, and whether it survived is a comparison against
@@ -57,8 +57,7 @@ export const CARE_BONUS_CAP = 2;
  * The first two days pay nothing on purpose. Care is meant to read as a
  * habit rather than a button with a prize behind it, and a reward on the
  * very first tap would make the mood and the name decoration on a vending
- * machine. The rungs are the same shape ./devotion.ts's ladder uses: a
- * handful of real steps, not a grind.
+ * machine. A handful of real steps, not a grind.
  */
 export function careYieldBonus(streak: number): number {
   if (streak >= 7) return 2;

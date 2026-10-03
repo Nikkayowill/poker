@@ -29,18 +29,10 @@ export interface StackAcresReadBatch {
   secret_ledger: Record<string, unknown>[];
   greenhouse: Record<string, unknown> | null;
   crop_fields: Record<string, unknown> | null;
-  perk_unlocks: Record<string, unknown>[];
-  blueprints: Record<string, unknown>[];
-  blueprint_progress: Record<string, unknown>[];
-  prestige: Record<string, unknown> | null;
-  tool_enchantments: Record<string, unknown>[];
-  crossbreed_plots: Record<string, unknown>[];
-  crossbreed_inventory: Record<string, unknown>[];
   pipes: Record<string, unknown>[];
   soil_tiles: Record<string, unknown>[];
   soil_stock: Record<string, unknown>[];
   seed_stock: Record<string, unknown>[];
-  devotion: Record<string, unknown> | null;
   friendship: Record<string, unknown>[];
   /** Every sealed manifest, one per aging machine (the Vat and the
    *  Preserves Cellar). Added by the Chapter 5 migration. */
@@ -72,11 +64,9 @@ export interface StackAcresReadBatch {
 
 /**
  * One Postgres round trip in place of the ~37 `view()` used to fire in
- * parallel -- see the migration's own header for which two reads are
- * deliberately NOT folded in here (they're already their own aggregate/
- * idle-sweep RPCs, not a plain per-table select), plus Stone's global read
- * (not per-profile, so it can't be a batch RPC argument), and why whole
- * rows, not a hand-typed column list, cross this boundary.
+ * parallel. Stone's global read is not folded in (not per-profile, so it
+ * can't be a batch RPC argument). See the migration's own header for why
+ * whole rows, not a hand-typed column list, cross this boundary.
  *
  * Returns null in memory mode (no Supabase configured) -- there is no batch
  * to fetch, and callers fall back to the exact same per-table reads this

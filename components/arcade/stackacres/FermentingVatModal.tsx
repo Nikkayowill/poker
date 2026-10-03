@@ -22,7 +22,7 @@ import {
  *
  * NOT TAILWIND, ON PURPOSE. This app has no Tailwind pipeline anywhere in
  * it -- every other surface, this one's sibling sheets included
- * (TownContractsModal, the prestige reset sheet), is styled through the
+ * (TownContractsModal), is styled through the
  * numbered plain-CSS system app/styles/CLAUDE.md documents, and Tailwind
  * utility classes here would compile to nothing without one. This sheet
  * reuses the same `sa-sheet`/`sa-cta` chrome every other StackAcres modal

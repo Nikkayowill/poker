@@ -1,7 +1,6 @@
 /**
  * The traveler keepsakes: what finishing a traveler's line hands the
- * player. Same posture as friendship.ts's KEEPSAKE_ITEMS and devotion.ts's
- * relics. Never Gold-valued, never sold by Ray, never tradeable, never swept
+ * player. Same posture as friendship.ts's KEEPSAKE_ITEMS. Never Gold-valued, never sold by Ray, never tradeable, never swept
  * by a harvest. stackacres-service.ts pins Gold to exactly four credit sites
  * and a story reward is not a fifth.
  *
@@ -21,7 +20,7 @@ export function isStoryItemId(value: unknown): value is StoryItemId {
 export interface StoryItemDef {
   label: string;
   /** Shown once it is held. Before that the UI shows "???", the same
-   *  treatment an unclaimed relic or keepsake gets. */
+   *  treatment an unclaimed keepsake gets. */
   blurb: string;
   /** A plain emoji, only ever drawn in a dialogue's own chrome. */
   icon: string;

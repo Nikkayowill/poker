@@ -22,14 +22,8 @@ import { useKeepOnScreen } from "./use-keep-on-screen";
  * NPC friendship: a greet-and-gift dialogue, one NPC at a time, for anyone
  * in FRIENDSHIP_NPCS (Ray, Chef Pierre, Botanist Ivy) -- opened by
  * onWorldRayTap for Ray, and by onWorldTravelerTap for a traveler whose
- * quest line is already done. Same screen-anchored treatment as
- * StackAcresMonkDialogue and built on the exact same phase shape (a
- * "greeting" the player answers, then a "result" of what that answer did) --
- * see that component's own header for the convention this one restates
- * rather than shares a component with. The two stay separate components
- * because a gift's own "greeting" is an item PICKER (any number of choices)
- * where a prayer's is a plain yes/no, and forcing that difference into one
- * component would mean threading item props through every prayer render.
+ * quest line is already done. Screen-anchored, in two phases: a
+ * "greeting" the player answers, then a "result" of what that answer did.
  *
  * "greeting" -- one of the NPC's rotating opening lines, a "Say hi" button
  * (always available, once already-greeted-today is simply what the server

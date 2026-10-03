@@ -99,14 +99,10 @@ export function crossedInfluenceTier(before: number, after: number): InfluenceTi
  *
  * WHAT IT MAY NOT BE APPLIED TO: a STAKE. `seedCost` reads like a fourth shop
  * price and is not one -- for livestock it is also the per-cycle stake
- * `stockStackAcres` spends in the pen and the stake the Crossbreeding Bed
- * spends per cell, neither of which is shopping. Discounting it would also
- * mint Gold: `refundCrossbreedStake` (lib/server/stackacres-service.ts) puts
- * back `STACKACRES_CATALOGUE[stock].seedCost` recomputed from the catalogue
- * rather than the amount actually debited, so a stake debited at 90% and
- * refunded at 100% pays the player 10% for every crossbreed that loses its
- * race. That refund is correct exactly as long as nothing here touches
- * `seedCost`. Widening the discount to seeds means fixing that refund FIRST.
+ * `stockStackAcres` spends in the pen, which is not shopping. Any refund of a
+ * stake that recomputes `seedCost` from the catalogue rather than the amount
+ * actually debited would mint Gold if the debit were discounted, so widening
+ * the discount to seeds means checking every such refund FIRST.
  */
 export function applyInfluenceDiscount(price: number, total: number): number {
   const bps = influenceTier(total).discountBps;

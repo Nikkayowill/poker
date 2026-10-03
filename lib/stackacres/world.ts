@@ -101,8 +101,8 @@ export interface WorldPoint {
  * THE HENS LEFT HOME in the 2026-09-07 map re-lay; THE CROP FIELDS CAME BACK
  * in the 2026-09-08 restructure's district merge (see ./zones.ts's own
  * header). Between those two passes `farmstead` appeared nowhere in this
- * record at all -- it kept the house, the barn, the pond, Ray, the monk and
- * the greenhouse, and no stock. It is back now because the Crop Fields are
+ * record at all -- it kept the house, the barn, the pond, Ray and the
+ * greenhouse, and no stock. It is back now because the Crop Fields are
  * not a district of their own any more; `stocksInZone("farmstead")` is no
  * longer the empty list `paintDistrictBoundary` (stackacres-scene.ts) grew a
  * guard for -- that guard is now dead for `farmstead` specifically, though
@@ -324,7 +324,7 @@ export function barnHitAt(x: number, y: number): boolean {
  * is the only stretch wide AND clear.
  *
  * A tap here opens the friendship gift dialogue (stackacres-farm.tsx's
- * `onWorldRayTap`), which also carries his Shop and Blueprints buttons -- the
+ * `onWorldRayTap`), which also carries his Shop button -- the
  * same callback the standing figure used to answer for. That is a different
  * surface from the barn (`barnHitAt`), which now opens the same supply store
  * directly. This box does not overlap the barn's, the field wall's (props.ts's

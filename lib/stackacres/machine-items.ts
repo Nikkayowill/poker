@@ -39,7 +39,7 @@ import { FISH_SPECIES } from "./fishing";
  *  either -- see this file's header. Meat and pelts join the fish for exactly
  *  the same reason they did, and like them nothing consumes either yet. Wood
  *  and Stone join the bucket the same way again: chopped/mined, not grown or
- *  crafted, and each is a required material on its own blueprints
+ *  crafted, and each is a required building material
  *  (./machines.ts's `woodCost`/`stoneCost`) rather than something a recipe
  *  consumes. */
 export const MACHINE_RAW_ITEMS = [...FISH_SPECIES, "meat", "pelt", "wood", "stone", "iron_ore"] as const;
@@ -92,8 +92,7 @@ export const MACHINE_ITEM_IDS: readonly MachineItemId[] = [
 
 /** Every `MachineItemId` there is: every `StackAcresItem` plus `MACHINE_ITEM_IDS`.
  *  For schema validation that has to accept the WHOLE inventory space (the
- *  Sell action) -- existing narrower call sites (gifts, blueprint
- *  contributions) keep using `MACHINE_ITEM_IDS` itself, since raw crops and
+ *  Sell action) -- existing narrower call sites (gifts) keep using `MACHINE_ITEM_IDS` itself, since raw crops and
  *  eggs were never valid there. */
 export const ALL_MACHINE_ITEM_IDS: readonly MachineItemId[] = [
   ...STACKACRES_ITEMS,

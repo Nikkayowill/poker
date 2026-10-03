@@ -101,7 +101,7 @@ describe("TRAVELER_QUESTS", () => {
       { kind: "deliver", item: "potato", target: 5 },
       { kind: "deliver", item: "carrot", target: 5 },
     ]);
-    expect(TRAVELER_QUESTS.ivy[0].objectives).toEqual([{ kind: "crossbreed", target: 1 }]);
+    expect(TRAVELER_QUESTS.ivy[0].objectives).toEqual([{ kind: "harvest-any-crop", target: 12 }]);
   });
 
   it("labels objectives as one imperative line", () => {

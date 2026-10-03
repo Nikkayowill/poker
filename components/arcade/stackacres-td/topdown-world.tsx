@@ -191,7 +191,6 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onForageTap: (nodeId, at) => p().onForageTap(nodeId, at),
           onLandTap: (obstacleId, at) => p().onLandTap(obstacleId, at),
           onGreenhouseTap: () => p().onGreenhouseTap(),
-          onMonkTap: (at) => p().onMonkTap(at),
           onRayTap: (at) => p().onRayTap(at),
           onHouseTap: (at) => p().onHouseTap(at),
           onBedTap: (at) => p().onBedTap(at),

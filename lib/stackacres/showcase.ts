@@ -16,11 +16,10 @@ import type { WoodNodeSnapshot } from "./wood";
  *
  * THE SHAPE IS THE SECURITY BOUNDARY. A visitor's read runs the owner's own
  * `view()` server-side and then projects it down to what is on this page --
- * the ground, what is standing on it, and a five-line header. Everything a
+ * the ground, what is standing on it, and a short header. Everything a
  * farm knows about its owner's money and their private progress (the purse,
  * the inventory, the seed stock, the open contract, land upkeep owed, energy,
- * the secrets ledger, the story flags, devotion and NPC friendship, the
- * blueprint board, the grocery till) has no field to travel in, so it cannot
+ * the secrets ledger, the story flags, NPC friendship, the grocery till) has no field to travel in, so it cannot
  * leak by being forgotten -- there is nowhere to forget it.
  *
  * READ-ONLY IS ALSO STRUCTURAL, not a flag on a button. Every farm mutation
@@ -138,7 +137,7 @@ export interface ShowcaseOwner {
   accent: string;
 }
 
-/** The five lines over the farm. Every one of them is already public about
+/** The lines over the farm. Every one of them is already public about
  *  this player somewhere else, or is derived from the layout below it. */
 export interface ShowcaseStats {
   /** Ray's own milestone ladder plus one, the same number the shop locks read
@@ -147,7 +146,6 @@ export interface ShowcaseStats {
   /** The chapter they are working on, or null once all six are done. */
   chapter: { number: number; title: string } | null;
   chaptersDone: number;
-  prestigeCount: number;
   /** What this farm raises more of than anything else. Null on a bare farm. */
   favoriteProduction: FavoriteProduction | null;
 }

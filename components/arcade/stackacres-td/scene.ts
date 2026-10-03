@@ -266,7 +266,7 @@ const SLEEP_BEAT_MS = 450;
 const SLEEP_FADE_MS = 900;
 const SLEEP_FADE_REDUCED_MS = 150;
 const SLEEP_DARK_MS = 700;
-const CHARACTERS = ["farmer", "ray", "pilgrim", "pierre", "ivy"];
+const CHARACTERS = ["farmer", "ray", "pierre", "ivy"];
 /** People seen only in one place's areas, whose sheets load and go with its pictures (LOADS_WITH). The grocery's
  *  staff and shoppers; the shoppers also walk the City as its townsfolk. */
 const PLACE_CHARACTERS: Partial<Record<TopdownArea, readonly string[]>> = {
@@ -278,7 +278,7 @@ const TRAVELERS_ON_MAP: readonly TravelerId[] = ["pierre", "ivy"];
 const PINNED_CLOCK_MS_PER_HOUR = 3_600_000;
 
 function isEmoteTarget(name: string): name is EmoteTarget {
-  return name === "ray" || name === "pilgrim" || (TRAVELERS_ON_MAP as readonly string[]).includes(name);
+  return name === "ray" || (TRAVELERS_ON_MAP as readonly string[]).includes(name);
 }
 
 /**
@@ -460,7 +460,6 @@ export interface TopdownCallbacks {
    *  `onTreeTap` takes. */
   onLandTap: (obstacleId: string, at: TapPoint) => void;
   onGreenhouseTap: () => void;
-  onMonkTap: (at: TapPoint) => void;
   onRayTap: (at: TapPoint) => void;
   onHouseTap: (at: TapPoint) => void;
   /** The bed in the farmhouse (a prop tagged `bed`): the farmer has walked up to it. */
@@ -2587,7 +2586,6 @@ export class TopdownScene extends Phaser.Scene {
       const node = this.npcSprites.get(target.name);
       const at = this.mapToCss(node ? { x: node.sprite.x, y: node.sprite.y - 20 } : target.anchor);
       if (target.name === "ray") cb.onRayTap(at);
-      else if (target.name === "pilgrim") cb.onMonkTap(at);
       else if (target.name === SEED_SELLER) cb.onSeedSellerTap();
       else if (townBuyerOfNpc(target.name)) cb.onTownBuyerTap(townBuyerOfNpc(target.name) as TownBuyerId);
       // The rest of the City's townsfolk only turn to look at the farmer (talkTo above).

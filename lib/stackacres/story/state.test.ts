@@ -38,7 +38,7 @@ const RUNNING_FARM: StackAcresShopProgress = {
 };
 
 /** A farm that has done none of the once-only work yet. */
-const BARE = { sectorsCleared: 0, soilBeds: 0, enchantments: 0, crossbreeds: 0 } as const;
+const BARE = { sectorsCleared: 0, soilBeds: 0 } as const;
 const TROWEL: StoryFacts = { tool: "trowel", ...BARE };
 
 /** Generous enough to clear any `requires` a real quest declares today
@@ -103,12 +103,6 @@ function finish(story: StoredStory, id: TravelerId, inventory: StackAcresInvento
           break;
         case "contracts":
           for (let i = 0; i < objective.target; i++) feed.push({ kind: "contract-fulfilled" });
-          break;
-        case "forge":
-          facts.enchantments = objective.target;
-          break;
-        case "crossbreed":
-          facts.crossbreeds = objective.target;
           break;
         case "deliver":
           stock[objective.item] = objective.target;
@@ -228,13 +222,6 @@ describe("applyTurnIn", () => {
     const result = applyTurnIn(story, "pierre", inventory, TROWEL);
     expect(result.outcome).toBe("not-ready");
     expect(result.inventory).toBe(inventory);
-  });
-
-  it("reads a live fact (crossbreeds) rather than waiting for an event", () => {
-    const story = met(freshStory(), "ivy");
-    expect(applyTurnIn(story, "ivy", {}, TROWEL).outcome).toBe("not-ready");
-    const crossed: StoryFacts = { ...TROWEL, crossbreeds: 1 };
-    expect(applyTurnIn(story, "ivy", {}, crossed).outcome).toBe("advanced");
   });
 
   it("grants the reward once, on the last quest", () => {

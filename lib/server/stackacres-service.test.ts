@@ -4,7 +4,6 @@ import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   StackAcresRequestError,
-  activateStackAcresSynergyPerk,
   buyStackAcresFeed,
   buyStackAcresStock,
   placeStackAcresAnimal,
@@ -20,8 +19,6 @@ import {
   feedStackAcres,
   feedStackAcresPen,
   harvestStackAcres,
-  harvestStackAcresCrossbreedBed,
-  plantStackAcresCrossbreedBed,
   readStackAcres,
   retireStackAcresStock,
   runStackAcresAction,
@@ -30,8 +27,6 @@ import {
   stockStackAcresGroup,
   tapStackAcresSecretZone,
   tradeStackAcresSecretItemToRay,
-  unlockStackAcresSynergyPerk,
-  forgeStackAcresToolEnchantment,
   upgradeStackAcresTool,
   buyStackAcresCutter,
   waterStackAcres,
@@ -46,9 +41,6 @@ import {
   sellStackAcresItem,
   payStackAcresUpkeep,
   processRecipe,
-  getPrestigeMultiplier,
-  prestigeResetStackAcres,
-  prayAtStackAcresShrine,
   giveStackAcresGift,
   greetStackAcresNpc,
   buyStackAcresSeed,
@@ -72,8 +64,6 @@ import type { StackAcresShopProgress } from "@/lib/stackacres/shop-locks";
 import { INFLUENCE_TIERS, applyInfluenceDiscount } from "@/lib/stackacres/influence-tiers";
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
 import { __resetStackAcresRevisionsForTest } from "./stackacres-revision-store";
-import { __resetStackAcresBlueprintsForTest } from "./stackacres-blueprint-store";
-import { __resetStackAcresCrossbreedForTest } from "./stackacres-crossbreeding-store";
 import {
   __stackacresHarvestsForTest,
   __resetStackAcresForTest,
@@ -100,8 +90,6 @@ import {
   recordStackAcresSectorCleared,
   adjustStackAcresInfluence,
   adjustStackAcresInventory,
-  recordStackAcresHarvest,
-  adjustStackAcresCapacity,
   createStackAcresMachine,
   buildStackAcresGreenhouseRow,
   readStackAcresEnergy,
@@ -119,10 +107,6 @@ import {
   LAND_SWING_ENERGY,
 } from "@/lib/stackacres/land-clearing";
 import { isFishSpecies } from "@/lib/stackacres/fishing";
-import {
-  STACKACRES_PRESTIGE_BASE_MULTIPLIER,
-  STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS,
-} from "@/lib/stackacres/prestige";
 import * as profileStore from "./profile-store";
 import { adjustGold, ensureProfile } from "./profile-store";
 import {
@@ -203,7 +187,6 @@ import {
 } from "@/lib/stackacres/wheat-plot";
 import { MACHINE_CAP, MACHINE_CATALOGUE, MACHINE_KINDS, isRetiredMachine } from "@/lib/stackacres/machines";
 import { MAX_RUN_BATCHES, RECIPE_CATALOGUE } from "@/lib/stackacres/recipes";
-import { SYNERGY_PERKS } from "@/lib/stackacres/synergy-perks";
 import {
   HIDDEN_ZONES,
   STACKACRES_DICE_BOOST_ARMED_KEY,
@@ -446,10 +429,8 @@ const REAL = {
 
 beforeEach(() => {
   __resetStackAcresForTest();
-  __resetStackAcresBlueprintsForTest();
   __resetStackAcresSeedStockForTest();
   __resetStackAcresSoilTilesForTest();
-  __resetStackAcresCrossbreedForTest();
   __resetStackAcresRevisionsForTest();
   resetStoneNodeStoreForTests();
   vi.mocked(createStackAcresUnit).mockImplementation(REAL.createStackAcresUnit);
@@ -2339,7 +2320,6 @@ describe("the currency wall", () => {
     // question to answer while doing it is "does this move Gold, and which
     // way".
     expect(actions).toEqual([
-      "activate-synergy-perk",
       "bag-quarry",
       "build-greenhouse",
       // Spends Gold, Wood and Stone on an acre of the wild land, refunded if the deed can't be written.
@@ -2371,14 +2351,12 @@ describe("the currency wall", () => {
       "collect-cellar",
       "collect-vat",
       "consume-secret-item",
-      "contribute-blueprint",
       "donate-secret-item",
       "draw-water",
       "eat",
       "expand-capacity",
       "feed",
       "feed-pen",
-      "forge-enchantment",
       "fulfill-contract",
       // Moves no Gold in either direction: a pick fills the seed shelf.
       "gather-forage",
@@ -2400,7 +2378,6 @@ describe("the currency wall", () => {
       "grocery-store",
       // Moves no Gold either way: the store taken over, development only until it can be bought.
       "grocery-take-over",
-      "harvest-crossbreed",
       "mine-stone",
       // Moves no Gold either way: a dog the player owns, moved to another square.
       "move-dog",
@@ -2422,9 +2399,6 @@ describe("the currency wall", () => {
       "place-fence",
       "place-machine",
       "place-soil-tile",
-      "plant-crossbreed",
-      "pray",
-      "prestige-reset",
       "process",
       // Moves no Gold either way: records that a quest's own named spot was
       // reached, nothing more. See lib/stackacres/story/places.ts's header.
@@ -2436,13 +2410,11 @@ describe("the currency wall", () => {
       "sell",
       // Moves no Gold either way: only the farm clock's offset.
       "sleep",
-      "start-blueprint",
       "stock",
       "story-meet",
       "story-turn-in",
       "tap-secret-zone",
       "trade-secret-item",
-        "unlock-synergy-perk",
       "upgrade-axe",
       "upgrade-tool",
       "water",
@@ -2478,22 +2450,7 @@ describe("the currency wall", () => {
     // inventory, and only `sell` turns that into Gold. The
     // four hidden-secrets actions are included too, which move an item count
     // or reshape a probability/target an existing payer already reserves
-    // against -- never a Gold credit of their own. `unlock-synergy-perk` is a
-    // pure sink, same category as `upgrade-tool`; `activate-synergy-perk`
-    // moves no Gold at all, same category as `work`. Neither Synergy Tree
-    // perk that touches a payout (`sunlight_harvester`'s crit chance,
-    // `high_yield_processing`'s Mill double-output chance) is a third payer
-    // for the same reason the critical harvest above isn't one: both only
-    // reshape a probability an existing roll inside `collect`/`work` already
-    // makes. `forge-enchantment` is the same shape again -- a pure sink
-    // (Gold plus a processing-track material, via forge_stackacres_
-    // enchantment) whose two crit-touching enchantments reshape the same
-    // roll `collect` already makes, never a new payer. `plant-crossbreed` spends
-    // (a seed or Gold, the same split `stock` takes) and `harvest-crossbreed`
-    // moves no Gold at all: a hybrid is credited to its own inventory table
-    // inside the settlement RPC, never to the purse.
-    // `prestige-reset` moves no Gold either; what it moves is the whole grid,
-    // irreversibly, for a permanent multiplier on every future `sell`.
+    // against -- never a Gold credit of their own.
     // `place-pipe` is a pure sink, same category as `place-machine` -- it
     // buys an irrigation tile, refunded only when the tile cannot land;
     // `remove-pipe` moves no Gold at all and is not a refund (a placed tile
@@ -3838,60 +3795,6 @@ describe("hidden secrets", () => {
     });
   });
 
-  describe("prayAtStackAcresShrine", () => {
-    const DAY = (d: number) => new Date(`2026-09-${String(d).padStart(2, "0")}T12:00:00.000Z`);
-
-    it("a first prayer starts the streak at 1 and grants no relic", async () => {
-      const { token } = await funded();
-      const result = await prayAtStackAcresShrine(token, DAY(1));
-      expect(result.prayer).toEqual({ streak: 1, alreadyPrayedToday: false, grantedRelic: null });
-      expect(result.devotion.streak).toBe(1);
-      expect(result.devotion.prayedToday).toBe(true);
-    });
-
-    it("a second prayer the same UTC day is a no-op, not a second streak day", async () => {
-      const { token } = await funded();
-      await prayAtStackAcresShrine(token, DAY(1));
-      const second = await prayAtStackAcresShrine(token, DAY(1));
-      expect(second.prayer).toEqual({ streak: 1, alreadyPrayedToday: true, grantedRelic: null });
-    });
-
-    it("praying on consecutive UTC days advances the streak", async () => {
-      const { token } = await funded();
-      await prayAtStackAcresShrine(token, DAY(1));
-      const second = await prayAtStackAcresShrine(token, DAY(2));
-      expect(second.prayer?.streak).toBe(2);
-    });
-
-    it("skipping a UTC day resets the streak to 1", async () => {
-      const { token } = await funded();
-      await prayAtStackAcresShrine(token, DAY(1));
-      const afterGap = await prayAtStackAcresShrine(token, DAY(5));
-      expect(afterGap.prayer?.streak).toBe(1);
-    });
-
-    it("grants the first ladder relic on the third unbroken day, and never again", async () => {
-      const { token } = await funded();
-      await prayAtStackAcresShrine(token, DAY(1));
-      await prayAtStackAcresShrine(token, DAY(2));
-      const third = await prayAtStackAcresShrine(token, DAY(3));
-      expect(third.prayer?.grantedRelic).toBe("pilgrims_bead");
-      expect(third.devotion.relicsHeld).toEqual(["pilgrims_bead"]);
-
-      const fourth = await prayAtStackAcresShrine(token, DAY(4));
-      expect(fourth.prayer?.grantedRelic).toBeNull();
-    });
-
-    it("replaying the same intent key answers with the identical prayer delta", async () => {
-      const { token } = await funded();
-      const key = randomUUID();
-      const run = () => prayAtStackAcresShrine(token, DAY(1));
-      const first = await runStackAcresAction(token, key, "pray", run, DAY(1));
-      const replay = await runStackAcresAction(token, key, "pray", run, DAY(1));
-      expect(replay.prayer).toEqual(first.prayer);
-    });
-  });
-
   describe("giveStackAcresGift", () => {
     const DAY = (d: number) => new Date(`2026-09-${String(d).padStart(2, "0")}T12:00:00.000Z`);
 
@@ -4018,7 +3921,7 @@ describe("hidden secrets", () => {
 
     it("refuses an NPC not in FRIENDSHIP_NPCS", async () => {
       const { token } = await funded();
-      await expect(greetStackAcresNpc(token, "pilgrim", DAY(1))).rejects.toThrow();
+      await expect(greetStackAcresNpc(token, "stranger", DAY(1))).rejects.toThrow();
     });
 
     it("never credits or spends Gold either way", async () => {
@@ -4187,315 +4090,6 @@ describe("hidden secrets", () => {
   });
 });
 
-/**
- * The Synergy Tree: permanent Gold-bought archetypes, slotted into a
- * per-session loadout. Ownership vs. activation is the split every test
- * below cares about -- `unlockStackAcresSynergyPerk` is the only one of the
- * two that moves Gold, and only once per archetype ever.
- */
-describe("Synergy Tree", () => {
-  it("unlocks an archetype and grants it, permanently", async () => {
-    // NOT a Gold-balance assertion: unlockStackAcresPerk's memory-mode branch
-    // is documented (stackacres-synergy-store.ts) to skip the real Gold
-    // check entirely -- there is no shared ledger for it to charge against
-    // outside a real Postgres RPC, the same simplification every other
-    // memory-mode branch here takes for cross-store coordination. What this
-    // CAN prove without a real DB is the shape: the perk is granted, exactly
-    // once, and stays unslotted until separately activated.
-    const { token } = await funded();
-
-    const result = await unlockStackAcresSynergyPerk(token, "sunlight_harvester", T0);
-
-    expect(result.synergyUnlock).toEqual({ archetype: "sunlight_harvester", success: true });
-    expect(result.synergy.unlocked).toEqual(["sunlight_harvester"]);
-    // Unlocked, not yet slotted: owning it alone contributes nothing.
-    expect(result.synergy.active).toEqual([]);
-  });
-
-  it("refuses a name that is not a real archetype", async () => {
-    const { token } = await funded();
-    await expect(unlockStackAcresSynergyPerk(token, "automated_logistics", T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-    await expect(unlockStackAcresSynergyPerk(token, "not-a-perk", T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-  });
-
-  it("refuses the Quickened Haft, whose scythe is not on the belt, before any Gold moves", async () => {
-    const { token } = await funded(5_000_000);
-    await expect(forgeStackAcresToolEnchantment(token, "quickened_haft", T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-    expect(await balance(token)).toBe(5_000_000);
-  });
-
-  it("refuses to unlock the same archetype twice, without charging a second time", async () => {
-    const { token } = await funded();
-    await unlockStackAcresSynergyPerk(token, "sunlight_harvester", T0);
-    const before = await balance(token);
-
-    await expect(unlockStackAcresSynergyPerk(token, "sunlight_harvester", T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-    expect(await balance(token)).toBe(before);
-  });
-
-  // No "refuses an unlock the player cannot afford" test: the real
-  // affordability check lives entirely inside `unlock_stackacres_perk`'s
-  // real Postgres RPC, and memory-mode's own branch (see
-  // stackacres-synergy-store.ts) deliberately never runs it -- there is no
-  // insufficient-Gold outcome this suite can reach without a real DB, the
-  // same posture Blackjack's Supabase branch verification already accepts.
-
-  it("refuses to activate an archetype nobody unlocked", async () => {
-    const { token } = await funded();
-    await expect(
-      activateStackAcresSynergyPerk(token, "sunlight_harvester", 0, T0),
-    ).rejects.toBeInstanceOf(StackAcresRequestError);
-  });
-
-  it("refuses a slot outside the loadout's range", async () => {
-    const { token } = await funded();
-    await unlockStackAcresSynergyPerk(token, "sunlight_harvester", T0);
-    await expect(
-      activateStackAcresSynergyPerk(token, "sunlight_harvester", 99, T0),
-    ).rejects.toBeInstanceOf(StackAcresRequestError);
-  });
-
-  it("slots an owned archetype, which then shows up as active", async () => {
-    const { token } = await funded();
-    await unlockStackAcresSynergyPerk(token, "sunlight_harvester", T0);
-    const result = await activateStackAcresSynergyPerk(token, "sunlight_harvester", 0, T0);
-    expect(result.synergyActivate).toEqual({ archetype: "sunlight_harvester", success: true });
-    expect(result.synergy.active).toEqual(["sunlight_harvester"]);
-  });
-
-  // Automated Logistics is off the shelf until a farmhand exists
-  // (lib/stackacres/unbuilt.ts), so nobody can activate it and the speed
-  // multiplier stays at its default.
-  it("reports the farmhand speed multiplier at 1", async () => {
-    const { token } = await funded();
-    const view = await readStackAcres(token, T0);
-    expect(view.synergy.farmhandSpeedMultiplier).toBe(1);
-  });
-
-  it("boosts the harvest crit chance on a Trowel, which alone can never crit", async () => {
-    const { token } = await funded();
-    await unlockStackAcresSynergyPerk(token, "sunlight_harvester", T0);
-    await activateStackAcresSynergyPerk(token, "sunlight_harvester", 0, T0);
-    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
-    const unitId = unitOf(bought, "hen").id;
-
-    // Between the Trowel's own 0 and the perk's flat +0.05: a miss without
-    // the perk active, a hit with it -- proof the bonus is actually reaching
-    // the roll, not just being computed and discarded.
-    const roll = vi.spyOn(Math, "random").mockReturnValue(0.03);
-    let result;
-    try {
-      result = await collectOne(token, unitId, HEN_READY);
-    } finally {
-      roll.mockRestore();
-    }
-    expect(result.harvest.crit).toBe(true);
-  });
-
-  it("does not boost the crit chance for an unlocked-but-unslotted archetype", async () => {
-    const { token } = await funded();
-    await unlockStackAcresSynergyPerk(token, "sunlight_harvester", T0);
-    // Deliberately never activated.
-    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
-    const unitId = unitOf(bought, "hen").id;
-
-    const roll = vi.spyOn(Math, "random").mockReturnValue(0.03);
-    let result;
-    try {
-      result = await collectOne(token, unitId, HEN_READY);
-    } finally {
-      roll.mockRestore();
-    }
-    expect(result.harvest.crit).toBe(false);
-  });
-
-  it("doubles a finished Mill batch's output when high_yield_processing is active", async () => {
-    const { token } = await funded();
-    await unlockStackAcresSynergyPerk(token, "high_yield_processing", T0);
-    await activateStackAcresSynergyPerk(token, "high_yield_processing", 0, T0);
-    await sowStackAcresWheat(token, T0);
-    await placeStackAcresMachine(token, "mill", T0);
-
-    const ripenedAt = new Date(T0.getTime() + WHEAT_DURATION_MS);
-    await workStackAcres(token, ripenedAt); // collects wheat, starts the mill
-
-    const finishedAt = new Date(ripenedAt.getTime() + RECIPE_CATALOGUE.flour.processingMs);
-    // Under the perk's 0.1 chance.
-    const roll = vi.spyOn(Math, "random").mockReturnValue(0.05);
-    let done;
-    try {
-      done = await workStackAcres(token, finishedAt);
-    } finally {
-      roll.mockRestore();
-    }
-    expect(done.inventory.flour).toBe(RECIPE_CATALOGUE.flour.output.quantity * 2);
-  });
-
-  it("never rolls for double output with no active perk touching it, even at guaranteed odds", async () => {
-    const { token } = await funded();
-    await sowStackAcresWheat(token, T0);
-    await placeStackAcresMachine(token, "mill", T0);
-
-    const ripenedAt = new Date(T0.getTime() + WHEAT_DURATION_MS);
-    await workStackAcres(token, ripenedAt);
-
-    const finishedAt = new Date(ripenedAt.getTime() + RECIPE_CATALOGUE.flour.processingMs);
-    const roll = vi.spyOn(Math, "random").mockReturnValue(0);
-    let done;
-    try {
-      done = await workStackAcres(token, finishedAt);
-    } finally {
-      roll.mockRestore();
-    }
-    expect(done.inventory.flour).toBe(RECIPE_CATALOGUE.flour.output.quantity);
-  });
-});
-
-/**
- * The Prestige Reset Valve.
- *
- * `giveLifetimeGross` seeds `homestead_harvests` directly rather than running
- * enough real harvests to earn it -- the arithmetic that turns gross into a
- * multiplier is already pinned exhaustively in prestige.test.ts, and what
- * these tests are actually about is the SERVICE-LEVEL contract: eligibility
- * gating through the real action, which tables a reset sweeps versus leaves
- * alone, and that a harvest AFTER a reset is actually priced under the new
- * multiplier -- the one seam prestige.test.ts and harvest.test.ts cannot see
- * on their own, since neither reaches across into the other's module.
- */
-describe("Crossbreeding Bed", () => {
-  /** The HTTP status a refused call carried, or a throw if it was not
-   *  refused at all. Duck-typed on `status` so this block needs no error
-   *  class import of its own. */
-  async function refusal(call: Promise<unknown>): Promise<number> {
-    try {
-      await call;
-    } catch (error) {
-      if (error instanceof Error && "status" in error && typeof error.status === "number") {
-        return error.status;
-      }
-      throw error;
-    }
-    throw new Error("expected a refusal");
-  }
-
-  const PIG = STACKACRES_CATALOGUE.pig;
-  const BOTH_RIPE = new Date(T0.getTime() + Math.max(HEN.durationMs, PIG.durationMs));
-
-  it("plants a crop off the seed shelf and livestock for Gold, and exposes both on the view", async () => {
-    const { token, id } = await funded();
-    const gold = await balance(token);
-    const seeds = (await readStackAcresSeedStock(id)).corn ?? 0;
-
-    const afterCorn = await plantStackAcresCrossbreedBed(token, { row: 0, col: 0, stock: "corn" }, T0);
-    expect((await readStackAcresSeedStock(id)).corn).toBe(seeds - 1);
-    expect(await balance(token)).toBe(gold);
-    expect(afterCorn.crossbreed.plots).toHaveLength(1);
-    expect(afterCorn.crossbreed.plots[0]).toMatchObject({ row: 0, col: 0, stock: "corn", ready: false });
-    expect(afterCorn.crossbreedResult.planted.id).toBe(afterCorn.crossbreed.plots[0].id);
-
-    const afterHen = await plantStackAcresCrossbreedBed(token, { row: 0, col: 1, stock: "hen" }, T0);
-    expect(await balance(token)).toBe(gold - HEN.seedCost);
-    expect((await readStackAcresSeedStock(id)).corn).toBe(seeds - 1);
-    expect(afterHen.crossbreed.plots).toHaveLength(2);
-    expect(afterHen.crossbreed.inventory).toEqual({});
-  });
-
-  it("refunds the stake when the cell is already planted, in whichever currency it took", async () => {
-    const { token, id } = await funded();
-    await plantStackAcresCrossbreedBed(token, { row: 1, col: 1, stock: "hen" }, T0);
-    const gold = await balance(token);
-    const seeds = (await readStackAcresSeedStock(id)).corn ?? 0;
-
-    expect(await refusal(plantStackAcresCrossbreedBed(token, { row: 1, col: 1, stock: "hen" }, T0))).toBe(409);
-    expect(await balance(token)).toBe(gold);
-    expect(await refusal(plantStackAcresCrossbreedBed(token, { row: 1, col: 1, stock: "corn" }, T0))).toBe(409);
-    expect((await readStackAcresSeedStock(id)).corn).toBe(seeds);
-  });
-
-  it("refuses a cell off the bed, a crop with no seeds, and livestock it cannot afford, taking nothing", async () => {
-    const { token, id } = await funded(0);
-    await adjustStackAcresSeedStock(id, "corn", -1000);
-    expect(await refusal(plantStackAcresCrossbreedBed(token, { row: 4, col: 0, stock: "hen" }, T0))).toBe(400);
-    expect(await refusal(plantStackAcresCrossbreedBed(token, { row: 0, col: 0, stock: "corn" }, T0))).toBe(400);
-    expect(await refusal(plantStackAcresCrossbreedBed(token, { row: 0, col: 0, stock: "hen" }, T0))).toBe(400);
-    expect(await balance(token)).toBe(0);
-    expect((await readStackAcresSeedStock(id)).corn ?? 0).toBe(0);
-    expect((await plantStackAcresCrossbreedBed(token, { row: 0, col: 0, stock: "carrot" }, T0)).crossbreed.plots).toHaveLength(1);
-  });
-
-  it("refuses to bring in a row that is not ripe yet", async () => {
-    const { token } = await funded();
-    const view = await plantStackAcresCrossbreedBed(token, { row: 0, col: 0, stock: "hen" }, T0);
-    const plotId = view.crossbreed.plots[0].id;
-    expect(await refusal(harvestStackAcresCrossbreedBed(token, plotId, T0))).toBe(409);
-    expect((await readStackAcres(token, T0)).crossbreed.plots).toHaveLength(1);
-  });
-
-  it("a plain harvest clears only the tapped row and credits nothing", async () => {
-    const { token } = await funded();
-    const view = await plantStackAcresCrossbreedBed(token, { row: 0, col: 0, stock: "hen" }, T0);
-    const plotId = view.crossbreed.plots[0].id;
-    const after = await harvestStackAcresCrossbreedBed(token, plotId, HEN_READY);
-    expect(after.crossbreedResult).toEqual({ clearedPlotIds: [plotId], hybridItem: null, hybridQuantity: null });
-    expect(after.crossbreed.plots).toHaveLength(0);
-    expect(after.crossbreed.inventory).toEqual({});
-    expect(await refusal(harvestStackAcresCrossbreedBed(token, plotId, HEN_READY))).toBe(409);
-  });
-
-  it("a cross clears both rows and credits the one hybrid, and a miss leaves the neighbour growing", async () => {
-    const { token } = await funded();
-    const planted = await plantStackAcresCrossbreedBed(token, { row: 0, col: 0, stock: "hen" }, T0);
-    await plantStackAcresCrossbreedBed(token, { row: 0, col: 1, stock: "pig" }, T0);
-    const henId = planted.crossbreed.plots[0].id;
-
-    const random = vi.spyOn(Math, "random").mockReturnValue(0.999);
-    try {
-      const missed = await harvestStackAcresCrossbreedBed(token, henId, BOTH_RIPE);
-      expect(missed.crossbreedResult).toEqual({ clearedPlotIds: [henId], hybridItem: null, hybridQuantity: null });
-      expect(missed.crossbreed.plots).toHaveLength(1);
-      expect(missed.crossbreed.plots[0].stock).toBe("pig");
-
-      const replanted = await plantStackAcresCrossbreedBed(token, { row: 0, col: 0, stock: "hen" }, BOTH_RIPE);
-      const secondHenId = replanted.crossbreedResult.planted.id;
-      random.mockReturnValue(0);
-      const hit = await harvestStackAcresCrossbreedBed(
-        token,
-        secondHenId,
-        new Date(BOTH_RIPE.getTime() + HEN.durationMs),
-      );
-      expect(hit.crossbreedResult.hybridItem).toBe("marbled_down");
-      expect(hit.crossbreedResult.hybridQuantity).toBe(1);
-      expect(hit.crossbreedResult.clearedPlotIds).toHaveLength(2);
-      expect(hit.crossbreed.plots).toHaveLength(0);
-      expect(hit.crossbreed.inventory).toEqual({ marbled_down: 1 });
-    } finally {
-      random.mockRestore();
-    }
-  });
-});
-
-async function giveLifetimeGross(profileId: string, gross: number): Promise<void> {
-  await recordStackAcresHarvest({
-    profileId,
-    unitId: randomUUID(),
-    stock: "cattle",
-    stake: 1,
-    payout: gross,
-    startedAt: T0.toISOString(),
-    collectedAt: T0.toISOString(),
-    permanent: false,
-  });
-}
-
 describe("sellStackAcresItem", () => {
   const EGG = itemSellPrice("eggs");
 
@@ -4532,18 +4126,6 @@ describe("sellStackAcresItem", () => {
 
     expect(await balance(token)).toBe(before);
     expect((await readStackAcres(token, T0)).inventory.eggs).toBe(2);
-  });
-
-  it("applies the prestige multiplier, floored", async () => {
-    const { token, id } = await funded();
-    await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS);
-    const { prestigeReset } = await prestigeResetStackAcres(token, T0);
-    await adjustStackAcresInventory(id, "eggs", 7);
-
-    const result = await sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity: 7 }, T0);
-
-    const gold = Math.floor(EGG * 7 * prestigeReset.multiplier);
-    expect(result.sold.gold).toBe(gold);
   });
 
   it("refuses an item the named buyer does not take, and moves no Gold and no goods", async () => {
@@ -4602,119 +4184,6 @@ describe("sellStackAcresItem", () => {
     });
     expect(await balance(token)).toBe(before);
     expect((await readStackAcres(token, T0)).inventory.eggs).toBe(5);
-  });
-});
-
-describe("getPrestigeMultiplier", () => {
-  it("is the base multiplier for a profile that has never reset", async () => {
-    const { id } = await funded();
-    expect(await getPrestigeMultiplier(id)).toBe(STACKACRES_PRESTIGE_BASE_MULTIPLIER);
-  });
-});
-
-describe("prestigeResetStackAcres", () => {
-  it("refuses when the farm has not grossed enough since the last reset, and changes nothing", async () => {
-    const { token, id } = await funded();
-    await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS - 1);
-    await stockStackAcres(token, { stock: "carrot" }, T0);
-
-    await expect(prestigeResetStackAcres(token, T0)).rejects.toThrow(StackAcresRequestError);
-
-    expect(await getPrestigeMultiplier(id)).toBe(STACKACRES_PRESTIGE_BASE_MULTIPLIER);
-    expect(await listStackAcresUnits(id)).toHaveLength(1);
-  });
-
-  it("raises the permanent multiplier and reports what it gained, once eligible", async () => {
-    const { token, id } = await funded();
-    await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS);
-
-    const result = await prestigeResetStackAcres(token, T0);
-
-    expect(result.prestigeReset.prestigeCount).toBe(1);
-    expect(result.prestigeReset.gainedMultiplier).toBeGreaterThan(0);
-    expect(result.prestigeReset.multiplier).toBeCloseTo(
-      STACKACRES_PRESTIGE_BASE_MULTIPLIER + result.prestigeReset.gainedMultiplier,
-      4,
-    );
-    expect(result.prestige.multiplier).toBe(result.prestigeReset.multiplier);
-    expect(await getPrestigeMultiplier(id)).toBe(result.prestigeReset.multiplier);
-  });
-
-  it("refuses a second reset immediately after the first, since no new gross has been earned", async () => {
-    const { token, id } = await funded();
-    await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS);
-    const first = await prestigeResetStackAcres(token, T0);
-
-    await expect(prestigeResetStackAcres(token, T0)).rejects.toThrow(StackAcresRequestError);
-    expect(await getPrestigeMultiplier(id)).toBe(first.prestigeReset.multiplier);
-  });
-
-  it("clears the grid and every resource stockpile riding on it", async () => {
-    const { token, id } = await funded();
-    await stockStackAcres(token, { stock: "carrot" }, T0);
-    await sowStackAcresWheat(token, T0);
-    await buyStackAcresFeed(token, { itemId: "feed_sack", quantity: 1 }, T0);
-    await createStackAcresMachine(id, MACHINE_KINDS[0]);
-    await requestStackAcresContract(token, T0);
-    await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS);
-
-    const before = await readStackAcres(token, T0);
-    expect(before.units.length).toBeGreaterThan(0);
-    expect(before.wheatPlots.length).toBeGreaterThan(0);
-    expect(before.feed).toBeGreaterThan(0);
-    expect(before.contract).not.toBeNull();
-    // funded()'s default settled:true already pre-paid today's Land
-    // Maintenance in full -- the non-zero figure a reset has to sweep away.
-    expect(await readStackAcresUpkeep(id, stackacresExchangeDay(T0))).toBeGreaterThan(0);
-
-    const after = await prestigeResetStackAcres(token, T0);
-
-    expect(after.units).toHaveLength(0);
-    expect(after.wheatPlots).toHaveLength(0);
-    expect(after.feed).toBe(0);
-    expect(after.contract).toBeNull();
-    expect(await readStackAcresUpkeep(id, stackacresExchangeDay(T0))).toBe(0);
-  });
-
-  it("leaves land, purchased capacity, placed machines and Town Influence untouched", async () => {
-    const { token, id } = await funded();
-    await adjustStackAcresCapacity(id, "hen", 1);
-    await createStackAcresMachine(id, MACHINE_KINDS[0]);
-    await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS);
-
-    const before = await readStackAcres(token, T0);
-    const after = await prestigeResetStackAcres(token, T0);
-
-    expect(after.sectors.sort()).toEqual(before.sectors.sort());
-    expect(after.capacity.hen).toBe(1);
-    expect(after.machines).toHaveLength(1);
-    expect(after.influence).toBe(before.influence);
-  });
-
-  it("pays the next sale under the new multiplier", async () => {
-    const { token, id } = await funded(500_000, { land: [], cropFieldsUnlocked: false });
-    await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS);
-    const { prestigeReset } = await prestigeResetStackAcres(token, T0);
-    expect(prestigeReset.multiplier).toBeGreaterThan(STACKACRES_PRESTIGE_BASE_MULTIPLIER);
-
-    // Added after the reset, which clears the stockpile.
-    await adjustStackAcresInventory(id, "eggs", 7);
-    const before = await balance(token);
-    const result = await sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity: 7 }, T0);
-
-    const expected = Math.floor(itemSellPrice("eggs") * 7 * prestigeReset.multiplier);
-    expect(expected).toBeGreaterThan(itemSellPrice("eggs") * 7);
-    expect(result.sold.gold).toBe(expected);
-    expect(await balance(token)).toBe(before + expected);
-  });
-
-  it("no longer boosts a harvest: the multiplier only touches Sell", async () => {
-    const { token, id } = await funded(500_000, { land: [], cropFieldsUnlocked: false });
-    await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS);
-    await prestigeResetStackAcres(token, T0);
-    const stocked = await buyStackAcresStock(token, { stock: "hen" }, T0);
-    const result = await collectOne(token, unitOf(stocked, "hen").id, HEN_READY);
-    expect(result.harvest.tally).toEqual([{ item: "eggs", quantity: HEN_YIELD.quantity }]);
   });
 });
 

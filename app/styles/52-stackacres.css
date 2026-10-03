@@ -403,8 +403,7 @@
   height: 20px;
 }
 
-/* The Prestige Reset Valve's HUD badge: the same tag as .sa-feed, but a
-   button that opens the valve's sheet. */
+/* A HUD badge: the same tag as .sa-feed, but a button that opens a sheet. */
 .sa-prestige-badge {
   display: inline-flex;
   align-items: center;
@@ -1309,7 +1308,7 @@
   color: var(--sa-ink-soft);
 }
 
-/* ---- the Pixel Pilgrim's dialogue -------------------------------------
+/* ---- the pinned dialogue card (the bed's "Go to sleep?") --------------
  * A screen-anchored speech bubble, same posture as .sa-radial above: pinned
  * at the tap point, real DOM (not a canvas overlay), closed by the next
  * world tap or its own close button rather than a scrim of its own. */
@@ -1363,36 +1362,16 @@
 
 .sa-monk-dialogue-close:hover { opacity: 1; }
 
-.sa-monk-dialogue-line {
-  margin: 0 18px 8px 0;
-  font-size: 13px;
-  font-style: italic;
-  line-height: 1.35;
-}
-
 .sa-monk-dialogue-prompt {
   margin: 0 0 10px;
   font-size: 13.5px;
   font-weight: 800;
 }
 
-.sa-monk-dialogue-relic {
-  margin: 0 0 8px;
-  font-size: 12.5px;
-  line-height: 1.35;
-}
-
 .sa-monk-dialogue-progress {
   margin: 0 0 8px;
   font-size: 12px;
   color: var(--sa-ink-soft);
-}
-
-.sa-monk-dialogue-relics-held {
-  margin: 0 0 10px;
-  font-size: 18px;
-  display: flex;
-  gap: 4px;
 }
 
 .sa-monk-dialogue-actions {
@@ -1435,7 +1414,7 @@
  * Same screen-pinned real-DOM shape as .sa-monk-dialogue above (see
  * stackacres-fence-upgrade-popup.tsx's own header) -- structure and
  * interaction copied one for one, only the palette differs (wood tones,
- * to read as "this is about the fence line" rather than the shrine). */
+ * to read as "this is about the fence line"). */
 
 .sa-fence-upgrade {
   position: absolute;
@@ -1540,7 +1519,7 @@
  * Same screen-anchored speech-bubble posture as .sa-monk-dialogue above --
  * a separate block rather than a shared class because the "greeting" phase
  * here draws an item picker (a variable-length list of buttons) that the
- * Pilgrim's own dialogue never needs. */
+ * plain yes/no card never needs. */
 .sa-gift-dialogue {
   position: absolute;
   z-index: 5;
@@ -1719,7 +1698,7 @@
  * Same screen-anchored speech-bubble posture as .sa-monk-dialogue above,
  * anchored over the traveler's head rather than the finger (see
  * stackacres-scene.ts's `travelerHeadPoint`). A portrait + name header the
- * monk/gift dialogues don't carry (they draw their own character in the
+ * gift dialogue doesn't carry (they draw their own character in the
  * canvas; a traveler's true pixel art next to the flat-vector world is the
  * whole point of showing it again here), then the line and however many
  * choices the current node has -- one for a locked/home beat that only
@@ -1965,9 +1944,8 @@
 
 /* Ray's counter, slid up from the bottom edge with the same overshoot the
    drawer opens on -- and the shell most of the farm's panels are actually
-   made of: Town Contracts, the Workshop, the Fermenting Vat, Blueprints, the
-   Sunlight Forge, the Crossbreeding Bed, the Prestige valve, both clearing
-   sheets and the Synergy tree all render into it. One
+   made of: Town Contracts, the Workshop, the Fermenting Vat and both
+   clearing sheets all render into it. One
    rule here is what keeps them one material. */
 .sa-sheet {
   width: min(100%, 560px);
@@ -2035,8 +2013,7 @@
 /* ---- the Supply Store: a centered popup, one shelf at a time ---------- */
 
 /* Replaces .sa-sheet-scrim/.sa-sheet for the barn's own popup only -- every
-   other sheet in here (the Vat, the Forge, the Prestige reset, Blueprints,
-   Town Contracts) still slides up from the bottom edge and is unaffected.
+   other sheet in here (the Vat, Town Contracts) still slides up from the bottom edge and is unaffected.
    The barn used to be the same bottom sheet with eight shelves stacked in
    one long scroll; centered + tabbed replaces that with one shelf on
    screen at a time, `sa-store-panel` below the only part that scrolls. */
@@ -4128,271 +4105,7 @@
 
 
 
-/* ---- the Synergy Tree ------------------------------------------------- */
-
-/* The HUD badge, same paper pill as .sa-feed next door. The corn ring shows
-   up only once a perk is actually active -- an empty loadout reads as plain
-   paper, the same "nothing to see yet" the allowance meter gives a fresh
-   day. */
-.sa-synergy-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 38px;
-  padding: 0 11px;
-  border: 2px solid var(--sa-paint-line);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-paint-fill-open);
-  box-shadow: var(--sa-paint-rim-sm), var(--sa-drop);
-  color: var(--sa-ink);
-  font-family: var(--sa-font);
-  font-size: 15px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  transition:
-    transform var(--duration-fast) var(--sa-ease-out),
-    box-shadow var(--duration-fast) var(--sa-ease-out);
-}
-
-/* A highlight only once at least one perk is actually contributing --
-   otherwise the badge is indistinguishable chrome nobody has a reason to
-   tap. */
-.sa-synergy-badge.has-active {
-  background: var(--sa-tint-corn);
-  box-shadow: var(--sa-paint-rim-lit), var(--sa-drop);
-  color: var(--sa-lit-corn);
-}
-
-.sa-synergy-milestone {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 12px 0 0;
-  padding: 9px 12px;
-  border: 2px solid var(--sa-paint-line);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-tint-corn);
-  box-shadow: var(--sa-paint-rim-sm);
-  color: var(--sa-lit-corn);
-  font-size: 13.5px;
-  font-weight: 800;
-}
-
-/* A locked perk reads as scenery, not a decision -- dimmed the way a wild,
-   uncleared district is, so the eye lands on what is actually ownable. An
-   active one gets the same corn ring TownContractsModal's posted rung does:
-   the marker for "this is the one actually doing something right now". */
-.sa-synergy-perk.is-locked { opacity: .72; }
-
-.sa-synergy-perk.is-active {
-  background: var(--sa-tint-corn);
-  box-shadow: inset 0 0 0 1px var(--sa-corn), inset 0 1px 0 rgba(255, 255, 255, .3);
-}
-
-.sa-synergy-perk-desc {
-  margin: 6px 0 0;
-  color: var(--sa-ink-soft);
-  font-size: 13.5px;
-  line-height: 1.4;
-}
-
-.sa-synergy-perk-btn {
-  min-height: 44px;
-  font-size: 14px;
-}
-
-/* Slotting an owned perk spends no Gold, so it carries the leaf tint for the
-   same "growth, not a purchase" reason .sa-buy-btn.is-expand does. */
-.sa-synergy-perk-btn.is-slot {
-  background: var(--sa-tint-leaf);
-  box-shadow: var(--sa-paint-rim-lit);
-  color: var(--sa-lit-leaf);
-}
-
-/* ---- the Sunlight Forge sheet ----------------------------------------
-   Mirrors .sa-contracts-*'s own structure (a status readout, a scrollable
-   list of cards, one note banner answering the sheet's own last action) --
-   kept as its own prefix rather than folded into .sa-contract-* because the
-   two are unrelated features that only happen to look alike, the same
-   reasoning that already keeps .sa-buy-* and .sa-contract-* separate. */
-
-.sa-forge-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin: 12px 0 0;
-  padding: 10px 12px;
-  border: 2px solid var(--sa-paint-line-soft);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-}
-
-.sa-forge-stat { display: flex; flex-direction: column; gap: 2px; text-align: center; }
-
-.sa-forge-stat dt {
-  margin: 0;
-  color: var(--sa-ink-soft);
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.sa-forge-stat dd {
-  margin: 0;
-  color: var(--sa-ink);
-  font-size: 18px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
-.sa-forge-note {
-  margin: 12px 0 0;
-  padding: 9px 12px;
-  border: 2px solid var(--sa-paint-line-soft);
-  border-radius: var(--sa-r-block);
-  font-size: 13.5px;
-  font-weight: 700;
-}
-
-.sa-forge-note.is-paid {
-  background: var(--sa-tint-leaf);
-  box-shadow: var(--sa-paint-rim-sm);
-  color: var(--sa-lit-leaf);
-}
-
-.sa-forge-note.is-refused {
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: var(--sa-paint-rim-sm);
-  color: var(--sa-ink);
-}
-
-.sa-forge-slots {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 12px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.sa-forge-slot {
-  padding: 12px;
-  border: 2px solid var(--sa-paint-line-soft);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-}
-
-/* A forged slot gets the same corn-ring treatment .sa-contract.is-posted
-   uses for "this is the number to plan around" -- here it marks "this is
-   already yours" instead. */
-.sa-forge-slot.is-owned {
-  background: var(--sa-tint-corn);
-  box-shadow: inset 0 0 0 1px var(--sa-corn), inset 0 1px 0 rgba(255, 255, 255, .3);
-}
-
-.sa-forge-slot-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.sa-forge-slot-head h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 800;
-  color: var(--sa-ink);
-}
-
-.sa-forge-slot-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-  color: var(--sa-ink-soft);
-  font-size: 11.5px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.sa-forge-slot-tag.is-owned { color: var(--sa-lit-leaf); }
-
-.sa-forge-slot-desc {
-  margin: 6px 0 0;
-  color: var(--sa-ink-soft);
-  font-size: 13.5px;
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-.sa-forge-slot .sa-contract-req { margin-top: 10px; }
-.sa-forge-slot .sa-cta { margin-top: 12px; width: 100%; justify-content: center; }
-
-/* ---- the Prestige Reset Valve -----------------------------------------
-   Reuses TownContractsModal's own vocabulary wherever the shape already
-   fits (.sa-contracts-standing for the multiplier readout, .sa-contract-bar
-   for progress toward eligibility, .sa-contracts-note for the outcome
-   banner) -- only what is genuinely new to this sheet gets a class of its
-   own: the eligibility caption under the bar, the warning panel step 2
-   shows, the Cancel/confirm row, and the danger-toned CTA. */
-
-.sa-prestige-progress { margin: 12px 0 0; }
-
-.sa-prestige-progress-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 8px 0 0;
-  color: var(--sa-ink-soft);
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.35;
-  text-wrap: pretty;
-}
-
-/* Roof, not corn: the one panel on this surface meant to read as a warning
-   rather than as an offer. Corn means an offer and roof means trouble. */
-.sa-prestige-warning {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin: 14px 0 0;
-  padding: 12px 14px;
-  border: 1px solid var(--sa-roof);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-tint-roof);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-  color: var(--sa-lit-roof);
-}
-
-.sa-prestige-warning > svg { flex: none; margin-top: 2px; color: var(--sa-roof); }
-
-.sa-prestige-warning .sa-clear-promise,
-.sa-prestige-warning .sa-stock-terms { color: var(--sa-ink); }
-
-.sa-prestige-confirm-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.sa-prestige-confirm-row .sa-cta { flex: 1; margin-top: 0; }
-
-/* The same .sa-sheet-close chrome the header's own "Done" button uses,
-   just sized to sit beside the danger CTA in this row instead of floating
-   at the head of the sheet, and kept from stretching to match it. */
-.sa-prestige-cancel {
-  flex: none;
-  min-height: 52px;
-  padding: 10px 18px;
-}
-
+/* A destructive action's CTA, roof-toned. */
 .sa-cta.is-danger {
   display: inline-flex;
   align-items: center;
@@ -4510,197 +4223,6 @@
   .sa-radial-cost { font-size: 11px; }
 }
 
-/* ---------------------------------------------------------------------- */
-/* The Crossbreeding Bed sheet (crossbreed-bed-sheet.tsx)                 */
-/* ---------------------------------------------------------------------- */
-/* Same sheet/scrim chrome as .sa-forge-*, its own prefix for the same
-   reason that block gives. The bed is a fixed 4x4 of square cells, each a
-   button: soil-brown when planted, paper when empty, a leaf ring once ripe
-   and a corn ring when a ripe neighbour could cross with it. */
-
-.sa-xb-note {
-  margin: 12px 0 0;
-  padding: 9px 12px;
-  border: 2px solid var(--sa-paint-line-soft);
-  border-radius: var(--sa-r-block);
-  font-size: 13.5px;
-  font-weight: 700;
-  color: var(--sa-ink);
-}
-
-.sa-xb-note.is-paid {
-  background: var(--sa-tint-leaf);
-  box-shadow: var(--sa-paint-rim-sm);
-  color: var(--sa-lit-leaf);
-}
-
-.sa-xb-note.is-refused {
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: var(--sa-paint-rim-sm);
-}
-
-.sa-xb-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  margin: 12px 0 0;
-  padding: 8px;
-  border: 2px solid var(--sa-paint-line-soft);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-}
-
-.sa-xb-cell {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  aspect-ratio: 1;
-  min-width: 0;
-  padding: 4px;
-  border: 2px solid var(--sa-paint-line-soft);
-  border-radius: var(--sa-r-block);
-  background: color-mix(in srgb, var(--sa-choc) 34%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-  color: var(--sa-ink);
-  font: inherit;
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1.1;
-  cursor: pointer;
-}
-
-.sa-xb-cell:disabled { cursor: default; }
-
-.sa-xb-cell.is-empty {
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-  color: var(--sa-ink-soft);
-}
-
-.sa-xb-cell.is-empty:not(:disabled):hover,
-.sa-xb-cell.is-picking {
-  color: var(--sa-ink);
-  box-shadow: inset 0 0 0 1px var(--sa-leaf), inset 0 1px 0 rgba(255, 255, 255, .3);
-}
-
-.sa-xb-cell.is-ripe {
-  box-shadow: inset 0 0 0 1px var(--sa-leaf), inset 0 1px 0 rgba(255, 255, 255, .3);
-}
-
-.sa-xb-cell.is-cross {
-  box-shadow: inset 0 0 0 1px var(--sa-corn), inset 0 1px 0 rgba(255, 255, 255, .3);
-}
-
-.sa-xb-cell-label {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sa-xb-sprite {
-  width: 36px;
-  height: 36px;
-  object-fit: contain;
-  image-rendering: pixelated;
-  pointer-events: none;
-}
-
-.sa-xb-picker {
-  margin: 12px 0 0;
-  padding: 10px 12px;
-  border: 2px solid var(--sa-paint-line-soft);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-}
-
-.sa-xb-picker-title {
-  margin: 0 0 8px;
-  color: var(--sa-ink-soft);
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.sa-xb-stock {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.sa-xb-stock-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  width: 100%;
-  padding: 8px 6px;
-  border: 2px solid var(--sa-paint-line);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-paint-fill-ctl);
-  box-shadow: var(--sa-paint-rim-sm);
-  color: var(--sa-ink);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.sa-xb-stock-btn:disabled { cursor: default; }
-.sa-xb-stock-btn.is-short { opacity: .55; }
-
-.sa-xb-stock-cost {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  color: var(--sa-ink-soft);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-.sa-xb-h {
-  margin: 14px 0 0;
-  color: var(--sa-ink-soft);
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.sa-xb-pairs {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 6px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.sa-xb-pairs li {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-paint-fill-quiet);
-  color: var(--sa-ink);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.sa-xb-pairs li strong {
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
 /* Chapter 1: the energy tag beside Gold, and Ray's Kitchen tab. */
 .sa-energy {
   display: inline-flex;
@@ -4775,7 +4297,7 @@
   .sa-clock { min-width: 88px; min-height: 34px; padding: 0 8px; font-size: 13px; }
 }
 
-/* The bed's card borrows the Pixel Pilgrim's; only the pin turns night blue. */
+/* The bed's card: only the pin turns night blue. */
 .sa-sleep-dialogue .sa-monk-dialogue-pin { background: #3d4a86; }
 
 /* ---- the player's house: the kitchen -----------------------------------

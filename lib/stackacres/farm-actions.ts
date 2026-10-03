@@ -15,14 +15,12 @@ import type { AxePayment } from "./axe";
 import { isLivestock, STACKACRES_CATALOGUE, type StackAcresCrop, type StackAcresStock } from "./catalogue";
 import type { StackAcresBuyableCutter } from "./cutters";
 import type { HiddenZoneId, SecretItemId } from "./secrets";
-import type { SynergyArchetype } from "./synergy-perks";
 import type { NpcId } from "./friendship";
 import type { MachineItemId } from "./machine-items";
 import type { TownBuyerId } from "./town-buyers";
 import type { MachineKind } from "./machines";
 import type { RecipeId } from "./recipes";
 import type { FoodItem } from "./energy";
-import type { BlueprintId } from "./blueprints";
 import type { ZoneId } from "./zones";
 import type { QuestPlaceId } from "./story/places";
 import type { TravelerId } from "./story/travelers";
@@ -126,10 +124,6 @@ export type Action =
   | { action: "donate-secret-item"; itemId: SecretItemId }
   | { action: "consume-secret-item"; itemId: SecretItemId }
   | { action: "trade-secret-item"; itemId: SecretItemId }
-  // The Synergy Tree. `unlock-synergy-perk` spends Gold, once, permanent;
-  // `activate-synergy-perk` moves no Gold, only the loadout.
-  | { action: "unlock-synergy-perk"; archetype: SynergyArchetype }
-  | { action: "activate-synergy-perk"; archetype: SynergyArchetype; slot: number }
   // Placeable soil beds (./soil.ts). `tx`/`ty` are SOIL_TILE lattice
   // coordinates, not world units -- see soilTileAt. Breaking ground is free:
   // neither action spends or refunds anything.
@@ -172,10 +166,6 @@ export type Action =
   // instead of charging Gold directly once the crop it names is a crop
   // rather than livestock. See stockStackAcres's own header.
   | { action: "buy-seed"; crop: StackAcresCrop; quantity: number }
-  // The Pixel Pilgrim's prayer. Only ever sent from his dialogue's own
-  // "yes" -- see StackAcresMonkDialogue -- never from the tap that opens
-  // it, so declining never reaches this at all.
-  | { action: "pray" }
   // The farmhouse bed: the farm clock jumps to 6 AM (./clock.ts). Only ever
   // sent from the bed's own "Sleep" button, and by night.
   | { action: "sleep" }
@@ -202,25 +192,7 @@ export type Action =
   // a harvest's own secret-find roll takes), only the scene's own
   // local-optimistic vacuum animation. See lib/stackacres/drone.ts.
   | { action: "deploy-drone" }
-  | { action: "collect-drone-forage"; droneId: string }
-  // The Prestige Reset Valve. `confirm: true` is required rather than
-  // inferred from the action name alone -- see the route's own comment on
-  // this action for why an irreversible sweep with no row to version-guard
-  // wants a payload shape a stray retry cannot satisfy by accident.
-  | { action: "prestige-reset"; confirm: true }
-  // The Sunlight Forge: a permanent tool enchantment, catalogue id (not the
-  // versioned wrapper). See lib/stackacres/forge.ts.
-  | { action: "forge-enchantment"; itemId: string }
-  // The Crossbreeding Bed (./crossbreeding.ts). `plant-crossbreed` pays the
-  // way `stock` does -- a seed off the shelf for a crop, Gold for livestock;
-  // `harvest-crossbreed` moves no Gold, a hybrid is inventory not a payout.
-  | { action: "plant-crossbreed"; row: number; col: number; stock: StackAcresStock }
-  | { action: "harvest-crossbreed"; plotId: string }
-  // Ray's Mythic Blueprints. Neither moves Gold -- a stage is filled from
-  // the processing inventory, same as a Town Contract. See
-  // lib/server/stackacres-blueprint-service.ts's own header.
-  | { action: "start-blueprint"; structureId: BlueprintId }
-  | { action: "contribute-blueprint"; structureId: BlueprintId; itemId: MachineItemId; amount: number };
+  | { action: "collect-drone-forage"; droneId: string };
 
 /**
  * A harvest is keyed by the crops it names. Keyed on the bare action, a
@@ -254,11 +226,6 @@ export function intentOf(body: Action): string {
   if (body.action === "collect" && body.unitIds && body.unitIds.length > 0) {
     return `${COLLECT_INTENT_PREFIX}${[...body.unitIds].sort().join(",")}`;
   }
-  // One bed cell, not one stock kind: two presses planting hens in two
-  // different cells are two intents, and the generic "stock" branch below
-  // would collapse them onto one. Checked before it for that reason.
-  if (body.action === "plant-crossbreed") return `${body.action}:${body.row},${body.col}`;
-  if ("plotId" in body) return `${body.action}:${body.plotId}`;
   // Keyed by where it goes. A greenhouse sow and an outdoor sow of the same
   // crop are different intents, and so are two beds of the same crop: keyed
   // on the crop alone, walking a row with seed in hand dropped every sowing
@@ -296,21 +263,12 @@ export function intentOf(body: Action): string {
   if ("npc" in body) return "item" in body ? `${body.action}:${body.npc}:${body.item}` : `${body.action}:${body.npc}`;
   if (body.action === "eat") return `eat:${body.item}`;
   if ("item" in body) return `${body.action}:${body.item}:${body.quantity}`;
-  // A contribution to one blueprint must never dedupe against or block a
-  // contribution to a different one -- checked before the generic `itemId`
-  // fallback below, which would otherwise collapse every structure's
-  // delivery of the same material onto one shared intent. `start-blueprint`
-  // carries no `itemId`, so it falls into this branch on `structureId` alone.
-  if ("structureId" in body) {
-    return "itemId" in body ? `${body.action}:${body.structureId}:${body.itemId}` : `${body.action}:${body.structureId}`;
-  }
   if ("itemId" in body) return `${body.action}:${body.itemId}`;
   // A forage claim on one drone must never dedupe against or block a claim
   // on a different drone -- checked before the generic fallback below,
   // which would otherwise collapse every drone's claim onto one shared
   // "collect-drone-forage" intent.
   if ("droneId" in body) return `${body.action}:${body.droneId}`;
-  if ("archetype" in body) return `${body.action}:${body.archetype}`;
   // Feeding one pen must never block feeding another.
   if ("zone" in body) return `${body.action}:${body.zone}`;
   if ("tx" in body) return `${body.action}:${body.tx},${body.ty}`;
@@ -370,12 +328,8 @@ export function purchaseCueText(body: Action): string | null {
       return "New axe in hand!";
     case "buy-cutter":
       return "New tool in hand!";
-    case "unlock-synergy-perk":
-      return "Perk unlocked!";
     case "build-greenhouse":
       return "Greenhouse begun!";
-    case "forge-enchantment":
-      return "Enchantment forged!";
     case "deploy-drone":
       return "Drone deployed!";
     case "buy-building":

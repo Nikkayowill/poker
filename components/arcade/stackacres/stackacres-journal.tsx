@@ -273,7 +273,7 @@ export function StackAcresJournalSheet({
  * The Journal's own entry point. It used to read "Mill · Gold 0 / 200"
  * forever, then "Chapter 1 · Bread / Water the wheat" forever -- either way, a
  * permanent sentence of text sitting over the map. Same standing-badge
- * posture as the Forge and Crossbreeding Bed entries next to it in the HUD
+ * posture as the other entries next to it in the HUD
  * (`.sa-prestige-badge`) now: worth a glance, not a paragraph. The current
  * cue, the chapter and the readiness bar are all still one tap away, in the
  * same Journal sheet this button already opened.

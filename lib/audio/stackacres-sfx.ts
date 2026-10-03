@@ -165,22 +165,10 @@ export function toolSound() {
   playFarmVoice("tool-tap", 0.8);
 }
 
-/**
- * A Town Favor rung reached: a glass ping struck twice. Kept apart from
- * `prestigeSound`, which is reserved for a Prestige Reset and nothing else.
- */
+/** A Town Favor rung reached: a glass ping struck twice. */
 export function townFavorSound() {
   playFarmSample("glass-ping", 0.6, 0);
   window.setTimeout(() => playFarmSample("glass-ping", 0.45, 0), 300);
-}
-
-/**
- * A Prestige Reset going through. The one moment on this farm big enough for
- * a whole phrase rather than a single cue: it answers a permanent choice, not
- * a tap.
- */
-export function prestigeSound() {
-  playFarmSample("prestige-music-box", 0.8, 0);
 }
 
 /** One footstep indoors, on the floorboards of the house, barn or workshop. */

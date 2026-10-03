@@ -229,21 +229,10 @@ export function __setTrowelCritChanceForTest(chance: number): void {
  * A line with nothing in it crits for nothing. That is deliberate: the crit
  * multiplies a harvest, and there is no sensible reading in which doubling
  * zero is a reward.
- *
- * `bonusOverride` is optional and defaults to the tier's own base bonus --
- * every existing call site is unaffected. It exists for the Sunlight
- * Forge (lib/stackacres/forge.ts): a `crit_yield_bonus` enchantment raises
- * `critBonus` past the bare tier number, and the caller computes that
- * forged value and passes it straight in, the same "caller computes, this
- * module just multiplies" split `chanceOverride` above already takes.
  */
-export function critBonusQuantity(
-  lineQuantity: number,
-  tier: StackAcresToolTier,
-  bonusOverride?: number,
-): number {
+export function critBonusQuantity(lineQuantity: number, tier: StackAcresToolTier): number {
   if (!Number.isFinite(lineQuantity) || lineQuantity <= 0) return 0;
-  const bonus = bonusOverride ?? STACKACRES_TOOL_TIER_DEFS[tier].critBonus;
+  const bonus = STACKACRES_TOOL_TIER_DEFS[tier].critBonus;
   if (!(bonus > 0)) return 0;
   // At least one extra unit, so a crit on a single pick is never worth nothing.
   return Math.max(1, Math.floor(lineQuantity * bonus));

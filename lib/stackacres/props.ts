@@ -255,8 +255,7 @@ export const PROP_SIZE: Record<PropKind, PropSize> = {
   barbCorner: { w: 18, h: 18 },
   // Sized off each traveler's own real PNG aspect (width/288 tall, Ray's
   // width/320) at a world height picked for their read: the adults at 38 (a
-  // standing adult's height at this zoom -- see STANDING_CHARACTER_SHADOW
-  // below), Skye and Ivy, the two small ones, at 30, Ray's spirit at 40.
+  // standing adult's height at this zoom), Skye and Ivy, the two small ones, at 30, Ray's spirit at 40.
   // Width = height * (pngWidth/pngHeight), never picked independently, so
   // `spriteBacked`'s stretch-to-box `drawImage` never distorts the art.
   travelerRay: { w: 19.75, h: 40 },
@@ -321,17 +320,6 @@ export const PROP_SHADOW: Record<PropKind, PropSize> = {
   travelerBea: { w: 24, h: 7 },
   travelerLeo: { w: 25, h: 7 },
 };
-
-/**
- * The shadow pool a standing chibi character reads at (the forty-unit build
- * every `PropSize`-height-38 human on this map shares -- see `PROP_SIZE`'s
- * own comment above): the Pixel Pilgrim stands
- * on this exact pool rather than each owning a slightly different one, since
- * neither is a `PropKind` of its own (see MIDNIGHT_MERCHANT_SPOT's doc
- * comment in ./world.ts for why a temporary NPC and a shrine's own character
- * both fall outside `PROP_SHADOW`'s closed set).
- */
-export const STANDING_CHARACTER_SHADOW: PropSize = { w: 27, h: 8 };
 
 /**
  * Props that stand on a path's verge, right beside the body: a lamp, a

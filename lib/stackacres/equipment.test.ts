@@ -194,12 +194,4 @@ describe("critBonusQuantity", () => {
       expect(critBonusQuantity(1_000, tier), tier).toBeLessThanOrEqual(1_000);
     }
   });
-
-  it("pays nothing when the bonus itself is zero", () => {
-    expect(critBonusQuantity(5, "iron-shovel", 0)).toBe(0);
-  });
-
-  it("takes a forged bonus over the tier's own", () => {
-    expect(critBonusQuantity(10, "iron-shovel", 1.5)).toBe(15);
-  });
 });

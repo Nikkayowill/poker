@@ -56,8 +56,6 @@ export function storyEventsForAction(body: Action, ctx: StoryPredictContext): St
       return [{ kind: "soil-placed", count: 1 }];
     case "fulfill-contract":
       return [{ kind: "contract-fulfilled" }];
-    case "forge-enchantment":
-      return [{ kind: "enchantment-forged" }];
     default:
       return [];
   }

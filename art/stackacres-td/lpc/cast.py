@@ -80,11 +80,6 @@ CAST = {
                           ("legs_pants2", "gray"), ("feet_boots_revised", "charcoal"),
                           ("hat_bandana", "white")],
                    palette={"body": "light", "hair": "white", "eye": "brown"}),
-    # The Pixel Pilgrim: brown robe and hood, no face to speak of.
-    "pilgrim": dict(items=[BODY, ("heads_human_male", None), ("torso_clothes_longsleeve", "brown"),
-                           ("cape_tattered", "brown"), ("legs_pants2", "brown"), ("feet_boots_revised", "walnut"),
-                           ("hat_hood_cloth", "brown")],
-                    palette={"body": "brown", "eye": "brown"}),
     # Skye: red cap, yellow jacket, jeans.
     "skye": dict(items=[BODY, ("heads_human_female", None), ("hair_plain", None),
                         ("torso_clothes_longsleeve", "white"),

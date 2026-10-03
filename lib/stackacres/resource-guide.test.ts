@@ -2,7 +2,6 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { LAND_OBSTACLES } from "./land-clearing";
 import { describe, expect, it } from "vitest";
-import { CROSSBREED_ITEMS } from "./crossbreed-items";
 import {
   GATHER_SOURCES,
   GUIDE_DESTINATION_LABELS,
@@ -45,10 +44,6 @@ describe("every item has a guide entry", () => {
     expect(new Set(GUIDE_ITEM_IDS).size).toBe(GUIDE_ITEM_IDS.length);
   });
 
-  it("covers every hybrid", () => {
-    for (const item of CROSSBREED_ITEMS) expect(GUIDE_ITEM_IDS).toContain(item);
-  });
-
   it("points every use and source at a destination the farm can open", () => {
     for (const item of GUIDE_ITEM_IDS) {
       const entry = resourceGuideEntry(item);
@@ -61,19 +56,12 @@ describe("every item has a guide entry", () => {
 
 describe("nothing is sellable but useless", () => {
   it("gives every sellable item a use besides selling it", () => {
-    const useless = GUIDE_ITEM_IDS.filter((item) => resourceGuideEntry(item).sellPrice !== null && nonSellUses(item).length === 0);
+    const useless = GUIDE_ITEM_IDS.filter((item) => nonSellUses(item).length === 0);
     expect(useless).toEqual([]);
   });
 
-  it("gives every hybrid a use, even though none can be sold", () => {
-    for (const item of CROSSBREED_ITEMS) {
-      expect(resourceGuideEntry(item).sellPrice).toBeNull();
-      expect(nonSellUses(item).length, item).toBeGreaterThan(0);
-    }
-  });
-
   it("keeps the at-risk items off the list", () => {
-    const atRisk: GuideItemId[] = ["bluegill", "trout", "catfish", "meat", "pelt", "cheese", "cloth", "wood", "stone", ...CROSSBREED_ITEMS];
+    const atRisk: GuideItemId[] = ["bluegill", "trout", "catfish", "meat", "pelt", "cheese", "cloth", "wood", "stone"];
     for (const item of atRisk) expect(nonSellUses(item).length, item).toBeGreaterThan(0);
   });
 

@@ -3,10 +3,9 @@
  *
  * Ray keeps the place going. He walks in from the east road in the morning, draws water at the well,
  * tends the greenhouse beds, minds his counter in the barn, feeds the hens at noon, picks berries in
- * the afternoon, sits on the porch at dusk and turns in by the east road again at night. The Pixel
- * Pilgrim fishes off the dock, wanders the grove by the workshop, rests by the well and camps by the
- * west edge overnight. Pierre and Ivy work their corner but break at midday and wander for the evening.
- * On day 6 of each week Ray and the Pilgrim keep a rest day (Routine.weekly).
+ * the afternoon, sits on the porch at dusk and turns in by the east road again at night. Pierre and
+ * Ivy work their corner but break at midday and wander for the evening. On day 6 of each week Ray
+ * keeps a rest day (Routine.weekly).
  *
  * Every spot is a map point on open ground (npc-schedules.test.ts checks each one against the
  * exported area.json, and that every walk between them can be made). When the Homestead is redrawn,
@@ -56,25 +55,11 @@ export const NPC_STATIONS: Record<string, Station> = {
     spots: [spot(520, 330, "down", "idle", 14_000), spot(540, 374, "up", "idle", 5000)],
   },
 
-  // On the bank west of the dock, clear of the oak, casting north into the lake. Not on the dock:
-  // it is the player's only way to their own cast spot (scene.ts DOCK_CAST_SPOT), and anyone
-  // stood on it took the tap that starts a cast.
-  "pilgrim-dock": {
-    area: "homestead",
-    spots: [spot(328, 120, "up", "fish", 16_000), spot(320, 124, "right", "idle", 5000)],
-  },
-  // The grove of old trees by the workshop, on the yard's side of the wild land.
-  "pilgrim-grove": {
-    area: "homestead",
-    spots: [spot(296, 150, "down", "idle", 8000), spot(264, 134, "up", "harvest", 5000), spot(280, 232, "left", "harvest", 5000)],
-  },
-  "pilgrim-well": {
+  // A rest by the well, west of where Ray draws water. Pierre takes his evening break here.
+  "well-bench": {
     area: "homestead",
     spots: [spot(412, 322, "up", "idle", 10_000), spot(372, 330, "right", "idle", 6000)],
   },
-  // He used to sleep out under the oaks, west of the Homestead -- that district is gone (2026-09-28,
-  // ../story/travelers.ts's own header). He camps in the yard's own west clearing instead.
-  "pilgrim-camp": { area: "homestead", spots: [spot(88, 456, "down", "idle", 60_000)] },
 
   // Two of the travelers who stay on the Homestead once they've arrived. They keep to their corner.
   "pierre-yard": {
@@ -116,33 +101,13 @@ export const NPC_ROUTINES: Record<string, Routine> = {
       ],
     },
   },
-  pilgrim: {
-    speed: 30,
-    steps: [
-      { hour: 5, station: "pilgrim-dock" },
-      { hour: 9, station: "pilgrim-grove" },
-      { hour: 12, station: "pilgrim-well" },
-      { hour: 14, station: "pilgrim-dock" },
-      { hour: 17, station: "pilgrim-grove" },
-      { hour: 20, station: "pilgrim-camp" },
-    ],
-    // Rest day: he keeps to the water, fishing longer and resting by the well at noon.
-    weekly: {
-      6: [
-        { hour: 6, station: "pilgrim-dock" },
-        { hour: 11, station: "pilgrim-well" },
-        { hour: 13, station: "pilgrim-dock" },
-        { hour: 20, station: "pilgrim-camp" },
-      ],
-    },
-  },
   pierre: {
     speed: 38,
     steps: [
       { hour: 7, station: "pierre-yard" },
       { hour: 12, station: "ray-porch" },
       { hour: 13, station: "pierre-yard" },
-      { hour: 17, station: "pilgrim-well" },
+      { hour: 17, station: "well-bench" },
       { hour: 19, station: "pierre-yard" },
       { hour: 21, station: "pierre-rest" },
     ],
@@ -168,8 +133,6 @@ export const NPC_ROUTINES: Record<string, Routine> = {
 export const NPC_TEMPERAMENTS: Record<string, Temperament> = {
   // Old, warm and unhurried: slow to look up, but once he has he's glad of the company.
   ray: { react: [320, 620], attention: [6000, 10_000], fidget: [3500, 8000], chatty: 0.8, tempo: 0.88 },
-  // Calm and inward. Rarely fidgets, gives you a long, steady look.
-  pilgrim: { react: [380, 700], attention: [5000, 9000], fidget: [7000, 14_000], chatty: 0.35, tempo: 0.82 },
   // Restless and curious: quick to notice, can't keep still.
   pierre: { react: [200, 380], attention: [3500, 6500], fidget: [2200, 5000], chatty: 0.7, tempo: 1.08 },
   // Shy: notices you quickly, looks away soon, then keeps sneaking glances.

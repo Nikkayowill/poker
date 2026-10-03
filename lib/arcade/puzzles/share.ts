@@ -24,7 +24,7 @@
 import type { ConnectionsLevel, ConnectionsSnapshot } from "./connections";
 import type { MemorySnapshot } from "./memory";
 import { formatDuration, type SudokuSnapshot } from "./sudoku";
-import type { WordStackSnapshot, WordStackTile } from "./word-stack";
+import type { WordStackSnapshot, WordStackTile, WordStackWordTier } from "./word-stack";
 
 /** Word Stack's three states. Green correct, gold present, dark block absent: StackChips' own palette, not the yellow/grey/green everyone associates with the game this is not. */
 export const WORD_STACK_BLOCKS: Record<WordStackTile, string> = {
@@ -60,6 +60,9 @@ function withLink(lines: string[], options?: ShareOptions): string {
   return options?.link ? `${body}\n\n${options.link}` : body;
 }
 
+/** What the share heading calls each harder word. */
+const WORD_STACK_SHARE_TIERS: Readonly<Record<WordStackWordTier, string>> = { 1: "(Hard)", 2: "(Harder)", 3: "(Hardest)" };
+
 /**
  * `4/6`, or `X/6` on a loss. The fraction is the score, and X is the
  * universally understood way of saying "did not get it" without a number that
@@ -86,7 +89,12 @@ export function wordStackGrid(snapshot: WordStackSnapshot): string {
 export function wordStackShareText(snapshot: WordStackSnapshot, options?: ShareOptions): string | null {
   if (snapshot.status === "active") return null;
   return withLink(
-    [`StackChips Word Stack #${snapshot.puzzleNumber} ${wordStackScoreLine(snapshot)}`, "", wordStackGrid(snapshot)],
+    [
+      // A harder word is not the daily word, so the heading says which board it was.
+      `StackChips Word Stack #${snapshot.puzzleNumber}${snapshot.wordTier ? ` ${WORD_STACK_SHARE_TIERS[snapshot.wordTier]}` : ""} ${wordStackScoreLine(snapshot)}`,
+      "",
+      wordStackGrid(snapshot),
+    ],
     options,
   );
 }

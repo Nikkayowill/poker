@@ -16,7 +16,7 @@ function unit(stock: StackAcresStock, yieldQuantity?: number): HarvestCandidate 
 /**
  * The harvest tally. A harvest credits inventory now and pays no Gold, so
  * this only has to get the per-line produce right plus the nominal gross
- * the ledger and Prestige eligibility read.
+ * the ledger reads.
  */
 describe("settleHarvest", () => {
   it("values a single unit at its snapshotted yield times today's sell price", () => {

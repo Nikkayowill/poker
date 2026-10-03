@@ -54,7 +54,7 @@ def ramp(*hexes):
 WARM_BROWN = ramp("5a2a26", "7a3d2c", "8f5233", "a0603c", "b07046", "c08352", "d29a66")
 DEEP_BROWN = ramp("441c21", "5a2522", "682d25", "7d4429", "8a4d30", "9a5a37", "b37749")  # the rig's skin_deep
 # Bea came out brown already, so she isn't here.
-BROWN_SKIN = {"ray": DEEP_BROWN, "brayden": WARM_BROWN, "pilgrim": WARM_BROWN}
+BROWN_SKIN = {"ray": DEEP_BROWN, "brayden": WARM_BROWN}
 
 
 def is_skin(r, g, b):

@@ -36,8 +36,8 @@ interface Voice {
 /**
  * Each person's way of saying it, from how the story writes them (lib/stackacres/story/dialogue.ts): Ray the
  * unhurried pioneer with a proverb for most things, Pierre the excitable retro chef who is delighted by dirt,
- * Ivy the botanist who is thrilled by anything that does not sit on a grid, the Pilgrim who speaks little and
- * means it. `open` starts a topic, `reply` answers whoever did.
+ * and Ivy the botanist who is thrilled by anything that does not sit on a grid. `open` starts a topic, `reply`
+ * answers whoever did.
  */
 const VOICES: Record<string, Voice> = {
   ray: {
@@ -50,18 +50,6 @@ const VOICES: Record<string, Voice> = {
       supper: { open: ["Getting on toward supper.", "Somebody's stew is on. I can smell it."], reply: ["Best part of any day.", "Set a place. There's always room."] },
       farmer: { open: ["Our farmer's coming along.", "That one's got the hands for it."], reply: ["Reminds me of me, once.", "The land's in good hands."] },
       work: { open: ["Always one more job.", "The oxen never asked when we'd be done."], reply: ["Slow and steady gets it done.", "That's how you know it's home."] },
-    },
-  },
-  pilgrim: {
-    nod: ["Yes.", "So it is.", "Hm."],
-    topics: {
-      hens: { open: ["The hens speak in circles.", "Curious creatures. I bow to them."], reply: ["Where I come from, nothing clucks.", "They watch me back."] },
-      well: { open: ["The water tastes of stone and light.", "Deep well. Deeper than it looks."], reply: ["I drink and I remember.", "It hums, at night."] },
-      pond: { open: ["The water is still today.", "I have caught nothing. A good day."], reply: ["Patience is the whole prayer.", "The lake keeps what it likes."] },
-      sky: { open: ["The sky is wider here.", "Different stars from home."], reply: ["I count them anyway.", "It is a kind sky."] },
-      supper: { open: ["Something smells like a blessing.", "Is there bread tonight?"], reply: ["I am seldom this hungry.", "I would be grateful."] },
-      farmer: { open: ["That one walks like they mean it.", "The farmer tends more than crops."], reply: ["A good sign for the land.", "I have seen worse beginnings."] },
-      work: { open: ["I do not mind an idle day.", "Quiet work is holy work."], reply: ["Time enough for all of it.", "We each keep a small corner."] },
     },
   },
   pierre: {
@@ -84,7 +72,7 @@ const VOICES: Record<string, Voice> = {
       pond: { open: ["Lily pads! Every one different!", "Nothing in that pond is on a grid."], reply: ["I can't stop looking at it.", "Ray says the fish are moody."] },
       sky: { open: ["The clouds don't tile. Anywhere.", "Light this uneven should be a bug."], reply: ["Best bug I've ever seen.", "I stopped trying to fix it."] },
       supper: { open: ["Is there soup? I forgot to eat.", "I skipped lunch debugging a bean."], reply: ["Pierre's cooking is the one table I trust.", "Save me a bowl?"] },
-      farmer: { open: ["The farmer's crosses are WILD.", "Every cross surprises me. Every one."], reply: ["I'm writing a whole new table for them.", "Best data I've ever had."] },
+      farmer: { open: ["The farmer's beds are WILD.", "Every harvest surprises me. Every one."], reply: ["I'm writing a whole new table for them.", "Best data I've ever had."] },
       work: { open: ["Sorry, I lost my place. Again.", "I have forty notes and no filing system."], reply: ["That's fine. It's fine.", "I'll get there."] },
     },
   },
@@ -92,7 +80,7 @@ const VOICES: Record<string, Voice> = {
 
 /**
  * Things only these two would say to each other. People are written through each other as much as through
- * themselves: Ray does not know what Pierre's dirt is for, Ivy asks the Pilgrim odd questions. Keyed by
+ * themselves: Ray does not know what Pierre's dirt is for, Ivy can't find a pattern in Ray's beds. Keyed by
  * the two names sorted; each exchange is 2 or 3 lines, fixed speakers.
  */
 const PAIRS: Record<string, [string, string][][]> = {
@@ -107,18 +95,6 @@ const PAIRS: Record<string, [string, string][][]> = {
   "pierre|ray": [
     [["pierre", "Ray! Zis dirt, it is PERFECT!"], ["ray", "Dirt's just dirt, friend."], ["pierre", "Nothing is 'just' anything."]],
     [["ray", "Something smells good."], ["pierre", "Zat is ze onions. And my pride."]],
-  ],
-  "pilgrim|ray": [
-    [["ray", "Fish biting, Pilgrim?"], ["pilgrim", "I have not asked them."], ["ray", "Ha. Fair enough."]],
-    [["pilgrim", "Your land is generous, Ray."], ["ray", "It takes and gives. Mostly gives."]],
-  ],
-  "ivy|pilgrim": [
-    [["ivy", "Pilgrim, do you ever feel... rendered?"], ["pilgrim", "Every morning. It is a mercy."]],
-    [["pilgrim", "Botanist, what are you counting?"], ["ivy", "Petals! Forty-one. Wait. Forty-two."]],
-  ],
-  "pierre|pilgrim": [
-    [["pierre", "Pilgrim, come eat! You are all bones."], ["pilgrim", "A little bread is enough."], ["pierre", "Never 'a little'! Never!"]],
-    [["pilgrim", "Chef, your soup smells like a memory."], ["pierre", "Zat is ze garlic. Ze memory is extra."]],
   ],
 };
 

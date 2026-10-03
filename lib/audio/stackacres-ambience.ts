@@ -67,7 +67,6 @@ const SAMPLE_FILES = {
   "coins-small": "/audio/stackacres/sfx/coins-small.mp3",
   "refuse-blip": "/audio/stackacres/sfx/refuse-blip.mp3",
   "glass-ping": "/audio/stackacres/sfx/glass-ping.mp3",
-  "prestige-music-box": "/audio/stackacres/sfx/prestige-music-box.mp3",
   "step-floor-1": "/audio/stackacres/sfx/step-floor-1.mp3",
   "step-floor-2": "/audio/stackacres/sfx/step-floor-2.mp3",
   "step-floor-3": "/audio/stackacres/sfx/step-floor-3.mp3",

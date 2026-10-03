@@ -68,7 +68,7 @@ import type { PainterName } from "./stackacres-art";
  * Optimistic: `place-machine` and `process` are predicted in
  * lib/stackacres/optimistic-actions.ts and rolled back by the farm on a
  * refusal, so a press answers before the round trip. `work` waits for the
- * real answer, since a Mill's double output is dice this sheet cannot
+ * real answer, since a machine's own clock is state this sheet cannot
  * honestly guess. Nothing is sold here: the shelf says who in town buys each
  * good (lib/stackacres/town-buyers.ts).
  *

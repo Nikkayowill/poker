@@ -115,7 +115,6 @@ function project(
       ),
       chapter: current ? { number: current.chapter.number, title: current.chapter.title } : null,
       chaptersDone: chapters.filter((chapter) => chapter.done).length,
-      prestigeCount: view.prestige.prestigeCount,
       favoriteProduction: favoriteProduction(view.units),
     },
     world: {

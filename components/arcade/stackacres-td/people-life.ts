@@ -30,7 +30,6 @@ interface Npc {
 export function greeting(name: string, hour: number): EmoteKind {
   if (hour >= 22 || hour < 5) return "sleep";
   if (name === "ray") return "heart";
-  if (name === "pilgrim") return "sparkle";
   return "note";
 }
 

@@ -165,8 +165,8 @@ export function yieldItemOf(stock: StackAcresStock): StackAcresItem | null {
   return isMarketLivestock(stock) ? null : STACKACRES_YIELDS[stock].item;
 }
 
-/** What a finished unit of `stock` would sell for, before any synergy. A
- *  market animal is valued at its unfed weight. */
+/** What a finished unit of `stock` would sell for. A market animal is
+ *  valued at its unfed weight. */
 export function yieldValue(stock: StackAcresStock): number {
   if (isMarketLivestock(stock)) return marketAnimalPrice(stock, STACKACRES_MARKET_ANIMALS[stock].baseWeight);
   const produce = STACKACRES_YIELDS[stock];

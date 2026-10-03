@@ -18,13 +18,11 @@ import {
 import clsx from "clsx";
 import {
   Backpack,
-  Dna,
   Heart,
   Lock,
   Moon,
   Sparkles,
   Sun,
-  Wand2,
   X,
 } from "lucide-react";
 import { StackAcresLogo } from "@/components/brand/stackacres-logo";
@@ -110,13 +108,6 @@ import type { StackAcresWheatPlotSnapshot } from "@/lib/stackacres/wheat-plot";
 import type { VatContainer } from "@/lib/stackacres/aging";
 import type { RecipeId } from "@/lib/stackacres/recipes";
 import {
-  RELIC_CATALOGUE,
-  devotionView,
-  freshDevotion,
-  type RelicId,
-  type StackAcresDevotionView,
-} from "@/lib/stackacres/devotion";
-import {
   FRIENDSHIP_NPCS,
   KEEPSAKE_CATALOGUE,
   NPC_GIFT_CATALOGUE,
@@ -145,14 +136,6 @@ import {
   type ActionBatchWindow,
   type BatchableAction,
 } from "@/lib/stackacres/action-batch";
-import { SYNERGY_PERKS, type SynergyArchetype } from "@/lib/stackacres/synergy-perks";
-import {
-  STACKACRES_PRESTIGE_BASE_MULTIPLIER,
-  STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS,
-  type StackAcresPrestigeResetResult,
-  type StackAcresPrestigeView,
-} from "@/lib/stackacres/prestige";
-import { FORGE_ENCHANTMENTS } from "@/lib/stackacres/forge";
 import { PEN_ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { useOnboardingTour } from "@/lib/onboarding/use-onboarding-tour";
@@ -165,37 +148,14 @@ import { StackAcresGreenhousePanel } from "./stackacres-greenhouse-panel";
 import { TownContractsModal, type ContractActionResult } from "./TownContractsModal";
 import { WorkshopModal, type WorkshopActionResult } from "./WorkshopModal";
 import { FermentingVatModal, type VatActionResult } from "./FermentingVatModal";
-import {
-  MythicBlueprintDashboard,
-  type BlueprintActionResult,
-  type BlueprintCardView,
-} from "./mythic-blueprint-dashboard";
-import type { BlueprintId } from "@/lib/stackacres/blueprints";
-import {
-  StackAcresPrestigeResetModal,
-  type StackAcresPrestigeActionResult,
-} from "./prestige-reset-modal";
-import { SunlightForgeTable, type ForgeActionResult } from "./SunlightForgeTable";
-import {
-  CrossbreedBedSheet,
-  type CrossbreedActionResult,
-  type CrossbreedHarvestActionResult,
-} from "./crossbreed-bed-sheet";
 import { ResourceGuideSheet } from "./resource-guide-sheet";
 import type { GuideDestinationId } from "@/lib/stackacres/resource-guide";
-import {
-  emptyCrossbreedBedView,
-  type CrossbreedBedView,
-  type CrossbreedHarvestSettlement,
-} from "@/lib/stackacres/crossbreeding";
-import { SynergyBadge, SynergyOverlay } from "./SynergyOverlay";
 import { StackAcresHudOverflow } from "./stackacres-hud-overflow";
 import { StackAcresBarnPanel, barnCardsFor } from "./stackacres-barn-panel";
 import { stackacresExchangeDay } from "@/lib/stackacres/exchange";
 import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { STOCK_ICON } from "./stock-icon";
-import { StackAcresMonkDialogue } from "./stackacres-monk-dialogue";
 import { StackAcresSleepDialogue } from "./stackacres-sleep-dialogue";
 import { StackAcresFriendshipDialogue } from "./stackacres-friendship-dialogue";
 import { StackAcresSectorModal } from "./stackacres-sector-modal";
@@ -323,7 +283,6 @@ import {
   isClaimOnUnit,
   layFarmField,
   sameOrNext,
-  takesNext,
   type ClaimKey,
   type FarmFields,
   type GuessField,
@@ -404,26 +363,10 @@ const NOTICE_MS = 3200;
  *  request can never hold a player's taps forever -- see `flushBatch`. */
 const BATCH_FLUSH_ATTEMPTS = 3;
 
-/**
- * The Pixel Pilgrim's own opening lines -- formal, devout, and clear that he
- * is a visitor here ("not from this world"), never the same one twice in a
- * row where it can be helped. One is picked at random each time his
- * dialogue opens; the prompt itself ("Will you pray with me?") is fixed and
- * lives in StackAcresMonkDialogue, not here, since it is a question rather
- * than flavor.
- */
-const PIXEL_PILGRIM_LINES: readonly string[] = [
-  "Peace be with you. I am not of this world -- I came from the pixel realm, and StackAcres has been my home since.",
-  "You keep good ground here. Where I am from, land like this is a rarer thing than gold.",
-  "Every day I keep my devotions, whether or not a soul stops to share them with me.",
-  "I ask nothing of you that I do not also ask of myself.",
-];
-
 /** Ray's own opening lines, in the same drawl the welcome
  *  modal already uses. One is picked at random
  *  each time his gift dialogue opens; the prompt itself lives in
- *  StackAcresFriendshipDialogue, not here, for the same reason
- *  PIXEL_PILGRIM_LINES keeps its own prompt out of this array. */
+ *  StackAcresFriendshipDialogue, not here. */
 const RAY_GIFT_LINES: readonly string[] = [
   "Well now, what've you got for me?",
   "You didn't have to bring me anything, but I won't say no.",
@@ -638,16 +581,6 @@ interface StackAcresResponse {
    *  only from a response old enough to predate the feature. */
   secrets?: { held: Partial<Record<SecretItemId, number>>; boostArmed: boolean };
   secretDonations?: Record<SecretItemId, boolean>;
-  /** The Synergy Tree: unlocked/active archetypes, and what
-   *  `automated_logistics` currently does to the farmhand's walk speed.
-   *  Absent only from a response old enough to predate the feature -- the
-   *  farmhand state defaults to speed 1, same as no active perk. */
-  synergy?: { unlocked: SynergyArchetype[]; active: SynergyArchetype[]; farmhandSpeedMultiplier: number };
-  /** Set only by `unlock-synergy-perk`/`activate-synergy-perk`; every other
-   *  action's answer leaves these undefined. `synergy` above already carries
-   *  the resulting state -- these are only the toast's own confirmation. */
-  synergyUnlock?: { archetype: SynergyArchetype; success: boolean };
-  synergyActivate?: { archetype: SynergyArchetype; success: boolean };
   /** Whether the Greenhouse (lib/stackacres/greenhouse.ts) has been built.
    *  Absent only from a response old enough to predate the feature, which
    *  `applyResponse` reads as "not yet". */
@@ -668,15 +601,6 @@ interface StackAcresResponse {
    *  from a response old enough to predate the revision guard (`applyResponse`
    *  then applies it unconditionally, same as before). */
   round?: { units: StackAcresUnitSnapshot[]; revision?: number };
-  /** The Pixel Pilgrim's devotion: this player's current UTC-day streak and
-   *  progress up his relic ladder. Absent only from a response old enough
-   *  to predate the feature. See lib/stackacres/devotion.ts. */
-  devotion?: StackAcresDevotionView;
-  /** Set only by a `pray` response; every other action's answer leaves this
-   *  undefined. `devotion` above already carries the resulting state --
-   *  this is only the dialogue's own confirmation (and, on a fresh rung,
-   *  which relic to celebrate). */
-  prayer?: { streak: number; alreadyPrayedToday: boolean; grantedRelic: RelicId | null };
   /** NPC friendship: this player's current gift points and keepsake ladder
    *  progress with every NPC that has one. Absent only from a response old
    *  enough to predate the feature. See lib/stackacres/friendship.ts. */
@@ -697,44 +621,8 @@ interface StackAcresResponse {
     outcome: GreetOutcome;
     grantedKeepsake: KeepsakeId | null;
   };
-  /** The Prestige Reset Valve's own standing: how many times pulled, the
-   *  live multiplier, and gross production still needed before the next
-   *  pull. Always present on a current server, same as `upkeep` above --
-   *  optional only so a bundle old enough to predate the feature keeps
-   *  working. See lib/stackacres/prestige.ts. */
-  prestige?: StackAcresPrestigeView;
-  /** Set only by a successful `prestige-reset` response; every other
-   *  action's answer leaves this undefined. `prestige` above already
-   *  carries the resulting standing -- this is only what THIS reset just
-   *  bought, for the modal's own confirmation line. */
-  prestigeReset?: StackAcresPrestigeResetResult;
-  /** The Sunlight Forge: catalogue ids (not the versioned wrapper) this
-   *  player has permanently forged. Always present on a current server,
-   *  same as `prestige` above -- optional only so a bundle old enough to
-   *  predate the feature keeps working. See lib/stackacres/forge.ts. */
-  forge?: readonly string[];
-  /** The Crossbreeding Bed, straight off `StackAcresView.crossbreed`. Always
-   *  present on a current server, same as `forge` above -- optional only so a
-   *  bundle old enough to predate the feature keeps working, which
-   *  `applyResponse` reads as "nothing planted". See
-   *  lib/stackacres/crossbreeding.ts. */
-  crossbreed?: CrossbreedBedView;
-  /** Set only by a `plant-crossbreed`/`harvest-crossbreed` response; every
-   *  other action's answer leaves this undefined. `crossbreed` above already
-   *  carries the resulting bed -- the harvest shape is the one the sheet
-   *  reads back for its own "what did this breed" line, the plant shape is
-   *  never read (the bed repainting IS its confirmation). */
-  crossbreedResult?: CrossbreedHarvestSettlement | { planted: unknown };
-  /** Ray's Mythic Blueprints: one entry per structure in the catalogue,
-   *  present whether or not the player has started it, shaped identically to
-   *  `BlueprintCardView` (mythic-blueprint-dashboard.tsx's own client-local
-   *  type -- see that file's header for why this reads it structurally
-   *  rather than importing the server's `BlueprintView`). Always present on
-   *  a current server, optional only so a bundle old enough to predate the
-   *  feature keeps working. */
-  blueprints?: Record<BlueprintId, BlueprintCardView>;
   /** The travelers' story, straight off `StackAcresView.story`. Always
-   *  present on a current server, same as `forge`/`prestige` above --
+   *  present on a current server --
    *  optional only so a bundle old enough to predate the feature keeps
    *  working, which leaves every traveler's bubble unreachable rather than
    *  wrong. See lib/stackacres/story/. */
@@ -916,7 +804,6 @@ function farmFieldsOf(data: Partial<StackAcresResponse>): Partial<FarmFields> {
   if (data.guardDogs) fields.guardDogs = data.guardDogs;
   if (data.secrets) fields.secrets = data.secrets;
   if (data.secretDonations) fields.secretDonations = data.secretDonations;
-  if (data.synergy) fields.synergy = data.synergy;
   // All four move together or not at all: a response either carries the
   // processing track or predates it, and a half-applied one would show a
   // contract next to inventory numbers from a different moment.
@@ -1000,75 +887,10 @@ export function StackAcresFarm() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
-  // The Synergy Tree. Seeded to "nothing unlocked, nothing active, speed 1"
-  // -- the same state a brand-new farm's own first read answers with.
-  const [synergyUnlocked, setSynergyUnlocked] = useState<SynergyArchetype[]>([]);
-  const [synergyActive, setSynergyActive] = useState<SynergyArchetype[]>([]);
-  const [farmhandSpeedMultiplier, setFarmhandSpeedMultiplier] = useState(1);
-  // The Pixel Pilgrim's devotion. Seeded to a fresh player's own answer --
-  // the same state a brand-new farm's own first read comes back with.
-  const [devotion, setDevotion] = useState<StackAcresDevotionView>(() =>
-    devotionView(freshDevotion(), new Date()),
-  );
-  // The Prestige Reset Valve. Seeded to a profile that has never pulled it --
-  // the same standing a brand-new farm's own first read comes back with.
-  const [prestige, setPrestige] = useState<StackAcresPrestigeView>({
-    prestigeCount: 0,
-    multiplier: STACKACRES_PRESTIGE_BASE_MULTIPLIER,
-    goldToNextPrestige: STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS,
-  });
-  const [showPrestige, setShowPrestige] = useState(false);
-  // What the last successful `prestige-reset` bought, read once by the modal
-  // through `onPrestigeReset`'s own return value: `act`'s return type is the
-  // fixed `ContractActionResult` shared by every action, and this is the one
-  // extra field a reset's own answer carries beyond it.
-  const lastPrestigeReset = useRef<StackAcresPrestigeResetResult | null>(null);
-  // The Sunlight Forge. Seeded to "nothing forged yet" -- the same standing
-  // a brand-new farm's own first read comes back with.
-  const [forge, setForge] = useState<readonly string[]>([]);
-  const [showForge, setShowForge] = useState(false);
-  const [showSynergy, setShowSynergy] = useState(false);
-  // The Crossbreeding Bed. Seeded empty -- the same standing a brand-new
-  // farm's own first read comes back with. `lastCrossbreedHarvest` is the
-  // same sidecar-ref shape `lastPrestigeReset` uses, for the same reason:
-  // `act`'s fixed return type has no room for what a harvest just bred.
-  const [crossbreed, setCrossbreed] = useState<CrossbreedBedView>(emptyCrossbreedBedView);
-  const [showCrossbreed, setShowCrossbreed] = useState(false);
   const [showBarn, setShowBarn] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
-  const lastCrossbreedHarvest = useRef<CrossbreedHarvestSettlement | null>(null);
-  // Ray's Mythic Blueprints. Seeded empty -- the dashboard only ever opens
-  // from a player press well after mount, by which point the first poll has
-  // long since landed, the same posture `forge` above takes.
-  const [blueprints, setBlueprints] = useState<Record<BlueprintId, BlueprintCardView>>(
-    {} as Record<BlueprintId, BlueprintCardView>,
-  );
-  const [showBlueprints, setShowBlueprints] = useState(false);
-  /**
-   * His dialogue: opened by `onWorldMonkTap` (the "greeting" phase, a line
-   * plus the "will you pray with me?" prompt), closed by "no", by the next
-   * world tap (`onViewMoved`, below), or replaced by the "result" phase once
-   * a "yes" answers. `at` is where to anchor it -- the tap point the scene
-   * handed back, same convention `radial`'s own screen anchor uses.
-   *
-   * Deliberately holds no server state beyond one action's own answer:
-   * `devotion` above is the ongoing source of truth (streak, today's status,
-   * relics held); `result` is only this ONE prayer's own confirmation (so a
-   * fresh relic grant can be named), read once out of `act`'s response.
-   */
-  type MonkDialogueState =
-    | { phase: "greeting"; at: TapPoint; line: string }
-    | {
-        phase: "result";
-        at: TapPoint;
-        streak: number;
-        alreadyPrayedToday: boolean;
-        grantedRelic: RelicId | null;
-      };
-  const [monkDialogue, setMonkDialogue] = useState<MonkDialogueState | null>(null);
   // NPC friendship. Seeded to a fresh player's own answer for every NPC that
-  // has one -- the same "fresh player" seed devotion above uses -- rather
-  // than an empty object, so a render before the first read lands never has
+  // has one, rather than an empty object, so a render before the first read lands never has
   // to guard a missing key.
   const [friendship, setFriendship] = useState<Record<NpcId, StackAcresFriendshipView>>(() => {
     const initial = {} as Record<NpcId, StackAcresFriendshipView>;
@@ -1081,9 +903,8 @@ export function StackAcresFarm() {
    * A gift dialogue, one NPC at a time -- opened by `onWorldRayTap` (the
    * "greeting" phase, a line plus his own item picker), closed by the next
    * world tap (`onViewMoved`) or its own close button, or replaced by the
-   * "result" phase once a gift answers. Same shape as `MonkDialogueState`;
-   * kept a separate type (not a union with it) since a gift result also
-   * needs to say WHICH NPC it was for.
+   * "result" phase once a gift answers. A gift result also says WHICH NPC
+   * it was for.
    */
   type GiftDialogueState =
     | { phase: "greeting"; npc: NpcId; at: TapPoint; line: string }
@@ -1135,8 +956,7 @@ export function StackAcresFarm() {
    * Greenhouse/Mill inventory rows) want it consistent within one render
    * rather than four separately-updated fields that could briefly disagree.
    * Used to also feed the scene's own automated farmhand -- that wiring is
-   * gone along with his walk (see MonkNode's own doc comment in
-   * stackacres-scene.ts); this state stays for the UI's own sake.
+   * gone along with his walk; this state stays for the UI's own sake.
    */
   const [processing, setProcessing] = useState<FarmProcessing>(() => ({
     contract: null,
@@ -1639,7 +1459,7 @@ export function StackAcresFarm() {
     [pendingIntents],
   );
   /** Whether any in-flight intent is `prefix` or `prefix:...` -- for a modal
-   *  or menu that fires a family of intents (every synergy archetype, say)
+   *  or menu that fires a family of intents (every gift to one NPC, say)
    *  and greys the whole surface while one is settling, while the rest of
    *  the screen stays live. */
   const pendingByPrefix = useCallback(
@@ -1792,13 +1612,6 @@ export function StackAcresFarm() {
     lay("guardDogs", setGuardDogs);
     lay("secrets", setSecrets);
     lay("secretDonations", setSecretDonations);
-    // Three atoms here, one field in a guess.
-    const { synergy } = fields;
-    if (synergy && takesNext("synergy", mode)) {
-      setSynergyUnlocked(synergy.unlocked);
-      setSynergyActive(synergy.active);
-      setFarmhandSpeedMultiplier(synergy.farmhandSpeedMultiplier);
-    }
     // Four fields in one atom.
     const { contract, inventory, machines, wheatPlots } = fields;
     if (contract !== undefined || inventory || machines || wheatPlots) {
@@ -1852,7 +1665,6 @@ export function StackAcresFarm() {
       setClockHour(gameHourNow());
     }
     if (data.axe) setAxe(data.axe);
-    if (data.devotion) setDevotion(data.devotion);
     if (data.friendship) setFriendship(data.friendship);
     if (data.empire) setEmpire(data.empire);
     if (data.acres) setAcres(data.acres);
@@ -1879,14 +1691,6 @@ export function StackAcresFarm() {
         vatCollected: data.vatCollected,
       };
     }
-    if (data.prestige) setPrestige(data.prestige);
-    if (data.prestigeReset) lastPrestigeReset.current = data.prestigeReset;
-    if (data.forge) setForge(data.forge);
-    if (data.crossbreed) setCrossbreed(data.crossbreed);
-    if (data.crossbreedResult && "hybridItem" in data.crossbreedResult) {
-      lastCrossbreedHarvest.current = data.crossbreedResult;
-    }
-    if (data.blueprints) setBlueprints(data.blueprints);
     if (data.story) setStoryView(data.story);
     if (data.farmBoard) setFarmBoard(data.farmBoard);
   }, [acceptRevision, layFarm, gameHourNow]);
@@ -1914,9 +1718,6 @@ export function StackAcresFarm() {
       upkeep,
       influence,
       contract: processing.contract,
-      synergyUnlocked,
-      synergyActive,
-      farmhandSpeedMultiplier,
       secrets,
       secretDonations,
       greenhouseBuilt,
@@ -1955,9 +1756,6 @@ export function StackAcresFarm() {
       upkeep,
       influence,
       processing,
-      synergyUnlocked,
-      synergyActive,
-      farmhandSpeedMultiplier,
       secrets,
       secretDonations,
       greenhouseBuilt,
@@ -2381,27 +2179,8 @@ export function StackAcresFarm() {
           if (anchor) world.current?.floatAt(anchor, `${found.icon} ${found.label}!`, "gain");
         }
         // The dialogue moves from "greeting" to "result" here, on the one
-        // response `pray` ever gives -- never on the press, since a decline
-        // never reaches this function at all. Keeps the dialogue's own
-        // anchor rather than reading a fresh one: the finger has not moved.
-        if (body.action === "pray" && data.prayer) {
-          setMonkDialogue((prev) => (prev ? { phase: "result", at: prev.at, ...data.prayer! } : null));
-          if (!data.prayer.alreadyPrayedToday) {
-            panelSound();
-            if (anchor) world.current?.floatAt(anchor, `🙏 Day ${data.prayer.streak}`, "gain");
-          }
-          if (data.prayer.grantedRelic) {
-            const relic = RELIC_CATALOGUE[data.prayer.grantedRelic];
-            goldSound();
-            setLastCollect({
-              text: `${relic.icon} The Pilgrim entrusts you the ${relic.label}`,
-              nonce: Date.now(),
-            });
-          }
-        }
-        // Same "moves from greeting to result on the one response an action
-        // ever gives" pattern `pray` documents above -- a decline never
-        // reaches this function at all.
+        // response a gift ever gives -- a decline never reaches this
+        // function at all.
         if (body.action === "give-gift" && data.gift) {
           setGiftDialogue((prev) => (prev ? { phase: "result", at: prev.at, ...data.gift! } : null));
           if (data.gift.outcome === "gifted") {
@@ -2439,7 +2218,7 @@ export function StackAcresFarm() {
             });
           }
         }
-        // The travelers' story. Unlike the prayer and gift dialogues above,
+        // The travelers' story. Unlike the gift dialogue above,
         // there is no separate "phase" state to flip here -- the bubble's
         // node is derived straight off `storyView` (see `dialogueNodeFor`),
         // and `data.story`, already applied a few lines up, is what moves
@@ -2463,13 +2242,6 @@ export function StackAcresFarm() {
             const text = granted.map((item) => `${item.icon} ${item.label}`).join(", ");
             setLastCollect({ text: `${TRAVELER_CATALOGUE[data.storyResult.traveler].name} leaves you ${text}`, nonce: Date.now() });
           }
-        }
-        if (body.action === "unlock-synergy-perk" && data.synergyUnlock?.success) {
-          goldSound();
-          setLastCollect({
-            text: `${SYNERGY_PERKS[body.archetype].label} unlocked!`,
-            nonce: Date.now(),
-          });
         }
         return { ok: true, reward: data.contractReward, groceryPaid: data.groceryPaid, shipped: data.shipped };
       } catch {
@@ -2676,27 +2448,6 @@ export function StackAcresFarm() {
    * refused gets the wooden knock on top of it, from `act`.
    */
   /* ---------------------------------------------------------------- */
-  /* The Pixel Pilgrim                                                  */
-  /* ---------------------------------------------------------------- */
-
-  const onWorldMonkTap = useCallback((at: TapPoint) => {
-    setMonkDialogue({ phase: "greeting", at, line: PIXEL_PILGRIM_LINES[Math.floor(Math.random() * PIXEL_PILGRIM_LINES.length)] });
-  }, []);
-
-  /**
-   * The only path that ever sends `pray`. Fires the scene's own optimistic
-   * bow first (the player already said "yes"; the request has not answered
-   * yet, same posture every other tap-triggered animation on this map
-   * takes), then the request itself. A decline in the dialogue calls
-   * neither of these -- see StackAcresMonkDialogue. The dialogue's own
-   * anchor is preserved across the phase switch (`act`'s own `data.prayer`
-   * handling), never a new tap point.
-   */
-  const onMonkPray = useCallback(() => {
-    void act({ action: "pray" });
-  }, [act]);
-
-  /* ---------------------------------------------------------------- */
   /* NPC friendship                                                     */
   /* ---------------------------------------------------------------- */
 
@@ -2858,7 +2609,7 @@ export function StackAcresFarm() {
     baitOnHook.current = useBait && radishesHeld > 0;
   }, [useBait, radishesHeld]);
 
-  /** The only path that ever sends `give-gift`. Unlike a prayer, there is no
+  /** The only path that ever sends `give-gift`. There is no
    *  optimistic animation to fire on the press -- a gift's own reward (a
    *  keepsake) only ever shows once the server confirms it, the same
    *  "nothing to guess" posture a secret-item donation already takes. */
@@ -3042,7 +2793,6 @@ export function StackAcresFarm() {
   }, [arrange]);
 
   const onViewMoved = useCallback(() => {
-    setMonkDialogue(null);
     setGiftDialogue(null);
     setSleepDialog(null);
     story.close();
@@ -3289,9 +3039,6 @@ export function StackAcresFarm() {
         break;
       case "contracts":
         setShowContracts(true);
-        break;
-      case "crossbreed":
-        setShowCrossbreed(true);
         break;
     }
   }, []);
@@ -3580,77 +3327,6 @@ export function StackAcresFarm() {
     [act, takeProcessingDelta],
   );
   const onCollectVat = useCallback(() => vatAct({ action: "collect-vat" }), [vatAct]);
-
-  /** The Synergy Tree's two actions, same "hand down as a promise" shape as
-   *  the town board's above. */
-  const onUnlockSynergyPerk = useCallback(
-    (archetype: SynergyArchetype) => act({ action: "unlock-synergy-perk", archetype }),
-    [act],
-  );
-
-  const onActivateSynergyPerk = useCallback(
-    (archetype: SynergyArchetype, slot: number) => act({ action: "activate-synergy-perk", archetype, slot }),
-    [act],
-  );
-
-  /**
-   * The Prestige Reset Valve's own request, adapted from `act`'s fixed
-   * `ContractActionResult` shape to `StackAcresPrestigeActionResult` --
-   * `lastPrestigeReset` is where the extra field (what THIS reset just
-   * bought) lands.
-   */
-  const onPrestigeReset = useCallback(async (): Promise<StackAcresPrestigeActionResult> => {
-    const result = await act({ action: "prestige-reset", confirm: true });
-    if (!result.ok) return { ok: false, message: result.message };
-    if (!lastPrestigeReset.current) {
-      return { ok: false, message: "That did not go through. Nothing was reset." };
-    }
-    return { ok: true, result: lastPrestigeReset.current };
-  }, [act]);
-
-  /** The Sunlight Forge's own request. `act`'s fixed `ContractActionResult`
-   *  shape is already exactly `ForgeActionResult` -- there is no extra field
-   *  to adapt out of a sidecar the way `onPrestigeReset` needs, since `forge`
-   *  above already carries the resulting owned-list on the same response. */
-  const onForgeEnchantment = useCallback(
-    (enchantmentId: string): Promise<ForgeActionResult> =>
-      act({ action: "forge-enchantment", itemId: enchantmentId }),
-    [act],
-  );
-
-  /** The Crossbreeding Bed's two requests. A plant is answered by the bed
-   *  itself repainting off the response; a harvest also wants to say what it
-   *  bred, which rides the same sidecar ref `onPrestigeReset` uses. */
-  const onPlantCrossbreed = useCallback(
-    (row: number, col: number, stock: StackAcresStock): Promise<CrossbreedActionResult> =>
-      act({ action: "plant-crossbreed", row, col, stock }),
-    [act],
-  );
-  const onHarvestCrossbreed = useCallback(
-    async (plotId: string): Promise<CrossbreedHarvestActionResult> => {
-      lastCrossbreedHarvest.current = null;
-      const result = await act({ action: "harvest-crossbreed", plotId });
-      if (!result.ok) return result;
-      return { ok: true, settlement: lastCrossbreedHarvest.current };
-    },
-    [act],
-  );
-
-  /** Ray's Mythic Blueprints. Same shape reuse as `onForgeEnchantment` above
-   *  -- `act`'s `ContractActionResult` is already a superset of
-   *  `BlueprintActionResult`, and `blueprints` in the response already
-   *  carries the resulting card, so there is nothing else to adapt. */
-  const onStartBlueprint = useCallback(
-    (structureId: BlueprintId): Promise<BlueprintActionResult> =>
-      act({ action: "start-blueprint", structureId }),
-    [act],
-  );
-
-  const onContributeBlueprint = useCallback(
-    (structureId: BlueprintId, itemId: MachineItemId, amount: number): Promise<BlueprintActionResult> =>
-      act({ action: "contribute-blueprint", structureId, itemId, amount }),
-    [act],
-  );
 
   /**
    * Tilling a bed straight out of the radial ring, or dragged across N tiles
@@ -4305,17 +3981,15 @@ export function StackAcresFarm() {
   // the inline row (desktop/tablet landscape) or StackAcresHudOverflow's
   // drawer (compactNav), never both.
   // A new farm shows the few pills it can use: the Journal, water, visitors and the guide. Feed waits for
-  // an animal, and the perk, Forge and hybrid badges wait for a first building, so the first hour is a
-  // screen of one job rather than a dashboard.
+  // an animal, so the first hour is a screen of one job rather than a dashboard.
   const hasAnimals = liveUnits.some((unit) => isLivestock(unit.stock));
   const showFeedPill = feed > 0 || hasAnimals;
-  const showLaterPills = builtKinds.size > 0 || hasAnimals;
   const secondaryHud = (
     <>
       {/* The Journal's own entry point -- moved off the persistent left-hand
           nav row (it used to be a chip with its own line of text and a
           progress bar, always on screen) and folded into this same
-          standing-badge row as the Forge and Crossbreeding Bed below it. */}
+          standing-badge row as the pills below it. */}
       <StackAcresJournalChip view={journal} onOpen={() => { journalSound(); setShowGoals(true); }} />
       {showFeedPill && (
         <span className="sa-feed" title="Feed servings" data-label="Feed">
@@ -4333,57 +4007,12 @@ export function StackAcresFarm() {
         <strong>{water}</strong>
         <span className="sa-sr">of {WATER_CAPACITY} water in your can</span>
       </span>
-      {showLaterPills && (
-        <SynergyBadge
-          unlocked={synergyUnlocked}
-          active={synergyActive}
-          onOpen={() => { panelSound(); setShowSynergy(true); }}
-        />
-      )}
-      {/* The Prestige Reset Valve's entry point is off the HUD until the
-          valve is redesigned: as it stands it multiplies manual sales only,
-          so it pays a player to stop using contracts, the Vat and the Farm
-          Kitchen, which is backwards for an investment farm. A multiplier
-          already earned keeps applying to sales. */}
-      {/* The Sunlight Forge's own entry point -- same standing-badge posture
-          as the Prestige valve above it, since a forged enchantment is also
-          a permanent, session-spanning upgrade worth a glance rather than a
-          buried menu item. */}
-      {showLaterPills && (
-        <button
-          type="button"
-          className="sa-prestige-badge"
-          onClick={() => { panelSound(); setShowForge(true); }}
-          title="The Sunlight Forge"
-          data-label="Forge"
-        >
-          <Wand2 size={13} aria-hidden="true" />
-          <strong>{forge.length}/{Object.keys(FORGE_ENCHANTMENTS).length}</strong>
-        </button>
-      )}
-      {/* The Crossbreeding Bed's own entry point -- same standing-badge
-          posture as the two above it. The count is hybrids bred to date,
-          the one number about the bed worth a glance every session. */}
-      {showLaterPills && (
-        <button
-          type="button"
-          className="sa-prestige-badge"
-          onClick={() => { panelSound(); setShowCrossbreed(true); }}
-          title="The Crossbreeding Bed"
-          data-label="Crossbreeding"
-        >
-          <Dna size={13} aria-hidden="true" />
-          <strong>
-            {Object.values(crossbreed.inventory).reduce((sum, qty) => sum + (qty ?? 0), 0)}
-          </strong>
-        </button>
-      )}
       {/* "Who can visit my farm", and what the visitors thought. Same
-          standing-badge posture as the three above it: a setting worth a
+          standing-badge posture as the pills above it: a setting worth a
           glance, not a permanent line of text over the map. */}
       <StackAcresShowcaseChip onOpen={() => { panelSound(); setShowShowcase(true); }} />
-      {/* The barn's own standing badge, same posture as the Forge and the
-          Crossbreeding Bed beside it. The count is animals that want
+      {/* The barn's own standing badge, same posture as the pills beside
+          it. The count is animals that want
           something -- a meal or today's tend -- which is the one number
           about the barn worth a glance, and it is why this pill exists at
           all: the feed and care reminder lives here rather than as a
@@ -4570,7 +4199,6 @@ export function StackAcresFarm() {
               onNearWater={setNearWater}
               tool={tool}
               cutter={cutter}
-              farmhandSpeedMultiplier={farmhandSpeedMultiplier}
               viewExpansion={compactNav ? HUD_VIEW_EXPANSION : 1}
               celebrate={celebrate}
               onReady={onWorldReady}
@@ -4590,7 +4218,6 @@ export function StackAcresFarm() {
               onForageTap={onWorldForageTap}
               onLandTap={onWorldLandTap}
               onGreenhouseTap={onWorldGreenhouseTap}
-              onMonkTap={onWorldMonkTap}
               onRayTap={onWorldRayTap}
               onHouseTap={onWorldHouseTap}
               onBedTap={onWorldBedTap}
@@ -4658,7 +4285,7 @@ export function StackAcresFarm() {
             ))}
 
           {/* The tool belt, top left. The places list is gone and so is the old
-              tool dock: Shop, Blueprints, Town Board and Workshop are walked up
+              tool dock: Shop, Town Board and Workshop are walked up
               to (Ray, the signpost, the windmill), and the ground is worked with
               whichever slot is held plus the Use key across from the thumb stick. */}
           <StackAcresToolbelt
@@ -4695,26 +4322,13 @@ export function StackAcresFarm() {
             />
           )}
 
-          {/* The Pixel Pilgrim's dialogue, same screen-anchored treatment
-              as the seed menu above. */}
-          {monkDialogue && (
-            <StackAcresMonkDialogue
-              at={monkDialogue.at}
-              devotion={devotion}
-              result={monkDialogue}
-              busy={pendingByPrefix("pray")}
-              onPray={onMonkPray}
-              onClose={() => setMonkDialogue(null)}
-            />
-          )}
-
           {/* The bed's "Go to sleep?" card, pinned where the bed was tapped. */}
           {sleepDialog && (
             <StackAcresSleepDialogue at={sleepDialog} onSleep={onSleep} onClose={() => setSleepDialog(null)} />
           )}
 
           {/* NPC friendship's gift dialogue, same screen-anchored treatment
-              as the Pixel Pilgrim's above. */}
+              as the seed menu above. */}
           {giftDialogue && (
             <StackAcresFriendshipDialogue
               at={giftDialogue.at}
@@ -4731,7 +4345,7 @@ export function StackAcresFarm() {
           )}
 
           {/* One of the eleven story travelers' dialogue, same screen-anchored
-              treatment as the Pixel Pilgrim's and the gift dialogue above --
+              treatment as the gift dialogue above --
               anchored over their head, not the finger (see the scene's own
               `travelerHeadPoint`). */}
           {story.dialogue && (
@@ -5363,49 +4977,6 @@ export function StackAcresFarm() {
         />
       )}
 
-      {showBlueprints && (
-        <MythicBlueprintDashboard
-          blueprints={Object.values(blueprints)}
-          inventory={processing.inventory}
-          busy={pendingByPrefix("start-blueprint") || pendingByPrefix("contribute-blueprint")}
-          onStart={onStartBlueprint}
-          onContribute={onContributeBlueprint}
-          onClose={() => { panelSound(); setShowBlueprints(false); }}
-        />
-      )}
-
-      {showPrestige && (
-        <StackAcresPrestigeResetModal
-          prestige={prestige}
-          busy={isPending("prestige-reset")}
-          onReset={onPrestigeReset}
-          onClose={() => { panelSound(); setShowPrestige(false); }}
-        />
-      )}
-
-      {showSynergy && (
-        <SynergyOverlay
-          unlocked={synergyUnlocked}
-          active={synergyActive}
-          busy={pendingByPrefix("unlock-synergy-perk") || pendingByPrefix("activate-synergy-perk")}
-          onUnlock={onUnlockSynergyPerk}
-          onActivate={onActivateSynergyPerk}
-          onClose={() => { panelSound(); setShowSynergy(false); }}
-        />
-      )}
-
-      {showForge && (
-        <SunlightForgeTable
-          toolTier={toolTier}
-          inventory={processing.inventory}
-          goldBalance={profile?.goldBalance ?? 0}
-          ownedEnchantmentIds={forge}
-          busy={isPending("forge-enchantment")}
-          onForge={onForgeEnchantment}
-          onClose={() => { panelSound(); setShowForge(false); }}
-        />
-      )}
-
       {showBarn && (
         <StackAcresBarnPanel
           units={liveUnits}
@@ -5427,24 +4998,9 @@ export function StackAcresFarm() {
         />
       )}
 
-      {showCrossbreed && (
-        <CrossbreedBedSheet
-          bed={crossbreed}
-          seedStock={seedStock}
-          goldBalance={profile?.goldBalance ?? 0}
-          unlimitedGold={profile?.unlimitedGold ?? false}
-          cropFieldsUnlocked={cropFieldsUnlocked}
-          busy={pendingByPrefix("plant-crossbreed") || pendingByPrefix("harvest-crossbreed")}
-          onPlant={onPlantCrossbreed}
-          onHarvest={onHarvestCrossbreed}
-          onClose={() => { panelSound(); setShowCrossbreed(false); }}
-        />
-      )}
-
       {showGuide && (
         <ResourceGuideSheet
           inventory={processing.inventory}
-          crossbreedInventory={crossbreed.inventory}
           onOpenDestination={onGuideDestination}
           onClose={() => { panelSound(); setShowGuide(false); }}
         />

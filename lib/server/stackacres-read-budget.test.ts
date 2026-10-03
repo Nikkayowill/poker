@@ -32,7 +32,7 @@ describe("the StackAcres read budget", () => {
   // latest file is the live definition -- point this at the new file
   // whenever one of them redefines it again.
   const MIGRATION = readFileSync(
-    join(process.cwd(), "supabase/migrations/20261002200000_stackacres_cut_fantasy_systems.sql"),
+    join(process.cwd(), "supabase/migrations/20261003030350_stackacres_cut_fantasy_systems.sql"),
     "utf8",
   );
 
@@ -107,7 +107,7 @@ describe("the StackAcres read budget", () => {
     // 38: the Far Field migration's 42, plus the Daily Farm Board's two
     // period rows (20261001180411), plus the guard dogs (20261001195736)
     // carried forward, plus the farm's acres (20261001204826), minus the
-    // eight keys the fantasy systems cut took out (20261002200000).
+    // eight keys the fantasy systems cut took out (20261003030350).
     // The acres and the dogs ARE in the fallback array above. The board is NOT in the fallback array
     // above, and deliberately: its read is a conditional draw rather than a
     // plain per-table select (it writes a row on the period's first read),

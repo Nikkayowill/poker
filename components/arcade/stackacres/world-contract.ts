@@ -22,6 +22,7 @@ import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
 import type { StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
 import type { ForageNodeSnapshot } from "@/lib/stackacres/forage";
 import type { LandObstacleSnapshot } from "@/lib/stackacres/land-clearing";
+import type { Facing } from "@/lib/stackacres/tractor";
 
 /**
  * What the farm shell (stackacres-farm.tsx) hands the map under it, and what it
@@ -83,6 +84,8 @@ export interface UseSquare {
   at: TapPoint;
   /** True while the Use key is held down and he is walking a row, false for a single press or a tap. */
   stroke: boolean;
+  /** Which way he is facing, which is the way a tractor row runs (lib/stackacres/tractor.ts). */
+  facing?: Facing;
 }
 
 /**
@@ -271,6 +274,8 @@ export interface StackAcresWorldApi {
    * view is back; with no map to fade, it just runs `whileDark`.
    */
   sleep: (whileDark: () => Promise<void> | void) => Promise<void>;
+  /** Climbs down off the tractor, if he is on it. */
+  getOffTractor: () => void;
 }
 
 /** A building being placed: where it would stand, and whether it may. */
@@ -339,6 +344,10 @@ export interface StackAcresWorldProps {
   onStoreDeskTap: () => void;
   /** A finger landed on someone working at the grocery. */
   onStaffTap: (name: string, at: TapPoint) => void;
+  /** The farm owns a tractor, so one is parked by the barn to climb onto. */
+  tractorOwned: boolean;
+  /** He climbed onto the tractor or off it. */
+  onDrivingChanged: (driving: boolean) => void;
   tool: StackAcresTool;
   /** Fired once, by nonce, to trigger the gold-burst effect on one unit --
    *  the client-side twin of a confirmed collect. */

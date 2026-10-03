@@ -98,6 +98,7 @@ import {
 import {
   createSoilMap,
   hasSoilTile,
+  soilSlotForTile,
   type SoilTile,
 } from "@/lib/stackacres/soil";
 
@@ -219,6 +220,8 @@ import {
   BELT_TOOL_DEFS,
   beltAnimation,
   resolveBeltAction,
+  type BeltContext,
+  type BeltTarget,
   type BeltTool,
 } from "@/lib/stackacres/toolbelt";
 import type { UseSquare } from "./world-contract";
@@ -283,6 +286,15 @@ import {
   type StackAcresCutter,
 } from "@/lib/stackacres/cutters";
 import { isUnbuiltCutter } from "@/lib/stackacres/unbuilt";
+import {
+  GET_OFF_TRACTOR_FIRST,
+  STACKACRES_EQUIPMENT_DEFS,
+  TRACTOR_ROW_LENGTH,
+  tilesAhead,
+  workableRun,
+  type StackAcresBuyableEquipment,
+  type StackAcresEquipment,
+} from "@/lib/stackacres/tractor";
 import {
   evaluateStackAcresShopLock,
   type StackAcresShopProgress,
@@ -509,6 +521,9 @@ interface StackAcresResponse {
    *  cutters, which leaves the Scythe alone in hand. */
   cutters?: StackAcresCutter[];
   boughtCutter?: StackAcresBuyableCutter;
+  /** Machines owned outright, like the tractor. Absent from a response older than them. */
+  equipment?: StackAcresEquipment[];
+  boughtEquipment?: StackAcresBuyableEquipment;
   collected?: { stock: StackAcresStock; item: StackAcresItem; quantity: number; mucked: boolean };
   harvest?: {
     units: number;
@@ -973,6 +988,9 @@ export function StackAcresFarm() {
   // what is actually in hand: the pick while it is still owned, else the best.
   const [cutters, setCutters] = useState<StackAcresCutter[]>([STACKACRES_STARTING_CUTTER]);
   const [pickedCutter, setPickedCutter] = useState<StackAcresCutter | null>(null);
+  // The tractor, once bought, and whether he is up on it (the map says when that changes).
+  const [equipment, setEquipment] = useState<StackAcresEquipment[]>([]);
+  const [driving, setDriving] = useState(false);
   const cutter = heldStackAcresCutter(pickedCutter, cutters);
   const visibleCutters = useMemo(
     () =>
@@ -1851,6 +1869,7 @@ export function StackAcresFarm() {
     if (data.friendship) setFriendship(data.friendship);
     if (data.empire) setEmpire(data.empire);
     if (data.acres) setAcres(data.acres);
+    if (data.equipment) setEquipment(data.equipment);
     if (data.grocery !== undefined) setGrocery(data.grocery);
     // Fresh arrays on every answer; keeping the old one when nothing moved
     // saves the map a redraw.
@@ -2306,6 +2325,10 @@ export function StackAcresFarm() {
             text: `${stackacresCutterDef(data.boughtCutter).label} in hand`,
             nonce: Date.now(),
           });
+        }
+        if (body.action === "buy-equipment" && data.boughtEquipment) {
+          goldSound();
+          setLastCollect({ text: "Your tractor is parked by the barn. Tap it to climb on.", nonce: Date.now() });
         }
         // A delivered contract sounds and toasts like the other Gold payer
         // does, so the two ways money arrives on this farm feel like the same
@@ -3740,6 +3763,33 @@ export function StackAcresFarm() {
   // beds already changed on screen under the optimistic patch.
   useEffect(() => () => flushSowRun(), [flushSowRun]);
 
+  /** The tractor's hoe: one request for the whole row, each bed held like a single till is. */
+  const onPlaceSoilRow = useCallback(
+    (tiles: { tx: number; ty: number }[]) => {
+      const request = act({ action: "place-soil-tile", tx: tiles[0].tx, ty: tiles[0].ty, tiles });
+      for (const tile of tiles) {
+        const key = `${tile.tx},${tile.ty}`;
+        pendingSoilPlacements.current.set(key, request);
+        void request.finally(() => {
+          if (pendingSoilPlacements.current.get(key) === request) pendingSoilPlacements.current.delete(key);
+        });
+      }
+    },
+    [act],
+  );
+
+  /** The tractor's seed drill: the row sown in one request, after any of its beds still being hoed. */
+  const onSowRow = useCallback(
+    (stock: StackAcresCrop, tiles: { tx: number; ty: number }[]) => {
+      flushSowRun();
+      const waiting = tiles
+        .map((tile) => pendingSoilPlacements.current.get(`${tile.tx},${tile.ty}`))
+        .filter((pending) => pending !== undefined);
+      void act({ action: "stock", stock, tiles }, { after: waiting.length > 0 ? Promise.allSettled(waiting) : undefined });
+    },
+    [act, flushSowRun],
+  );
+
 
   /**
    * The farmer is standing on a square with a belt tool in hand: he walked to a
@@ -3758,29 +3808,58 @@ export function StackAcresFarm() {
   const onUseSquare = useCallback(
     (square: UseSquare) => {
       const unit = square.unitId ? liveUnits.find((candidate) => candidate.id === square.unitId) ?? null : null;
-      const action = resolveBeltAction(
-        belt,
-        {
-          unit,
-          tile: square.tile,
-          bedded: square.tile ? hasSoilTile(soilMapForTiles, square.tile.tx, square.tile.ty) : false,
-          armed: Boolean(
-            square.tile && armedLift && armedLift.tx === square.tile.tx && armedLift.ty === square.tile.ty,
-          ),
-          fenced: square.tile ? fencedSquares.has(soilSquareFenceKey(square.tile)) : false,
-          gate: square.tile ? acreGateAtSoilTile(square.tile, ownedAcres) : undefined,
-        },
-        {
-          water,
-          feed,
-          shelfFeed: processing.inventory,
-          gold,
-          nowMs,
-          seed,
-          seedsHeld: seed ? seedStock[seed] ?? 0 : 0,
-          wood: processing.inventory.wood ?? 0,
-        },
-      );
+      const targetFor = (tile: { tx: number; ty: number } | null, on: StackAcresUnitSnapshot | null): BeltTarget => ({
+        unit: on,
+        tile,
+        bedded: tile ? hasSoilTile(soilMapForTiles, tile.tx, tile.ty) : false,
+        armed: Boolean(tile && armedLift && armedLift.tx === tile.tx && armedLift.ty === tile.ty),
+        fenced: tile ? fencedSquares.has(soilSquareFenceKey(tile)) : false,
+        gate: tile ? acreGateAtSoilTile(tile, ownedAcres) : undefined,
+      });
+      const beltContext: BeltContext = {
+        water,
+        feed,
+        shelfFeed: processing.inventory,
+        gold,
+        nowMs,
+        seed,
+        seedsHeld: seed ? seedStock[seed] ?? 0 : 0,
+        wood: processing.inventory.wood ?? 0,
+      };
+      const action = resolveBeltAction(belt, targetFor(square.tile, unit), beltContext);
+      if (driving) {
+        // Up on the tractor the hoe and the seed pouch work the row ahead
+        // (lib/stackacres/tractor.ts); a lone bed falls through to the usual press.
+        if ((belt === "hoe" || belt === "seeds") && square.tile && square.facing) {
+          const want = belt === "hoe" ? "till" : "plant";
+          let seedsLeft = beltContext.seedsHeld;
+          const run = workableRun(tilesAhead(square.tile, square.facing, TRACTOR_ROW_LENGTH), (tile) => {
+            if (want === "plant" && seedsLeft < 1) return false;
+            const slot = soilSlotForTile(soilMapForTiles, tile.tx, tile.ty);
+            const on = slot === null ? null : liveUnits.find((candidate) => candidate.soilSlot === slot) ?? null;
+            if (resolveBeltAction(belt, targetFor(tile, on), beltContext).kind !== want) return false;
+            seedsLeft -= 1;
+            return true;
+          });
+          if (run.length > 1) {
+            if (armedLift) setArmedLift(null);
+            world.current?.farmerAction(want === "till" ? "hoe" : "plant", square.at);
+            tapAnchor.current = square.at;
+            if (want === "till") {
+              window.setTimeout(hoeSound, HOE_STRIKE_MS);
+              onPlaceSoilRow(run);
+            } else if (seed) {
+              sowSound();
+              onSowRow(seed, run);
+            }
+            return;
+          }
+        } else if (action.kind !== "idle") {
+          // Everything else waits until he climbs down, so nothing is done from a seat he isn't in.
+          if (!square.stroke) world.current?.floatAt(square.at, GET_OFF_TRACTOR_FIRST, "deny");
+          return;
+        }
+      }
       // Anything that is not the second half of a lift disarms it, so an armed
       // bed never sits waiting through a walk across the farm.
       if (action.kind !== "arm-lift" && action.kind !== "lift" && action.kind !== "arm-unfence" && action.kind !== "unfence" && armedLift) {
@@ -3891,7 +3970,7 @@ export function StackAcresFarm() {
         }
       }
     },
-    [act, acreDeed, fencedSquares, ownedAcres, belt, feed, gold, liveUnits, nowMs, processing.inventory, onPlaceSoilTile, onSowTile, feedPen, seed, seedStock, onRemoveSoilTile, armedLift, queueSow, tapBatched, soilMapForTiles, triggerCascade, water],
+    [act, acreDeed, fencedSquares, ownedAcres, belt, driving, feed, gold, liveUnits, nowMs, processing.inventory, onPlaceSoilTile, onPlaceSoilRow, onSowTile, onSowRow, feedPen, seed, seedStock, onRemoveSoilTile, armedLift, queueSow, tapBatched, soilMapForTiles, triggerCascade, water],
   );
 
   const onMoveSoilTileGroup = useCallback(
@@ -4546,6 +4625,8 @@ export function StackAcresFarm() {
               onJobBoardTap={onJobBoardTap}
               onStoreDeskTap={onStoreDeskTap}
               onStaffTap={onStaffTap}
+              tractorOwned={equipment.includes("tractor")}
+              onDrivingChanged={setDriving}
               onUseSquare={onUseSquare}
               useKeyLabel={belt === "rod" ? "Cast" : BELT_TOOL_DEFS[belt].label}
               rodHeld={belt === "rod"}
@@ -4661,6 +4742,8 @@ export function StackAcresFarm() {
               toolSound();
               setUseBait((on) => !on);
             }}
+            driving={driving}
+            onGetOff={() => world.current?.getOffTractor()}
           />
 
           {seedWheelOpen && (
@@ -5198,6 +5281,49 @@ export function StackAcresFarm() {
                   </div>
                   </>
                   )}
+
+                  {/* Farm machinery. Bought once; the tractor then waits by the barn. */}
+                  <StoreShelf icon="ico-hoe">Farm Machinery</StoreShelf>
+                  <div className="sa-stock-cards">
+                    {(() => {
+                      const def = STACKACRES_EQUIPMENT_DEFS.tractor;
+                      const owned = equipment.includes("tractor");
+                      const metal = processing.inventory.metal ?? 0;
+                      const enoughGold = (profile?.unlimitedGold ?? false) || (profile?.goldBalance ?? 0) >= def.gold;
+                      const enoughMetal = metal >= def.metal;
+                      return (
+                        <div className="sa-stock-card" data-testid="sa-buy-tractor">
+                          <span className="sa-tractor-art" aria-hidden="true" />
+                          <h3>{def.label}</h3>
+                          <p className="sa-stock-terms">{def.blurb}</p>
+                          {owned ? (
+                            <p className="sa-sheet-note">Yours. It is parked beside the barn.</p>
+                          ) : (
+                            <>
+                              <p className="sa-stock-yield">
+                                <StoreCost amount={def.gold} />{" "}
+                                <span className="sa-store-cost">
+                                  <StackAcresIcon name="ico-metal" size={16} />
+                                  {metal}/{def.metal} Metal
+                                </span>
+                              </p>
+                              <button
+                                type="button"
+                                className="sa-cta"
+                                disabled={isPending("buy-equipment:tractor") || !enoughGold || !enoughMetal}
+                                onClick={() => {
+                                  buySound();
+                                  void act({ action: "buy-equipment", kind: "tractor" });
+                                }}
+                              >
+                                {!enoughGold ? "Not enough Gold" : !enoughMetal ? "Not enough Metal" : "Buy"}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
                 </>
               )}
             </div>

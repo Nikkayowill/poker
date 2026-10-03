@@ -52,6 +52,9 @@ export interface StackAcresToolbeltProps {
   /** Radishes held, which is what the bait is. */
   baitHeld: number;
   onToggleBait: () => void;
+  /** He is up on the tractor, so the belt shows a key to climb down. */
+  driving?: boolean;
+  onGetOff?: () => void;
 }
 
 export function StackAcresToolbelt({
@@ -66,6 +69,8 @@ export function StackAcresToolbelt({
   baitOn,
   baitHeld,
   onToggleBait,
+  driving = false,
+  onGetOff,
 }: StackAcresToolbeltProps) {
   return (
     <div className="sa-toolbelt" data-tour="sa-tool-belt" role="radiogroup" aria-label="Tool belt">
@@ -102,6 +107,17 @@ export function StackAcresToolbelt({
           </button>
         );
       })}
+      {driving && (
+        <button
+          type="button"
+          className="sa-belt-slot sa-belt-getoff"
+          aria-label="Get off the tractor"
+          title="Climb down off the tractor."
+          onClick={onGetOff}
+        >
+          Get off
+        </button>
+      )}
       {nearWater && (
         <>
           {WATER_TOOLS.map((tool) => (

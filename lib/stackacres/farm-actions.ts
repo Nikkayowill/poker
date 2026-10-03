@@ -14,6 +14,7 @@
 import type { AxePayment } from "./axe";
 import { isLivestock, STACKACRES_CATALOGUE, type StackAcresCrop, type StackAcresStock } from "./catalogue";
 import type { StackAcresBuyableCutter } from "./cutters";
+import type { StackAcresBuyableEquipment } from "./tractor";
 import type { HiddenZoneId, SecretItemId } from "./secrets";
 import type { SynergyArchetype } from "./synergy-perks";
 import type { NpcId } from "./friendship";
@@ -100,6 +101,8 @@ export type Action =
   | { action: "upgrade-tool" }
   | { action: "upgrade-axe"; pay: AxePayment }
   | { action: "buy-cutter"; cutter: StackAcresBuyableCutter }
+  // A machine from Ray (./tractor.ts). Spends Gold and Metal.
+  | { action: "buy-equipment"; kind: StackAcresBuyableEquipment }
   // The processing track, all from the Workshop sheet (WorkshopModal.tsx).
   // `place-machine` spends Gold; the rest move inventory only.
   | { action: "place-machine"; kind: MachineKind }
@@ -133,7 +136,8 @@ export type Action =
   // Placeable soil beds (./soil.ts). `tx`/`ty` are SOIL_TILE lattice
   // coordinates, not world units -- see soilTileAt. Breaking ground is free:
   // neither action spends or refunds anything.
-  | { action: "place-soil-tile"; tx: number; ty: number }
+  // `tiles` is the tractor's straight row; `tx`/`ty` stay the first bed of it.
+  | { action: "place-soil-tile"; tx: number; ty: number; tiles?: { tx: number; ty: number }[] }
   | { action: "remove-soil-tile"; tx: number; ty: number }
   | { action: "place-fence"; tx: number; ty: number }
   | { action: "remove-fence"; tx: number; ty: number }
@@ -284,6 +288,10 @@ export function intentOf(body: Action): string {
   // Likewise one piece of the grocery's floor, and one person at a time hired or let go. Keyed on kind as
   // well as the square, checked before the generic `tx` branch below: two different kinds can share a
   // square (a rug under a fixture), and buying one must never be taken for a retry of the other.
+  // A tractor row is its own intent, apart from a single bed at its first square.
+  if (body.action === "place-soil-tile" && body.tiles && body.tiles.length > 0) {
+    return `place-soil-tile:${body.tiles.map((tile) => `${tile.tx},${tile.ty}`).join(";")}`;
+  }
   if (body.action === "grocery-buy") return `${body.action}:${body.kind}:${body.tx},${body.ty}`;
   if (body.action === "grocery-place" || body.action === "grocery-store") return `grocery-item:${body.id}`;
   if (body.action === "grocery-hire" || body.action === "grocery-fire") return `grocery-staff:${body.name}`;

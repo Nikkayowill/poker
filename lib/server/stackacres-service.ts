@@ -141,6 +141,16 @@ import {
   stackAcresGuardDogFromBatchRow,
 } from "./stackacres-guard-dog-store";
 import {
+  STACKACRES_EQUIPMENT_DEFS,
+  TRACTOR_NEEDED,
+  TRACTOR_ROW_NOT_STRAIGHT,
+  isStackAcresBuyableEquipment,
+  isStraightRow,
+  type StackAcresBuyableEquipment,
+  type StackAcresEquipment,
+} from "@/lib/stackacres/tractor";
+import { readStackAcresEquipment, recordStackAcresEquipment } from "./stackacres-equipment-store";
+import {
   HERD_PLACEMENT_MESSAGES,
   herdKey,
   herdPlacementProblem,
@@ -936,6 +946,8 @@ export interface StackAcresView {
   acres: StackAcresAcresView;
   /** The guard dogs standing on this farm (lib/stackacres/guard-dog.ts), by Homestead map square. */
   guardDogs: GuardDog[];
+  /** Machines this farm owns outright, like the tractor (lib/stackacres/tractor.ts). */
+  equipment: StackAcresEquipment[];
   /** The farm clock (lib/stackacres/clock.ts): this farm's offset, and the
    *  server's `now` for this read, so the client can correct for its own
    *  clock being off. */
@@ -1241,7 +1253,8 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   // batch is available this slot does nothing; `listDrones` must never be
   // called a second time here, or every live-Supabase view() pays for a
   // real, wasted extra round trip whose result nothing reads.
-  const [batch, activeSynergies, lifetimeGross, stoneNodeRows, fallback] = await Promise.all([
+  // Equipment is read on its own too: its table is newer than the batch RPC.
+  const [batch, activeSynergies, lifetimeGross, stoneNodeRows, fallback, equipment] = await Promise.all([
     supabase ? readStackAcresBatch(profile.id, day) : Promise.resolve(null),
     listActiveSynergyArchetypes(profile.id),
     readStackAcresLifetimeGross(profile.id),
@@ -1302,6 +1315,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
           groceryOwnershipEnabled() ? readGrocery(profile.id) : Promise.resolve(null),
           listStackAcresAcres(profile.id),
         ] as const),
+    readStackAcresEquipment(profile.id),
   ]);
 
   let rows: StoredStackAcresUnit[];
@@ -1626,6 +1640,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     fences,
     acres: acresView(ownedAcres),
     guardDogs,
+    equipment,
     clock: { offsetMs: clockOffset, serverNowMs: now.getTime() },
     revision,
     // Wood and Metal are the shared inventory's, since that is what the Far
@@ -2628,6 +2643,71 @@ export async function buyStackAcresCutter(
   }
 
   return { ...(await view(debited, now)), boughtCutter: cutter };
+}
+
+/**
+ * Buys a machine from Ray, like the tractor (lib/stackacres/tractor.ts).
+ *
+ * Rule 1: the Metal and then the Gold leave first, and only then is the row
+ * written, guarded by its primary key. A write that lands nothing (another tab
+ * bought it first) or fails outright gives both back, once. A write whose
+ * answer was lost but which did land is kept and stays paid for.
+ */
+export async function buyStackAcresEquipment(
+  token: string,
+  kindInput: string,
+  now = new Date(),
+): Promise<StackAcresView & { boughtEquipment: StackAcresBuyableEquipment }> {
+  if (!isStackAcresBuyableEquipment(kindInput)) throw new StackAcresRequestError("Ray doesn't sell that.", 400);
+  const kind = kindInput;
+  const def = STACKACRES_EQUIPMENT_DEFS[kind];
+  const profile = await ensureProfile(token);
+  if ((await readStackAcresEquipment(profile.id)).includes(kind)) {
+    throw new StackAcresRequestError(`You already own the ${def.label}.`, 409, { round: await snapshots(profile.id, now) });
+  }
+
+  const { refund: refundMaterials } = await spendStackAcresMaterials(
+    profile.id,
+    [{ item: "metal", quantity: def.metal }],
+    now,
+    (material) => `The ${def.label} needs ${material.quantity.toLocaleString()} ${machineItemNoun(material.item, material.quantity)}.`,
+  );
+  let paid: boolean;
+  try {
+    paid = await debitGoldByProfile(profile.id, def.gold);
+  } catch (error) {
+    await refundMaterials();
+    throw error;
+  }
+  if (!paid) {
+    await refundMaterials();
+    throw new StackAcresRequestError(`The ${def.label} costs ${def.gold.toLocaleString()} Gold.`, 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  const giveBack = async () => {
+    if (!profile.unlimitedGold) await refundGold(profile.id, def.gold);
+    await refundMaterials();
+  };
+
+  let recorded: boolean;
+  try {
+    recorded = await recordStackAcresEquipment(profile.id, kind);
+  } catch (error) {
+    const landed = await readStackAcresEquipment(profile.id)
+      .then((owned) => owned.includes(kind))
+      .catch(() => false);
+    if (!landed) {
+      await giveBack();
+      throw error;
+    }
+    recorded = true;
+  }
+  if (!recorded) {
+    await giveBack();
+    throw new StackAcresRequestError("That was already bought.", 409, { round: await snapshots(profile.id, now) });
+  }
+  return { ...(await view(await ensureProfile(token), now)), boughtEquipment: kind };
 }
 
 /**
@@ -6826,51 +6906,100 @@ export async function placeStackAcresSoilTile(
   now = new Date(),
 ): Promise<StackAcresView> {
   const profile = await ensureProfile(token);
-  const tx = Math.trunc(input.tx);
-  const ty = Math.trunc(input.ty);
+  const inMeadow = await breakGround(profile.id, Math.trunc(input.tx), Math.trunc(input.ty), now);
+  // Breaking ground out in the wild land IS clearing the Crop Fields -- there is no
+  // gate, no price and no modal any more, so the milestone the rest of the
+  // game hangs off (travellers arriving, the tool tiers, the crossbreeding
+  // shelf) is recorded off the first bed rather than off a purchase. Once
+  // set it never unsets, the same as every other permanent row, so lifting
+  // that bed again does not take the Crop Fields back. A bed on the
+  // Homestead's grass is not Crop Fields ground and records nothing.
+  //
+  // Run without a read first: the writer is an ignore-duplicates upsert
+  // (one round trip, idempotent), where "is it set already?" would cost a
+  // read and still race the other tab.
+  if (inMeadow) await recordStackAcresCropFieldsUnlocked(profile.id, now);
+  await recordStoryEvents(profile.id, [{ kind: "soil-placed", count: 1 }], now);
+  return view(profile, now);
+}
 
+/**
+ * The tractor's hoe: a straight row of 2 to 12 new beds in one request
+ * (lib/stackacres/tractor.ts). Only a farm that owns a tractor may send one.
+ * Each bed goes through exactly what a single bed does, so the rules and the
+ * cost per bed (nothing) are the same. A bed refused on its own (a road, a bed
+ * already there) is skipped and the rest are still dug; the row is refused
+ * only when none of it could be.
+ */
+export async function placeStackAcresSoilRow(
+  token: string,
+  input: { tiles: readonly { tx: number; ty: number }[] },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const tiles = input.tiles.map((tile) => ({ tx: Math.trunc(tile.tx), ty: Math.trunc(tile.ty) }));
+  if (!isStraightRow(tiles)) throw new StackAcresRequestError(TRACTOR_ROW_NOT_STRAIGHT, 400);
+  const profile = await ensureProfile(token);
+  if (!(await readStackAcresEquipment(profile.id)).includes("tractor")) {
+    throw new StackAcresRequestError(TRACTOR_NEEDED, 403);
+  }
+
+  let dug = 0;
+  let inMeadow = false;
+  let firstRefusal: StackAcresRequestError | null = null;
+  for (const { tx, ty } of tiles) {
+    try {
+      if (await breakGround(profile.id, tx, ty, now)) inMeadow = true;
+      dug += 1;
+    } catch (error) {
+      if (error instanceof StackAcresRequestError) {
+        firstRefusal ??= error;
+        continue;
+      }
+      // Something went wrong underneath, not a refusal: keep what already landed.
+      if (dug === 0) throw error;
+      break;
+    }
+  }
+  if (dug === 0) throw firstRefusal ?? new StackAcresRequestError("There is already a bed there.", 409);
+
+  if (inMeadow) await recordStackAcresCropFieldsUnlocked(profile.id, now);
+  await recordStoryEvents(profile.id, [{ kind: "soil-placed", count: dug }], now);
+  return view(profile, now);
+}
+
+/**
+ * One new bed on bare ground, checked and written: the whole of what the hoe
+ * does to one square. Free -- nothing is spent and nothing is refunded. True
+ * when the bed is out in the wild land, which is the Crop Fields milestone.
+ * Throws a `StackAcresRequestError` for a square the hoe may not break.
+ */
+async function breakGround(profileId: string, tx: number, ty: number, now: Date): Promise<boolean> {
   if (!isHoeableSoilTile(tx, ty)) {
     throw new StackAcresRequestError("The hoe only breaks grass.", 400);
   }
-  if (await fencedSoilTile(profile.id, tx, ty)) {
-    throw new StackAcresRequestError(FENCE_IN_THE_WAY, 409, { round: await snapshots(profile.id, now) });
+  if (await fencedSoilTile(profileId, tx, ty)) {
+    throw new StackAcresRequestError(FENCE_IN_THE_WAY, 409, { round: await snapshots(profileId, now) });
   }
-  await requireOwnedGround(profile.id, [soilToMapTile(tx, ty)], now);
-  if (overgrownSoilTile(tx, ty, clearedObstacleIds(await listStackAcresLandObstacleStates(profile.id)))) {
-    throw new StackAcresRequestError(OVERGROWN_SQUARE, 409, { round: await snapshots(profile.id, now) });
+  await requireOwnedGround(profileId, [soilToMapTile(tx, ty)], now);
+  if (overgrownSoilTile(tx, ty, clearedObstacleIds(await listStackAcresLandObstacleStates(profileId)))) {
+    throw new StackAcresRequestError(OVERGROWN_SQUARE, 409, { round: await snapshots(profileId, now) });
   }
-  const inMeadow = isWildSoilTile(tx, ty);
 
   // The slots the crops are holding, so the new bed's order clears them --
   // see `nextSoilOrder` in lib/stackacres/soil.ts. Passed unevaluated: the
   // memory store is the only one that needs the read, and the RPC does the
   // same arithmetic in SQL.
-  const outcome = await placeSoilTileRow(profile.id, tx, ty, SOIL_DEFAULT_TIER, async () =>
-    (await listStackAcresUnits(profile.id))
+  const outcome = await placeSoilTileRow(profileId, tx, ty, SOIL_DEFAULT_TIER, async () =>
+    (await listStackAcresUnits(profileId))
       .map((unit) => unit.soilSlot)
       .filter((slot): slot is number => slot !== null),
   );
-  if (outcome.kind === "created") {
-    // Breaking ground out in the wild land IS clearing the Crop Fields -- there is no
-    // gate, no price and no modal any more, so the milestone the rest of the
-    // game hangs off (travellers arriving, the tool tiers, the crossbreeding
-    // shelf) is recorded off the first bed rather than off a purchase. Once
-    // set it never unsets, the same as every other permanent row, so lifting
-    // that bed again does not take the Crop Fields back. A bed on the
-    // Homestead's grass is not Crop Fields ground and records nothing.
-    //
-    // Run without a read first: the writer is an ignore-duplicates upsert
-    // (one round trip, idempotent), where "is it set already?" would cost a
-    // read and still race the other tab.
-    if (inMeadow) await recordStackAcresCropFieldsUnlocked(profile.id, now);
-    await recordStoryEvents(profile.id, [{ kind: "soil-placed", count: 1 }], now);
-    return view(profile, now);
-  }
+  if (outcome.kind === "created") return isWildSoilTile(tx, ty);
 
   // Both remaining outcomes ("occupied" and a lost race for the same bare
   // cell) read as the same thing to the player -- there is already a bed there.
   throw new StackAcresRequestError("There is already a bed there.", 409, {
-    round: await snapshots(profile.id, now),
+    round: await snapshots(profileId, now),
   });
 }
 

@@ -37,6 +37,13 @@ describe("intentOf: farm taps that must not swallow each other", () => {
     expect(intentOf({ action: "stock", stock: "carrot", tiles: [{ tx: 1, ty: 2 }, { tx: 2, ty: 2 }] })).not.toBe(here);
   });
 
+  it("keeps a tractor row apart from a single bed at its first square", () => {
+    const single = intentOf({ action: "place-soil-tile", tx: 1, ty: 2 });
+    const row = intentOf({ action: "place-soil-tile", tx: 1, ty: 2, tiles: [{ tx: 1, ty: 2 }, { tx: 2, ty: 2 }] });
+    expect(row).not.toBe(single);
+    expect(intentOf({ action: "buy-equipment", kind: "tractor" })).toBe("buy-equipment:tractor");
+  });
+
   it("keeps two grocery fixtures of different kinds bought on the same square apart", () => {
     const fern = intentOf({ action: "grocery-buy", kind: "fern", tx: 5, ty: 5 });
     const flowerbox = intentOf({ action: "grocery-buy", kind: "flowerbox", tx: 5, ty: 5 });

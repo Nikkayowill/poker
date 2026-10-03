@@ -9,10 +9,9 @@
  * 'open'`, so the single-contract rule holds even against two racing tabs.
  *
  * NOT THE ONLY DOOR ANY MORE. `sellStackAcresItem` (lib/server/
- * stackacres-service.ts) can turn any inventory item, including Flour/
- * Cheese/Cloth, into Gold at any time, at that item's own (lower) sell
- * price -- see ./machine-items.ts's own header on why a contract still pays
- * a 1.3x premium over Sell for exactly these three goods. Neither door is
+ * stackacres-service.ts) can turn any inventory item into Gold at any time,
+ * at that item's own (lower) sell price, to the townsperson who buys it.
+ * A contract pays a small premium over that (see `CONTRACT_RUNGS`). Neither door is
  * capped any more (see lib/stackacres/exchange.ts's header for when and why
  * the flat daily ceiling this comment used to describe was removed).
  *
@@ -48,45 +47,35 @@ export interface ContractDef {
 /**
  * The rungs a contract is drawn from.
  *
- * FLOUR pays 1.3x its Sell price, not a multiple of seed. It used to pay up
- * to 35x the seed cost, and with no cooldown between orders that was a money
- * printer. A Mill turns 3 Wheat into 1 Flour, so the rungs still clear what
- * growing and milling it cost.
+ * Every rung pays 1.25x what its goods' raw inputs sell for
+ * (`recipeRawGoldValue`), pinned by a test in ./recipes.test.ts. That beats
+ * selling the made good itself (at most 1.15x raw, ./machine-items.ts), so an
+ * order is still worth filling, but only by a little: the farm's money is raw
+ * goods sold in bulk in town, not orders (2026-10-02 economy rebase).
  *
- * CHEESE AND CLOTH are priced off something stricter, because their raw
- * materials are not seed but FORGONE HARVEST GOLD. Milk and wool have a price
- * on the Gold track (./items.ts); sending them to a Dairy or a Loom means the
- * harvest never paid for them. So each rung below pays 1.3x
- * `recipeRawGoldValue` -- a flat 30% premium for the round trip, pinned by a
- * test in ./recipes.test.ts. Anything at or under 1.0x would make the machine
- * a sink the player built with their own Gold, which is the shape of bug this
- * file's header exists to stop repeating.
+ * No Cheese or Cloth orders. A rung for a good the Dairy or Loom makes would
+ * pay hundreds per unit and turn the board back into the main income.
  *
  * The premium is uniform on purpose. A ladder where one good paid better per
  * unit of raw material would turn the single open contract into an arbitrage
- * puzzle -- reroll until Cheese comes up -- and there is no reroll, so it
- * would just be a bad draw the player is stuck with.
+ * puzzle -- reroll until the rich one comes up -- and there is no reroll, so
+ * it would just be a bad draw the player is stuck with.
  */
 export const CONTRACT_RUNGS: readonly ContractDef[] = [
-  { item: "flour", quantity: 2, goldReward: 42, influenceReward: 10 },
-  { item: "flour", quantity: 4, goldReward: 84, influenceReward: 25 },
-  { item: "flour", quantity: 8, goldReward: 168, influenceReward: 60 },
-  { item: "cheese", quantity: 2, goldReward: 1_720, influenceReward: 60 },
-  { item: "cheese", quantity: 4, goldReward: 3_430, influenceReward: 130 },
-  { item: "cloth", quantity: 3, goldReward: 1_190, influenceReward: 40 },
-  { item: "cloth", quantity: 6, goldReward: 2_370, influenceReward: 90 },
-  // Chapter 5's town kitchen, same 1.3x premium. Sauerkraut has no rung:
-  // three cabbages sell for 6 Gold, so a fair order would pay almost nothing.
-  // The Preserves Cellar is where Sauerkraut earns its keep instead.
-  { item: "sauce", quantity: 2, goldReward: 200, influenceReward: 10 },
-  { item: "sauce", quantity: 4, goldReward: 400, influenceReward: 20 },
-  { item: "salsa", quantity: 3, goldReward: 300, influenceReward: 15 },
-  { item: "salsa", quantity: 6, goldReward: 600, influenceReward: 30 },
-  { item: "pickles", quantity: 4, goldReward: 260, influenceReward: 10 },
-  { item: "pickles", quantity: 8, goldReward: 520, influenceReward: 25 },
-  // Chapter 6. The Harvest Feast has no order: it is for eating and giving.
-  { item: "bean_casserole", quantity: 2, goldReward: 290, influenceReward: 15 },
-  { item: "bean_casserole", quantity: 4, goldReward: 580, influenceReward: 30 },
+  { item: "flour", quantity: 2, goldReward: 52, influenceReward: 10 },
+  { item: "flour", quantity: 4, goldReward: 105, influenceReward: 25 },
+  { item: "flour", quantity: 8, goldReward: 210, influenceReward: 60 },
+  // Sauerkraut has no rung: three cabbages sell for 6 Gold, so a fair order
+  // would pay almost nothing.
+  { item: "sauce", quantity: 2, goldReward: 192, influenceReward: 10 },
+  { item: "sauce", quantity: 4, goldReward: 385, influenceReward: 20 },
+  { item: "salsa", quantity: 3, goldReward: 289, influenceReward: 15 },
+  { item: "salsa", quantity: 6, goldReward: 578, influenceReward: 30 },
+  { item: "pickles", quantity: 4, goldReward: 250, influenceReward: 10 },
+  { item: "pickles", quantity: 8, goldReward: 500, influenceReward: 25 },
+  // The Harvest Feast has no order: it is for eating and giving.
+  { item: "bean_casserole", quantity: 2, goldReward: 248, influenceReward: 15 },
+  { item: "bean_casserole", quantity: 4, goldReward: 495, influenceReward: 30 },
 ];
 
 export interface StackAcresContractRow {

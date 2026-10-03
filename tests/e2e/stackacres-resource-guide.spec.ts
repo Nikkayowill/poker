@@ -60,7 +60,7 @@ test("a resource guide opens from the inventory and leads to the screen that use
 
   // What it is for: the machines built from it, and selling it.
   const uses = detail.getByRole("list", { name: "Uses" });
-  await expect(uses.getByText("Build the Mill")).toBeVisible();
+  await expect(uses.getByText("Build the Feed Grinder")).toBeVisible();
   await expect(uses.getByText("Build the Loom")).toBeVisible();
 
   // Where to get more: an open source, with no "not open yet" on it.
@@ -69,7 +69,7 @@ test("a resource guide opens from the inventory and leads to the screen that use
   await expect(sources.getByText(/Not open yet/)).toHaveCount(0);
 
   // Follow a use: the guide closes and the Workshop opens.
-  await uses.getByRole("listitem").filter({ hasText: "Build the Mill" }).getByRole("button", { name: "Open the Workshop" }).click();
+  await uses.getByRole("listitem").filter({ hasText: "Build the Feed Grinder" }).getByRole("button", { name: "Open the Workshop" }).click();
   await expect(page.getByRole("dialog", { name: "What you are carrying" })).toHaveCount(0);
   await expect(page.getByRole("dialog", { name: "The Workshop" })).toBeVisible();
 });

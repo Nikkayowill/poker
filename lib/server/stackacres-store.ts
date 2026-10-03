@@ -2450,35 +2450,6 @@ export async function writeStackAcresSiloFeeds(
   return data ? machineFromRow(data as MachineDbRow) : null;
 }
 
-/** Writes the Farm Kitchen's standing order and bank start under the row's
- *  version guard. Null on a lost race. */
-export async function writeStackAcresFarmKitchen(
-  current: StoredMachine,
-  standingRecipe: RecipeId | null,
-  kitchenSince: string | null,
-): Promise<StoredMachine | null> {
-  const supabase = adminClient();
-  const version = current.version + 1;
-
-  if (!supabase) {
-    const stored = memoryMachines.get(current.id);
-    if (!stored || stored.version !== current.version) return null;
-    const updated: StoredMachine = { ...stored, standingRecipe, kitchenSince, version };
-    memoryMachines.set(current.id, { ...updated });
-    return { ...updated };
-  }
-
-  const { data, error } = await supabase
-    .from("homestead_machines")
-    .update({ standing_recipe: standingRecipe, kitchen_since: kitchenSince, version })
-    .eq("id", current.id)
-    .eq("version", current.version)
-    .select(MACHINE_COLUMNS)
-    .maybeSingle();
-  if (error) throw new Error(`Could not update the Farm Kitchen: ${error.message}`);
-  return data ? machineFromRow(data as MachineDbRow) : null;
-}
-
 /* ------------------------------------------------------------------ */
 /* Fermenting Vat                                                      */
 /* ------------------------------------------------------------------ */

@@ -10,7 +10,6 @@
 
 import type { VatContainer } from "./aging";
 import { buildPlace, type BuildPlace } from "./build-cost";
-import { farmKitchenBanked } from "./farm-kitchen";
 import { isMachineDone, type MachineKind, type StackAcresMachineSnapshot } from "./machines";
 
 /** A building with a door on the Homestead map. The prop tags the scene
@@ -66,7 +65,6 @@ export function roomHasMachines(machines: readonly StackAcresMachineSnapshot[], 
  */
 export function buildingCues(input: BuildingCueInput): readonly BuildingCue[] {
   const cues: BuildingCue[] = [];
-  const now = new Date(input.nowMs);
 
   if (input.cellar?.status === "collectible") {
     cues.push({ door: "farmhouse", where: "House", line: "The jars in the cellar have finished aging." });
@@ -86,19 +84,6 @@ export function buildingCues(input: BuildingCueInput): readonly BuildingCue[] {
         finished === 1
           ? `Something in ${room} has finished and is waiting to be taken.`
           : `${finished} things in ${room} have finished and are waiting to be taken.`,
-    });
-  }
-
-  const kitchen = input.machines.find((machine) => machine.kind === "farm_kitchen");
-  const banked = kitchen ? farmKitchenBanked(kitchen.kitchenSince, now) : 0;
-  if (banked > 0) {
-    cues.push({
-      door: "farmhouse",
-      where: "House",
-      line:
-        banked === 1
-          ? "The Farm Kitchen has a batch banked."
-          : `The Farm Kitchen has ${banked} batches banked.`,
     });
   }
 

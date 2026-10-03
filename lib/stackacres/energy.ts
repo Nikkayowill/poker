@@ -24,7 +24,7 @@ export const TOO_TIRED_TO_FISH = "You're too tired to fish. Eat something from t
 export const HUNTING_STALK_ENERGY = 10;
 export const TOO_TIRED_TO_HUNT = "You're too tired to hunt. Eat something from the kitchen!";
 
-export const FOOD_ITEMS = ["bread", "cake", "stew", "salad", "salsa", "stuffed_peppers", "bean_casserole", "harvest_feast"] as const;
+export const FOOD_ITEMS = ["bread", "cake", "stew", "salad", "salsa", "sauerkraut", "stuffed_peppers", "bean_casserole", "harvest_feast"] as const;
 export type FoodItem = (typeof FOOD_ITEMS)[number];
 
 export const FOOD_ENERGY: Readonly<Record<FoodItem, number>> = {
@@ -33,6 +33,9 @@ export const FOOD_ENERGY: Readonly<Record<FoodItem, number>> = {
   stew: 50,
   salad: 15,
   salsa: 20,
+  // Cheap to make (three cabbages), so a small top-up. It used to age in the
+  // Preserves Cellar; with the cellar retired, eating it is what it is for.
+  sauerkraut: 10,
   stuffed_peppers: 40,
   bean_casserole: 40,
   // A full bar from empty.

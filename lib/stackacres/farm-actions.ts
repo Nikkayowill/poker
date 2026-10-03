@@ -16,7 +16,6 @@ import { isLivestock, STACKACRES_CATALOGUE, type StackAcresCrop, type StackAcres
 import type { StackAcresBuyableCutter } from "./cutters";
 import type { HiddenZoneId, SecretItemId } from "./secrets";
 import type { NpcId } from "./friendship";
-import type { CellarItem } from "./aging";
 import type { MachineItemId } from "./machine-items";
 import type { TownBuyerId } from "./town-buyers";
 import type { MachineKind } from "./machines";
@@ -105,11 +104,9 @@ export type Action =
   // One batch. Instant for a Dairy or a Loom; a Mill enqueues and `work`
   // collects it.
   | { action: "process"; recipe: RecipeId; batches?: number }
-  | { action: "seal-vat" }
+  // The Vat and the Cellar take no new batches; one sealed before that still collects.
   | { action: "collect-vat" }
-  | { action: "seal-cellar"; item: CellarItem }
   | { action: "collect-cellar" }
-  | { action: "set-kitchen-order"; recipe: RecipeId }
   // The idle-worker pass: settles every ripe wheat plot and every mill that
   // has become startable or finished. Moves no Gold. The Workshop sheet
   // fires it when something is due and on its own "work the farm" key.
@@ -265,8 +262,6 @@ export function intentOf(body: Action): string {
   // there is only ever one greet in flight for a given NPC at a time.
   if ("npc" in body) return "item" in body ? `${body.action}:${body.npc}:${body.item}` : `${body.action}:${body.npc}`;
   if (body.action === "eat") return `eat:${body.item}`;
-  // One cellar, so storing either kind of jar is the same press.
-  if (body.action === "seal-cellar") return "seal-cellar";
   if ("item" in body) return `${body.action}:${body.item}:${body.quantity}`;
   if ("itemId" in body) return `${body.action}:${body.itemId}`;
   // A forage claim on one drone must never dedupe against or block a claim

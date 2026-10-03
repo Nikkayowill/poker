@@ -30,7 +30,7 @@ describe("drawContract", () => {
     // one. Rolled across the table rather than at one point, since a filtered
     // draw that ignored `producible` would still pass a single-point check.
     for (let roll = 0; roll < 1; roll += 0.05) {
-      expect(drawContract(["cheese"], () => roll)?.item).toBe("cheese");
+      expect(drawContract(["sauce"], () => roll)?.item).toBe("sauce");
     }
   });
 

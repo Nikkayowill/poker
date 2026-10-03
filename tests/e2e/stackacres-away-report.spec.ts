@@ -65,7 +65,7 @@ test("a player back after hours is told what finished while they were gone", asy
   const dialog = page.getByRole("dialog", { name: "While you were away" });
   await expect(dialog).toBeVisible({ timeout: 20_000 });
   await expect(dialog).toContainText("about 5 hours");
-  await expect(dialog).toContainText("The Mill finished Flour.");
+  await expect(dialog).toContainText("The Feed Grinder finished Flour.");
   await dialog.getByRole("button", { name: "Back to work" }).click();
   await expect(dialog).toBeHidden();
 });

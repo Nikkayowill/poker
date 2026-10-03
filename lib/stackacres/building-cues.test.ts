@@ -84,15 +84,12 @@ describe("building cues", () => {
     expect(buildingCues(farm({ vat: container("aging"), cellar: container("aging") }))).toEqual([]);
   });
 
-  it("names the kitchen's banked batches", () => {
+  it("says nothing about a retired Farm Kitchen's old order", () => {
     const kitchen = machine({
       kind: "farm_kitchen",
       standingRecipe: "pickles",
       kitchenSince: new Date(NOW - 4 * 60 * 60 * 1000).toISOString(),
     });
-    const cues = buildingCues(farm({ machines: [kitchen] }));
-    expect(cues).toHaveLength(1);
-    expect(cues[0].door).toBe("farmhouse");
-    expect(cues[0].line).toMatch(/\d+ batches banked/);
+    expect(buildingCues(farm({ machines: [kitchen] }))).toEqual([]);
   });
 });

@@ -313,10 +313,8 @@ import {
   createStackAcresContract,
   createStackAcresMachine,
   createStackAcresWheatPlot,
-  createStackAcresVatManifest,
   collectStackAcresMachine,
   writeStackAcresSiloFeeds,
-  writeStackAcresFarmKitchen,
   collectStackAcresVatManifest,
   collectStackAcresWheatPlot,
   listStackAcresAgingManifests,
@@ -451,7 +449,6 @@ import { isActiveStock } from "@/lib/stackacres/scope";
 import { isUnbuiltCutter } from "@/lib/stackacres/unbuilt";
 import { feedingToast, servingBonusEggs, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
 import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/feed-silo";
-import { isFarmKitchenRecipe, planFarmKitchen } from "@/lib/stackacres/farm-kitchen";
 import { isSeedUnlocked, seedLockedMessage } from "@/lib/stackacres/seed-unlocks";
 import { TOWN_BUYERS, buyerTakes, isTownBuyer, townBuyerFor } from "@/lib/stackacres/town-buyers";
 import { STARTER_SEED_COUNT, STARTER_SEED_CROP, STARTER_SEEDS_LEDGER_KEY } from "@/lib/stackacres/starter-seeds";
@@ -524,6 +521,7 @@ import {
   canStartMachine,
   isMachineDone,
   isMachineKind,
+  isRetiredMachine,
   toMachineSnapshot,
   type MachineKind,
   type StackAcresMachineSnapshot,
@@ -531,17 +529,10 @@ import {
 import {
   AGING_TIERS,
   CELLAR_AGING_TIERS,
-  VAT_INPUT_ITEM,
-  VAT_INPUT_QUANTITY,
-  baseGoldValueForSeal,
-  cellarBaseGoldValue,
-  cellarSealQuantity,
-  firstAgingTier,
   toVatContainer,
   vatTierForElapsed,
   agedGoldValue,
   type AgingTier,
-  type CellarItem,
   type VatContainer,
 } from "@/lib/stackacres/aging";
 import {
@@ -5406,6 +5397,14 @@ export async function placeStackAcresMachine(
   const def = MACHINE_CATALOGUE[kind];
   const profile = await ensureProfile(token);
 
+  // The Vat, the Cellar and the Farm Kitchen are no longer built (see
+  // RETIRED_MACHINE_KINDS). Refused before anything is spent.
+  if (isRetiredMachine(kind)) {
+    throw new StackAcresRequestError(`The ${def.label} isn't built any more.`, 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
   const machines = await listStackAcresMachines(profile.id);
   // One of each kind, checked here for a clean 409; the database's own
   // `homestead_machines_one_per_kind` index is the guard a race cannot get
@@ -5454,7 +5453,8 @@ export async function placeStackAcresMachine(
 }
 
 /** The player's own aging machine (the Vat or the Preserves Cellar), or a
- *  404 -- every seal/collect action needs this first. */
+ *  404. Neither takes a new batch any more; a batch sealed before that can
+ *  still be collected. */
 async function requireAgingMachine(profileId: string, kind: "vat" | "cellar", now: Date) {
   const machines = await listStackAcresMachines(profileId);
   const machine = machines.find((candidate) => candidate.kind === kind);
@@ -5466,121 +5466,6 @@ async function requireAgingMachine(profileId: string, kind: "vat" | "cellar", no
     );
   }
   return machine;
-}
-
-/**
- * Seals a fresh batch inside the player's vat: `VAT_INPUT_QUANTITY` Cheese
- * leaves inventory and is locked inside a new `AgingManifest`, both in one
- * database transaction (`seal_homestead_vat`) -- see that migration's own
- * header for why this cannot be a debit followed by a separate insert.
- *
- * ONE SEAL AT A TIME, same posture as Town Contracts' one-open-contract rule:
- * the database's own `homestead_vat_manifests_one_per_machine` unique index
- * is the real guard against two racing calls both sealing the same vat, and
- * this function checks ahead of the debit only for a clean 409 -- the same
- * "check first for a nice error, guarded write is the real gate" shape
- * `placeStackAcresMachine` takes above.
- *
- * `baseGoldValueForSeal` prices the batch OFF THE LIVE RECIPE TABLE, but only
- * ONCE, right here -- the value it returns is written straight into the
- * manifest and never re-read at collection. See aging.ts's header for why
- * that snapshot is load-bearing.
- */
-export async function sealStackAcresVat(token: string, now = new Date()): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
-  const vat = await requireAgingMachine(profile.id, "vat", now);
-
-  const existing = await readStackAcresAgingManifest(profile.id, vat.id);
-  if (existing) {
-    throw new StackAcresRequestError("The vat is already sealed.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-
-  const baseGoldValue = baseGoldValueForSeal();
-  if (baseGoldValue === null) {
-    // Cannot happen for cheese today (milk always prices on the Gold track),
-    // but the vat must refuse to seal a batch it cannot value rather than
-    // seal one worth nothing -- see aging.ts's own comment on this return.
-    throw new StackAcresRequestError("The vat cannot price that right now.", 500, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-
-  const sealedAt = now;
-  const readyAt = new Date(now.getTime() + firstAgingTier().durationMs);
-
-  const sealed = await createStackAcresVatManifest(
-    profile.id,
-    vat.id,
-    VAT_INPUT_ITEM,
-    VAT_INPUT_QUANTITY,
-    baseGoldValue,
-    sealedAt,
-    readyAt,
-  );
-  if (!sealed.ok) {
-    throw new StackAcresRequestError(
-      sealed.reason === "occupied"
-        ? "The vat is already sealed."
-        : `Sealing the vat takes ${machineItemLabel(VAT_INPUT_ITEM, VAT_INPUT_QUANTITY)}.`,
-      409,
-      { round: await snapshots(profile.id, now) },
-    );
-  }
-
-  return view(profile, now);
-}
-
-/**
- * Seals jars of Pickles or Sauerkraut in the Preserves Cellar: every jar of
- * that kind on the shelf, up to CELLAR_CAPACITY, priced once at seal time off
- * what the jars sell for today. Same one-transaction seal as the Vat
- * (`seal_homestead_vat`), keyed on the Cellar's own machine row.
- */
-export async function sealStackAcresCellar(
-  token: string,
-  item: CellarItem,
-  now = new Date(),
-): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
-  const cellar = await requireAgingMachine(profile.id, "cellar", now);
-
-  const existing = await readStackAcresAgingManifest(profile.id, cellar.id);
-  if (existing) {
-    throw new StackAcresRequestError("The cellar already has jars aging.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-
-  const inventory = await readStackAcresInventory(profile.id);
-  const quantity = cellarSealQuantity(inventoryQuantity(inventory, item));
-  if (quantity < 1) {
-    throw new StackAcresRequestError(`You have no ${machineItemNoun(item, 2)} to store.`, 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-
-  const sealed = await createStackAcresVatManifest(
-    profile.id,
-    cellar.id,
-    item,
-    quantity,
-    cellarBaseGoldValue(item, quantity),
-    now,
-    new Date(now.getTime() + firstAgingTier(CELLAR_AGING_TIERS).durationMs),
-  );
-  if (!sealed.ok) {
-    throw new StackAcresRequestError(
-      sealed.reason === "occupied"
-        ? "The cellar already has jars aging."
-        : `Some of those ${machineItemNoun(item, 2)} just went elsewhere. Try again.`,
-      409,
-      { round: await snapshots(profile.id, now) },
-    );
-  }
-
-  return view(profile, now);
 }
 
 /**
@@ -5699,8 +5584,6 @@ export interface StackAcresWorkResult {
   machinesCollected: number;
   /** Servings the Feed Silo handed out on this pass. */
   siloServings: number;
-  /** What the Farm Kitchen cooked on this pass, or null. */
-  kitchenCooked: { item: MachineProcessedItem; quantity: number } | null;
 }
 
 export async function workStackAcres(
@@ -5709,7 +5592,6 @@ export async function workStackAcres(
 ): Promise<StackAcresView & { work: StackAcresWorkResult }> {
   const profile = await ensureProfile(token);
   const siloServings = await runFeedSilo(profile.id, now);
-  const kitchenCooked = await runFarmKitchen(profile.id, now);
 
   let wheatCollected = 0;
   const wheatPlots = await listStackAcresWheatPlots(profile.id);
@@ -5813,9 +5695,6 @@ export async function workStackAcres(
     }
   }
 
-  if (kitchenCooked) {
-    processedEvents.push({ kind: "processed", recipe: kitchenCooked.recipe, count: kitchenCooked.quantity });
-  }
   await recordStoryEvents(profile.id, processedEvents, now);
   return {
     ...(await view(profile, now)),
@@ -5824,79 +5703,8 @@ export async function workStackAcres(
       machinesStarted,
       machinesCollected,
       siloServings,
-      kitchenCooked: kitchenCooked ? { item: kitchenCooked.item, quantity: kitchenCooked.quantity } : null,
     },
   };
-}
-
-/**
- * The Farm Kitchen's lazy settlement: cooks every banked batch of its
- * standing order the shelf can pay for (lib/stackacres/farm-kitchen.ts).
- * Runs only inside `workStackAcres`, never in a read.
- *
- * The batches are claimed on the machine row first, under its version guard,
- * so two requests cannot both cook them. Then every input and the doubled
- * output move in one transaction. A shelf that changed in between hands the
- * claimed batches back.
- */
-async function runFarmKitchen(
-  profileId: string,
-  now: Date,
-): Promise<{ recipe: RecipeId; item: MachineProcessedItem; quantity: number } | null> {
-  const machines = await listStackAcresMachines(profileId);
-  const kitchen = machines.find((machine) => machine.kind === "farm_kitchen");
-  if (!kitchen) return null;
-  const plan = planFarmKitchen(kitchen, await readStackAcresInventory(profileId), now);
-  if (!plan) return null;
-
-  const claimed = await writeStackAcresFarmKitchen(kitchen, plan.recipe, plan.nextSince);
-  if (!claimed) return null;
-
-  // The RPC is all-or-nothing, so a shortfall or an error spent nothing:
-  // hand the claimed batches back and let the rest of the work pass run.
-  let cooked: number | null = null;
-  try {
-    cooked = await processStackAcresRecipeMulti(profileId, plan.inputs, plan.output);
-  } catch (error) {
-    console.error("stackacres.farm_kitchen_cook_failed", { profileId, recipe: plan.recipe, error });
-  }
-  if (cooked === null) {
-    await writeStackAcresFarmKitchen(claimed, kitchen.standingRecipe, kitchen.kitchenSince).catch(() => null);
-    return null;
-  }
-  return { recipe: plan.recipe, ...plan.output };
-}
-
-/**
- * Sets what the Farm Kitchen cooks. Batches start banking from the first
- * order; changing the order later keeps what is already banked. Moves no
- * Gold and no items.
- */
-export async function setStackAcresKitchenOrder(
-  token: string,
-  recipe: string,
-  now = new Date(),
-): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
-  if (!isFarmKitchenRecipe(recipe)) {
-    throw new StackAcresRequestError("The Farm Kitchen can't cook that.", 400, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  const machines = await listStackAcresMachines(profile.id);
-  const kitchen = machines.find((machine) => machine.kind === "farm_kitchen");
-  if (!kitchen) {
-    throw new StackAcresRequestError("Build the Farm Kitchen first.", 404, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  const written = await writeStackAcresFarmKitchen(kitchen, recipe, kitchen.kitchenSince ?? now.toISOString());
-  if (!written) {
-    throw new StackAcresRequestError("The Farm Kitchen was busy. Try again.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  return view(profile, now);
 }
 
 /** ./wheat-plot.ts's own `isWheatPlotReady`, restated under a name that does

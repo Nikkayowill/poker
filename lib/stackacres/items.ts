@@ -65,9 +65,11 @@ export interface StackAcresItemDef {
 }
 
 export const STACKACRES_ITEM_CATALOGUE: Readonly<Record<StackAcresItem, StackAcresItemDef>> = {
-  eggs: { label: "Egg", plural: "Eggs", icon: "ico-egg", sellPrice: 18 },
-  wool: { label: "Fleece", plural: "Fleeces", icon: "ico-fleece", sellPrice: 76 },
-  milk: { label: "Milk", plural: "Milk", icon: "ico-milk", sellPrice: 220 },
+  // Egg and cream money (2026-10-02 economy rebase). The farm earns from raw
+  // goods sold in bulk in town, not from processing them.
+  eggs: { label: "Egg", plural: "Eggs", icon: "ico-egg", sellPrice: 12 },
+  wool: { label: "Fleece", plural: "Fleeces", icon: "ico-fleece", sellPrice: 40 },
+  milk: { label: "Milk", plural: "Milk", icon: "ico-milk", sellPrice: 120 },
 
   /* ---- Tier 1 (fast/cheap): sellPrice 2, yield quantity 1. Unchanged by the
    * 2026-09-12 crop-roster swap -- see catalogue.ts's TIER1 comment. ---- */
@@ -89,13 +91,14 @@ export const STACKACRES_ITEM_CATALOGUE: Readonly<Record<StackAcresItem, StackAcr
   green_bean: { label: "Green Bean", plural: "Green Beans", icon: "ico-green_bean", sellPrice: 25 },
   tomato: { label: "Tomato", plural: "Tomatoes", icon: "ico-tomato", sellPrice: 25 },
 
-  /* ---- Tier 3 (slow/valuable): sellPrice 44, yield quantity 5. Wheat is the
-   * exception below: sellPrice 4, quantity 4. ---- */
-  corn: { label: "Corn", plural: "Corn", icon: "ico-corn", sellPrice: 44 },
+  /* ---- Tier 3 (slow/valuable): sellPrice 44, yield quantity 5. Corn is
+   * grain sold at the elevator (30), and Wheat is quick grain: sellPrice 7,
+   * quantity 4. ---- */
+  corn: { label: "Corn", plural: "Corn", icon: "ico-corn", sellPrice: 30 },
   eggplant: { label: "Eggplant", plural: "Eggplants", icon: "ico-eggplant", sellPrice: 44 },
-  // The one Wheat: what the Wheat crop pays and what the Mill grinds. Sells for
-  // 4, so Flour (3 Wheat -> 40) is always the better use. Sprite-backed icon.
-  wheat: { label: "Wheat", plural: "Wheat", icon: "ico-wheat", sellPrice: 4 },
+  // The one Wheat: what the Wheat crop pays and what the Feed Grinder grinds.
+  // Sold by the load at the grain elevator. Sprite-backed icon.
+  wheat: { label: "Wheat", plural: "Wheat", icon: "ico-wheat", sellPrice: 7 },
 };
 
 /** What one finished unit brings in. */

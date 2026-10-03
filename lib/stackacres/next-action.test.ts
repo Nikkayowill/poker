@@ -143,7 +143,7 @@ describe("picking the objective", () => {
   it("points a brand new farm at chapter 1's Mill, and says why it matters", () => {
     const action = planned();
     expect(action.cue).toBe("gather");
-    expect(action.title).toBe("Build the Mill");
+    expect(action.title).toBe("Build the Feed Grinder");
     // Straight off CHAPTERS[0].blurb and seedsOpenedLine("mill"), not authored
     // here -- if either is retuned this assertion is what notices.
     expect(action.why).toContain(CHAPTERS[0].blurb);
@@ -309,7 +309,7 @@ describe("what is missing, and where it comes from", () => {
 describe("advancing when the objective is done", () => {
   it("moves to the next building the moment the first one is up", () => {
     const before = planned();
-    expect(before.title).toBe("Build the Mill");
+    expect(before.title).toBe("Build the Feed Grinder");
     const after = planned({ built: new Set<MachineKind>(["mill"]) });
     expect(after.title).toBe("Build the Oven");
     // A different objective, and the id says so, which is what lets the panel

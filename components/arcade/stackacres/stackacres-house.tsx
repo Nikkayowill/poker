@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Archive, Clock, CookingPot, House, Utensils, X, type LucideIcon } from "lucide-react";
+import { Archive, CookingPot, House, Utensils, X, type LucideIcon } from "lucide-react";
 import clsx from "clsx";
 import { ENERGY_MAX } from "@/lib/stackacres/energy";
 import { StackAcresKitchen, type KitchenTab, type StackAcresKitchenProps } from "./stackacres-kitchen";
 
 /**
  * The player's own house, opened by tapping it on the Homestead. It is the
- * kitchen: cook, eat, age jars and set the Farm Kitchen's order. Ray lives
+ * house kitchen: cook, and eat for energy. The Cellar tab shows only while
+ * jars sealed before the cellar was retired are still down there. Ray lives
  * elsewhere and has his own tap (story and gifts), so nothing of his is here.
  *
  * Same centered, tabbed popup as the barn's store (`.sa-store-*`), since both
@@ -20,7 +21,6 @@ const HOUSE_TABS: { id: KitchenTab; label: string; icon: LucideIcon }[] = [
   { id: "cook", label: "Cook", icon: CookingPot },
   { id: "eat", label: "Eat", icon: Utensils },
   { id: "cellar", label: "Cellar", icon: Archive },
-  { id: "farm_kitchen", label: "Farm Kitchen", icon: Clock },
 ];
 
 export interface StackAcresHouseProps extends Omit<StackAcresKitchenProps, "tab"> {
@@ -61,7 +61,7 @@ export function StackAcresHouse({ onClose, ...kitchen }: StackAcresHouseProps) {
         </header>
 
         <div className="sa-store-tabs" role="tablist" aria-label="House room">
-          {HOUSE_TABS.map(({ id, label, icon: Icon }) => (
+          {HOUSE_TABS.filter(({ id }) => id !== "cellar" || Boolean(kitchen.cellar?.manifest)).map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               type="button"

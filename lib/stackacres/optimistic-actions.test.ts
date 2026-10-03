@@ -205,7 +205,6 @@ describe("predictStackAcresAction: the processing track", () => {
   it("leaves work and the vat to the server", () => {
     const vatCtx = ctx({ machines: [machine({ id: "v1", kind: "vat" })], inventory: { cheese: 4 } });
     expect(predictStackAcresAction({ action: "work" }, vatCtx)).toBeNull();
-    expect(predictStackAcresAction({ action: "seal-vat" }, vatCtx)).toBeNull();
     expect(predictStackAcresAction({ action: "collect-vat" }, vatCtx)).toBeNull();
   });
 });

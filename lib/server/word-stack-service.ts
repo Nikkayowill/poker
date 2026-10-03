@@ -10,15 +10,16 @@ import {
   puzzleNumber,
 } from "@/lib/arcade/puzzles/daily";
 import { WORD_STACK_ANSWERS } from "@/lib/arcade/puzzles/word-stack-answers";
+import { wordStackHardAnswers } from "@/lib/arcade/puzzles/word-stack-hard-answers";
 import { isAllowedWordStackGuess } from "@/lib/arcade/puzzles/word-stack-dictionary";
 import {
   startWordStackRound,
   submitWordStackGuess,
   toWordStackSnapshot,
   wordStackGuessProblem,
-  wordStackHardModeProblem,
   type WordStackRound,
   type WordStackSnapshot,
+  type WordStackWordTier,
 } from "@/lib/arcade/puzzles/word-stack";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
@@ -113,6 +114,11 @@ import { recordSoloResult } from "./solo-earnings-store";
 
 export const WORD_STACK_GAME = "word-stack";
 
+/** The canon key, and pickDaily salt, for a band's harder word of the day. */
+function hardWordGame(tier: WordStackWordTier): string {
+  return `${WORD_STACK_GAME}:hard-${tier}`;
+}
+
 /** The stored round, plus the wager it was opened with. Zero for the free daily play. */
 export interface StoredWordStackRound extends WordStackRound {
   wager: number;
@@ -141,12 +147,11 @@ export interface WordStackView {
 
 /**
  * `unknown-word` is a player typing a non-word: expected, costs nothing, and
- * the board should shrug rather than show an error banner. `hard-mode` is the
- * same kind of refusal for a guess that skips a revealed hint.
+ * the board should shrug rather than show an error banner.
  */
 export class WordStackRequestError extends ArcadeRequestError<
   WordStackSnapshot,
-  "unknown-word" | "hard-mode" | "rolled-over" | "stale"
+  "unknown-word" | "rolled-over" | "stale"
 > {
   readonly name = "WordStackRequestError";
 }
@@ -268,7 +273,7 @@ export async function startWordStackPuzzle(
       400,
     );
   }
-  // No ceiling: a bigger stake plays hard mode instead (wordStackStakeRules
+  // No ceiling: a bigger stake plays a harder word instead (wordStackStakeRules
   // below). Deliberately after the resume short-circuit above, since a
   // resumed round already ignores the client's wager.
   const stakeProblem = anteUpStakeProblem(WORD_STACK_GAME, null, wagerInput);
@@ -286,12 +291,27 @@ export async function startWordStackPuzzle(
   // -- so a throw here charged the player and handed back no board. Rule 1
   // still holds with it up here: the stake leaves before the round it pays
   // for exists.
-  const answer = await getOrCreateCanonicalAnswer(
+  const dailyAnswer = await getOrCreateCanonicalAnswer(
     WORD_STACK_GAME,
     targetDay,
     () => pickDaily(WORD_STACK_ANSWERS, targetDay, WORD_STACK_GAME),
     (round) => (round as StoredWordStackRound).answer,
   );
+
+  // A big stake plays that band's harder word of the day instead, shared by
+  // everyone on the band. The daily word above is still cached first, every
+  // time: its backfill reads any round stored for the day, and it must find
+  // none of these harder rounds before it has its own answer.
+  const stakeRules = wordStackStakeRules(wagerInput);
+  const tier = stakeRules.wordTier;
+  const answer = tier
+    ? await getOrCreateCanonicalAnswer(
+        hardWordGame(tier),
+        targetDay,
+        () => pickDaily(wordStackHardAnswers(tier), targetDay, hardWordGame(tier)),
+        (round) => (round as StoredWordStackRound).answer,
+      )
+    : dailyAnswer;
 
   // Rule 1: the wager leaves first. Null is "cannot afford", not an error;
   // the ledgered spend is the authority.
@@ -303,10 +323,9 @@ export async function startWordStackPuzzle(
   }
 
   // The stake band's rules are copied onto the round so a live round never changes.
-  const stakeRules = wordStackStakeRules(wagerInput);
   const round: StoredWordStackRound = {
     ...startWordStackRound(answer),
-    ...(stakeRules.hardMode ? { hardMode: true } : {}),
+    ...(tier ? { wordTier: tier } : {}),
     wager: wagerInput,
     // Copied in only for a real wager; see the field's own doc comment.
     ...(wagerInput > 0 ? { wagerLadder: stakeRules.ladder } : {}),
@@ -412,7 +431,7 @@ export async function playWordStackGuess(
   if (problem === "finished") {
     throw new WordStackRequestError("That puzzle is already done.", 409, { round: snapshot(current) });
   }
-  if (problem && problem !== "hard-mode") {
+  if (problem) {
     throw new WordStackRequestError("A guess is five letters.", 400, { round: snapshot(current) });
   }
 
@@ -423,15 +442,6 @@ export async function playWordStackGuess(
   if (!isAllowedWordStackGuess(input.guess)) {
     throw new WordStackRequestError("Not in the word list.", 400, {
       reason: "unknown-word",
-      round: snapshot(current),
-    });
-  }
-
-  // Checked after the dictionary so a non-word still reads "Not in the word list".
-  const hardModeProblem = wordStackHardModeProblem(current.round, input.guess);
-  if (hardModeProblem) {
-    throw new WordStackRequestError(hardModeProblem, 400, {
-      reason: "hard-mode",
       round: snapshot(current),
     });
   }

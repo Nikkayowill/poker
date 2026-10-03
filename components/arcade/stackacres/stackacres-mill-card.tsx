@@ -5,13 +5,13 @@ import { X } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import { machineItemLabel } from "@/lib/stackacres/machine-items";
-import { isMachineDone, machineProgress } from "@/lib/stackacres/machines";
+import { MACHINE_CATALOGUE, isMachineDone, machineProgress } from "@/lib/stackacres/machines";
 import type { MachineView } from "@/lib/stackacres/optimistic-actions";
 import { RECIPE_CATALOGUE, batchesAvailable, type RecipeId } from "@/lib/stackacres/recipes";
 import { whoBuysLine } from "@/lib/stackacres/town-buyers";
 
 /**
- * The Mill on its own, for a tap on the windmill: wheat in, flour out, without the whole Workshop sheet.
+ * The Feed Grinder (the `mill` kind) on its own, for a tap on the windmill: wheat in, flour out, without the whole Workshop sheet.
  * Flour is sold in town (lib/stackacres/town-buyers.ts). The Workshop is one button away for everything else.
  */
 
@@ -58,9 +58,9 @@ export function StackAcresMillCard({
 
   return (
     <div className="sa-store-scrim" role="presentation" onMouseDown={onBackdropMouseDown}>
-      <section className="sa-store-card" role="dialog" aria-modal="true" aria-label="The Mill">
+      <section className="sa-store-card" role="dialog" aria-modal="true" aria-label={`The ${MACHINE_CATALOGUE.mill.label}`}>
         <header className="sa-store-head">
-          <h2>The Mill</h2>
+          <h2>The {MACHINE_CATALOGUE.mill.label}</h2>
           <button ref={closeButtonRef} type="button" className="sa-store-close" aria-label="Close" onClick={onClose}>
             <X size={16} aria-hidden="true" />
           </button>
@@ -77,14 +77,14 @@ export function StackAcresMillCard({
             </button>
           ) : running && mill.readyAt ? (
             <>
-              <p className="sa-stock-yield">Milling · {countdown(Date.parse(mill.readyAt) - now)}</p>
+              <p className="sa-stock-yield">Grinding · {countdown(Date.parse(mill.readyAt) - now)}</p>
               <span className="sa-contract-bar" aria-hidden="true">
                 <span style={{ transform: `scaleX(${progress ?? 0})` }} />
               </span>
             </>
           ) : batches > 0 ? (
             <button type="button" className="sa-cta" disabled={isPending(`process:${FLOUR}`)} onClick={() => onMill(batches)}>
-              Mill {machineItemLabel("flour", def.output.quantity * batches)}
+              Grind {machineItemLabel("flour", def.output.quantity * batches)}
             </button>
           ) : (
             <p className="sa-stock-terms">

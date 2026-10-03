@@ -261,14 +261,14 @@ export const RECIPE_CATALOGUE: Readonly<Record<RecipeId, RecipeDef>> = {
 
 /** What the button says while making one batch of `recipe`. */
 export const RECIPE_VERB: Readonly<Record<RecipeId, string>> = {
-  flour: "Mill",
+  flour: "Grind",
   cheese: "Make",
   cloth: "Weave",
   cake: "Bake",
   bread: "Bake",
   stew: "Cook",
   salad: "Toss",
-  cattle_feed: "Mill",
+  cattle_feed: "Grind",
   sauce: "Cook",
   salsa: "Mix",
   stuffed_peppers: "Bake",

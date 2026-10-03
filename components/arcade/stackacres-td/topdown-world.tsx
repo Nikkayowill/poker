@@ -90,6 +90,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
     grocery,
     groceryGhost,
     rodHeld,
+    tractorOwned,
     api,
   } = props;
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -205,6 +206,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onJobBoardTap: () => p().onJobBoardTap(),
           onStoreDeskTap: () => p().onStoreDeskTap(),
           onStaffTap: (name, at) => p().onStaffTap(name, at),
+          onDrivingChanged: (driving) => p().onDrivingChanged(driving),
         },
         host,
         // Fixed at boot, not read through `p()`: the scene keeps it for its
@@ -256,6 +258,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       scene.setGrocery(now.grocery);
       scene.setGroceryGhost(now.groceryGhost);
       scene.setRodHeld(p().rodHeld);
+      scene.setTractorOwned(p().tractorOwned);
       scene.setClockSource(() => p().clockHour());
       scene.setDaySource(() => p().clockDay());
 
@@ -312,6 +315,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       recenter: () => sceneRef.current?.recenter(),
       farmerAction: (action, impact) => sceneRef.current?.farmerAction(action, impact),
       emote: (who, kind) => sceneRef.current?.emote(who, kind),
+      getOffTractor: () => sceneRef.current?.getOffTractor(),
       sleep: async (whileDark) => {
         const scene = sceneRef.current;
         if (scene) await scene.sleep(whileDark);
@@ -466,6 +470,10 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   useLayoutEffect(() => {
     sceneRef.current?.setRodHeld(rodHeld);
   }, [rodHeld]);
+
+  useEffect(() => {
+    sceneRef.current?.setTractorOwned(tractorOwned);
+  }, [tractorOwned]);
 
   useEffect(() => {
     sceneRef.current?.setBuildGhost(buildGhost);

@@ -18,6 +18,7 @@ import { FORAGE_NODE_IDS } from "@/lib/stackacres/forage";
 import { ALL_MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
 import { TOWN_BUYER_IDS } from "@/lib/stackacres/town-buyers";
 import { STACKACRES_BUYABLE_CUTTERS } from "@/lib/stackacres/cutters";
+import { STACKACRES_BUYABLE_EQUIPMENT, TRACTOR_ROW_MAX, TRACTOR_ROW_MIN } from "@/lib/stackacres/tractor";
 import { FRIENDSHIP_NPCS, GIFTABLE_ITEMS } from "@/lib/stackacres/friendship";
 import { STORY_ITEM_IDS } from "@/lib/stackacres/story/items";
 import { QUEST_PLACE_IDS } from "@/lib/stackacres/story/places";
@@ -47,6 +48,7 @@ import {
   upgradeStackAcresTool,
   upgradeStackAcresAxe,
   buyStackAcresCutter,
+  buyStackAcresEquipment,
   waterStackAcres,
   waterStackAcresGroup,
   claimStackAcresStarterSeeds,
@@ -67,6 +69,7 @@ import {
   processStackAcresRecipeAction,
   collectStackAcresCellar,
   placeStackAcresSoilTile,
+  placeStackAcresSoilRow,
   placeStackAcresAnimal,
   pickUpStackAcresAnimal,
   buyStackAcresGuardDog,
@@ -189,6 +192,8 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("upgrade-tool") }),
   z.object({ action: z.literal("upgrade-axe"), pay: z.enum(["materials", "gold"]) }),
   z.object({ action: z.literal("buy-cutter"), cutter: z.enum(STACKACRES_BUYABLE_CUTTERS) }),
+  // A machine from Ray. SPENDS Gold and Metal, priced on the server.
+  z.object({ action: z.literal("buy-equipment"), kind: z.enum(STACKACRES_BUYABLE_EQUIPMENT) }),
   // Builds the Greenhouse once, spending processing-track goods, not Gold --
   // see buildStackAcresGreenhouse's own header.
   z.object({ action: z.literal("build-greenhouse") }),
@@ -367,10 +372,14 @@ const bodySchema = z.discriminatedUnion("action", [
   // and placeStackAcresSoilTile itself is what actually confines a tile to
   // the Crop Fields. Breaking ground is free: `place-soil-tile` and
   // `remove-soil-tile` move no Gold and no stock.
+  // `tiles` is the tractor's row (lib/stackacres/tractor.ts): a straight line
+  // of beds, only from a farm that owns a tractor. `tx`/`ty` still name the
+  // first bed so an older client and the intent key read the same.
   z.object({
     action: z.literal("place-soil-tile"),
     tx: z.number().int().min(-512).max(512),
     ty: z.number().int().min(-512).max(512),
+    tiles: z.array(soilTileCoordSchema).min(TRACTOR_ROW_MIN).max(TRACTOR_ROW_MAX).optional(),
   }),
   z.object({
     action: z.literal("remove-soil-tile"),
@@ -526,6 +535,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return upgradeStackAcresAxe(token, action.pay, now);
     case "buy-cutter":
       return buyStackAcresCutter(token, action.cutter, now);
+    case "buy-equipment":
+      return buyStackAcresEquipment(token, action.kind, now);
     case "build-greenhouse":
       return buildStackAcresGreenhouse(token, now);
     case "stock":
@@ -609,7 +620,9 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "trade-secret-item":
       return tradeStackAcresSecretItemToRay(token, action.itemId, now);
     case "place-soil-tile":
-      return placeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
+      return action.tiles
+        ? placeStackAcresSoilRow(token, { tiles: action.tiles }, now)
+        : placeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
     case "remove-soil-tile":
       return removeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
     case "place-fence":

@@ -245,6 +245,21 @@ export interface FarmStatePatch {
   secretDonations?: Record<SecretItemId, boolean>;
 }
 
+/** The bed a press of the hoe on (tx, ty) would dig, or null where the server would refuse it. */
+function predictedBed(ctx: FarmPredictContext, tx: number, ty: number): SoilTile | null {
+  // The same ground the server allows (lib/stackacres/hoeable.ts), so a tap
+  // on the road never flashes a bed the answer then takes away.
+  if (!isHoeableSoilTile(tx, ty)) return null;
+  if (overgrownSoilTile(tx, ty, clearedLandIds(ctx.landObstacles))) return null;
+  if (!ownsMapTile(ctx, soilToMapTile(tx, ty))) return null;
+  // Every slot a crop currently holds, so the new bed's order clears them
+  // all -- see `nextSoilOrder` on why max-plus-one over the beds alone would
+  // let a fresh bed adopt an orphaned crop.
+  const claimed = ctx.units.map((unit) => unit.soilSlot).filter((slot): slot is number => slot !== null);
+  const result = plantSoilTile(createSoilMap(ctx.soilTiles), { tx, ty }, SOIL_DEFAULT_TIER, claimed);
+  return result.kind === "created" ? result.tile : null;
+}
+
 /** Whether the acre under a map square is one the farm owns, as far as this guess can tell. */
 function ownsMapTile(ctx: FarmPredictContext, tile: { mx: number; my: number }): boolean {
   if (!ctx.ownedAcres) return true;
@@ -719,29 +734,22 @@ export function predictStackAcresAction(
       return { greenhouseBuilt: true };
     }
     case "place-soil-tile": {
-      // The same ground the server allows (lib/stackacres/hoeable.ts), so a tap
-      // on the road never flashes a bed the answer then takes away.
-      if (!isHoeableSoilTile(body.tx, body.ty)) return null;
-      if (overgrownSoilTile(body.tx, body.ty, clearedLandIds(ctx.landObstacles))) return null;
-      if (!ownsMapTile(ctx, soilToMapTile(body.tx, body.ty))) return null;
-      const soil = createSoilMap(ctx.soilTiles);
-      // Every slot a crop currently holds, so the new bed's order clears
-      // them all -- see `nextSoilOrder` on why max-plus-one over the beds
-      // alone would let a fresh bed adopt an orphaned crop.
-      const claimed = ctx.units
-        .map((unit) => unit.soilSlot)
-        .filter((slot): slot is number => slot !== null);
-      const result = plantSoilTile(soil, { tx: body.tx, ty: body.ty }, SOIL_DEFAULT_TIER, claimed);
-      if (result.kind !== "created") return null;
-      return {
-        soilTiles: [...ctx.soilTiles, result.tile],
+      // A tractor row guesses each bed the way a single press does, skipping
+      // the ones that press would not dig, as the server does.
+      let soilTiles = ctx.soilTiles;
+      let cropFieldsUnlocked = ctx.cropFieldsUnlocked;
+      for (const tile of body.tiles ?? [{ tx: body.tx, ty: body.ty }]) {
+        const dug = predictedBed({ ...ctx, soilTiles }, tile.tx, tile.ty);
+        if (!dug) continue;
+        soilTiles = [...soilTiles, dug];
         // Breaking ground out in the wild land IS clearing the Crop Fields, and
         // the server records the flag off this same placement, so the browser
         // predicts it rather than waiting a round trip. `isWildSoilTile` is the
         // same check the server makes, so a bed in the yard never claims it.
-        cropFieldsUnlocked:
-          ctx.cropFieldsUnlocked || isWildSoilTile(body.tx, body.ty),
-      };
+        cropFieldsUnlocked ||= isWildSoilTile(tile.tx, tile.ty);
+      }
+      if (soilTiles === ctx.soilTiles) return null;
+      return { soilTiles: [...soilTiles], cropFieldsUnlocked };
     }
     case "remove-soil-tile": {
       const existing = ctx.soilTiles.find((t) => t.tx === body.tx && t.ty === body.ty);

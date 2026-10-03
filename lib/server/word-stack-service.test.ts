@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PUZZLE_EPOCH_DAY, pickDaily, previousDay, puzzleDay } from "@/lib/arcade/puzzles/daily";
 import { WORD_STACK_ANSWERS } from "@/lib/arcade/puzzles/word-stack-answers";
+import { wordStackHardAnswers } from "@/lib/arcade/puzzles/word-stack-hard-answers";
 import { __resetDailyPuzzlesForTest } from "./daily-puzzle-store";
 import {
   WORD_STACK_GAME,
@@ -510,7 +511,7 @@ describe("a failed canon lookup does not take the stake", () => {
   });
 });
 
-describe("a big stake plays hard mode", () => {
+describe("a big stake plays a harder word", () => {
   async function fundedPlayer(gold: number) {
     const token = randomUUID();
     const profile = await ensureProfile(token);
@@ -519,69 +520,60 @@ describe("a big stake plays hard mode", () => {
     return { token, id: profile.id };
   }
 
-  /** A real word sharing the answer's first letter, so that letter comes back green. */
-  function sameFirstLetter(answer: string): string {
-    const word = WORD_STACK_ANSWERS.find((candidate) => candidate !== answer && candidate[0] === answer[0]);
-    if (!word) throw new Error("no word shares the first letter");
-    return word;
-  }
-
-  function otherFirstLetter(answer: string): string {
-    const word = WORD_STACK_ANSWERS.find((candidate) => candidate[0] !== answer[0]);
-    if (!word) throw new Error("no word with another first letter");
-    return word;
-  }
-
-  it("keeps normal rules under 10k", async () => {
-    const { token } = await fundedPlayer(50_000);
+  it("keeps the daily word under 10k", async () => {
+    const { token, id } = await fundedPlayer(50_000);
     const view = await startWordStackPuzzle(token, 9_999);
-    expect(view.round?.hardMode).toBe(false);
-  });
-
-  it("opens hard mode at 10k and refuses a guess that drops a green, without spending it", async () => {
-    const { token, id } = await fundedPlayer(50_000);
-    const view = await startWordStackPuzzle(token, 10_000);
-    expect(view.round?.hardMode).toBe(true);
-
-    const answer = todaysAnswer();
-    await playWordStackGuess(token, { day: today(), version: 1, guess: sameFirstLetter(answer) });
-    await expect(
-      playWordStackGuess(token, { day: today(), version: 2, guess: otherFirstLetter(answer) }),
-    ).rejects.toMatchObject({
-      status: 400,
-      reason: "hard-mode",
-      message: `1st letter must be ${answer[0].toUpperCase()}.`,
-    });
-
+    expect(view.round?.wordTier).toBeNull();
     const stored = await getPuzzleRound<StoredWordStackRound>(id, WORD_STACK_GAME, today());
-    expect(stored?.round.guesses).toHaveLength(1);
-    expect(stored?.version).toBe(2);
-    expect(stored?.round.wagerLadder).toEqual(WORD_STACK_LADDER_BY_PRESSURE[1]);
+    expect(stored?.round.answer).toBe(todaysAnswer());
   });
 
-  it("stamps the top-stake ladder at 1M, where a 6th-guess win pays nothing", async () => {
+  it.each([
+    [10_000, 1],
+    [100_000, 2],
+    [1_000_000, 3],
+  ] as const)("opens a %i wager on tier %i's word of the day, with that band's ladder", async (wager, tier) => {
     const { token, id } = await fundedPlayer(2_000_000);
-    await startWordStackPuzzle(token, 1_000_000);
+    const view = await startWordStackPuzzle(token, wager);
+    expect(view.round?.wordTier).toBe(tier);
+
     const stored = await getPuzzleRound<StoredWordStackRound>(id, WORD_STACK_GAME, today());
-    expect(stored?.round.hardMode).toBe(true);
-    expect(stored?.round.wagerLadder).toEqual(WORD_STACK_LADDER_BY_PRESSURE[3]);
+    expect(stored?.round.answer).toBe(pickDaily(wordStackHardAnswers(tier), today(), `${WORD_STACK_GAME}:hard-${tier}`));
+    expect(wordStackHardAnswers(tier)).toContain(stored?.round.answer);
+    expect(stored?.round.wagerLadder).toEqual(WORD_STACK_LADDER_BY_PRESSURE[tier]);
   });
 
-  it("loads a big-stake round stored before hard mode existed with the old rules", async () => {
-    const { token, id } = await fundedPlayer(50_000);
-    await startWordStackPuzzle(token, 50_000);
-    const opened = await getPuzzleRound<StoredWordStackRound>(id, WORD_STACK_GAME, today());
-    if (!opened) throw new Error("no round");
-    const legacy: StoredWordStackRound = { ...opened.round };
-    delete legacy.hardMode;
-    await advancePuzzleRound<StoredWordStackRound>(opened, legacy, false);
+  it("gives everyone on a band the same harder word", async () => {
+    const first = await fundedPlayer(50_000);
+    const second = await fundedPlayer(50_000);
+    await startWordStackPuzzle(first.token, 20_000);
+    await startWordStackPuzzle(second.token, 50_000);
+    const a = await getPuzzleRound<StoredWordStackRound>(first.id, WORD_STACK_GAME, today());
+    const b = await getPuzzleRound<StoredWordStackRound>(second.id, WORD_STACK_GAME, today());
+    expect(a?.round.answer).toBe(b?.round.answer);
+  });
 
-    const answer = todaysAnswer();
-    const read = await readWordStackPuzzle(token);
-    expect(read.round?.hardMode).toBe(false);
-    await playWordStackGuess(token, { day: today(), version: 2, guess: sameFirstLetter(answer) });
-    const next = await playWordStackGuess(token, { day: today(), version: 3, guess: otherFirstLetter(answer) });
-    expect(next.round?.guesses).toHaveLength(2);
+  it("keeps the daily word for free players who open after a big stake", async () => {
+    const big = await fundedPlayer(50_000);
+    await startWordStackPuzzle(big.token, 10_000);
+    const free = await fundedPlayer(0);
+    await startWordStackPuzzle(free.token, 0);
+    const stored = await getPuzzleRound<StoredWordStackRound>(free.id, WORD_STACK_GAME, today());
+    expect(stored?.round.answer).toBe(todaysAnswer());
+  });
+
+  it("accepts a guess that drops a revealed letter", async () => {
+    const { token, id } = await fundedPlayer(50_000);
+    await startWordStackPuzzle(token, 10_000);
+    const answer = (await getPuzzleRound<StoredWordStackRound>(id, WORD_STACK_GAME, today()))?.round.answer;
+    // A word sharing the answer's first letter turns it green; the next guess starts with another letter.
+    const keeps = WORD_STACK_ANSWERS.find((word) => word !== answer && word[0] === answer?.[0]);
+    const drops = WORD_STACK_ANSWERS.find((word) => word[0] !== answer?.[0]);
+    if (!keeps || !drops) throw new Error("no test words");
+
+    await playWordStackGuess(token, { day: today(), version: 1, guess: keeps });
+    const second = await playWordStackGuess(token, { day: today(), version: 2, guess: drops });
+    expect(second.round?.guesses).toEqual([keeps, drops]);
   });
 });
 

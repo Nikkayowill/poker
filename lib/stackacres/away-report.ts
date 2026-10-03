@@ -8,7 +8,6 @@
  */
 
 import { STACKACRES_CATALOGUE, isLivestock } from "./catalogue";
-import { farmKitchenBanked } from "./farm-kitchen";
 import { herdNightStartMs } from "./herd-risk";
 import { MACHINE_CATALOGUE, type StackAcresMachineSnapshot } from "./machines";
 import { RECIPE_CATALOGUE } from "./recipes";
@@ -107,15 +106,6 @@ export function buildAwayReport(input: {
   if (readyAnimals > 0) lines.push(`${readyAnimals} ${plural(readyAnimals, "animal has", "animals have")} something to collect.`);
 
   for (const machine of machines) {
-    if (machine.kind === "farm_kitchen") {
-      const banked = farmKitchenBanked(machine.kitchenSince, new Date(nowMs));
-      if (banked > 0 && machine.standingRecipe) {
-        lines.push(
-          `The Farm Kitchen has ${banked} ${plural(banked, "batch", "batches")} of ${RECIPE_CATALOGUE[machine.standingRecipe].label} waiting.`,
-        );
-      }
-      continue;
-    }
     if (machine.status === "working" && machine.recipeId && within(machine.readyAt, lastSeenMs, nowMs)) {
       lines.push(`The ${MACHINE_CATALOGUE[machine.kind].label} finished ${RECIPE_CATALOGUE[machine.recipeId].label}.`);
     }

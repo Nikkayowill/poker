@@ -17,7 +17,6 @@ describe("intentOf: the processing track", () => {
 
   it("keys the field-wide passes on the action alone", () => {
     expect(intentOf({ action: "work" })).toBe("work");
-    expect(intentOf({ action: "seal-vat" })).toBe("seal-vat");
     expect(intentOf({ action: "collect-vat" })).toBe("collect-vat");
   });
 

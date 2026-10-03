@@ -271,7 +271,7 @@ export function nextAction(input: JournalInput, view: JournalView): NextAction |
         cue,
         title: wheat ? "Plant your wheat" : "Plant your seed",
         why: wheat
-          ? "Wheat is the first crop on the farm. It grows while you chop, and the Mill turns it into flour."
+          ? "Wheat is the first crop on the farm. It grows while you chop, and the Feed Grinder turns it into flour."
           : "Hoe a bed on the grass by the house, sow the seed and water it from the well.",
         requirements: [],
         button: null,

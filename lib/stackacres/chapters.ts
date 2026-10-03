@@ -1,5 +1,5 @@
 /**
- * The six farm chapters, worked out from which buildings the player owns.
+ * The farm chapters, worked out from which buildings the player owns.
  * Nothing is stored: a chapter is done when all its buildings are built.
  */
 
@@ -22,7 +22,7 @@ export const CHAPTERS: readonly Chapter[] = [
   {
     number: 1,
     title: "Bread",
-    blurb: "Grow wheat, mill it into flour and bake bread.",
+    blurb: "Grow wheat, grind it into flour and bake bread.",
     steps: ["mill", "oven"],
     doneLine: "There's your first loaf. Eat bread when your energy runs low and you can fish a few casts longer.",
   },
@@ -46,20 +46,6 @@ export const CHAPTERS: readonly Chapter[] = [
     blurb: "Build a silo so the hens get fed while you're away.",
     steps: ["feed_silo"],
     doneLine: "The silo will feed the hens when you can't. That's when a farm starts working for you.",
-  },
-  {
-    number: 5,
-    title: "Jars and Pickles",
-    blurb: "Age jars of pickles and sauerkraut in a stone cellar.",
-    steps: ["cellar"],
-    doneLine: "Good things take time. Leave the jars down there and they'll be worth more when you open them.",
-  },
-  {
-    number: 6,
-    title: "Harvest Feast",
-    blurb: "Cook a standing order while you're away, and every batch comes out double.",
-    steps: ["farm_kitchen"],
-    doneLine: "Now the kitchen works while you sleep. I never had that. Go on, be proud of it.",
   },
 ];
 

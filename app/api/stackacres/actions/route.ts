@@ -11,8 +11,6 @@ import { PEN_ZONE_IDS, ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import { MACHINE_KINDS } from "@/lib/stackacres/machines";
 import { MAX_RUN_BATCHES, RECIPE_IDS } from "@/lib/stackacres/recipes";
 import { FOOD_ITEMS } from "@/lib/stackacres/energy";
-import { CELLAR_ITEMS } from "@/lib/stackacres/aging";
-import { FARM_KITCHEN_RECIPES } from "@/lib/stackacres/farm-kitchen";
 import { HIDDEN_ZONE_IDS, SECRET_ITEM_IDS } from "@/lib/stackacres/secrets";
 import { WOOD_NODE_IDS } from "@/lib/stackacres/tree-nodes";
 import { STONE_NODE_IDS } from "@/lib/stackacres/stone-nodes";
@@ -73,9 +71,7 @@ import {
   claimStackAcresFarmBoard,
   sellStackAcresItem,
   processStackAcresRecipeAction,
-  sealStackAcresCellar,
   collectStackAcresCellar,
-  setStackAcresKitchenOrder,
   startStackAcresMythicBlueprint,
   contributeToStackAcresMythicBlueprint,
   prestigeResetStackAcres,
@@ -106,7 +102,6 @@ import {
   prayAtStackAcresShrine,
   giveStackAcresGift,
   greetStackAcresNpc,
-  sealStackAcresVat,
   collectStackAcresVat,
   meetStackAcresTraveler,
   reachStackAcresQuestPlace,
@@ -368,24 +363,12 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("claim-farm-board"), code: z.string().min(1).max(64) }),
   // One a UTC day, and it moves nothing. See passStackAcresContract.
   z.object({ action: z.literal("pass-contract") }),
-  // The Fermenting Vat. `seal-vat` spends Cheese (never Gold) and locks it
-  // inside the vat's own manifest; `collect-vat` is the one action here that
-  // pays -- through the same daily ceiling `fulfill-contract` does. See
-  // lib/server/stackacres-service.ts's sealStackAcresVat/collectStackAcresVat.
-  z.object({ action: z.literal("seal-vat") }),
+  // The Fermenting Vat and the Preserves Cellar take no new batches
+  // (RETIRED_MACHINE_KINDS in lib/stackacres/machines.ts). A batch sealed
+  // before that still collects, and collecting pays. See
+  // lib/server/stackacres-service.ts's collectStackAcresVat.
   z.object({ action: z.literal("collect-vat") }),
-  // The Preserves Cellar: the Vat's two actions for jars of Pickles or
-  // Sauerkraut, on a slower ladder. Only `collect-cellar` pays.
-  z.object({
-    action: z.literal("seal-cellar"),
-    item: z.enum(CELLAR_ITEMS),
-  }),
   z.object({ action: z.literal("collect-cellar") }),
-  // The Farm Kitchen's standing order. Moves no Gold and no items.
-  z.object({
-    action: z.literal("set-kitchen-order"),
-    recipe: z.enum(FARM_KITCHEN_RECIPES as unknown as [string, ...string[]]),
-  }),
   // Hidden secrets: three small discovery spots, one collectible. See
   // lib/server/stackacres-service.ts's own "Hidden secrets" section --
   // `tap-secret-zone` moves no Gold at all, and neither do the other three;
@@ -708,16 +691,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return claimStackAcresFarmBoard(token, action.code, now);
     case "pass-contract":
       return passStackAcresContract(token, now);
-    case "seal-vat":
-      return sealStackAcresVat(token, now);
     case "collect-vat":
       return collectStackAcresVat(token, now);
-    case "seal-cellar":
-      return sealStackAcresCellar(token, action.item, now);
     case "collect-cellar":
       return collectStackAcresCellar(token, now);
-    case "set-kitchen-order":
-      return setStackAcresKitchenOrder(token, action.recipe, now);
     case "tap-secret-zone":
       return tapStackAcresSecretZone(token, action.zoneId, now);
     case "donate-secret-item":

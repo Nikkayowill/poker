@@ -15,7 +15,7 @@ import { Cog, Coins, Lock } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 import { BuildCostLines } from "./build-cost-lines";
 import { buildCost, buildShortfall, costSummary } from "@/lib/stackacres/build-cost";
-import { VAT_INPUT_ITEM, VAT_INPUT_QUANTITY, type VatContainer } from "@/lib/stackacres/aging";
+import type { VatContainer } from "@/lib/stackacres/aging";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import {
   machineItemIcon,
@@ -29,6 +29,7 @@ import {
   MACHINE_CATALOGUE,
   MACHINE_KINDS,
   isMachineDone,
+  isRetiredMachine,
   machineProgress,
   type MachineKind,
 } from "@/lib/stackacres/machines";
@@ -83,7 +84,6 @@ export type WorkshopActionResult =
         readonly machinesStarted: number;
         readonly machinesCollected: number;
         readonly siloServings: number;
-        readonly kitchenCooked?: { readonly item: MachineItemId; readonly quantity: number } | null;
       };
       readonly processed?: {
         readonly recipe: RecipeId;
@@ -213,22 +213,22 @@ const SILO_LINE = "Feeds hungry animals from your barn while you're away";
 
 /** One plain sentence per machine: what it does and why it is worth building. */
 const MACHINE_JOB: Partial<Record<MachineKind, string>> = {
-  mill: "Grinds Wheat from your beds into Flour, which sells for more and goes into Cakes. Also grinds Corn into Cattle Feed.",
-  dairy: "Turns Milk into Cheese, or Eggs, Milk and Flour into a Cake. Both sell for more than the raw goods.",
+  mill: "Grinds Corn into Cattle Feed for your animals, and Wheat into Flour for bread and cakes.",
+  dairy: "Skims your Milk to make Cheese, or a Cake with Eggs and Flour.",
   loom: "Weaves Wool into Cloth.",
   smelter: "Melts Iron Ore from the Mine into Metal, which the Far Field's buildings are made from.",
-  vat: `Seal ${machineItemLabel(VAT_INPUT_ITEM, VAT_INPUT_QUANTITY)} inside and let it age. The longer it sits, the more Gold it is worth.`,
+  vat: "It takes no new batches. Open it to collect what is inside.",
   feed_silo: SILO_LINE,
 };
 
 /** Where an ingredient comes from, for a player who is short of it. */
 const ITEM_SOURCE: Partial<Record<MachineItemId, string>> = {
   wheat: "your beds (Wheat seed is at Ray's)",
-  flour: "the Mill",
+  flour: `the ${MACHINE_CATALOGUE.mill.label}`,
   milk: "your cows",
   eggs: "your hens",
   wool: "your sheep",
-  cheese: "the Dairy",
+  cheese: `the ${MACHINE_CATALOGUE.dairy.label}`,
   iron_ore: "the boulders in the Mine",
 };
 
@@ -273,12 +273,9 @@ function workNote(work: NonNullable<Extract<WorkshopActionResult, { ok: true }>[
   if (work.wheatCollected > 0) {
     parts.push(`brought in ${machineItemLabel("wheat", work.wheatCollected * WHEAT_YIELD_QUANTITY)}`);
   }
-  if (work.machinesCollected > 0) parts.push(`collected the Mill`);
-  if (work.machinesStarted > 0) parts.push(`started the Mill`);
+  if (work.machinesCollected > 0) parts.push(`collected the ${MACHINE_CATALOGUE.mill.label}`);
+  if (work.machinesStarted > 0) parts.push(`started the ${MACHINE_CATALOGUE.mill.label}`);
   if (work.siloServings > 0) parts.push(`the Feed Silo fed ${work.siloServings} time${work.siloServings === 1 ? "" : "s"}`);
-  if (work.kitchenCooked) {
-    parts.push(`the Farm Kitchen made ${machineItemLabel(work.kitchenCooked.item, work.kitchenCooked.quantity)}`);
-  }
   if (parts.length === 0) return null;
   const sentence = parts.join(", ");
   return sentence.charAt(0).toUpperCase() + sentence.slice(1) + ".";
@@ -301,14 +298,19 @@ export function WorkshopModal({
 }: WorkshopModalProps) {
   const [now, setNow] = useState(() => Date.now());
   const [note, setNote] = useState<Note | null>(null);
-  // Loom/Vat stay off the shelf by default (Pig/wool is out of active scope,
-  // and nothing in scope makes the Cheese a Vat ages) -- see
-  // lib/stackacres/scope.ts's own header. Already-built machines never hide,
-  // whatever their kind: a player who placed one keeps seeing its state.
+  // The Loom stays off the shelf by default (see lib/stackacres/scope.ts's own
+  // header). Already-built machines never hide, whatever their kind: a player
+  // who placed one keeps seeing its state.
   const [showMoreMachines, setShowMoreMachines] = useState(false);
   // The kitchen machines live in the player's house, not here (stackacres-house.tsx).
+  // Retired machines (RETIRED_MACHINE_KINDS) are never offered; a Vat shows
+  // only while it still holds a batch to collect.
   const workshopKinds = MACHINE_KINDS.filter(
-    (kind) => kind !== "oven" && kind !== "stew_pot" && kind !== "counter" && kind !== "cellar" && kind !== "farm_kitchen",
+    (kind) =>
+      kind !== "oven" &&
+      kind !== "stew_pot" &&
+      kind !== "counter" &&
+      (!isRetiredMachine(kind) || (kind === "vat" && Boolean(vat?.manifest))),
   );
   const visibleMachineKinds = workshopKinds.filter(
     (kind) => showMoreMachines || isActiveMachine(kind) || machineOfKind(machines, kind) !== null,
@@ -546,10 +548,6 @@ export function WorkshopModal({
                       <h3>{def.label}</h3>
                       {job && <p className="sa-workshop-job">{job}</p>}
                       <p className="sa-stock-yield">{status}</p>
-                      <p className="sa-stock-terms">
-                        You have {inventoryQuantity(inventory, VAT_INPUT_ITEM).toLocaleString()}{" "}
-                        {machineItemNoun(VAT_INPUT_ITEM, inventoryQuantity(inventory, VAT_INPUT_ITEM))}
-                      </p>
                       <button type="button" className="sa-cta" onClick={contain(onOpenVat)}>
                         {vat?.status === "collectible" ? (
                           <>

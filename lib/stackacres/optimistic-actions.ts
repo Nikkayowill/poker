@@ -54,7 +54,7 @@
  * multiplier and the daily ceiling, and a guess that then corrected downward
  * would be worse than showing nothing until the real number lands. `work`
  * stays unpredicted (a Mill's double-output roll), and so do
- * `seal-vat`/`collect-vat` -- the vat's own sheet awaits the answer and says
+ * `collect-vat` -- the vat's own sheet awaits the answer and says
  * so in its own note, the same way the town board does.
  *
  * The patch is shaped as a subset of the component's own response type, so
@@ -887,18 +887,6 @@ export function predictStackAcresAction(
         machines: ctx.machines.map((candidate) => (candidate.id === machine.id ? working : candidate)),
       });
     }
-    case "set-kitchen-order": {
-      const kitchen = ctx.machines.find((candidate) => candidate.kind === "farm_kitchen");
-      if (!kitchen) return null;
-      const updated: MachineView = {
-        ...kitchen,
-        standingRecipe: body.recipe,
-        kitchenSince: kitchen.kitchenSince ?? new Date(ctx.nowMs).toISOString(),
-      };
-      return processingPatch(ctx, {
-        machines: ctx.machines.map((candidate) => (candidate.id === kitchen.id ? updated : candidate)),
-      });
-    }
     case "eat": {
       const now = new Date(ctx.nowMs);
       if (energyAt(ctx.energy, now) >= ENERGY_MAX) return null;
@@ -1047,7 +1035,7 @@ export function predictStackAcresAction(
     }
     // The rest are dice rolls this browser cannot honestly guess (`collect`'s
     // own Gold, `tap-secret-zone`, `request-contract`, `work`), await their
-    // own sheet's answer (`seal-vat`, `collect-vat`), or move nothing the
+    // own sheet's answer (`collect-vat`), or move nothing the
     // client keeps state for (`build-greenhouse`'s materials aside from the
     // flag itself, blueprints, prestige). See this module's own header.
     default:

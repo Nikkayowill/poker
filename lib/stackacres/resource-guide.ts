@@ -10,7 +10,6 @@
 
 import { STACKACRES_LIVESTOCK, isLivestock, type StackAcresStock } from "./catalogue";
 import { AXE_LEVELS, AXE_LEVEL_DEFS } from "./axe";
-import { CELLAR_ITEMS, VAT_INPUT_ITEM } from "./aging";
 import { MYTHIC_BLUEPRINTS, MYTHIC_BLUEPRINT_IDS } from "./blueprints";
 import { CONTRACT_RUNGS } from "./contracts";
 import { CROSSBREED_MATRIX } from "./crossbreeding";
@@ -25,7 +24,7 @@ import { SHELF_FEED_ORDERS } from "./feeding";
 import { FISHING_BAIT_ITEM, FISH_SPECIES } from "./fishing";
 import { GIFTABLE_ITEMS, NPC_GIFT_CATALOGUE, FRIENDSHIP_NPCS } from "./friendship";
 import { STACKACRES_YIELDS, STACKACRES_ITEMS } from "./items";
-import { MACHINE_CATALOGUE, MACHINE_KINDS, type MachineKind } from "./machines";
+import { MACHINE_CATALOGUE, MACHINE_KINDS, isRetiredMachine, type MachineKind } from "./machines";
 import {
   ALL_MACHINE_ITEM_IDS,
   MACHINE_ITEM_CATALOGUE,
@@ -155,8 +154,8 @@ const DESCRIPTIONS: Readonly<Record<GuideItemId, string>> = {
   wood: "Chopped from the trees on the Homestead.",
   stone: "Broken out of boulders.",
   iron_ore: "Broken out of boulders alongside the stone.",
-  flour: "Ground from wheat at the Mill.",
-  cheese: "Made from milk at the Dairy.",
+  flour: "Ground from wheat at the Feed Grinder.",
+  cheese: "Made from milk at the Cream Separator.",
   cloth: "Woven from wool at the Loom.",
   cake: "Baked from eggs, milk and flour.",
   bread: "Baked from flour in the kitchen oven.",
@@ -201,7 +200,7 @@ export const GATHER_SOURCES: Readonly<Record<"fishing" | "hunting" | "wood" | "s
 };
 
 function isMachineBuildable(kind: MachineKind): boolean {
-  return MACHINE_KINDS.includes(kind);
+  return MACHINE_KINDS.includes(kind) && !isRetiredMachine(kind);
 }
 
 function stockIsOpen(stock: StackAcresStock): boolean {
@@ -322,6 +321,7 @@ export function resourceUses(item: GuideItemId): ResourceUse[] {
   }
 
   for (const kind of MACHINE_KINDS) {
+    if (isRetiredMachine(kind)) continue;
     const cost = MACHINE_CATALOGUE[kind].materials?.find((entry) => entry.item === item);
     if (!cost) continue;
     uses.push({
@@ -360,14 +360,6 @@ export function resourceUses(item: GuideItemId): ResourceUse[] {
   const rungs = CONTRACT_RUNGS.filter((rung) => rung.item === item);
   if (rungs.length > 0) {
     uses.push({ kind: "contract", label: "Town orders", detail: "The town posts orders for it", destination: "contracts" });
-  }
-
-  if (item === VAT_INPUT_ITEM) {
-    uses.push({ kind: "vat", label: "Age it in the Fermenting Vat", destination: "workshop", machine: "vat" });
-  }
-
-  if ((CELLAR_ITEMS as readonly string[]).includes(item)) {
-    uses.push({ kind: "cellar", label: "Age it in the Preserves Cellar", destination: "house", machine: "cellar" });
   }
 
   if (isFoodItem(item)) {

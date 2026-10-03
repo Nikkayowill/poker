@@ -20,8 +20,8 @@ describe("the Hearty Stew recipe", () => {
     });
   });
 
-  it("makes Stew a 30 Gold food worth 50 energy", () => {
-    expect(machineItemSellPrice("stew")).toBe(30);
+  it("makes Stew an 11 Gold food worth 50 energy", () => {
+    expect(machineItemSellPrice("stew")).toBe(11);
     expect(isFoodItem("stew")).toBe(true);
     expect(FOOD_ENERGY.stew).toBe(50);
   });
@@ -47,8 +47,8 @@ describe("the Garden Salad recipe", () => {
     });
   });
 
-  it("makes Salad a 12 Gold food worth 15 energy", () => {
-    expect(machineItemSellPrice("salad")).toBe(12);
+  it("makes Salad a 9 Gold food worth 15 energy", () => {
+    expect(machineItemSellPrice("salad")).toBe(9);
     expect(isFoodItem("salad")).toBe(true);
     expect(FOOD_ENERGY.salad).toBe(15);
   });
@@ -86,7 +86,7 @@ describe("wantedForLine", () => {
     expect(wantedForLine("cabbage")).toBe("For: Sauerkraut, Hen feed");
     expect(wantedForLine("wheat")).toBe("For: Flour, Hen feed");
     expect(wantedForLine("radish")).toBe("For: Garden Salad, Fishing bait");
-    expect(wantedForLine("corn")).toBe("For: Cattle feed (at the Mill)");
+    expect(wantedForLine("corn")).toBe("For: Cattle feed (at the Feed Grinder)");
     expect(otherUsesOf("cattle_feed")).toEqual(["Cattle feed"]);
   });
 
@@ -121,7 +121,7 @@ describe("the Cattle Feed recipe", () => {
       output: { item: "cattle_feed", quantity: 4 },
       processingMs: RECIPE_CATALOGUE.flour.processingMs,
     });
-    expect(machineItemSellPrice("cattle_feed")).toBe(12);
+    expect(machineItemSellPrice("cattle_feed")).toBe(8);
     expect(4 * machineItemSellPrice("cattle_feed")).toBeGreaterThan(machineItemSellPrice("corn"));
   });
 

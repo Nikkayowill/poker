@@ -39,6 +39,19 @@ export function isMachineKind(value: string): value is MachineKind {
   return (MACHINE_KINDS as readonly string[]).includes(value);
 }
 
+/**
+ * Machines that are no longer built (2026-10-02 economy rebase): the
+ * Fermenting Vat, the Preserves Cellar and the Farm Kitchen. Aging and
+ * auto-cooking made processed goods the income, which is not this farm.
+ * Nothing new is built and nothing new is sealed, but a batch already sealed
+ * in a Vat or Cellar can still be collected, so no one loses what they put in.
+ */
+export const RETIRED_MACHINE_KINDS = ["vat", "cellar", "farm_kitchen"] as const satisfies readonly MachineKind[];
+
+export function isRetiredMachine(kind: MachineKind): boolean {
+  return (RETIRED_MACHINE_KINDS as readonly string[]).includes(kind);
+}
+
 /** One material line a machine's placement also spends, alongside its Gold
  *  `placeCost`. The shape is ./machine-items.ts's now, shared with land
  *  clears and pen slots; the old name is kept so call sites read the same. */
@@ -74,8 +87,11 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
   // Wood's real economic job (see ./wood.ts's own header) -- a chopped
   // material that actually gates something a player wants, rather than
   // existing only to be sold.
-  mill: { label: "Mill", placeCost: 200, materials: [{ item: "wood", quantity: 15 }] },
-  dairy: { label: "Dairy", placeCost: 700 },
+  // Player-facing names follow a Midwest farm of 1920 to 1990: the Mill is the
+  // Feed Grinder (corn to feed, wheat to flour) and the Dairy is the cream
+  // separator. The kind ids stay `mill` and `dairy`, since they are stored.
+  mill: { label: "Feed Grinder", placeCost: 200, materials: [{ item: "wood", quantity: 15 }] },
+  dairy: { label: "Cream Separator", placeCost: 700 },
   loom: { label: "Loom", placeCost: 350, materials: [{ item: "wood", quantity: 25 }] },
   // Dearest of the four, and deliberately so: unlike the other three, the Vat
   // never touches Town Contracts at all -- it is a second, direct door back
@@ -103,9 +119,8 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
   // root cellar is dug and lined with stone, not framed in wood -- and
   // priced a little steeper in Stone than the Silo since it sits underground.
   cellar: { label: "Preserves Cellar", placeCost: 25_000, materials: [{ item: "stone", quantity: 30 }] },
-  // Chapter 6's late automation beside the house kitchen. Runs no recipe of its
-  // own: it cooks the player's standing order while they are away, at double
-  // yield (./farm-kitchen.ts).
+  // Retired (RETIRED_MACHINE_KINDS). It used to cook a standing order while
+  // the player was away; nothing reads its order any more.
   farm_kitchen: { label: "Farm Kitchen", placeCost: 60_000 },
   // The Workshop's furnace: melts Iron Ore into Metal, the one material the
   // Far Field's buildings cannot be raised without. Built of stone like the
@@ -160,9 +175,8 @@ export interface StackAcresMachineRow {
    *  feed. Written under the row's version guard (./feed-silo.ts). */
   autoFeedDay: string | null;
   autoFeeds: number;
-  /** Farm Kitchen only: the recipe it cooks while the player is away, and the
-   *  instant its batches bank from (./farm-kitchen.ts). Null until an order
-   *  is set. Written under the row's version guard. */
+  /** Farm Kitchen only: the standing order it used to cook. The Farm Kitchen
+   *  is retired and nothing reads these now; the columns stay so old rows load. */
   standingRecipe: RecipeId | null;
   kitchenSince: string | null;
   version: number;
@@ -234,8 +248,7 @@ export interface StackAcresMachineSnapshot {
   /** Feed Silo only: auto-feeds it can still hand out today. Null for every
    *  other kind. */
   autoFeedsLeft: number | null;
-  /** Farm Kitchen only: its standing order, and the instant its batches bank
-   *  from (./farm-kitchen.ts's `farmKitchenBanked`). Null for every other kind. */
+  /** Farm Kitchen only: its old standing order. Unused since it was retired. */
   standingRecipe: RecipeId | null;
   kitchenSince: string | null;
 }

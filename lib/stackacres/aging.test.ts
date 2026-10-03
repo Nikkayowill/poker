@@ -16,6 +16,7 @@ import {
   type AgingManifest,
 } from "./aging";
 import { recipeRawGoldValue } from "./recipes";
+import { machineItemSellPrice } from "./machine-items";
 
 describe("AGING_TIERS", () => {
   it("is three rungs of 1.5x/2x/3x, the same ladder as the Cellar", () => {
@@ -153,7 +154,7 @@ describe("the Preserves Cellar ladder", () => {
     expect(cellarSealQuantity(0)).toBe(0);
     expect(cellarSealQuantity(5)).toBe(5);
     expect(cellarSealQuantity(40)).toBe(CELLAR_CAPACITY);
-    expect(cellarBaseGoldValue("pickles", 12)).toBe(12 * 60);
+    expect(cellarBaseGoldValue("pickles", 12)).toBe(12 * machineItemSellPrice("pickles"));
   });
 
   it("shows the cellar's own ladder in its container", () => {

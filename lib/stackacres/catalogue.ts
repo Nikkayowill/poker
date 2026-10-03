@@ -360,7 +360,10 @@ export function capFor(extraSlots: number): number {
  * would re-roll on every refetch and let a player reroll muck by pulling to
  * refresh.
  */
-export const STACKACRES_MUCK_CHANCE = 0.2;
+// Off since the 2026-10-02 economy rebase: a random cleanup bill on a
+// harvest is not how a farm of that era lost money. The fee table stays so
+// a stored muck row from before still reads.
+export const STACKACRES_MUCK_CHANCE = 0;
 
 /**
  * What buying one extra capacity slot costs, in Gold. Untouched by the

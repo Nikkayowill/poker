@@ -602,6 +602,29 @@ describe("predictStackAcresAction: laying a soil tile", () => {
     expect(patch?.cropFieldsUnlocked).toBe(false);
   });
 
+  it("lays each bed of a tractor row the way a single press would, skipping one already dug", () => {
+    const yardRow = (() => {
+      const yard = (mx: number, my: number) => isFenceableMapTile(mx, my) && !isWildMapTile(mx, my);
+      for (let my = 0; my < HOMESTEAD_MAP_HEIGHT; my++) {
+        for (let mx = 0; mx + 3 <= HOMESTEAD_MAP_WIDTH; mx++) {
+          if (yard(mx, my) && yard(mx + 1, my) && yard(mx + 2, my)) {
+            const first = mapToSoilTile(mx, my);
+            return [0, 1, 2].map((i) => ({ tx: first.tx + i, ty: first.ty }));
+          }
+        }
+      }
+      throw new Error("no three yard squares in a row on the Homestead");
+    })();
+    const dug = { ...yardRow[1], order: 0, origin: "purchased" as const };
+    const patch = predictStackAcresAction(
+      { action: "place-soil-tile", tx: yardRow[0].tx, ty: yardRow[0].ty, tiles: yardRow },
+      ctx({ soilTiles: [dug] }),
+    );
+    expect(patch?.soilTiles?.map((tile) => `${tile.tx},${tile.ty}`).sort()).toEqual(
+      yardRow.map((tile) => `${tile.tx},${tile.ty}`).sort(),
+    );
+  });
+
   it("refuses a coordinate that already has a bed", () => {
     const bed = { tx: inFields.tx, ty: inFields.ty, order: 0, origin: "purchased" as const };
     expect(

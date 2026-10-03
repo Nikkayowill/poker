@@ -2334,6 +2334,8 @@ describe("the currency wall", () => {
       "buy-cutter",
       // Spends Gold on a guard dog, refunded if it can't be set down.
       "buy-dog",
+      // Spends Gold and Metal on a machine like the tractor, refunded if the row can't be written.
+      "buy-equipment",
       "buy-feed",
       "buy-seed",
       "buy-stock",

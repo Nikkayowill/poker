@@ -74,6 +74,7 @@ import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import {
   axeSound,
   doorSound,
+  toolSound,
   floorStepSound,
   grassStepSound,
   castSwishSound,
@@ -164,6 +165,8 @@ import {
 import { gridRouter } from "@/lib/stackacres-td/work-board";
 import type { AreaSpecForRoutines } from "@/lib/stackacres-td/npc-routine";
 import { WindSway } from "./wind-sway";
+import { TractorRig } from "./tractor-rig";
+import { GET_OFF_TRACTOR_FIRST } from "@/lib/stackacres/tractor";
 import { SeeThrough } from "./see-through";
 import { drawNodeTextures } from "./node-textures";
 import { NODE_ART, gatherKindOfTag, spentForage, spentStones, spentTrees, type SpentNode } from "@/lib/stackacres-td/gather-nodes";
@@ -484,6 +487,8 @@ export interface TopdownCallbacks {
   onStoreDeskTap: () => void;
   /** A finger landed on someone working at the grocery: their name, and the point over their head. */
   onStaffTap: (name: string, at: TapPoint) => void;
+  /** He climbed onto the tractor or off it (./tractor-rig.ts). */
+  onDrivingChanged: (driving: boolean) => void;
 }
 
 /**
@@ -697,6 +702,12 @@ export class TopdownScene extends Phaser.Scene {
   private groceryGhost: GroceryGhost | null = null;
   private groceryObjects: Phaser.GameObjects.GameObject[] = [];
   private nextRegrowCheck = 0;
+  /** The tractor, once bought: parked by the barn, or driven. */
+  private tractor!: TractorRig;
+  /** What the shell last said about owning one, kept for a push that lands before boot. */
+  private tractorOwned = false;
+  /** When a refused gate last said so, so a stick held into it does not say it every frame. */
+  private gateRefusedAt = 0;
 
   /**
    * Visitor Mode: this map belongs to somebody else, so nothing on it may be
@@ -727,6 +738,7 @@ export class TopdownScene extends Phaser.Scene {
     }
     this.load.atlas("common", `${ASSETS}/common/sprites.png`, `${ASSETS}/common/sprites.json`);
     this.load.atlas("buildings", `${ASSETS}/common/buildings.png`, `${ASSETS}/common/buildings.json`);
+    this.load.atlas("tractor", `${ASSETS}/common/tractor.png`, `${ASSETS}/common/tractor.json`);
     this.load.image("forest", `${ASSETS}/common/forest.png`);
     this.load.spritesheet("fence", `${ASSETS}/common/fence.png`, { frameWidth: FENCE_FRAME.width, frameHeight: FENCE_FRAME.height });
     this.load.image("waterfall", `${ASSETS}/common/waterfall.png`);
@@ -780,6 +792,9 @@ export class TopdownScene extends Phaser.Scene {
     this.walkers = new NpcWalkers(new Map<string, AreaSpecForRoutines>(this.specs), STANDING);
     this.walkers.setHourLength(STACKACRES_HOUR_MS);
     this.speech = new SpeechBubbles(this.host, (p) => this.mapToCss(p));
+    this.tractor = new TractorRig(this, (object) => this.keep(object));
+    // Drawn by enterArea below, once there is an area to draw it in.
+    this.tractor.setOwned(this.tractorOwned, "");
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.speech.clear());
     this.drops = new ChunkDrops(
       this,
@@ -818,6 +833,8 @@ export class TopdownScene extends Phaser.Scene {
       // Nothing to walk: the farmer is between two places.
     } else if (this.stick) this.walkByStick(delta);
     else if (this.path.length > 0) this.walk(delta);
+    // Snapped like his own sprite, so the machine does not shimmer against the ground.
+    this.tractor.update(time, { x: this.snap(this.pos.x), y: this.snap(this.pos.y) }, this.facing, this.isWalking());
     if (this.useDown && this.isWalking()) this.useSquare(true);
     this.checkNearWater();
     if (this.shake.ms > 0) this.shake.ms = Math.max(0, this.shake.ms - delta);
@@ -908,7 +925,7 @@ export class TopdownScene extends Phaser.Scene {
   private playWalk(speed: number): void {
     // A stroke acts each bed out while he keeps moving (Kayo's call), so the
     // action animation owns the sprite until it finishes; the walk resumes after.
-    if (this.acting) return;
+    if (this.acting || this.tractor.driving) return;
     const key = `walk_${this.facing}`;
     const timeScale = speed / WALK_TIMED_FOR;
     const current = this.player.anims.currentAnim;
@@ -932,6 +949,14 @@ export class TopdownScene extends Phaser.Scene {
       (e) => at.x >= e.x && at.x < e.x + e.w && at.y >= e.y && at.y < e.y + e.h && this.canEnter(e.to),
     );
     if (!exit) return false;
+    // The tractor stays on the Homestead: it does not go through doors or gates.
+    if (this.tractor.driving) {
+      if (this.time.now - this.gateRefusedAt > 1500) {
+        this.gateRefusedAt = this.time.now;
+        this.floatAt(this.mapToCss({ x: this.pos.x, y: this.pos.y - 40 }), GET_OFF_TRACTOR_FIRST, "deny");
+      }
+      return false;
+    }
     this.path = [];
     this.pending = null;
     this.travelTo(exit.to, exit.spawn);
@@ -1315,6 +1340,7 @@ export class TopdownScene extends Phaser.Scene {
     this.drawGroceryGhost();
     if (name === "grocery" && !this.buildMode) this.openGrocery();
     this.drawUnits();
+    this.enterTractor(name);
     // Nothing of the place he left is drawn any more, so its pictures go (LOADS_WITH).
     for (const place of [...this.placesLoaded]) if (place !== "homestead" && place !== LOADS_WITH[name]) this.dropPlace(place);
   }
@@ -2066,6 +2092,10 @@ export class TopdownScene extends Phaser.Scene {
       const trades = name === SEED_SELLER || townBuyerOfNpc(name) !== null;
       if (box.contains(map.x, map.y)) consider({ kind: "npc", name, anchor: { x: node.sprite.x, y: node.sprite.y + 10 }, face: { x: node.sprite.x, y: node.sprite.y } }, node.sprite.depth + (trades ? 1000 : 0));
     }
+    if (this.tractor.hit(map)) {
+      const { anchor, face } = this.tractor.approach();
+      consider({ kind: "tag", tag: "tractor", anchor: this.tractor.driving ? { ...this.pos } : anchor, face: this.tractor.driving ? null : face }, this.tractor.position.y);
+    }
     for (const { spec, image } of this.propImages) {
       if (!spec.tag || !image.visible) continue;
       if (!image.getBounds().contains(map.x, map.y)) continue;
@@ -2576,12 +2606,21 @@ export class TopdownScene extends Phaser.Scene {
     if (target.kind === "unit") {
       const node = this.unitNodes.get(target.id);
       const at = node ? this.mapToCss({ x: node.sprite.x, y: node.sprite.y - node.sprite.height / 2 }) : this.mapToCss(target.anchor);
-      cb.onUseSquare({ tile: this.tileOfUnit.get(target.id) ?? null, unitId: target.id, at, stroke: false });
+      cb.onUseSquare({ tile: this.tileOfUnit.get(target.id) ?? null, unitId: target.id, at, stroke: false, facing: this.facing });
       return;
     }
     if (target.kind === "field") {
       const { tx, ty } = soilTileAt(target.world.x, target.world.y);
-      cb.onUseSquare({ tile: { tx, ty }, unitId: null, at: this.mapToCss(target.anchor), stroke: false });
+      cb.onUseSquare({ tile: { tx, ty }, unitId: null, at: this.mapToCss(target.anchor), stroke: false, facing: this.facing });
+      return;
+    }
+    if (target.kind === "tag" && target.tag === "tractor") {
+      this.toggleTractor();
+      return;
+    }
+    // Up on the tractor he works beds and drives; everything else waits until he climbs down.
+    if (this.tractor.driving && (target.kind === "npc" || target.kind === "tag")) {
+      this.floatAt(this.mapToCss({ x: this.pos.x, y: this.pos.y - 40 }), GET_OFF_TRACTOR_FIRST, "deny");
       return;
     }
     if (target.kind === "npc") {
@@ -2729,7 +2768,7 @@ export class TopdownScene extends Phaser.Scene {
     if (stroke && (key === null || key === this.stroked)) return;
     this.stroked = key;
     const unitId = key !== null ? this.unitTiles.get(key) ?? null : this.nearestUnit();
-    this.callbacks.onUseSquare({ tile, unitId, at: this.mapToCss(front), stroke });
+    this.callbacks.onUseSquare({ tile, unitId, at: this.mapToCss(front), stroke, facing: this.facing });
   }
 
   /** The map square a bed target stands on: a bare bed or grass, or the bed a crop
@@ -2761,6 +2800,62 @@ export class TopdownScene extends Phaser.Scene {
       if (distance <= REACH && (!best || distance < best.distance)) best = { id, distance };
     }
     return best?.id ?? null;
+  }
+
+  // ------------------------------------------------------------------ tractor
+
+  /** Whether the farm owns a tractor, so one is parked by the barn. */
+  setTractorOwned(owned: boolean): void {
+    this.tractorOwned = owned;
+    if (!this.booted) return;
+    if (!owned && this.tractor.driving) this.getOffTractor();
+    this.tractor.setOwned(owned, this.areaName);
+  }
+
+  /** The belt's Get off key, the same as tapping the tractor while on it. */
+  getOffTractor(): void {
+    if (this.tractor.driving) this.toggleTractor();
+  }
+
+  private toggleTractor(): void {
+    this.stand();
+    if (!this.tractor.driving) {
+      const { at, facing } = this.tractor.mount();
+      this.facing = facing;
+      this.setPlayerAt(at);
+      this.player.setVisible(false);
+      this.playerShadow.setVisible(false);
+      this.tractor.update(this.time.now, this.pos, this.facing, false);
+    } else {
+      this.tractor.dismount();
+      // He steps down beside it rather than standing inside it.
+      const beside = [
+        { x: this.pos.x - 26, y: this.pos.y },
+        { x: this.pos.x + 26, y: this.pos.y },
+        { x: this.pos.x, y: this.pos.y + 14 },
+      ].find((p) => this.isOpenTile(Math.floor(p.x / this.area.tile), Math.floor(p.y / this.area.tile)));
+      if (beside) this.setPlayerAt(beside);
+      this.facing = "down";
+      this.player.setVisible(true);
+      this.playerShadow.setVisible(true);
+      this.stand();
+    }
+    toolSound();
+    this.callbacks.onDrivingChanged(this.tractor.driving);
+  }
+
+  /** Draws the tractor for the place just entered. Taken off the Homestead some other way, he is off it too. */
+  private enterTractor(name: TopdownArea): void {
+    if (this.tractor.driving && name !== "homestead") {
+      this.tractor.sendHome();
+      this.callbacks.onDrivingChanged(false);
+    }
+    this.tractor.build(name);
+    if (!this.tractor.driving) return;
+    // Moved somewhere on the Homestead while driving (the map sheet): he takes it with him.
+    this.player.setVisible(false);
+    this.playerShadow.setVisible(false);
+    this.tractor.update(this.time.now, this.pos, this.facing, false);
   }
 
   setStick(push: Point | null): void {
@@ -3894,6 +3989,11 @@ export class TopdownScene extends Phaser.Scene {
    */
   cameraState(): { zoom: number; following: boolean; centre: Point } {
     return { zoom: this.zoom, following: this.following, centre: { ...this.centre } };
+  }
+
+  /** e2e only: whether a tractor is parked or driven here, where it stands, and whether he is on it. */
+  tractorState(): { drawn: boolean; driving: boolean; at: Point } {
+    return { drawn: this.tractor.drawn, driving: this.tractor.driving, at: this.tractor.position };
   }
 
   isWalking(): boolean {

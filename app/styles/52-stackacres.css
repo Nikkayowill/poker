@@ -5074,6 +5074,23 @@
 }
 .sa-belt-slot:active { box-shadow: none; }
 .sa-belt-slot .sa-px-lg { margin: -4px; }
+/* The tractor on Ray's machinery shelf: its own map frame, facing right, doubled. */
+.sa-tractor-art {
+  display: block;
+  width: 128px;
+  height: 108px;
+  margin: 0 auto;
+  background: url("/stackacres-td/common/tractor.png") -1536px 0 / 2048px 108px no-repeat;
+  image-rendering: pixelated;
+}
+/* Up on the tractor: the key that climbs him down, in words, since there is no icon for it. */
+.sa-belt-getoff {
+  font-family: var(--sa-font-pixel);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 10px;
+  text-align: center;
+}
 .sa-belt-count {
   right: -10px;
   bottom: -10px;

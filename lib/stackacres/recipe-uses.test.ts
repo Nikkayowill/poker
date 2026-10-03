@@ -86,8 +86,8 @@ describe("wantedForLine", () => {
     expect(wantedForLine("cabbage")).toBe("For: Sauerkraut, Hen feed");
     expect(wantedForLine("wheat")).toBe("For: Flour, Hen feed");
     expect(wantedForLine("radish")).toBe("For: Garden Salad, Fishing bait");
-    expect(wantedForLine("corn")).toBe("For: Cattle feed (at the Feed Grinder)");
-    expect(otherUsesOf("cattle_feed")).toEqual(["Cattle feed"]);
+    expect(wantedForLine("corn")).toBe("For: Cattle feed (at the Feed Grinder), Fattens hogs");
+    expect(otherUsesOf("cattle_feed")).toEqual(["Cattle feed", "Fattens hogs and steers"]);
   });
 
   it("tags beans as a soil helper", () => {

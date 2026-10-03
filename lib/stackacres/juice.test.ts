@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { STACKACRES_STOCK, type StackAcresStock } from "./catalogue";
-import { STACKACRES_YIELDS } from "./items";
+import { yieldItemOf } from "./items";
 import {
   CRIT_SHAKE_DURATION_MS,
   GOLD_TICKER_DURATION_MS,
@@ -47,7 +47,7 @@ describe("STACKACRES_JUICE_STYLES", () => {
 describe("juiceItemFor", () => {
   it("matches ./items.ts's own yield table, never a second guess", () => {
     for (const stock of STACKACRES_STOCK) {
-      expect(juiceItemFor(stock)).toBe(STACKACRES_YIELDS[stock].item);
+      expect(juiceItemFor(stock)).toBe(yieldItemOf(stock));
     }
   });
 });

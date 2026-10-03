@@ -19,6 +19,7 @@
 import { STACKACRES_CATALOGUE, type StackAcresStock } from "./catalogue";
 import {
   servingBonusEggs,
+  servingBonusWeight,
   shelfFeedLeft,
   shelfFeedOrder,
   type ServingSource,
@@ -48,10 +49,10 @@ export function siloFeedsLeft(counter: SiloCounter, day: string): number {
 }
 
 /** What the Silo feeds `stock` off the shelf, before the Feed Sack. It skips
- *  anything that earns a bonus (Spinach's extra egg), so that bonus stays a
- *  reward for feeding by hand. */
+ *  anything that earns a bonus (Spinach's extra egg, a hog's corn), so that
+ *  bonus stays a reward for feeding by hand. */
 export function siloFeedOrder(stock: StackAcresStock): readonly ShelfFeedItem[] {
-  return shelfFeedOrder(stock).filter((item) => servingBonusEggs(item) === 0);
+  return shelfFeedOrder(stock).filter((item) => servingBonusEggs(item) === 0 && servingBonusWeight(stock, item) === 0);
 }
 
 export interface SiloUnit {

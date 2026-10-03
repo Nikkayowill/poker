@@ -7,7 +7,13 @@
 import { inventoryQuantity, type StackAcresInventory } from "./inventory";
 import { machineItemNoun, type MachineItemId } from "./machine-items";
 import { RECIPE_CATALOGUE, RECIPE_IDS, type RecipeId } from "./recipes";
-import { SHELF_FEED_ORDERS, isHenFeedItem, servingBonusEggs } from "./feeding";
+import {
+  SHELF_FEED_ORDERS,
+  isHenFeedItem,
+  servingBonusEggs,
+  servingBonusWeight,
+  type ServingSource,
+} from "./feeding";
 import { FISHING_BAIT_ITEM } from "./fishing";
 import { MACHINE_CATALOGUE } from "./machines";
 import { SOIL_ENRICH_USE_LABEL, isSoilEnrichingItem } from "./soil-enrich";
@@ -38,10 +44,14 @@ function recipeUseLabel(recipe: RecipeId): string {
 export function otherUsesOf(item: MachineItemId): string[] {
   const uses: string[] = [];
   const noun = feedNounFor(item);
-  if (noun) {
+  // Hogs and steers get their own line below, so their noun is not repeated.
+  if (noun && noun !== "Hog" && noun !== "Steer") {
     const eggs = isHenFeedItem(item) ? servingBonusEggs(item) : 0;
     uses.push(eggs > 0 ? `${noun} feed (+${eggs} egg${eggs === 1 ? "" : "s"})` : `${noun} feed`);
   }
+  // Corn and Cattle Feed also fatten hogs and steers for the sale barn.
+  const fattens = (["hog", "steer"] as const).filter((stock) => servingBonusWeight(stock, item as ServingSource) > 0);
+  if (fattens.length > 0) uses.push(`Fattens ${fattens.map((stock) => `${stock}s`).join(" and ")}`);
   if (item === FISHING_BAIT_ITEM) uses.push("Fishing bait");
   if (isSoilEnrichingItem(item)) uses.push(SOIL_ENRICH_USE_LABEL);
   return uses;

@@ -75,7 +75,7 @@ export class PeopleLife {
   syncHens(nodes: Iterable<[string, Phaser.GameObjects.Image]>, time: number): void {
     const seen = new Set<string>();
     for (const [id, sprite] of nodes) {
-      if (!/^(hen|sheep|cattle)_/.test(sprite.frame.name)) continue;
+      if (!/^(hen|sheep|cattle|hog)_/.test(sprite.frame.name)) continue;
       seen.add(id);
       const known = this.hens.get(id);
       if (!known || known.sprite !== sprite) {
@@ -151,7 +151,7 @@ export class PeopleLife {
         hen.base = hen.base.includes("_left") ? hen.base.replace("_left", "_right") : hen.base.replace("_right", "_left");
         hen.sprite.setFrame(hen.base);
       }
-      // Sheep and cattle only turn now and then; hens are busier.
+      // Sheep, cattle and hogs only turn now and then; hens are busier.
       hen.next = time + (pecks ? (Math.random() < 0.3 ? 300 : 1400 + Math.random() * 3600) : 4000 + Math.random() * 7000);
     }
 

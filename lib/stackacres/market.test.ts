@@ -44,9 +44,8 @@ describe("stock prices", () => {
     const first = stackacresStockPrice("cattle");
     const later = stackacresStockPrice("cattle");
     expect(later).toBe(first);
-    // Unchanged across the single-currency conversion, deliberately: seed
-    // prices doubled and the multiple halved, so no price on the shelf moved.
-    expect(first).toBe(60_000);
+    // 670 a cycle since the 2026-10-02 retune, so 50 times that outright.
+    expect(first).toBe(33_500);
   });
 
   it("rank the tiers the same way the seed prices do", () => {
@@ -146,6 +145,30 @@ describe("districts", () => {
     expect(stockZone("pig")).toBe("wallow");
     expect(stockZone("corn")).toBe("farmstead");
     expect(stockZone("hen")).toBe("henhaven");
+  });
+});
+
+describe("the 2026-10-02 lease retune", () => {
+  it("makes one leased cycle of every animal and of corn pay a little", () => {
+    expect(STACKACRES_CATALOGUE.hen.seedCost).toBe(35);
+    expect(STACKACRES_CATALOGUE.pig.seedCost).toBe(170);
+    expect(STACKACRES_CATALOGUE.cattle.seedCost).toBe(670);
+    expect(STACKACRES_CATALOGUE.corn.seedCost).toBe(75);
+    for (const stock of ["hen", "pig", "cattle", "corn", "hog", "steer"] as const) {
+      expect(yieldValue(stock)).toBeGreaterThan(STACKACRES_CATALOGUE[stock].seedCost);
+    }
+  });
+
+  it("prices owning outright at fifty cycles", () => {
+    expect(stackacresStockPrice("hen")).toBe(1_750);
+    expect(stackacresStockPrice("pig")).toBe(8_500);
+    expect(stackacresStockPrice("cattle")).toBe(33_500);
+    expect(stackacresStockPrice("corn")).toBe(3_750);
+  });
+
+  it("never sells a hog or steer outright", () => {
+    expect(stackacresStockOwnableOutright("hog")).toBe(false);
+    expect(stackacresStockOwnableOutright("steer")).toBe(false);
   });
 });
 

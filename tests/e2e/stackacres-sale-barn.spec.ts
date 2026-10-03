@@ -1,8 +1,8 @@
 import { expect, test, type BrowserContext, type Page } from "./fixtures";
 
 /**
- * Selling happens in town, to the person who buys that good: Dale at the grain elevator, Iris at the
- * general store and Hank at the sale barn (lib/stackacres/town-buyers.ts). Ray's barn no longer buys.
+ * Hank at the sale barn (lib/stackacres/sale-barn.ts) sells feeder pigs and calves, and ships the farm's
+ * ready hogs and steers back to market by weight. Cloned from stackacres-town-buyers.spec.ts.
  */
 
 interface Handle {
@@ -29,7 +29,7 @@ async function admit(context: BrowserContext): Promise<string> {
 const farm = async (context: BrowserContext) =>
   (await (await context.request.get("/api/stackacres")).json()) as {
     profile: { goldBalance: number };
-    inventory: Record<string, number>;
+    units: { stock: string }[];
   };
 
 async function start(page: Page) {
@@ -60,57 +60,33 @@ async function tapPerson(page: Page, at: { x: number; y: number }) {
   await page.mouse.click(point.x, point.y);
 }
 
-// Where public/stackacres-td/areas/city/area.json stands them.
-const IRIS = { x: 467, y: 389 };
-const DALE = { x: 728, y: 573 };
+// Where public/stackacres-td/areas/city/area.json stands him.
 const HANK = { x: 614, y: 422 };
 
-test("Iris buys Stone at the general store, and Dale turns it away", async ({ context, page }) => {
-  const profileId = await admit(context);
-  const granted = await context.request.post("/api/admin/stackacres-items", { data: { profileId, item: "stone", delta: 3 } });
-  expect(granted.ok()).toBe(true);
-
-  // The wrong buyer moves nothing.
-  const wrong = await context.request.post("/api/stackacres/actions", {
-    data: { action: "sell", buyer: "grain-elevator", item: "stone", quantity: 3 },
-  });
-  expect(wrong.status()).toBe(400);
-  expect((await farm(context)).inventory.stone).toBe(3);
-
-  await start(page);
-
-  // Dale has nothing to buy from this farm yet.
-  await tapPerson(page, DALE);
-  const elevator = page.getByRole("dialog", { name: "Grain Elevator" });
-  await expect(elevator).toBeVisible();
-  await expect(elevator).toContainText("You have nothing Dale buys yet.");
-  await elevator.getByRole("button", { name: "Close" }).click();
-  await expect(elevator).toHaveCount(0);
-
-  // Iris takes the Stone.
-  await tapPerson(page, IRIS);
-  const store = page.getByRole("dialog", { name: "General Store" });
-  await expect(store).toBeVisible();
-  const before = await farm(context);
-  await store.locator(".sa-stock-card", { hasText: "Stone" }).getByRole("button", { name: "Sell all 3" }).click();
-  await expect(store.getByRole("status")).toContainText("Sold 3 Stone");
-  await expect.poll(async () => (await farm(context)).inventory.stone ?? 0, { timeout: 10_000 }).toBe(0);
-  expect((await farm(context)).profile.goldBalance).toBeGreaterThan(before.profile.goldBalance);
-});
-
-test("Hank at the sale barn sells young stock and buys it back", async ({ context, page }) => {
+test("Hank sells a feeder pig, and has nothing to ship until it's grown", async ({ context, page }) => {
   await admit(context);
+  const before = await farm(context);
+  expect(before.profile.goldBalance).toBeGreaterThanOrEqual(250);
+  expect(before.units.filter((unit) => unit.stock === "hog")).toHaveLength(0);
+
+  // A hog is never bought outright, and there is nothing ready to ship yet.
+  const outright = await context.request.post("/api/stackacres/actions", { data: { action: "buy-stock", stock: "hog" } });
+  expect(outright.ok()).toBe(false);
+  const early = await context.request.post("/api/stackacres/actions", { data: { action: "ship-livestock" } });
+  expect(early.status()).toBe(409);
+
   await start(page);
   await tapPerson(page, HANK);
   const saleBarn = page.getByRole("dialog", { name: "Sale Barn" });
   await expect(saleBarn).toBeVisible();
-  await expect(saleBarn).toContainText("Raise them fat and I'll buy them back by weight.");
-});
+  await expect(saleBarn.getByRole("button", { name: "Ship to market" })).toBeDisabled();
 
-test("a sale that names no buyer is refused", async ({ context }) => {
-  await admit(context);
-  const response = await context.request.post("/api/stackacres/actions", {
-    data: { action: "sell", item: "eggs", quantity: 1 },
-  });
-  expect(response.status()).toBe(400);
+  await saleBarn.getByRole("button", { name: "Buy a feeder pig" }).click();
+  await expect(saleBarn.getByRole("status")).toContainText("Your feeder pig is on its way home.");
+  await expect
+    .poll(async () => (await farm(context)).units.filter((unit) => unit.stock === "hog").length, { timeout: 10_000 })
+    .toBe(1);
+  expect((await farm(context)).profile.goldBalance).toBe(before.profile.goldBalance - 250);
+  await expect(saleBarn).toContainText("You have 1 of 3 hogs.");
+  await expect(saleBarn).toContainText("Nothing is ready yet.");
 });

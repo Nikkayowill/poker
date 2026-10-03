@@ -66,6 +66,7 @@ import {
   fulfillStackAcresTownContract,
   claimStackAcresFarmBoard,
   sellStackAcresItem,
+  shipStackAcresLivestock,
   processStackAcresRecipeAction,
   collectStackAcresCellar,
   placeStackAcresSoilTile,
@@ -304,6 +305,9 @@ const bodySchema = z.discriminatedUnion("action", [
     // actually holds, checked server-side under a row lock.
     quantity: z.number().int().min(1).max(9_999),
   }),
+  // Sells every ready hog and steer at Hank's sale barn, by weight, in one
+  // payout. Takes nothing: the server decides which animals are ready.
+  z.object({ action: z.literal("ship-livestock") }),
   // Eats one food (FOOD_ITEMS) for energy. Moves no Gold.
   z.object({
     action: z.literal("eat"),
@@ -597,6 +601,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return workStackAcres(token, now);
     case "sell":
       return sellStackAcresItem(token, { item: action.item, quantity: action.quantity, buyer: action.buyer }, now);
+    case "ship-livestock":
+      return shipStackAcresLivestock(token, now);
     case "process":
       return processStackAcresRecipeAction(token, action.recipe, now, action.batches ?? 1);
     case "request-contract":

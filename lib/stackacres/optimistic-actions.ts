@@ -68,6 +68,7 @@ import {
   STACKACRES_CATALOGUE,
   STACKACRES_FEED,
   isLivestock,
+  isMarketLivestock,
   stackacresCapacityPrice,
   type SeedStock,
   type StackAcresStock,
@@ -139,7 +140,7 @@ import {
   energyAt,
   type StackAcresEnergyAnchor,
 } from "./energy";
-import { SHELF_FEED_ITEMS, planServings, type ServingPlan } from "./feeding";
+import { SHELF_FEED_ITEMS, planServings, servingBonus, type ServingPlan, type ServingSource } from "./feeding";
 import { FEED_SILO_DAILY_FEEDS } from "./feed-silo";
 import { FISHING_BAIT_ITEM } from "./fishing";
 import {
@@ -410,6 +411,14 @@ function openedSectorPatch(
   return { sectors: [...ctx.sectors, sector] };
 }
 
+/** A hog or steer fed something that fattens it shows the weight at once,
+ *  never past its cap. Everything else is returned as it was. */
+function fattened(unit: StackAcresUnitSnapshot, source: ServingSource | undefined): StackAcresUnitSnapshot {
+  if (!source || !isMarketLivestock(unit.stock)) return unit;
+  const added = servingBonus(unit.stock, source, unit.feedBonus ?? 0);
+  return added > 0 ? { ...unit, feedBonus: (unit.feedBonus ?? 0) + added } : unit;
+}
+
 /** Takes what hens and cattle ate off the shelf for a feeding, through `processingPatch`
  *  for the same reason every other shelf change does. */
 function shelfSpentPatch(ctx: FarmPredictContext, plan: ServingPlan): ReturnType<typeof processingPatch> | null {
@@ -442,7 +451,7 @@ export function predictStackAcresAction(
       const plan = planServings([unit.stock], ctx.inventory, ctx.feed);
       if (plan.fed === 0) return null;
       return {
-        units: ctx.units.map((u) => (u.id === unit.id ? optimisticallyFedUnit(u, ctx.nowMs) : u)),
+        units: ctx.units.map((u) => (u.id === unit.id ? fattened(optimisticallyFedUnit(u, ctx.nowMs), plan.sources[0]) : u)),
         feed: ctx.feed - plan.feedUsed,
         ...shelfSpentPatch(ctx, plan),
       };
@@ -472,9 +481,12 @@ export function predictStackAcresAction(
         ctx.feed,
       );
       if (plan.fed === 0) return null;
-      const ids = new Set(hungry.slice(0, plan.fed).map((u) => u.id));
+      const fedIds = hungry.slice(0, plan.fed).map((u) => u.id);
       return {
-        units: ctx.units.map((u) => (ids.has(u.id) ? optimisticallyFedUnit(u, ctx.nowMs) : u)),
+        units: ctx.units.map((u) => {
+          const at = fedIds.indexOf(u.id);
+          return at === -1 ? u : fattened(optimisticallyFedUnit(u, ctx.nowMs), plan.sources[at]);
+        }),
         feed: ctx.feed - plan.feedUsed,
         ...shelfSpentPatch(ctx, plan),
       };
@@ -510,8 +522,12 @@ export function predictStackAcresAction(
       return { units: withoutStackAcresUnit(ctx.units, unit.id) };
     }
     case "collect": {
+      // A hog or steer is never collected; the server skips it, so the guess does too.
       const targets = ctx.units.filter(
-        (u) => isNow(u, "ready", ctx.nowMs) && (!body.unitIds || body.unitIds.includes(u.id)),
+        (u) =>
+          !isMarketLivestock(u.stock) &&
+          isNow(u, "ready", ctx.nowMs) &&
+          (!body.unitIds || body.unitIds.includes(u.id)),
       );
       if (targets.length === 0) return null;
       const targetIds = new Set(targets.map((u) => u.id));
@@ -977,6 +993,15 @@ export function predictStackAcresAction(
             : node,
         ),
       };
+    }
+    case "ship-livestock": {
+      // Every ready hog and steer that is home leaves for the sale barn. The
+      // Gold is the server's to say, same as a sale.
+      const going = new Set(
+        ctx.units.filter((u) => isMarketLivestock(u.stock) && !u.away && isNow(u, "ready", ctx.nowMs)).map((u) => u.id),
+      );
+      if (going.size === 0) return null;
+      return { units: ctx.units.filter((u) => !going.has(u.id)) };
     }
     case "sell": {
       // Known-insufficient is a real refusal, not a guess -- refuse locally

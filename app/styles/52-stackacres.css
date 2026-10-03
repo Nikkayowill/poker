@@ -5715,6 +5715,24 @@
   white-space: nowrap;
 }
 
+/* What Hank is about to take to market, one animal to a line. */
+.sa-sale-barn-list {
+  margin: 4px 0 8px;
+  padding: 0 0 0 16px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A hog or steer's weight: its own row under the card, so the three
+   columns above keep their widths. */
+.sa-barn-weight {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--sa-ink-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .sa-barn-streak { color: var(--sa-ink-soft); }
 .sa-barn-bonus { color: var(--sa-sprout-3); font-weight: 800; }
 

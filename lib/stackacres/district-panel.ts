@@ -27,6 +27,7 @@ import {
   STACKACRES_LIVESTOCK,
   STACKACRES_MAX_EXTRA_CAP,
   isLivestock,
+  isMarketLivestock,
   stackacresCapacityMaterials,
   stackacresCapacityPrice,
   type StackAcresStock,
@@ -50,6 +51,8 @@ export type UnitRowAction =
   | { kind: "water" }
   | { kind: "clear"; fee: number; disabled: boolean; reason: string | null }
   | { kind: "retire" }
+  /** A ready hog or steer: nothing to collect here, it is shipped from the sale barn in town. */
+  | { kind: "ship" }
   | { kind: "none" };
 
 /** The one action a unit's row affords right now. */
@@ -59,7 +62,7 @@ export function unitRowAction(
 ): UnitRowAction {
   switch (unit.state) {
     case "ready":
-      return { kind: "collect" };
+      return isMarketLivestock(unit.stock) ? { kind: "ship" } : { kind: "collect" };
     case "hungry":
       // Hens and cattle eat off the shelf before the Feed Sack (./feeding.ts).
       return context.feed < 1 && shelfFeedFor(unit.stock, context.shelfFeed ?? {}) < 1

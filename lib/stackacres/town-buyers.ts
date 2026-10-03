@@ -52,7 +52,7 @@ export const TOWN_BUYERS: Readonly<Record<TownBuyerId, TownBuyerDef>> = {
     name: "Hank",
     place: "the sale barn",
     title: "Sale Barn",
-    greeting: "Bring your hogs and steers when they're ready.",
+    greeting: "I sell feeder pigs and calves. Raise them fat and I'll buy them back by weight.",
     buys: "hogs and steers",
   },
 };
@@ -60,8 +60,8 @@ export const TOWN_BUYERS: Readonly<Record<TownBuyerId, TownBuyerDef>> = {
 const GRAIN: TownBuyerId = "grain-elevator";
 const STORE: TownBuyerId = "general-store";
 
-/** The one buyer for each item. The sale barn takes no item yet: it is for animals, and hogs and steers
- *  are not on the farm yet. */
+/** The one buyer for each item. The sale barn takes no item: it buys whole animals, through
+ *  `ship-livestock` (./sale-barn.ts), not anything off the shelf. */
 const ITEM_BUYER: Readonly<Record<MachineItemId, TownBuyerId>> = {
   // Grain and what the feed grinder makes from it.
   wheat: GRAIN,

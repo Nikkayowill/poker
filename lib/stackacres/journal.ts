@@ -34,7 +34,7 @@
 import { CHAPTERS } from "./chapters";
 import type { FarmBoardLine, FarmBoardView } from "./farm-board";
 import { buildCost, buildPlace, costLines, costSummary, type BuildCost, type BuildLine, type BuildPlace } from "./build-cost";
-import { STACKACRES_CATALOGUE, isLivestock, type SeedStock } from "./catalogue";
+import { STACKACRES_CATALOGUE, isLivestock, isMarketLivestock, type SeedStock } from "./catalogue";
 import { SEED_SELLER_WHERE } from "./seed-seller";
 import { canFulfillContract, type StackAcresContractRow } from "./contracts";
 import { STACKACRES_TOOL_TIERS, STACKACRES_TOOL_TIER_DEFS } from "./equipment";
@@ -78,6 +78,8 @@ export type JournalCueKind =
   | "collect"
   /** The open town order can be filled right now. */
   | "contract"
+  /** A hog or steer is ready to sell at Hank's sale barn. */
+  | "ship"
   /** Crops are standing ready in the beds. */
   | "harvest"
   /** Beds have gone dry, so nothing in them is growing. */
@@ -101,6 +103,7 @@ const CUE_ORDER: readonly JournalCueKind[] = [
   "hungry",
   "collect",
   "contract",
+  "ship",
   "harvest",
   "water",
   "sow",
@@ -487,7 +490,8 @@ function journalWaiting(input: JournalInput): JournalWaiting[] {
   const animals = input.units.filter((unit) => isLivestock(unit.stock));
   if (animals.length > 0) {
     const hungry = animals.filter((unit) => unit.state === "hungry").length;
-    const ready = animals.filter((unit) => unit.state === "ready").length;
+    const ready = animals.filter((unit) => unit.state === "ready" && !isMarketLivestock(unit.stock)).length;
+    const toSell = animals.filter((unit) => unit.state === "ready" && isMarketLivestock(unit.stock)).length;
     rows.push({
       key: "animals",
       label: "The pens",
@@ -496,9 +500,11 @@ function journalWaiting(input: JournalInput): JournalWaiting[] {
           ? `${hungry} hungry`
           : ready > 0
             ? `${ready} ready to collect`
-            : `${animals.length} coming along`,
+            : toSell > 0
+              ? `${toSell} ready to sell`
+              : `${animals.length} coming along`,
       fill: null,
-      ready: hungry > 0 || ready > 0,
+      ready: hungry > 0 || ready > 0 || toSell > 0,
     });
   }
 
@@ -530,7 +536,15 @@ function candidateCues(input: JournalInput, chapters: readonly JournalChapter[])
     );
   }
 
-  const ready = input.units.filter((unit) => unit.state === "ready").length;
+  // Hogs and steers are not brought in. They go to the sale barn in town.
+  const toSell = input.units.filter((unit) => unit.state === "ready" && isMarketLivestock(unit.stock));
+  if (toSell.length > 0) {
+    const kinds = [...new Set(toSell.map((unit) => STACKACRES_CATALOGUE[unit.stock].label.toLowerCase()))];
+    const what = toSell.length === 1 ? `Your ${kinds[0]} is` : `Your ${kinds.join("s and ")}s are`;
+    cues.push(cue("ship", `${what} ready to sell. Take ${toSell.length === 1 ? "it" : "them"} to Hank at the sale barn.`, "The City"));
+  }
+
+  const ready = input.units.filter((unit) => unit.state === "ready" && !isMarketLivestock(unit.stock)).length;
   if (ready > 0) {
     cues.push(
       cue("harvest", ready === 1 ? "Something out there is ready to bring in." : `${ready} things are ready to bring in.`),

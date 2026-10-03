@@ -1608,7 +1608,7 @@ export class TopdownScene extends Phaser.Scene {
 
   private unitPlacement(unit: StackAcresSceneUnit): { x: number; y: number } | null {
     if (unit.housedIn) return null;
-    // Sheep and cattle stand on the square the player set them on. One not set down yet is not drawn.
+    // Sheep, cattle, hogs and steers stand on the square the player set them on. One not set down yet is not drawn.
     if (isHerdStock(unit.stock)) {
       if (unit.mapTx == null || unit.mapTy == null || unit.away || this.areaName !== "homestead") return null;
       const { tile } = this.area;
@@ -1639,6 +1639,9 @@ export class TopdownScene extends Phaser.Scene {
     const zone = stockZone(unit.stock);
     const side = unit.id.charCodeAt(unit.id.length - 1) % 2 ? "left" : "right";
     if (zone === "henhaven") return `hen_${side}`;
+    // Market animals share the herd's districts, so they are checked first.
+    if (unit.stock === "hog") return `hog_${side}`;
+    if (unit.stock === "steer") return `cattle_${side}_hereford`;
     if (zone === "wallow") return `sheep_${side}`;
     if (zone === "oxfields") return unit.id.charCodeAt(0) % 2 ? `cattle_${side}` : `cattle_${side}_plain`;
     if (unit.state === "mucked") return "crop_withered";

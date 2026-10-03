@@ -12,7 +12,7 @@
  * counts so the optimistic prediction matches it.
  */
 
-import type { StackAcresStock } from "./catalogue";
+import { STACKACRES_MARKET_ANIMALS, isMarketLivestock, type StackAcresStock } from "./catalogue";
 import type { StackAcresInventory } from "./inventory";
 
 /** What a hen eats off the shelf, best first. */
@@ -21,19 +21,29 @@ export const HEN_FEED_ORDER = ["spinach", "wheat", "lettuce", "cabbage"] as cons
 /** What cattle eat off the shelf. Cattle Feed is milled from corn. */
 export const CATTLE_FEED_ORDER = ["cattle_feed"] as const;
 
+/** What a hog eats off the shelf: whole corn first, then milled feed. Each
+ *  serving puts on weight (STACKACRES_MARKET_ANIMALS in ./catalogue.ts). */
+export const HOG_FEED_ORDER = ["corn", "cattle_feed"] as const;
+
+/** What a steer eats off the shelf. */
+export const STEER_FEED_ORDER = ["cattle_feed"] as const;
+
 export type HenFeedItem = (typeof HEN_FEED_ORDER)[number];
 export type CattleFeedItem = (typeof CATTLE_FEED_ORDER)[number];
-export type ShelfFeedItem = HenFeedItem | CattleFeedItem;
+export type HogFeedItem = (typeof HOG_FEED_ORDER)[number];
+export type ShelfFeedItem = HenFeedItem | CattleFeedItem | HogFeedItem;
 
 export type ServingSource = ShelfFeedItem | "feed";
 
 /** Every item any animal eats off the shelf. */
-export const SHELF_FEED_ITEMS: readonly ShelfFeedItem[] = [...HEN_FEED_ORDER, ...CATTLE_FEED_ORDER];
+export const SHELF_FEED_ITEMS: readonly ShelfFeedItem[] = [...HEN_FEED_ORDER, ...CATTLE_FEED_ORDER, "corn"];
 
 /** The animals that eat off the shelf, and what the seed card calls their feed. */
 export const SHELF_FEED_ORDERS = {
   hen: { order: HEN_FEED_ORDER, noun: "Hen" },
   cattle: { order: CATTLE_FEED_ORDER, noun: "Cattle" },
+  hog: { order: HOG_FEED_ORDER, noun: "Hog" },
+  steer: { order: STEER_FEED_ORDER, noun: "Steer" },
 } as const satisfies Partial<Record<StackAcresStock, { order: readonly ShelfFeedItem[]; noun: string }>>;
 
 type ShelfFedStock = keyof typeof SHELF_FEED_ORDERS;
@@ -67,6 +77,26 @@ export function eatsShelfFeed(stock: StackAcresStock): boolean {
 /** Extra eggs a serving from `source` adds. Only hen greens add any. */
 export function servingBonusEggs(source: ServingSource): number {
   return isHenFeedItem(source) ? HEN_FEED_BONUS_EGGS[source] : 0;
+}
+
+/** Weight one serving from `source` puts on a hog or steer: 1 for what it
+ *  fattens on, 0 for the Feed Sack or anything else. Before the cap. */
+export function servingBonusWeight(stock: StackAcresStock, source: ServingSource): number {
+  if (!isMarketLivestock(stock) || source === "feed") return 0;
+  return (STACKACRES_MARKET_ANIMALS[stock].fattensOn as readonly string[]).includes(source) ? 1 : 0;
+}
+
+/**
+ * What one serving adds to this animal's current batch (`feed_bonus`): extra
+ * eggs for a hen, extra weight for a hog or steer, never past the market
+ * animal's cap. `currentBonus` is what the batch already carries.
+ */
+export function servingBonus(stock: StackAcresStock, source: ServingSource, currentBonus: number): number {
+  if (isMarketLivestock(stock)) {
+    const room = Math.max(0, STACKACRES_MARKET_ANIMALS[stock].maxFeedWeight - Math.max(0, currentBonus));
+    return Math.min(room, servingBonusWeight(stock, source));
+  }
+  return servingBonusEggs(source);
 }
 
 /** How many hen servings the shelf holds, across every hen feed item. */

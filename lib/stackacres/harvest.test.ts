@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { harvestTally, settleHarvest, type HarvestCandidate } from "./harvest";
-import { STACKACRES_YIELDS, itemSellPrice, yieldValue } from "./items";
+import { STACKACRES_YIELDS, baseYieldQuantity, itemSellPrice, yieldValue } from "./items";
 import type { StackAcresStock } from "./catalogue";
 
 let seq = 0;
@@ -9,7 +9,7 @@ function unit(stock: StackAcresStock, yieldQuantity?: number): HarvestCandidate 
   return {
     unitId: `u${seq}`,
     stock,
-    yieldQuantity: yieldQuantity ?? STACKACRES_YIELDS[stock].quantity,
+    yieldQuantity: yieldQuantity ?? baseYieldQuantity(stock),
   };
 }
 

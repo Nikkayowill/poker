@@ -33,4 +33,6 @@ export const STOCK_ICON: Readonly<Record<StackAcresStock, PainterName>> = {
   hen: "hen",
   pig: "sheep",
   cattle: "cow",
+  hog: "hog",
+  steer: "ox",
 };

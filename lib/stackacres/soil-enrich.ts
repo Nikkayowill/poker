@@ -1,9 +1,9 @@
-import type { StackAcresStock } from "./catalogue";
+import type { StackAcresCrop, StackAcresStock } from "./catalogue";
 import { STACKACRES_YIELDS } from "./items";
 import type { SoilTile } from "./soil";
 
 /** Crops whose harvest enriches the bed they grew on. */
-export const SOIL_ENRICHING_CROPS: readonly StackAcresStock[] = ["green_bean"];
+export const SOIL_ENRICHING_CROPS: readonly StackAcresCrop[] = ["green_bean"];
 
 /** The next crop sown on an enriched bed takes this share of its normal time. */
 export const ENRICHED_GROWTH_MULTIPLIER = 0.75;
@@ -11,7 +11,7 @@ export const ENRICHED_GROWTH_MULTIPLIER = 0.75;
 export const SOIL_ENRICH_USE_LABEL = "Soil helper (next crop grows faster)";
 
 export function enrichesSoil(stock: StackAcresStock): boolean {
-  return SOIL_ENRICHING_CROPS.includes(stock);
+  return (SOIL_ENRICHING_CROPS as readonly StackAcresStock[]).includes(stock);
 }
 
 /** True when a harvested item is the produce of an enriching crop. */

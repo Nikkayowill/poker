@@ -16,7 +16,14 @@
  * sprite file prefix, all identical on purpose, same as before.
  */
 
-import { STACKACRES_STOCK, type StackAcresStock } from "./catalogue";
+import {
+  STACKACRES_STOCK,
+  STACKACRES_MARKET_ANIMALS,
+  isMarketLivestock,
+  marketAnimalPrice,
+  type StackAcresMarketLivestock,
+  type StackAcresStock,
+} from "./catalogue";
 
 export const STACKACRES_ITEMS = [
   "eggs",
@@ -107,7 +114,15 @@ export interface StackAcresYield {
   quantity: number;
 }
 
-export const STACKACRES_YIELDS: Readonly<Record<StackAcresStock, StackAcresYield>> = {
+/** Every stock that makes something to collect. Hogs and steers make
+ *  nothing: they are the thing sold (see STACKACRES_MARKET_ANIMALS). */
+export type StackAcresProduceStock = Exclude<StackAcresStock, StackAcresMarketLivestock>;
+
+export function makesProduce(stock: StackAcresStock): stock is StackAcresProduceStock {
+  return !isMarketLivestock(stock);
+}
+
+export const STACKACRES_YIELDS: Readonly<Record<StackAcresProduceStock, StackAcresYield>> = {
   hen: { item: "eggs", quantity: 4 },
   pig: { item: "wool", quantity: 6 },
   cattle: { item: "milk", quantity: 8 },
@@ -138,8 +153,22 @@ export function itemSellPrice(item: StackAcresItem): number {
   return STACKACRES_ITEM_CATALOGUE[item].sellPrice;
 }
 
-/** What a finished unit of `stock` would sell for, before any synergy. */
+/** What gets snapshotted onto a new unit as its yield: the produce count,
+ *  or a market animal's starting weight. */
+export function baseYieldQuantity(stock: StackAcresStock): number {
+  return isMarketLivestock(stock) ? STACKACRES_MARKET_ANIMALS[stock].baseWeight : STACKACRES_YIELDS[stock].quantity;
+}
+
+/** The item a unit of `stock` brings in when collected, or null for a hog or
+ *  steer, which is shipped instead. */
+export function yieldItemOf(stock: StackAcresStock): StackAcresItem | null {
+  return isMarketLivestock(stock) ? null : STACKACRES_YIELDS[stock].item;
+}
+
+/** What a finished unit of `stock` would sell for, before any synergy. A
+ *  market animal is valued at its unfed weight. */
 export function yieldValue(stock: StackAcresStock): number {
+  if (isMarketLivestock(stock)) return marketAnimalPrice(stock, STACKACRES_MARKET_ANIMALS[stock].baseWeight);
   const produce = STACKACRES_YIELDS[stock];
   return itemSellPrice(produce.item) * produce.quantity;
 }

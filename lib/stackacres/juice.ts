@@ -17,7 +17,7 @@
  */
 
 import { STACKACRES_STOCK, type StackAcresStock } from "./catalogue";
-import { STACKACRES_YIELDS, type StackAcresItem } from "./items";
+import { yieldItemOf, type StackAcresItem } from "./items";
 
 /* ------------------------------------------------------------------ */
 /* Harvest pop: procedural shard styling per stock                     */
@@ -109,6 +109,22 @@ export const STACKACRES_JUICE_STYLES: Readonly<Record<StackAcresStock, JuiceShar
     gravity: 160,
     lifeMs: { min: 560, max: 860 },
   },
+  hog: {
+    ramp: "chalk",
+    shardCount: 8,
+    shardRadius: 2.6,
+    speed: { min: 50, max: 100 },
+    gravity: 180,
+    lifeMs: { min: 520, max: 800 },
+  },
+  steer: {
+    ramp: "chalk",
+    shardCount: 8,
+    shardRadius: 2.8,
+    speed: { min: 40, max: 90 },
+    gravity: 160,
+    lifeMs: { min: 560, max: 860 },
+  },
 };
 
 export function juiceStyleFor(stock: StackAcresStock): JuiceShardStyle {
@@ -116,9 +132,10 @@ export function juiceStyleFor(stock: StackAcresStock): JuiceShardStyle {
 }
 
 /** Which item a stock's own harvest pop is celebrating -- lifted straight
- *  off ./items.ts, never a second guess at what a Hen Coop pays. */
-export function juiceItemFor(stock: StackAcresStock): StackAcresItem {
-  return STACKACRES_YIELDS[stock].item;
+ *  off ./items.ts, never a second guess at what a Hen Coop pays. Null for a
+ *  hog or steer, which is shipped rather than collected from. */
+export function juiceItemFor(stock: StackAcresStock): StackAcresItem | null {
+  return yieldItemOf(stock);
 }
 
 /**

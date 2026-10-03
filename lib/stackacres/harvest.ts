@@ -28,7 +28,7 @@
  * lifetime production, unaffected by that reframing.
  */
 
-import { STACKACRES_YIELDS, itemSellPrice, type StackAcresItem } from "./items";
+import { itemSellPrice, yieldItemOf, type StackAcresItem } from "./items";
 import type { StackAcresStock } from "./catalogue";
 
 /** A ready unit, as much of it as tallying needs. */
@@ -61,15 +61,20 @@ export interface HarvestSettlement {
 /** Tallies a sweep: what each unit contributed, and the sweep's total
  *  nominal value. */
 export function settleHarvest(units: readonly HarvestCandidate[]): HarvestSettlement {
-  const lines: HarvestLine[] = units.map((unit) => {
-    const item = STACKACRES_YIELDS[unit.stock].item;
-    return {
-      unitId: unit.unitId,
-      stock: unit.stock,
-      item,
-      quantity: unit.yieldQuantity,
-      gold: itemSellPrice(item) * unit.yieldQuantity,
-    };
+  // A hog or steer makes nothing to collect (it is shipped instead), so it
+  // never adds a line here.
+  const lines: HarvestLine[] = units.flatMap((unit) => {
+    const item = yieldItemOf(unit.stock);
+    if (item === null) return [];
+    return [
+      {
+        unitId: unit.unitId,
+        stock: unit.stock,
+        item,
+        quantity: unit.yieldQuantity,
+        gold: itemSellPrice(item) * unit.yieldQuantity,
+      },
+    ];
   });
 
   const gross = lines.reduce((total, line) => total + line.gold, 0);

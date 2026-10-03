@@ -30,7 +30,7 @@
  */
 
 import { STACKACRES_STOCK, isLivestock, type StackAcresStock } from "./catalogue";
-import { STACKACRES_YIELDS } from "./items";
+import { yieldItemOf } from "./items";
 import type { StackAcresInventory } from "./inventory";
 import type { MachineProcessedItem } from "./machine-items";
 import type { MachineKind } from "./machines";
@@ -138,9 +138,13 @@ export function contractableItems(farm: {
   const reachable = new Set<string>();
   const built = new Set(farm.machineKinds);
   for (const stock of STACKACRES_STOCK) {
-    if (!isLivestock(stock) && isSeedUnlocked(stock, built)) reachable.add(STACKACRES_YIELDS[stock].item);
+    const item = yieldItemOf(stock);
+    if (item && !isLivestock(stock) && isSeedUnlocked(stock, built)) reachable.add(item);
   }
-  for (const stock of farm.ownedStocks) if (isLivestock(stock)) reachable.add(STACKACRES_YIELDS[stock].item);
+  for (const stock of farm.ownedStocks) {
+    const item = isLivestock(stock) ? yieldItemOf(stock) : null;
+    if (item) reachable.add(item);
+  }
   for (const [item, quantity] of Object.entries(farm.inventory)) if ((quantity ?? 0) > 0) reachable.add(item);
 
   const recipes = [...new Set(farm.machineKinds)].flatMap((kind) => recipesForMachine(kind));

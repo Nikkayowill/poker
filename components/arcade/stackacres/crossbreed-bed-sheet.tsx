@@ -82,7 +82,7 @@ type Note = { readonly tone: "paid" | "refused"; readonly text: string };
 
 /** Which sprite stands for a stock kind on the bed. A crop uses its own
  *  growth-stage frames; livestock reuse the pen art's sprite names. */
-const LIVESTOCK_SPRITE: Record<StackAcresLivestock, string> = { hen: "hen", pig: "hog", cattle: "cow" };
+const LIVESTOCK_SPRITE: Record<StackAcresLivestock, string> = { hen: "hen", pig: "hog", cattle: "cow", hog: "hog", steer: "ox" };
 
 function stockSpriteUrl(stock: StackAcresStock, stage: 0 | 1 | 2): string {
   return isLivestock(stock)

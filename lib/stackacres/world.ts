@@ -130,6 +130,10 @@ const STOCK_ZONE: Readonly<Record<StackAcresStock, ZoneId>> = {
   wheat: "farmstead",
   pig: "wallow",
   cattle: "oxfields",
+  // Market animals stand in the yard like the herd; their districts only
+  // say which pen list they show up in.
+  hog: "wallow",
+  steer: "oxfields",
 };
 
 export function stockZone(stock: StackAcresStock): ZoneId {

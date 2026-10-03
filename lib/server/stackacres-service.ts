@@ -34,7 +34,7 @@ import {
   toStackAcresUnitSnapshots,
   type StackAcresUnitSnapshot,
 } from "@/lib/stackacres/units";
-import { STACKACRES_YIELDS, type StackAcresItem } from "@/lib/stackacres/items";
+import { STACKACRES_YIELDS, baseYieldQuantity, type StackAcresItem } from "@/lib/stackacres/items";
 import { stackacresExchangeDay } from "@/lib/stackacres/exchange";
 import {
   animalNameFor,
@@ -470,7 +470,7 @@ import {
 import { NOT_SLEEPY, canSleepAt, gameHourAt, offsetAfterSleep } from "@/lib/stackacres/clock";
 import { isActiveStock } from "@/lib/stackacres/scope";
 import { isUnbuiltCutter, isUnbuiltEnchantment, isUnbuiltPerk } from "@/lib/stackacres/unbuilt";
-import { feedingToast, servingBonusEggs, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
+import { feedingToast, servingBonus, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
 import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/feed-silo";
 import { isSeedUnlocked, seedLockedMessage } from "@/lib/stackacres/seed-unlocks";
 import { TOWN_BUYERS, buyerTakes, isTownBuyer, townBuyerFor } from "@/lib/stackacres/town-buyers";
@@ -2919,7 +2919,7 @@ export async function buyStackAcresStock(
     );
   }
 
-  const produce = STACKACRES_YIELDS[stock];
+  const baseYield = baseYieldQuantity(stock);
   try {
     // Same race the sow path runs: the slot was only read, so a concurrent
     // sow can take it before this insert lands and the partial unique index
@@ -2937,7 +2937,7 @@ export async function buyStackAcresStock(
           // deliberately NOT stored: it is spent, gone, and re-derivable from the
           // stock whenever it is needed.
           stake: def.seedCost,
-          yieldQuantity: produce.quantity,
+          yieldQuantity: baseYield,
           startedAt: now,
           // Snapshotted here for good, the same as the sow path: the bed's
           // growth multiplier is baked into `ready_at` once and never
@@ -3059,7 +3059,7 @@ export async function stockStackAcres(
   // Ray's shop (buyStackAcresSeed), so charging Gold again here would be a
   // second debit for the same seed. Either way a null/refusal here means
   // nothing was sown.
-  const produce = STACKACRES_YIELDS[stock];
+  const baseYield = baseYieldQuantity(stock);
   let debited: PlayerProfile | null;
   if (isLivestock(stock)) {
     debited = await spendGoldByProfile(profile.id, def.seedCost);
@@ -3138,7 +3138,7 @@ export async function stockStackAcres(
         await createStackAcresUnit(profile.id, {
           stock,
           stake: def.seedCost,
-          yieldQuantity: produce.quantity,
+          yieldQuantity: baseYield,
           startedAt: now,
           readyAt: new Date(now.getTime() + durationMs),
           // An animal counts as fed the moment it arrives; a crop never eats.
@@ -3592,10 +3592,12 @@ export async function feedStackAcres(
     });
   }
 
-  const bonus = servingBonusEggs(source);
+  // Extra eggs for a hen, extra weight for a hog or steer (capped). Worked
+  // out against the row it is written to, so a retry on a fresher row
+  // re-checks the cap.
   let fed: StoredStackAcresUnit | null;
   try {
-    fed = await feedStackAcresUnit(unit, now, pushed, newStartedAt, bonus);
+    fed = await feedStackAcresUnit(unit, now, pushed, newStartedAt, servingBonus(unit.stock, source, unit.feedBonus));
     // Same version-guard retry as feedStackAcresPen below, and for the same
     // reason: a miss here almost always means this function's own read at
     // the top went stale for this one unit (irrigation/auto-feed tick, or an
@@ -3607,7 +3609,13 @@ export async function feedStackAcres(
       const freshUnit = await getStackAcresUnit(profile.id, unit.id);
       if (freshUnit && freshUnit.status === "working" && isStackAcresUnitHungry(freshUnit, now, comfort)) {
         const retryPush = feedPushFor(freshUnit, now, comfort);
-        fed = await feedStackAcresUnit(freshUnit, now, retryPush.pushed, retryPush.newStartedAt, bonus);
+        fed = await feedStackAcresUnit(
+          freshUnit,
+          now,
+          retryPush.pushed,
+          retryPush.newStartedAt,
+          servingBonus(freshUnit.stock, source, freshUnit.feedBonus),
+        );
       }
     }
   } catch (error) {
@@ -3670,11 +3678,10 @@ export async function feedStackAcresPen(
     if (source === null) break;
 
     const { pushed, newStartedAt } = feedPushFor(unit, now, comfort);
-    const bonus = servingBonusEggs(source);
 
     let fed: StoredStackAcresUnit | null;
     try {
-      fed = await feedStackAcresUnit(unit, now, pushed, newStartedAt, bonus);
+      fed = await feedStackAcresUnit(unit, now, pushed, newStartedAt, servingBonus(unit.stock, source, unit.feedBonus));
       // See waterStackAcresGroup's matching retry for why: a version-guard
       // miss here is almost always this same drop's own top-of-function read
       // going stale for one animal in the pen, not a real refusal, and
@@ -3684,7 +3691,13 @@ export async function feedStackAcresPen(
         const freshUnit = await getStackAcresUnit(profile.id, unit.id);
         if (freshUnit && isStackAcresUnitHungry(freshUnit, now, comfort)) {
           const retryPush = feedPushFor(freshUnit, now, comfort);
-          fed = await feedStackAcresUnit(freshUnit, now, retryPush.pushed, retryPush.newStartedAt, bonus);
+          fed = await feedStackAcresUnit(
+            freshUnit,
+            now,
+            retryPush.pushed,
+            retryPush.newStartedAt,
+            servingBonus(freshUnit.stock, source, freshUnit.feedBonus),
+          );
         }
       }
     } catch (error) {

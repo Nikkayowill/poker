@@ -73,10 +73,19 @@ export const STACKACRES_CROPS = [
   // Wheat: 3 seed / 5m / 4 to a bed. Its own numbers, see WHEAT below.
   "wheat",
 ] as const;
-export const STACKACRES_LIVESTOCK = ["hen", "pig", "cattle"] as const;
+export const STACKACRES_LIVESTOCK = ["hen", "pig", "cattle", "hog", "steer"] as const;
+
+/**
+ * Market animals: bought young at the sale barn, fattened on corn and feed,
+ * and shipped back there for Gold by weight. They make nothing to collect.
+ * See STACKACRES_MARKET_ANIMALS below and `shipStackAcresLivestock` in
+ * lib/server/stackacres-service.ts.
+ */
+export const STACKACRES_MARKET_LIVESTOCK = ["hog", "steer"] as const;
 
 export type StackAcresCrop = (typeof STACKACRES_CROPS)[number];
 export type StackAcresLivestock = (typeof STACKACRES_LIVESTOCK)[number];
+export type StackAcresMarketLivestock = (typeof STACKACRES_MARKET_LIVESTOCK)[number];
 export type StackAcresStock = StackAcresCrop | StackAcresLivestock;
 
 export const STACKACRES_STOCK: readonly StackAcresStock[] = [
@@ -90,6 +99,11 @@ export function isStackAcresStock(value: string): value is StackAcresStock {
 
 export function isLivestock(stock: StackAcresStock): stock is StackAcresLivestock {
   return (STACKACRES_LIVESTOCK as readonly string[]).includes(stock);
+}
+
+/** Whether `stock` is a hog or steer, raised to sell rather than kept for what it makes. */
+export function isMarketLivestock(stock: StackAcresStock): stock is StackAcresMarketLivestock {
+  return (STACKACRES_MARKET_LIVESTOCK as readonly string[]).includes(stock);
 }
 
 export function isStackAcresCrop(value: string): value is StackAcresCrop {
@@ -225,13 +239,17 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
   tomato: { label: "Tomato", ...TIER2 },
 
   // ---- Tier 3 (slow/valuable). ----
-  corn: { label: "Corn", ...TIER3 },
+  // Corn's seed is cheaper than the rest of tier 3 so a bed of it pays at
+  // the elevator's 30 a bushel and leaves corn over to fatten hogs on.
+  corn: { label: "Corn", ...TIER3, seedCost: 75, muckFee: 150 },
   eggplant: { label: "Eggplant", ...TIER3 },
   wheat: { label: "Wheat", ...WHEAT },
 
   hen: {
     label: "Hen Coop",
-    seedCost: 50,
+    // 35 a cycle so a coop leased for a cycle clears a little at the
+    // general store's 12 an egg (2026-10-02 retune).
+    seedCost: 35,
     durationMs: 15 * 60 * 1000,
     // Retuned 2026-09-11 from 45 minutes (longer than the Coop's own cycle,
     // so a Hen could never actually go hungry) to 8 minutes, comfortably
@@ -244,7 +262,7 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     hungerMs: 8 * 60 * 1000,
     thirstMs: null,
     spoils: true,
-    muckFee: 44,
+    muckFee: 26,
     ownableOutright: true,
   },
   pig: {
@@ -254,25 +272,79 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     // every plot row, and renaming it would be a data migration to fix a
     // caption. Draw a pig and this one line goes back.
     label: "Sheep Pen",
-    seedCost: 300,
+    seedCost: 170,
     durationMs: 4 * 60 * 60 * 1000,
     hungerMs: 2 * 60 * 60 * 1000,
     thirstMs: null,
     spoils: false,
-    muckFee: 312,
+    muckFee: 140,
     ownableOutright: true,
   },
   cattle: {
     label: "Cattle Pen",
-    seedCost: 1_200,
+    seedCost: 670,
     durationMs: 24 * 60 * 60 * 1000,
     hungerMs: 8 * 60 * 60 * 1000,
     thirstMs: null,
     spoils: false,
-    muckFee: 1_120,
+    muckFee: 580,
     ownableOutright: true,
   },
+  // Market animals. The seed cost is the feeder's price at the sale barn.
+  // Never sold outright: a hog or steer is bought to be shipped.
+  hog: {
+    label: "Hog",
+    seedCost: 250,
+    durationMs: 2 * 60 * 60 * 1000,
+    hungerMs: 30 * 60 * 1000,
+    thirstMs: null,
+    spoils: false,
+    muckFee: 700,
+    ownableOutright: false,
+  },
+  steer: {
+    label: "Steer",
+    seedCost: 1_000,
+    durationMs: 12 * 60 * 60 * 1000,
+    hungerMs: 3 * 60 * 60 * 1000,
+    thirstMs: null,
+    spoils: false,
+    muckFee: 3_200,
+    ownableOutright: false,
+  },
 };
+
+/**
+ * What a market animal is worth at the sale barn. It arrives at `baseWeight`
+ * (snapshotted onto the row as its yield, and the database trigger caps it
+ * there). Each serving of one of `fattensOn` adds one more, up to
+ * `maxFeedWeight`, and the sale barn pays `pricePerWeight` for each.
+ */
+export interface StackAcresMarketAnimalDef {
+  /** What the sale barn calls the young one you buy. */
+  feederLabel: string;
+  baseWeight: number;
+  maxFeedWeight: number;
+  pricePerWeight: number;
+  /** The shelf items that put weight on, best first. */
+  fattensOn: readonly ("corn" | "cattle_feed")[];
+}
+
+export const STACKACRES_MARKET_ANIMALS: Readonly<Record<StackAcresMarketLivestock, StackAcresMarketAnimalDef>> = {
+  hog: { feederLabel: "Feeder Pig", baseWeight: 6, maxFeedWeight: 4, pricePerWeight: 100, fattensOn: ["corn", "cattle_feed"] },
+  steer: { feederLabel: "Calf", baseWeight: 13, maxFeedWeight: 4, pricePerWeight: 200, fattensOn: ["cattle_feed"] },
+};
+
+/** The weight a market animal will ship at: its base plus what feed added, never past the cap. */
+export function marketAnimalWeight(stock: StackAcresMarketLivestock, yieldQuantity: number, feedBonus: number): number {
+  const def = STACKACRES_MARKET_ANIMALS[stock];
+  return yieldQuantity + Math.max(0, Math.min(def.maxFeedWeight, feedBonus));
+}
+
+/** What a market animal of that weight fetches at the sale barn, in Gold. */
+export function marketAnimalPrice(stock: StackAcresMarketLivestock, weight: number): number {
+  return weight * STACKACRES_MARKET_ANIMALS[stock].pricePerWeight;
+}
 
 /**
  * Feed, sold in shipments and priced in Gold. Priced per serving against
@@ -395,6 +467,8 @@ export const STACKACRES_CAPACITY_PRICE: Readonly<Record<StackAcresLivestock, num
   hen: 2_000,
   pig: 15_000,
   cattle: 40_000,
+  hog: 8_000,
+  steer: 25_000,
 };
 
 export function stackacresCapacityPrice(stock: StackAcresLivestock): number {
@@ -419,6 +493,8 @@ export const STACKACRES_CAPACITY_MATERIALS: Readonly<Record<StackAcresLivestock,
   hen: [{ item: "wood", quantity: 5 }],
   pig: [{ item: "wood", quantity: 10 }],
   cattle: [{ item: "wood", quantity: 15 }],
+  hog: [{ item: "wood", quantity: 10 }],
+  steer: [{ item: "wood", quantity: 15 }],
 };
 
 export function stackacresCapacityMaterials(stock: StackAcresLivestock): readonly MaterialCost[] {

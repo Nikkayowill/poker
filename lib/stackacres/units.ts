@@ -23,7 +23,7 @@
  */
 
 import { STACKACRES_CATALOGUE, isLivestock, type StackAcresStock } from "./catalogue";
-import { STACKACRES_YIELDS } from "./items";
+import { baseYieldQuantity } from "./items";
 import { greenhouseDurationMs } from "./greenhouse";
 import { enrichedGrowthMultiplier } from "./soil-enrich";
 import { applyCare, freshAnimalCare } from "./barn";
@@ -718,7 +718,7 @@ export function optimisticallyStockedUnit(input: {
     // The catalogue's own one-cycle seed price, notionally -- what the ledger
     // records for a bought unit too (see `buyStackAcresStock`).
     stake: def.seedCost,
-    yieldQuantity: STACKACRES_YIELDS[input.stock].quantity,
+    yieldQuantity: baseYieldQuantity(input.stock),
     startedAt: new Date(input.nowMs).toISOString(),
     readyAt: new Date(input.nowMs + durationMs).toISOString(),
     progress: 0,

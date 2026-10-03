@@ -177,6 +177,13 @@ describe("the one line", () => {
     );
   });
 
+  it("points at Hank when a hog is ready, not at bringing it in", () => {
+    const cue = journalView(farm({ units: [unit("working"), unit("ready", "hog")] })).now;
+    expect(cue.kind).toBe("ship");
+    expect(cue.line).toBe("Your hog is ready to sell. Take it to Hank at the sale barn.");
+    expect(cue.where).toBe("The City");
+  });
+
   it("stays quiet about an order that cannot be filled yet", () => {
     expect(cueFor({ contract: order("flour", 4), inventory: holding("flour", 3) })).not.toBe("contract");
   });

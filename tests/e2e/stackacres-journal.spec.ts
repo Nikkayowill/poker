@@ -122,7 +122,7 @@ test("the sheet shows both tracks: the buildings and the reach", async ({ contex
   await expect(sheet.locator(".sa-journal-reach")).not.toContainText("Brings");
   // The first acre prices the Crop Fields, and a sheep prices the Fold.
   await expect(sheet.locator(".sa-journal-reach")).toContainText("300 Gold + 15 Wood + 5 Stone");
-  await expect(sheet.locator(".sa-journal-reach")).toContainText("15,000 Gold");
+  await expect(sheet.locator(".sa-journal-reach")).toContainText("8,500 Gold");
   await expect(sheet.locator(".sa-journal-reach")).not.toContainText("Not open yet");
   await expect(sheet.locator(".sa-journal-foot")).toContainText("Chef Pierre");
 });

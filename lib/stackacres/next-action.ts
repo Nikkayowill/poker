@@ -240,6 +240,16 @@ export function nextAction(input: JournalInput, view: JournalView): NextAction |
     case "contract":
       return contractAction(cue, input, heldForContract(input));
 
+    case "ship":
+      return {
+        id: "ship",
+        cue,
+        title: "Sell your animals to Hank",
+        why: "Hank at the sale barn pays for each hog and steer by its weight. Feed them well first and they fetch more.",
+        requirements: [],
+        button: { label: "Go to the City", target: { kind: "travel", place: "city" } },
+      };
+
     case "harvest":
       return {
         id: "harvest",

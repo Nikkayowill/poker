@@ -1,6 +1,6 @@
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { adminClient } from "./supabase-admin";
 import {
@@ -8,6 +8,7 @@ import {
   STACKACRES_CROPS,
   STACKACRES_FEED,
   STACKACRES_FEED_SHIPMENTS_PER_PURCHASE,
+  STACKACRES_MARKET_ANIMALS,
   STACKACRES_MAX_EXTRA_CAP,
   STACKACRES_MUCK_CHANCE,
   STACKACRES_SEED_BAGS_PER_PURCHASE,
@@ -15,6 +16,7 @@ import {
   stackacresCapacityMaterials,
   stackacresCapacityPrice,
   isLivestock,
+  isMarketLivestock,
   isStackAcresCrop,
   isStackAcresStock,
   type SeedStock,
@@ -35,6 +37,13 @@ import {
   type StackAcresUnitSnapshot,
 } from "@/lib/stackacres/units";
 import { STACKACRES_YIELDS, baseYieldQuantity, type StackAcresItem } from "@/lib/stackacres/items";
+import {
+  MARKET_ANIMAL_NOT_COLLECTED,
+  shipmentGold,
+  shippedLine,
+  type ShippedAnimal,
+  type StackAcresShipment,
+} from "@/lib/stackacres/sale-barn";
 import { stackacresExchangeDay } from "@/lib/stackacres/exchange";
 import {
   animalNameFor,
@@ -1810,6 +1819,8 @@ export type StackAcresActionResult = StackAcresView & {
   harvest?: unknown;
   /** Set by `collectStackAcresGroceryTill` to the Gold THIS emptying paid out. */
   groceryPaid?: number;
+  /** Set by `shipStackAcresLivestock` to what THIS load sold for. */
+  shipped?: StackAcresShipment;
   /** Set (to an item id or null) by `tapStackAcresSecretZone`; every other
    *  action leaves this undefined. */
   discovery?: unknown;
@@ -1954,6 +1965,7 @@ function replayDelta(result: StackAcresActionResult): Record<string, unknown> | 
   if (result.fed !== undefined) delta.fed = result.fed;
   if (result.cared !== undefined) delta.cared = result.cared;
   if (result.storyResult !== undefined) delta.storyResult = result.storyResult;
+  if (result.shipped !== undefined) delta.shipped = result.shipped;
   return Object.keys(delta).length > 0 ? delta : null;
 }
 
@@ -2848,7 +2860,7 @@ export async function harvestStackAcresCrossbreedBed(
  * buys ONE CYCLE and is consumed by its own harvest, so it is gone once
  * collected and you buy another. Bought stock is permanent and re-sows itself
  * forever -- you own the cow, you do not own one cow-cycle. That is what makes
- * 60,000 Gold and 1,200 Gold honest prices for the same animal: they are not
+ * 33,500 Gold and 670 Gold honest prices for the same animal: they are not
  * the same thing. With one currency the gap between them is finally legible on
  * the shelf, which it never was while one price was in Bushels.
  *
@@ -3034,7 +3046,9 @@ export async function stockStackAcres(
   ]);
   if (occupied >= cap) {
     throw new StackAcresRequestError(
-      `You already have ${cap} ${def.label}${cap === 1 ? "" : "s"} going. Collect from or clear one first, or expand capacity.`,
+      isMarketLivestock(stock)
+        ? `You already have ${cap} ${def.label.toLowerCase()}s. Sell one at the sale barn first.`
+        : `You already have ${cap} ${def.label}${cap === 1 ? "" : "s"} going. Collect from or clear one first, or expand capacity.`,
       409,
       { round: await snapshots(profile.id, now) },
     );
@@ -3065,7 +3079,9 @@ export async function stockStackAcres(
     debited = await spendGoldByProfile(profile.id, def.seedCost);
     if (!debited) {
       throw new StackAcresRequestError(
-        `${def.label} seed costs ${def.seedCost.toLocaleString()} Gold.`,
+        isMarketLivestock(stock)
+          ? `A ${STACKACRES_MARKET_ANIMALS[stock].feederLabel.toLowerCase()} costs ${def.seedCost.toLocaleString()} Gold.`
+          : `${def.label} seed costs ${def.seedCost.toLocaleString()} Gold.`,
         400,
         { round: await snapshots(profile.id, now) },
       );
@@ -5600,6 +5616,10 @@ export async function harvestStackAcres(
       if (!row || row.status !== "working") {
         throw new StackAcresRequestError("Nothing to collect here.", 404, { round: await roundNow() });
       }
+      // A hog or steer makes nothing to collect. It is sold whole at the sale barn.
+      if (isMarketLivestock(row.stock)) {
+        throw new StackAcresRequestError(MARKET_ANIMAL_NOT_COLLECTED, 409, { round: await roundNow() });
+      }
       const wandered = away.get(row.id);
       if (wandered) throw new StackAcresRequestError(HERD_AWAY_MESSAGES[wandered], 409, { round: await roundNow() });
       if (isStackAcresUnitHungry(row, now, comfort)) {
@@ -5615,7 +5635,10 @@ export async function harvestStackAcres(
 
   const ready = rows.filter(
     (row) =>
-      (!named || named.has(row.id)) && !away.has(row.id) && isStackAcresUnitReady(row, now, irrigated.has(row.id), comfort),
+      (!named || named.has(row.id)) &&
+      !isMarketLivestock(row.stock) &&
+      !away.has(row.id) &&
+      isStackAcresUnitReady(row, now, irrigated.has(row.id), comfort),
   );
   if (ready.length === 0) {
     throw new StackAcresRequestError("Nothing is ready yet.", 409, { round: await roundNow() });
@@ -5806,6 +5829,85 @@ export async function harvestStackAcres(
       crit: critical,
       critBonus: [...critBonusTally].map(([item, quantity]) => ({ item, quantity })),
     },
+  };
+}
+
+/**
+ * Sends every ready hog and steer to Hank's sale barn and pays for the load.
+ *
+ * Only animals that are home and fed go: one that wandered off in the night
+ * or is hungry stays on the farm, the same rule `collect` keeps. Each one is
+ * taken off the farm by its own version-guarded delete, which lands at most
+ * once, so two shipments racing for the same hog can only ever pay for it
+ * once between them. The Gold is added up over the rows that actually came
+ * off, the day's upkeep is taken out of it the way a sale does, and it is
+ * paid in ONE ledgered credit keyed by those rows.
+ */
+export async function shipStackAcresLivestock(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresView & { shipped: StackAcresShipment }> {
+  const profile = await ensureProfile(token);
+  // The Feed Silo settles first, so an animal it would have fed on time ships on time.
+  await runFeedSilo(profile.id, now);
+  const rows = await listStackAcresUnits(profile.id);
+  const comfort = await barnComfortFor(profile.id);
+  const away = await herdAwayFor(profile.id, rows, now);
+
+  const market = rows.filter((row) => isMarketLivestock(row.stock));
+  const ready = market.filter((row) => !away.has(row.id) && isStackAcresUnitReady(row, now, false, comfort));
+  if (ready.length === 0) {
+    throw new StackAcresRequestError(
+      market.length === 0 ? "You have no hogs or steers to sell." : "Nothing is ready to sell yet.",
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  // Settle first. A null is a row something else already took, and it is
+  // simply not in this load.
+  const lines: ShippedAnimal[] = [];
+  const settled: StoredStackAcresUnit[] = [];
+  for (const row of ready) {
+    const gone = await collectStackAcresUnit(row, now, null, null);
+    if (!gone) continue;
+    const line = shippedLine(gone);
+    if (!line) continue;
+    settled.push(gone);
+    lines.push(line);
+  }
+  if (lines.length === 0) {
+    throw new StackAcresRequestError("That moved on.", 409, { round: await snapshots(profile.id, now) });
+  }
+
+  // Then pay, once, for exactly what came off. The key is the set of rows,
+  // which can only ever settle once, so a retried credit cannot pay twice.
+  const gold = shipmentGold(lines);
+  const paid = await netUpkeepFromPayout(profile.id, now, gold);
+  const loadKey = createHash("sha256")
+    .update(lines.map((line) => line.unitId).sort().join(","))
+    .digest("hex")
+    .slice(0, 32);
+  await payOutGold(profile.id, paid, `stackacres-ship:${profile.id}:${loadKey}`, "stackacres_ship");
+
+  for (const row of settled) {
+    const line = lines.find((candidate) => candidate.unitId === row.id);
+    if (!line) continue;
+    await recordStackAcresHarvest({
+      profileId: profile.id,
+      unitId: row.id,
+      stock: row.stock,
+      stake: row.stake,
+      payout: line.gold,
+      startedAt: row.startedAt,
+      collectedAt: now.toISOString(),
+      permanent: row.permanent,
+    });
+  }
+
+  return {
+    ...(await view(await ensureProfile(token), now)),
+    shipped: { animals: lines, gold, paid },
   };
 }
 

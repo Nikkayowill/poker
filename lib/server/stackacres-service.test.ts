@@ -2290,11 +2290,12 @@ describe("the currency wall", () => {
     expect(SERVICE).toContain("async function refundGold(");
     expect(SERVICE).toContain("await creditGoldByProfile(profileId, gold).catch(() => null);");
     expect(SERVICE).toContain("async function payOutGold(");
-    // The payers are the vat and cellar collect, the contract, Sell and the
-    // grocery till, and the three that skim Land Maintenance do so first.
-    expect(calls(SERVICE, "await payOutGold")).toBe(4);
+    // The payers are the vat and cellar collect, the contract, Sell, the
+    // sale barn and the grocery till, and the four that skim Land
+    // Maintenance do so first.
+    expect(calls(SERVICE, "await payOutGold")).toBe(5);
     const netUpkeepCalls = SERVICE.split("await netUpkeepFromPayout(profile.id, now,").length - 1;
-    expect(netUpkeepCalls).toBe(3);
+    expect(netUpkeepCalls).toBe(4);
 
     const body = (name: string) => {
       const start = SERVICE.indexOf(`export async function ${name}(`);
@@ -2308,6 +2309,10 @@ describe("the currency wall", () => {
     const sellCredit = sell.indexOf("payOutGold(");
     expect(debit).toBeGreaterThan(-1);
     expect(debit).toBeLessThan(sellCredit);
+    // The sale barn takes the animals off the farm before it pays.
+    const ship = body("shipStackAcresLivestock");
+    expect(ship.indexOf("collectStackAcresUnit(row, now, null, null)")).toBeGreaterThan(-1);
+    expect(ship.indexOf("collectStackAcresUnit(row, now, null, null)")).toBeLessThan(ship.indexOf("payOutGold("));
     // And a harvest never pays Gold at all.
     const harvest = body("harvestStackAcres");
     expect(harvest).not.toContain("payOutGold(");
@@ -2434,6 +2439,9 @@ describe("the currency wall", () => {
       "request-contract",
       "retire",
       "sell",
+      // PAYS Gold: every ready hog and steer at the sale barn, by weight, one
+      // keyed credit for the rows that settled (lib/stackacres/sale-barn.ts).
+      "ship-livestock",
       // Moves no Gold either way: only the farm clock's offset.
       "sleep",
       "start-blueprint",

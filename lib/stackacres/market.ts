@@ -36,8 +36,8 @@ import { yieldValue } from "./items";
  * exists to avoid.
  *
  * So: one multiplier, applied to a number the player already sees on the shelf.
- * A Cattle Pen's seed is 1,200 Gold, so a Cattle Pen is 60,000 Gold, and it
- * stays 60,000 Gold whether it is your first or your fourth.
+ * A Cattle Pen's cycle is 670 Gold, so a Cattle Pen is 33,500 Gold, and it
+ * stays 33,500 Gold whether it is your first or your fourth.
  *
  * WAS 100 x A SEED PRICE IN BUSHELS. Seed prices are Gold now and doubled in
  * the conversion, so this halved to 50 and **every outright price is

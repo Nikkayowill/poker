@@ -118,7 +118,7 @@ test("StackAcres runs on Gold alone: seeding debits it, and the sell/exchange ac
     };
     expect(after.units).toHaveLength(1);
     expect(after.units[0]).toMatchObject({ stock: "hen", state: "working" });
-    expect(after.profile.goldBalance).toBe(before.profile.goldBalance - 50);
+    expect(after.profile.goldBalance).toBe(before.profile.goldBalance - 35);
     // Still inside the free base: a Hen Coop at the Farmstead is one of the
     // three slots a new farm never pays for. The fee arrives with cleared land,
     // which is its own describe block in the service tests.

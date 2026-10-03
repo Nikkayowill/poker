@@ -1093,3 +1093,31 @@ describe("predictStackAcresAction: ground the farm does not own", () => {
     expect(patch?.fences).toEqual([{ tx: wild.tx, ty: wild.ty }]);
   });
 });
+
+describe("predictStackAcresAction: hogs and steers", () => {
+  const hog = (overrides: Partial<StackAcresUnitSnapshot> = {}) =>
+    unit({ id: "hog-1", stock: "hog", state: "ready", stake: 250, yieldQuantity: 6, hungryAt: null, ...overrides });
+
+  it("never guesses a hog away on a harvest", () => {
+    const ready = hog();
+    const hen = unit({ id: "hen-1", state: "ready" });
+    const patch = predictStackAcresAction({ action: "collect" }, ctx({ units: [ready, hen] }));
+    expect(patch?.units).toEqual([ready]);
+  });
+
+  it("ships the ready hogs that are home, and leaves the rest", () => {
+    const ready = hog();
+    const away = hog({ id: "hog-2", away: "wandered" });
+    const growing = hog({ id: "hog-3", state: "working", readyAt: new Date(NOW.getTime() + 60_000).toISOString() });
+    const patch = predictStackAcresAction({ action: "ship-livestock" }, ctx({ units: [ready, away, growing] }));
+    expect(patch?.units).toEqual([away, growing]);
+    expect(patch?.profile).toBeUndefined();
+  });
+
+  it("shows the weight a serving of corn puts on", () => {
+    const hungry = hog({ state: "hungry", feedBonus: 1, hungryAt: new Date(NOW.getTime() - 60_000).toISOString() });
+    const patch = predictStackAcresAction({ action: "feed", unitId: hungry.id }, ctx({ units: [hungry], inventory: { corn: 2 } }));
+    expect(patch?.units?.[0].feedBonus).toBe(2);
+    expect(patch?.inventory?.corn).toBe(1);
+  });
+});

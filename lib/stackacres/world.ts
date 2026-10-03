@@ -577,7 +577,10 @@ export function critterSpeed(stock: StackAcresStock | null): number {
     case "pig":
       return 9;
     case "cattle":
+    case "steer":
       return 7;
+    case "hog":
+      return 9;
     default:
       return 0;
   }

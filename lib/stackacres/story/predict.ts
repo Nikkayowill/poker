@@ -12,7 +12,7 @@
  * the response instead.
  */
 
-import { STACKACRES_FEED } from "../catalogue";
+import { STACKACRES_FEED, isMarketLivestock } from "../catalogue";
 import type { Action } from "../farm-actions";
 import { isInstantRecipe } from "../recipes";
 import type { StackAcresUnitSnapshot } from "../units";
@@ -30,6 +30,8 @@ export function storyEventsForAction(body: Action, ctx: StoryPredictContext): St
       const counts = new Map<StackAcresUnitSnapshot["stock"], number>();
       for (const unit of ctx.units) {
         if (named ? !named.has(unit.id) : unit.state !== "ready") continue;
+        // Hogs and steers are sold at the sale barn, never collected.
+        if (isMarketLivestock(unit.stock)) continue;
         counts.set(unit.stock, (counts.get(unit.stock) ?? 0) + 1);
       }
       return [...counts].map(([stock, count]) => ({ kind: "harvested", stock, count }));

@@ -55,6 +55,8 @@ type Carrying = Standing | { kind: "new-dog" };
 function noun(unit: HerdUnit): string {
   if (unit.stock === "pig") return "sheep";
   if (unit.stock === "cattle") return "cow";
+  if (unit.stock === "hog") return "hog";
+  if (unit.stock === "steer") return "steer";
   return "animal";
 }
 

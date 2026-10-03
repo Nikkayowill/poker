@@ -12,7 +12,14 @@
  */
 
 import type { AxePayment } from "./axe";
-import { isLivestock, STACKACRES_CATALOGUE, type StackAcresCrop, type StackAcresStock } from "./catalogue";
+import {
+  isLivestock,
+  isMarketLivestock,
+  STACKACRES_CATALOGUE,
+  STACKACRES_MARKET_ANIMALS,
+  type StackAcresCrop,
+  type StackAcresStock,
+} from "./catalogue";
 import type { StackAcresBuyableCutter } from "./cutters";
 import type { HiddenZoneId, SecretItemId } from "./secrets";
 import type { SynergyArchetype } from "./synergy-perks";
@@ -97,6 +104,8 @@ export type Action =
   // harvest always credits inventory instead of Gold. Sold to one of the
   // town's buyers (./town-buyers.ts), who only takes their own goods.
   | { action: "sell"; buyer: TownBuyerId; item: MachineItemId; quantity: number }
+  // Hank's sale barn: every ready hog and steer goes, paid by weight.
+  | { action: "ship-livestock" }
   | { action: "upgrade-tool" }
   | { action: "upgrade-axe"; pay: AxePayment }
   | { action: "buy-cutter"; cutter: StackAcresBuyableCutter }
@@ -353,8 +362,9 @@ export function intentOf(body: Action): string {
 export function purchaseCueText(body: Action): string | null {
   switch (body.action) {
     case "stock":
-      // A 50 Gold cycle, not the animal: "Bought a Hen Coop!" read as the 2,500 Gold outright buy.
+      // A 35 Gold cycle, not the animal: "Bought a Hen Coop!" read as the 1,750 Gold outright buy.
       // A crop going in is answered by the seed on the bed and its sound.
+      if (isMarketLivestock(body.stock)) return `Bought a ${STACKACRES_MARKET_ANIMALS[body.stock].feederLabel.toLowerCase()}!`;
       return isLivestock(body.stock) ? `Started a ${STACKACRES_CATALOGUE[body.stock].label} cycle!` : null;
     case "buy-stock":
       return `Bought a ${STACKACRES_CATALOGUE[body.stock].label}!`;

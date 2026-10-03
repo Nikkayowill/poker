@@ -73,8 +73,10 @@ import {
   STACKACRES_LIVESTOCK,
   STACKACRES_SEED_BAGS_PER_PURCHASE,
   isLivestock,
+  isMarketLivestock,
   type SeedStock,
   type StackAcresCrop,
+  type StackAcresMarketLivestock,
   type StackAcresStock,
 } from "@/lib/stackacres/catalogue";
 import { buyOptionsForZone, lockedLivestock, type BuyOption } from "@/lib/stackacres/district-panel";
@@ -243,6 +245,7 @@ import { isActiveStock } from "@/lib/stackacres/scope";
 import { isSeedUnlocked, seedLockLine } from "@/lib/stackacres/seed-unlocks";
 import { SEED_SELLER_NAME } from "@/lib/stackacres/seed-seller";
 import type { TownBuyerId } from "@/lib/stackacres/town-buyers";
+import type { StackAcresShipment } from "@/lib/stackacres/sale-barn";
 import { TownBuyerSheet } from "./town-buyer-sheet";
 import { chapterFinishedBy, chapterViews, currentChapter, type Chapter } from "@/lib/stackacres/chapters";
 import { StackAcresChapterCard } from "./stackacres-chapters";
@@ -496,6 +499,8 @@ interface StackAcresResponse {
   /** Only on a settled `grocery-collect`: the Gold that emptying actually paid, which may be a moment fresher
    *  than the till's own client-side estimate at the instant it was pressed. */
   groceryPaid?: number;
+  /** Only on a settled `ship-livestock`: what each animal fetched at the sale barn. */
+  shipped?: StackAcresShipment;
   capacity: Partial<Record<StackAcresStock, number>>;
   /** Land the player may work. Everything else is drawn as wild growth. */
   sectors: SectorId[];
@@ -2466,7 +2471,7 @@ export function StackAcresFarm() {
             nonce: Date.now(),
           });
         }
-        return { ok: true, reward: data.contractReward, groceryPaid: data.groceryPaid };
+        return { ok: true, reward: data.contractReward, groceryPaid: data.groceryPaid, shipped: data.shipped };
       } catch {
         // The outcome is unknown -- the write may well have committed. The
         // guess goes back in `finally` so nothing false is on screen, then
@@ -3551,6 +3556,18 @@ export function StackAcresFarm() {
     },
     [workshopAct],
   );
+  /** Hank's sale barn: a feeder pig or calf is a one-cycle lease, and shipping sells every ready one. */
+  const onBuyFeeder = useCallback(
+    (stock: StackAcresMarketLivestock) => {
+      buySound();
+      return act({ action: "stock", stock });
+    },
+    [act],
+  );
+  const onShipLivestock = useCallback(() => {
+    sellSound();
+    return act({ action: "ship-livestock" });
+  }, [act]);
 
   /** The vat's two actions, same adapter, its own result shape. */
   const vatAct = useCallback(
@@ -4103,7 +4120,8 @@ export function StackAcresFarm() {
   /** Produce in the barn, in catalogue order so the list never reshuffles. */
   /** Everything standing ready right now. The Harvest key's whole subject. */
   const readyUnits = useMemo(
-    () => liveUnits.filter((unit) => unit.state === "ready"),
+    // A ready hog or steer is sold at the sale barn, not brought in here.
+    () => liveUnits.filter((unit) => unit.state === "ready" && !isMarketLivestock(unit.stock)),
     [liveUnits],
   );
   const carrying = readyUnits.length;
@@ -4826,6 +4844,11 @@ export function StackAcresFarm() {
           isPending={isPending}
           onSell={onSell}
           onClose={() => { panelSound(); setTownBuyer(null); }}
+          saleBarn={
+            townBuyer === "sale-barn"
+              ? { units: liveUnits, capacity, hasBarn, gold, onBuyFeeder, onShip: onShipLivestock }
+              : undefined
+          }
         />
       )}
 

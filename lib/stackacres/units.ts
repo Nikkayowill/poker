@@ -113,6 +113,9 @@ export interface StackAcresUnitRow {
   /** Set while a placed sheep or cow is away for the night (./herd-risk.ts). It
    *  cannot be collected from, and it shows as working so nothing offers to. */
   away?: HerdAway | null;
+  /** What feeding has added to this batch: extra eggs on a hen, extra weight
+   *  on a hog or steer. Optional for the same reason `caredOn` is. */
+  feedBonus?: number;
 }
 
 /**
@@ -180,6 +183,9 @@ export interface StackAcresUnitSnapshot {
   /** Set while a placed sheep or cow is away for the night (./herd-risk.ts). It
    *  cannot be collected from, and it never shows as ready, so nothing offers to. */
   away?: HerdAway | null;
+  /** See `StackAcresUnitRow.feedBonus`. A hog or steer's weight is its
+   *  `yieldQuantity` plus this. */
+  feedBonus?: number;
 }
 
 /**
@@ -530,6 +536,7 @@ export function toStackAcresUnitSnapshots(
       careStreak: row.careStreak ?? 0,
       careBonus: row.careBonus ?? 0,
       away,
+      feedBonus: row.feedBonus ?? 0,
     };
   });
 }

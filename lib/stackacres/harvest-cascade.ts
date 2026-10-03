@@ -75,6 +75,7 @@
  * brief on the Sunlight Forge feature.)
  */
 
+import { isMarketLivestock } from "./catalogue";
 import type { StackAcresUnitSnapshot } from "./units";
 import { stockZone } from "./world";
 import type { ZoneId } from "./zones";
@@ -104,6 +105,7 @@ export function findCascadeTargets(
     .filter(
       (unit) =>
         unit.state === "ready" &&
+        !isMarketLivestock(unit.stock) &&
         !excludeIds.has(unit.id) &&
         stockZone(unit.stock) === originZone,
     )

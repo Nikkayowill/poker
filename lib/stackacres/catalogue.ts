@@ -493,8 +493,8 @@ export const STACKACRES_CAPACITY_MATERIALS: Readonly<Record<StackAcresLivestock,
   hen: [{ item: "wood", quantity: 5 }],
   pig: [{ item: "wood", quantity: 10 }],
   cattle: [{ item: "wood", quantity: 15 }],
-  hog: [{ item: "wood", quantity: 10 }],
-  steer: [{ item: "wood", quantity: 15 }],
+  hog: [{ item: "wood", quantity: 8 }],
+  steer: [{ item: "wood", quantity: 12 }],
 };
 
 export function stackacresCapacityMaterials(stock: StackAcresLivestock): readonly MaterialCost[] {

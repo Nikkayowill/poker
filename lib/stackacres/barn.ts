@@ -110,10 +110,22 @@ const CATTLE_NAMES = [
   "Bluebell", "Hattie", "Winnie", "Agnes", "Constance", "Dorothy", "Edith", "Florence",
 ] as const;
 
+const HOG_NAMES = [
+  "Porky", "Truffle", "Hamlet", "Rosie", "Biscuit", "Peanut", "Wilbur", "Clover",
+  "Muddy", "Pickles", "Dumpling", "Sprout", "Button", "Taffy", "Spud", "Waddles",
+] as const;
+
+const STEER_NAMES = [
+  "Duke", "Rusty", "Buck", "Tex", "Boots", "Moose", "Chester", "Rocky",
+  "Buster", "Dusty", "Bandit", "Tank", "Ranger", "Copper", "Gus", "Jasper",
+] as const;
+
 const NAME_POOLS: Readonly<Record<string, readonly string[]>> = {
   hen: HEN_NAMES,
   pig: SHEEP_NAMES,
   cattle: CATTLE_NAMES,
+  hog: HOG_NAMES,
+  steer: STEER_NAMES,
 };
 
 /** FNV-1a over the id. Any stable spread would do; this one is short, has no

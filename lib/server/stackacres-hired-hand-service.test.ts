@@ -188,7 +188,11 @@ describe("Earl's chores", () => {
     await adjustStackAcresSeedStock(profileId, "wheat", 1 - held);
     const pass = await runStackAcresHiredHand(token, at(PASS + 10 * 60_000));
     expect(pass.handChores.harvested).toHaveLength(2);
-    expect(pass.units.filter((unit) => unit.stock === "wheat")).toHaveLength(1);
+    const resown = pass.units.filter((unit) => unit.stock === "wheat");
+    expect(resown).toHaveLength(1);
+    // Watered from his well as it goes in, so it is growing, not waiting dry for the next pass.
+    expect(resown[0].isWatered).toBe(true);
+    expect(resown[0].state).toBe("working");
     expect((await readStackAcresSeedStock(profileId)).wheat ?? 0).toBe(0);
     expect(await gold(token)).toBe(1_000 - HIRED_HAND_DAILY_WAGE);
   });

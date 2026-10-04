@@ -246,6 +246,7 @@ export function StackAcresVisit({ profileId }: { profileId: string }) {
               onStoreDeskTap={noop}
               onStaffTap={noop}
               tractorOwned={false}
+              handHired={false}
               onDrivingChanged={noop}
               onUseSquare={noop}
               onGroundTap={noop}

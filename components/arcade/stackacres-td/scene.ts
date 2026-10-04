@@ -166,6 +166,7 @@ import { gridRouter } from "@/lib/stackacres-td/work-board";
 import type { AreaSpecForRoutines } from "@/lib/stackacres-td/npc-routine";
 import { WindSway } from "./wind-sway";
 import { TractorRig } from "./tractor-rig";
+import { HandRig, type HandJobKind } from "./hand-rig";
 import { GET_OFF_TRACTOR_FIRST } from "@/lib/stackacres/tractor";
 import { SeeThrough } from "./see-through";
 import { drawNodeTextures } from "./node-textures";
@@ -269,7 +270,7 @@ const SLEEP_BEAT_MS = 450;
 const SLEEP_FADE_MS = 900;
 const SLEEP_FADE_REDUCED_MS = 150;
 const SLEEP_DARK_MS = 700;
-const CHARACTERS = ["farmer", "ray", "pierre", "ivy"];
+const CHARACTERS = ["farmer", "ray", "pierre", "ivy", "earl"];
 /** People seen only in one place's areas, whose sheets load and go with its pictures (LOADS_WITH). The grocery's
  *  staff and shoppers; the shoppers also walk the City as its townsfolk. */
 const PLACE_CHARACTERS: Partial<Record<TopdownArea, readonly string[]>> = {
@@ -704,6 +705,8 @@ export class TopdownScene extends Phaser.Scene {
   private nextRegrowCheck = 0;
   /** The tractor, once bought: parked by the barn, or driven. */
   private tractor!: TractorRig;
+  private hand!: HandRig;
+  private handHired = false;
   /** What the shell last said about owning one, kept for a push that lands before boot. */
   private tractorOwned = false;
   /** When a refused gate last said so, so a stick held into it does not say it every frame. */
@@ -795,6 +798,8 @@ export class TopdownScene extends Phaser.Scene {
     this.tractor = new TractorRig(this, (object) => this.keep(object));
     // Drawn by enterArea below, once there is an area to draw it in.
     this.tractor.setOwned(this.tractorOwned, "");
+    this.hand = new HandRig(this, (object) => this.keep(object));
+    this.hand.setHired(this.handHired, "");
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.speech.clear());
     this.drops = new ChunkDrops(
       this,
@@ -835,6 +840,7 @@ export class TopdownScene extends Phaser.Scene {
     else if (this.path.length > 0) this.walk(delta);
     // Snapped like his own sprite, so the machine does not shimmer against the ground.
     this.tractor.update(time, { x: this.snap(this.pos.x), y: this.snap(this.pos.y) }, this.facing, this.isWalking());
+    if (this.areaName === "homestead") this.hand.update(time, delta, this.grid, this.reducedMotion);
     if (this.useDown && this.isWalking()) this.useSquare(true);
     this.checkNearWater();
     if (this.shake.ms > 0) this.shake.ms = Math.max(0, this.shake.ms - delta);
@@ -1341,6 +1347,7 @@ export class TopdownScene extends Phaser.Scene {
     if (name === "grocery" && !this.buildMode) this.openGrocery();
     this.drawUnits();
     this.enterTractor(name);
+    this.hand.build(name);
     // Nothing of the place he left is drawn any more, so its pictures go (LOADS_WITH).
     for (const place of [...this.placesLoaded]) if (place !== "homestead" && place !== LOADS_WITH[name]) this.dropPlace(place);
   }
@@ -2804,6 +2811,25 @@ export class TopdownScene extends Phaser.Scene {
 
   // ------------------------------------------------------------------ tractor
 
+  // ------------------------------------------------------------------ hired hand
+
+  /** Whether Earl works here, so he is on the Homestead. */
+  setHandHired(hired: boolean): void {
+    this.handHired = hired;
+    if (!this.booted) return;
+    this.hand.setHired(hired, this.areaName);
+  }
+
+  /** The beds his last chores pass worked: he walks to each and acts it out. */
+  handChores(jobs: { unitId: string; kind: HandJobKind }[]): void {
+    if (!this.booted || this.areaName !== "homestead") return;
+    const spots = jobs.flatMap(({ unitId, kind }) => {
+      const node = this.unitNodes.get(unitId);
+      return node ? [{ at: { x: node.sprite.x, y: node.sprite.y }, kind }] : [];
+    });
+    this.hand.queue(spots);
+  }
+
   /** Whether the farm owns a tractor, so one is parked by the barn. */
   setTractorOwned(owned: boolean): void {
     this.tractorOwned = owned;
@@ -3994,6 +4020,11 @@ export class TopdownScene extends Phaser.Scene {
   /** e2e only: whether a tractor is parked or driven here, where it stands, and whether he is on it. */
   tractorState(): { drawn: boolean; driving: boolean; at: Point } {
     return { drawn: this.tractor.drawn, driving: this.tractor.driving, at: this.tractor.position };
+  }
+
+  /** e2e only: whether Earl is drawn here, where he stands, and whether he has beds to work. */
+  handState(): { drawn: boolean; busy: boolean; at: Point } {
+    return { drawn: this.hand.drawn, busy: this.hand.busy, at: this.hand.position };
   }
 
   isWalking(): boolean {

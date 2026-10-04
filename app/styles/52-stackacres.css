@@ -5083,6 +5083,15 @@
   background: url("/stackacres-td/common/tractor.png") -1536px 0 / 2048px 108px no-repeat;
   image-rendering: pixelated;
 }
+/* Earl standing, facing you: his idle_down frame (96) off characters/earl, at 2x. */
+.sa-hand-art {
+  display: block;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto;
+  background: url("/stackacres-td/characters/earl.png") 0 -2304px / 384px 4224px no-repeat;
+  image-rendering: pixelated;
+}
 /* Up on the tractor: the key that climbs him down, in words, since there is no icon for it. */
 .sa-belt-getoff {
   font-family: var(--sa-font-pixel);

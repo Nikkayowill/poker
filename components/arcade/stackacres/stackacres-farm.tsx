@@ -259,6 +259,15 @@ import {
   type StackAcresEquipment,
 } from "@/lib/stackacres/tractor";
 import {
+  HIRED_HAND_BEDS_TO_HIRE,
+  HIRED_HAND_CHORES_EVERY_MS,
+  HIRED_HAND_DAILY_WAGE,
+  HIRED_HAND_NAME,
+  HIRED_HAND_QUIT,
+  type HiredHandChores,
+  type HiredHandView,
+} from "@/lib/stackacres/hired-hand";
+import {
   evaluateStackAcresShopLock,
   type StackAcresShopProgress,
 } from "@/lib/stackacres/shop-locks";
@@ -472,6 +481,11 @@ interface StackAcresResponse {
   /** Machines owned outright, like the tractor. Absent from a response older than them. */
   equipment?: StackAcresEquipment[];
   boughtEquipment?: StackAcresBuyableEquipment;
+  /** Earl, or null when nobody works here. Absent from a response older than him. */
+  hand?: HiredHandView | null;
+  hiredHand?: true;
+  /** Only on `hand-chores`: what his pass did. */
+  handChores?: HiredHandChores;
   collected?: { stock: StackAcresStock; item: StackAcresItem; quantity: number; mucked: boolean };
   harvest?: {
     units: number;
@@ -882,6 +896,7 @@ export function StackAcresFarm() {
   const [pickedCutter, setPickedCutter] = useState<StackAcresCutter | null>(null);
   // The tractor, once bought, and whether he is up on it (the map says when that changes).
   const [equipment, setEquipment] = useState<StackAcresEquipment[]>([]);
+  const [hand, setHand] = useState<HiredHandView | null>(null);
   const [driving, setDriving] = useState(false);
   const cutter = heldStackAcresCutter(pickedCutter, cutters);
   const visibleCutters = useMemo(
@@ -1687,6 +1702,7 @@ export function StackAcresFarm() {
     if (data.empire) setEmpire(data.empire);
     if (data.acres) setAcres(data.acres);
     if (data.equipment) setEquipment(data.equipment);
+    if (data.hand !== undefined) setHand(data.hand);
     if (data.grocery !== undefined) setGrocery(data.grocery);
     // Fresh arrays on every answer; keeping the old one when nothing moved
     // saves the map a redraw.
@@ -2128,6 +2144,21 @@ export function StackAcresFarm() {
             text: `${stackacresCutterDef(data.boughtCutter).label} in hand`,
             nonce: Date.now(),
           });
+        }
+        if (body.action === "hire-hand" && data.hiredHand) {
+          goldSound();
+          setLastCollect({ text: `${HIRED_HAND_NAME} is on the farm. He waters and picks your beds.`, nonce: Date.now() });
+        }
+        if (body.action === "hand-chores" && data.handChores) {
+          const chores = data.handChores;
+          if (chores.quit) setLastCollect({ text: HIRED_HAND_QUIT, nonce: Date.now() });
+          else if (chores.wagePaid > 0) {
+            setLastCollect({ text: `Paid ${HIRED_HAND_NAME} ${chores.wagePaid} Gold for the day`, nonce: Date.now() });
+          }
+          world.current?.handChores([
+            ...chores.watered.map((unitId) => ({ unitId, kind: "water" as const })),
+            ...chores.harvested.map((unitId) => ({ unitId, kind: "harvest" as const })),
+          ]);
         }
         if (body.action === "buy-equipment" && data.boughtEquipment) {
           goldSound();
@@ -4001,6 +4032,20 @@ export function StackAcresFarm() {
   // and the loading board, so the line saying so is seen), instead of standing
   // in the HUD as a bill. Asked once per day per visit; the server takes at
   // most what is held and never twice for the same day.
+  // Earl works while the farm is open and on screen: every so often the server
+  // is asked to pay his wage if a new day is owed and let him take a pass at the
+  // beds. It decides everything; a call too soon after the last does nothing.
+  const handWorking = hand !== null && hasStarted && bootPhase === "hidden";
+  useEffect(() => {
+    if (!handWorking) return;
+    const ask = () => {
+      if (document.visibilityState === "visible") void act({ action: "hand-chores" });
+    };
+    ask();
+    const timer = window.setInterval(ask, HIRED_HAND_CHORES_EVERY_MS);
+    return () => window.clearInterval(timer);
+  }, [handWorking, act]);
+
   const upkeepAskedFor = useRef<string | null>(null);
   const canPayUpkeep = hasStarted && bootPhase === "hidden" && upkeep.due > 0 && gold > 0;
   useEffect(() => {
@@ -4273,6 +4318,7 @@ export function StackAcresFarm() {
               onStoreDeskTap={onStoreDeskTap}
               onStaffTap={onStaffTap}
               tractorOwned={equipment.includes("tractor")}
+              handHired={hand !== null}
               onDrivingChanged={setDriving}
               onUseSquare={onUseSquare}
               useKeyLabel={belt === "rod" ? "Cast" : BELT_TOOL_DEFS[belt].label}
@@ -4954,6 +5000,62 @@ export function StackAcresFarm() {
                                 }}
                               >
                                 {!enoughGold ? "Not enough Gold" : !enoughMetal ? "Not enough Metal" : "Buy"}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Hired help. Paid by the game day while the farm is open. */}
+                  <StoreShelf icon="ico-hoe">Hired Help</StoreShelf>
+                  <div className="sa-stock-cards">
+                    {(() => {
+                      const beds = soilTiles.length;
+                      const enoughBeds = beds >= HIRED_HAND_BEDS_TO_HIRE;
+                      const enoughGold = (profile?.unlimitedGold ?? false) || (profile?.goldBalance ?? 0) >= HIRED_HAND_DAILY_WAGE;
+                      return (
+                        <div className="sa-stock-card" data-testid="sa-hire-hand">
+                          <span className="sa-hand-art" aria-hidden="true" />
+                          <h3>{HIRED_HAND_NAME}</h3>
+                          <p className="sa-stock-terms">
+                            Waters your dry beds and picks the ripe ones while you play. {HIRED_HAND_DAILY_WAGE} Gold a day,
+                            paid each morning. If you can&apos;t pay, he quits.
+                          </p>
+                          {hand ? (
+                            <>
+                              <p className="sa-sheet-note">Working your farm.</p>
+                              <button
+                                type="button"
+                                className="sa-cta is-ghost"
+                                disabled={isPending("dismiss-hand")}
+                                onClick={() => void act({ action: "dismiss-hand" })}
+                              >
+                                Let him go
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <p className="sa-stock-yield">
+                                <StoreCost amount={HIRED_HAND_DAILY_WAGE} /> a day
+                                {!enoughBeds && (
+                                  <span className="sa-store-cost">
+                                    {" "}
+                                    · {beds}/{HIRED_HAND_BEDS_TO_HIRE} beds dug
+                                  </span>
+                                )}
+                              </p>
+                              <button
+                                type="button"
+                                className="sa-cta"
+                                disabled={isPending("hire-hand") || !enoughBeds || !enoughGold}
+                                onClick={() => {
+                                  buySound();
+                                  void act({ action: "hire-hand" });
+                                }}
+                              >
+                                {!enoughBeds ? `Dig ${HIRED_HAND_BEDS_TO_HIRE} beds first` : !enoughGold ? "Not enough Gold" : "Hire"}
                               </button>
                             </>
                           )}

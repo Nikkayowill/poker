@@ -49,6 +49,9 @@ import {
   upgradeStackAcresAxe,
   buyStackAcresCutter,
   buyStackAcresEquipment,
+  dismissStackAcresHand,
+  hireStackAcresHand,
+  runStackAcresHiredHand,
   waterStackAcres,
   waterStackAcresGroup,
   claimStackAcresStarterSeeds,
@@ -195,6 +198,9 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("buy-cutter"), cutter: z.enum(STACKACRES_BUYABLE_CUTTERS) }),
   // A machine from Ray. SPENDS Gold and Metal, priced on the server.
   z.object({ action: z.literal("buy-equipment"), kind: z.enum(STACKACRES_BUYABLE_EQUIPMENT) }),
+  z.object({ action: z.literal("hire-hand") }),
+  z.object({ action: z.literal("dismiss-hand") }),
+  z.object({ action: z.literal("hand-chores") }),
   // Builds the Greenhouse once, spending processing-track goods, not Gold --
   // see buildStackAcresGreenhouse's own header.
   z.object({ action: z.literal("build-greenhouse") }),
@@ -541,6 +547,12 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return buyStackAcresCutter(token, action.cutter, now);
     case "buy-equipment":
       return buyStackAcresEquipment(token, action.kind, now);
+    case "hire-hand":
+      return hireStackAcresHand(token, now);
+    case "dismiss-hand":
+      return dismissStackAcresHand(token, now);
+    case "hand-chores":
+      return runStackAcresHiredHand(token, now);
     case "build-greenhouse":
       return buildStackAcresGreenhouse(token, now);
     case "stock":

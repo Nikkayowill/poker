@@ -91,6 +91,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
     groceryGhost,
     rodHeld,
     tractorOwned,
+    handHired,
     api,
   } = props;
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -259,6 +260,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       scene.setGroceryGhost(now.groceryGhost);
       scene.setRodHeld(p().rodHeld);
       scene.setTractorOwned(p().tractorOwned);
+      scene.setHandHired(p().handHired);
       scene.setClockSource(() => p().clockHour());
       scene.setDaySource(() => p().clockDay());
 
@@ -298,6 +300,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       pullCrop: (unitId) => sceneRef.current?.pullCrop(unitId),
       celebrateCascade: (unitIds) => sceneRef.current?.celebrate(unitIds),
       celebrateCrit: (unitId, multiplier) => sceneRef.current?.celebrateCrit(unitId, multiplier),
+      handChores: (jobs) => sceneRef.current?.handChores(jobs),
       floatAt: (at, text, tone) => sceneRef.current?.floatAt(at, text, tone),
       setTravelerUnlocks: (unlocked) => sceneRef.current?.setTravelerUnlocks(unlocked),
       soilTiles: () => sceneRef.current?.soilTiles() ?? [],
@@ -474,6 +477,9 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   useEffect(() => {
     sceneRef.current?.setTractorOwned(tractorOwned);
   }, [tractorOwned]);
+  useEffect(() => {
+    sceneRef.current?.setHandHired(handHired);
+  }, [handHired]);
 
   useEffect(() => {
     sceneRef.current?.setBuildGhost(buildGhost);

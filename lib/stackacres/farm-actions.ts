@@ -110,6 +110,11 @@ export type Action =
   | { action: "buy-cutter"; cutter: StackAcresBuyableCutter }
   // A machine from Ray (./tractor.ts). Spends Gold and Metal.
   | { action: "buy-equipment"; kind: StackAcresBuyableEquipment }
+  // Earl, the hired hand (./hired-hand.ts). `hire-hand` pays his first day;
+  // `hand-chores` pays any wage owed and lets him take a pass at the beds.
+  | { action: "hire-hand" }
+  | { action: "dismiss-hand" }
+  | { action: "hand-chores" }
   // The processing track, all from the Workshop sheet (WorkshopModal.tsx).
   // `place-machine` spends Gold; the rest move inventory only.
   | { action: "place-machine"; kind: MachineKind }

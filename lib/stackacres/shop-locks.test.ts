@@ -3,10 +3,8 @@ import { STACKACRES_CATALOGUE, STACKACRES_FEED } from "./catalogue";
 import { STACKACRES_TOOL_TIER_DEFS, STACKACRES_TOOL_TIERS } from "./equipment";
 import {
   STACKACRES_MAX_MILESTONE,
-  STACKACRES_QUEST_FLAGS,
   STACKACRES_QUEST_LABELS,
   evaluateStackAcresShopLock,
-  isStackAcresQuestFlag,
   nextReachableStackAcresMilestone,
   nextStackAcresMilestone,
   stackacresMilestone,
@@ -56,17 +54,6 @@ describe("quest flags", () => {
     expect(stackacresQuestFlags(farm({ greenhouseBuilt: true })).has("greenhouse_raised")).toBe(
       true,
     );
-  });
-
-  it("names every flag it can hand out", () => {
-    for (const flag of STACKACRES_QUEST_FLAGS) {
-      expect(STACKACRES_QUEST_LABELS[flag]).toBeTruthy();
-      // Straight into "Requires: <label>", so it has to be an instruction and
-      // must not bring its own full stop.
-      expect(STACKACRES_QUEST_LABELS[flag].endsWith(".")).toBe(false);
-      expect(isStackAcresQuestFlag(flag)).toBe(true);
-    }
-    expect(isStackAcresQuestFlag("cleared_the_back_forty")).toBe(false);
   });
 
   it("names the Store row that opens each herd district", () => {

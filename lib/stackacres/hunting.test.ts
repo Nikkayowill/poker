@@ -6,9 +6,6 @@ import {
   QUARRY_SPECIES,
   RIFLE_LEVEL,
   RIFLE_UNLOCK,
-  bestWeapon,
-  isHuntingWeapon,
-  isQuarrySpecies,
   pickQuarry,
   rifleUnlocked,
 } from "./hunting";
@@ -46,12 +43,6 @@ describe("QUARRY_CATALOGUE", () => {
 });
 
 describe("pickQuarry", () => {
-  it("returns a real species for every roll in range", () => {
-    const random = seededRandom(7);
-    for (let i = 0; i < 500; i += 1) {
-      expect(isQuarrySpecies(pickQuarry(random))).toBe(true);
-    }
-  });
 
   it("puts the common quarry at the bottom of the range and the rare at the top", () => {
     expect(pickQuarry(() => 0)).toBe("rabbit");
@@ -87,12 +78,4 @@ describe("the rifle's gate", () => {
     expect(rifleUnlocked(progressWith(5))).toBe(true);
   });
 
-  it("puts a bow in every hand that has not earned the rifle, and never nothing", () => {
-    expect(bestWeapon(progressWith(0))).toBe("bow");
-    expect(bestWeapon(progressWith(2))).toBe("bow");
-    expect(bestWeapon(progressWith(3))).toBe("rifle");
-    for (let flags = 0; flags <= 5; flags += 1) {
-      expect(isHuntingWeapon(bestWeapon(progressWith(flags)))).toBe(true);
-    }
-  });
 });

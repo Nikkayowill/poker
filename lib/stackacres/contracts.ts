@@ -104,10 +104,6 @@ export function isStackAcresContractStatus(value: string): value is StackAcresCo
   return value === "open" || value === "fulfilled" || value === "passed";
 }
 
-/** One a day. Named rather than inlined so the rule reads the same in the
- *  service, the sheet and the tests. */
-export const CONTRACT_PASSES_PER_DAY = 1;
-
 /**
  * Whether today's pass is already gone.
  *

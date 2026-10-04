@@ -13,7 +13,6 @@ import {
   ZONE_FEATHER,
   ZONE_IDS,
   inOuterZone,
-  isActionValidInZone,
   meadowBaseDensity,
   meadowDensityAt,
   meadowTileAt,
@@ -178,30 +177,6 @@ describe("zone tool policy", () => {
     expect(zoneToolPolicy.scythe).toEqual(["farmstead"]);
   });
 
-  it("passes an action in its own district and names the right place when it refuses", () => {
-    const farm = STACKACRES_ZONES.farmstead.approach;
-    const ok = isActionValidInZone(farm.x, farm.y, "scythe");
-    expect(ok).toEqual({ ok: true, zone: "farmstead" });
-
-    const wallow = STACKACRES_ZONES.wallow.approach;
-    const no = isActionValidInZone(wallow.x, wallow.y, "scythe");
-    expect(no.ok).toBe(false);
-    if (no.ok) throw new Error("unreachable");
-    expect(no.zone).toBe("wallow");
-    // The refusal has to say where it DOES work, or the player finds out by
-    // walking the whole map.
-    expect(no.reason).toContain(STACKACRES_ZONES.farmstead.label);
-  });
-
-  it("refuses out in the woodland, where there is no district at all", () => {
-    // (-600, -600) was open woodland before the 2026-09-07 re-lay and is
-    // inside the Mine's rect now; (900, 900) is off the map's south-east
-    // corner, which is genuinely nowhere.
-    const no = isActionValidInZone(900, 900, "scythe");
-    expect(no.ok).toBe(false);
-    if (no.ok) throw new Error("unreachable");
-    expect(no.zone).toBeNull();
-  });
 });
 
 describe("district scenery clearance", () => {

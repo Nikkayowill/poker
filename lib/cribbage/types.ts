@@ -67,8 +67,3 @@ export interface CribbageHandSummary {
   heelsPoints: number;
   entries: CribbageHandEntry[];
 }
-
-export type CribbageMove =
-  | { type: "discard"; card: Card }
-  | { type: "peg"; card: Card }
-  | { type: "go" };

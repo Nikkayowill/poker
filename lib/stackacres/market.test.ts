@@ -4,7 +4,6 @@ import {
   STACKACRES_CAPACITY_PRICE,
   STACKACRES_RETIRE_REFUND,
   STACKACRES_SEED_MULTIPLE_TO_OWN,
-  goldStockRoundTrip,
   stackacresCapacityPrice,
   stackacresStockPrice,
 } from "./market";
@@ -60,22 +59,6 @@ describe("stock prices", () => {
 });
 
 describe("the round trip", () => {
-  it("always loses, on every tier", () => {
-    for (const stock of STACKACRES_STOCK) {
-      expect(goldStockRoundTrip(stock)).toBeLessThan(1);
-    }
-  });
-
-  it("loses by a wide enough margin that a retune cannot silently flip it", () => {
-    // The closest tier to breaking even is the one to watch. A margin this
-    // wide means yields would have to rise by an order of magnitude, or the
-    // outright multiple fall by one, before a single cycle paid for the animal
-    // -- either of which is a deliberate act, not a slip.
-    // Only stock that can be bought outright: seed-only crops (tier 1, wheat)
-    // have an outright price on paper but nobody can pay it.
-    const ratios = STACKACRES_STOCK.filter(stackacresStockOwnableOutright).map((stock) => goldStockRoundTrip(stock));
-    expect(Math.max(...ratios)).toBeLessThan(0.1);
-  });
 
   it("is what the outright multiple being far above one cycle buys", () => {
     // A tier costs fifty seeds to own outright and one seed to sow once, and

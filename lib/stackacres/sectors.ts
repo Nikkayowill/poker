@@ -245,11 +245,6 @@ export function isSectorUnlocked(id: SectorId, unlocked: readonly SectorId[]): b
   return unlocked.includes(id);
 }
 
-/** The sectors still under growth. What the scene paints wild. */
-export function lockedSectors(unlocked: readonly SectorId[]): SectorId[] {
-  return SECTOR_IDS.filter((id) => !unlocked.includes(id));
-}
-
 /* ------------------------------------------------------------------ */
 /* Clearing                                                            */
 /* ------------------------------------------------------------------ */
@@ -468,18 +463,6 @@ const OVERGROWTH_FLOOR: readonly SceneryKind[] = [
   "flower3",
   "mushroom",
 ];
-
-/**
- * A pale wash laid over a locked sector, under everything standing in it.
- *
- * The third of the three cues the brief asks for (growth, trees, light fog),
- * and the one doing the least work on purpose: it is a haze that says "far
- * off, not yours yet", not a scrim that says "disabled". Anything heavier
- * turns the sector grey, which is exactly the treatment this whole approach
- * exists to avoid -- so it is barely there, and the growth is what actually
- * reads.
- */
-export const SECTOR_FOG = { colour: 0xcfe3ec, alpha: 0.16 } as const;
 
 /**
  * Everything growing on one locked sector, dealt once for its whole extent

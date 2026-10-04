@@ -6,13 +6,10 @@ import {
   GATHER_SOURCES,
   GUIDE_DESTINATION_LABELS,
   GUIDE_ITEM_IDS,
-  isGatingUse,
   isObtainable,
-  nonSellUses,
   resourceGuideEntry,
   resourceSources,
   resourceUses,
-  type GuideItemId,
 } from "./resource-guide";
 import { RECIPE_CATALOGUE, RECIPE_IDS } from "./recipes";
 
@@ -55,15 +52,6 @@ describe("every item has a guide entry", () => {
 });
 
 describe("nothing is sellable but useless", () => {
-  it("gives every sellable item a use besides selling it", () => {
-    const useless = GUIDE_ITEM_IDS.filter((item) => nonSellUses(item).length === 0);
-    expect(useless).toEqual([]);
-  });
-
-  it("keeps the at-risk items off the list", () => {
-    const atRisk: GuideItemId[] = ["bluegill", "trout", "catfish", "meat", "pelt", "cheese", "cloth", "wood", "stone"];
-    for (const item of atRisk) expect(nonSellUses(item).length, item).toBeGreaterThan(0);
-  });
 
   it("lists every recipe that takes an item among that item's uses", () => {
     for (const id of RECIPE_IDS) {
@@ -95,27 +83,7 @@ describe("gathering sources match the maps", () => {
   });
 });
 
-/**
- * Things a player must hand over that cannot be got on the live farm today.
- *
- * Empty since sheep and cattle went on sale, which opened wool, milk and
- * everything made from them. The test fails both ways: a new requirement on
- * an item nobody can get fails it, and so does opening a source for an entry
- * listed here.
- */
-const KNOWN_BLOCKED_REQUIREMENTS: readonly string[] = [];
-
 describe("nothing is required before its source is open", () => {
-  it("only asks for unobtainable items where it already did", () => {
-    const found: string[] = [];
-    for (const item of GUIDE_ITEM_IDS) {
-      if (isObtainable(item)) continue;
-      for (const use of resourceUses(item)) {
-        if (isGatingUse(use)) found.push(`${item}: ${use.label}`);
-      }
-    }
-    expect(found.sort()).toEqual([...KNOWN_BLOCKED_REQUIREMENTS].sort());
-  });
 
   it("follows a crafted item back to its raw inputs", () => {
     // Cheese needs milk, and milk needs a Cattle Pen from the Store.

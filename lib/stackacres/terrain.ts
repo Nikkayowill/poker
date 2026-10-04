@@ -45,7 +45,7 @@
  * Nothing here touches Phaser or a canvas.
  */
 
-import { isoProject, isoUnproject, projectedBounds } from "./iso";
+import { isoUnproject, } from "./iso";
 import { ALL_FARM_PATHS, distanceToPath, type PathSpec } from "./paths";
 import { POND, POND_SAND, POND_SHALLOW, pondRadial } from "./water";
 import { yardRect } from "./yard";
@@ -66,10 +66,6 @@ export const TERRAIN_ORIGIN: WorldPoint = { x: 8, y: -8 };
  *  power-of-two padding. */
 export const TERRAIN_CHUNK_CELLS = 7;
 export const TERRAIN_CHUNK = TERRAIN_CELL * TERRAIN_CHUNK_CELLS;
-
-/** How far a grass-edged tile's blades reach above its diamond, in screen
- *  units: the pack's tallest overhang is ten source pixels, five units. */
-export const TERRAIN_OVERHANG = 8;
 
 /* ---- the materials ------------------------------------------------------- */
 
@@ -324,19 +320,6 @@ export function terrainMaterialAt(x: number, y: number): TerrainMaterial {
 
 /* ---- the tiles ------------------------------------------------------------ */
 
-/**
- * The atlas: eight frames a row, 64x64 each, with the diamond's base at
- * y 30 (`prepare-stackacres-terrain.py`'s BASE_TOP). Pair p (0 grass-sand,
- * 1 sand-shallow, 2 shallow-deep, 3 grass-dirt, 4 grass-cobble) owns
- * sixteen frames from
- * 16p: straight, inside curve and outside curve at rotations 45, 135, 225,
- * 315 in that order, then four plates of the pair's higher material.
- */
-export const TERRAIN_ATLAS_COLUMNS = 8;
-export const TERRAIN_FRAME = 64;
-export const TERRAIN_FRAME_BASE_TOP = 30;
-export const TERRAIN_FRAME_DIAMOND_HEIGHT = 32;
-
 const PAIR_GRASS_SAND = 0;
 const PAIR_SAND_SHALLOW = 1;
 const PAIR_SHALLOW_DEEP = 2;
@@ -534,31 +517,6 @@ export interface TerrainChunk {
   /** Content hash: two chunks with the same key draw the same picture. */
   key: string;
   tiles: readonly TerrainTile[];
-}
-
-/** The chunk's own 7x7 cells, in world units. */
-export function terrainChunkWorldRect(cx: number, cy: number): WorldRect {
-  const o = cellOrigin(cx * TERRAIN_CHUNK_CELLS, cy * TERRAIN_CHUNK_CELLS);
-  return { x: o.x, y: o.y, width: TERRAIN_CHUNK, height: TERRAIN_CHUNK };
-}
-
-/** The screen box the chunk's cells project to, without the overhang: what
- *  the baked canvas covers below its top `TERRAIN_OVERHANG` units. */
-export function terrainChunkScreenRect(cx: number, cy: number): WorldRect {
-  return projectedBounds(terrainChunkWorldRect(cx, cy));
-}
-
-/** Where a tile's frame goes, in screen units relative to the chunk's
- *  screen rect's top-left corner (before the overhang is added): the cell's
- *  projected centre, less the diamond centre's offset inside the frame at
- *  half a screen unit per frame pixel. */
-export function tileFrameOffset(chunk: TerrainChunk, tile: TerrainTile): WorldPoint {
-  const rect = terrainChunkScreenRect(chunk.cx, chunk.cy);
-  const o = cellOrigin(chunk.cx * TERRAIN_CHUNK_CELLS + tile.di, chunk.cy * TERRAIN_CHUNK_CELLS + tile.dj);
-  const centre = isoProject(o.x + TERRAIN_CELL / 2, o.y + TERRAIN_CELL / 2);
-  const half = TERRAIN_FRAME / 4;
-  const diamondCentreY = (TERRAIN_FRAME_BASE_TOP + TERRAIN_FRAME_DIAMOND_HEIGHT / 2) / 2;
-  return { x: centre.x - rect.x - half, y: centre.y - rect.y - diamondCentreY };
 }
 
 function hashTiles(tiles: readonly TerrainTile[]): string {

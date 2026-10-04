@@ -88,31 +88,6 @@ export function projectedBounds(rect: WorldRect): WorldRect {
 }
 
 /**
- * The world-space box a screen-space (projected/camera) rect could have come
- * from -- an over-approximation, not an inverse of `projectedBounds`: a
- * rectangle in screen space unprojects to a rotated parallelogram in world
- * space, and this returns that parallelogram's own axis-aligned box. Used
- * only to decide which scenery chunks might be visible, where drawing a
- * chunk or two more than strictly needed is harmless and cheap -- `tendWorld`
- * already prunes with a two-chunk margin for the same reason.
- */
-export function unprojectBoundsApprox(rect: WorldRect): WorldRect {
-  const corners = [
-    isoUnproject(rect.x, rect.y),
-    isoUnproject(rect.x + rect.width, rect.y),
-    isoUnproject(rect.x + rect.width, rect.y + rect.height),
-    isoUnproject(rect.x, rect.y + rect.height),
-  ];
-  const xs = corners.map((p) => p.x);
-  const ys = corners.map((p) => p.y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-}
-
-/**
  * The scene-space depth key for a world point: the projected y, which is
  * monotonic in (worldX + worldY) by construction, so it is the correct
  * isometric near/far ordering and not just a stand-in for one. `nudge` is a
@@ -129,16 +104,6 @@ export function unprojectBoundsApprox(rect: WorldRect): WorldRect {
 export function isoDepthAt(x: number, y: number, nudge = 0): number {
   return isoProject(x, y).y + nudge;
 }
-
-/**
- * Depth of a unit's needs-something cue (stackacres-scene.ts `paintUnitCue`).
- * Every unit's own depth is `isoDepthAt` of its feet, which stays under this
- * across the whole world (bounds.test.ts holds that), so no plant in front can
- * hide a cue. It also stays under the harvest bursts, toasts and crit text
- * (8500 and up), so a new seed's water cue never covers the reward that just
- * popped over the same bed.
- */
-export const UNIT_CUE_DEPTH = 8400;
 
 /**
  * A sub-grid's own local point, projected as an offset from its world-space

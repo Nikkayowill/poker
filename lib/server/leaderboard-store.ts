@@ -1,10 +1,8 @@
 import "server-only";
 import { leaderboardGame, type LeaderboardStats } from "@/lib/leaderboard/contract";
 import type { AvatarPreset } from "@/lib/profile/types";
-import { listFriendIds } from "./friends-store";
-import { getHeadToHeadSummaries, recordHeadToHeadDuel, recordHeadToHeadTable } from "./head-to-head-store";
+import { recordHeadToHeadDuel, recordHeadToHeadTable } from "./head-to-head-store";
 import { decorateRankedRows } from "./leaderboard-identity";
-import { getPublicProfilesByIds } from "./profile-store";
 import { __memoryPlayerStatsForGlobalBlend } from "./stats-store";
 import { adminClient } from "./supabase-admin";
 
@@ -48,30 +46,6 @@ export interface GameLeaderboardEntry {
   accent: string;
   stats: LeaderboardStats;
   cells: Record<string, string>;
-}
-
-/**
- * One friend on the Friends board: your record against them, not theirs
- * against the world.
- *
- * The only board here whose rows differ per viewer, which is also why it has
- * no rank: there is no ordering of your friends that means anything the way
- * "#3 by Gold won" does. Sorted by how much you have actually played each
- * other instead.
- */
-export interface FriendBoardEntry {
-  profileId: string;
-  displayName: string;
-  avatarUrl: string | null;
-  accent: string;
-  wins: number;
-  losses: number;
-  draws: number;
-  /** Signed, and only meaningful when a single game accounts for every result. See getHeadToHeadSummaries. */
-  currentStreak: number;
-  bestStreak: number;
-  /** Per game, most played first. Empty for a friend you have never finished a game against. */
-  games: { gameId: string; label: string; wins: number; losses: number; draws: number; currentStreak: number }[];
 }
 
 export interface GlobalLeaderboardEntry {
@@ -280,9 +254,8 @@ async function allGameRows(gameId: string): Promise<ScoredRow[]> {
 }
 
 // decorateRankedRows lives in ./leaderboard-identity: shared by decorateGameRows
-// and decorateGlobalRows below, and by stats-store.ts's own poker board, so
-// none of the three can drift on the fallback values by building the same
-// shape twice.
+// and decorateGlobalRows below, so neither can drift on the fallback values by
+// building the same shape twice.
 
 async function decorateGameRows(gameId: string, rows: ScoredRow[]): Promise<GameLeaderboardEntry[]> {
   const contract = leaderboardGame(gameId);
@@ -384,56 +357,6 @@ export async function getGameBoard(
   const sample = rawRow ? sampleOf(rawRow.stats) : 0;
   const mineProgress = sample > 0 && sample < contract.minSample ? { sample, minSample: contract.minSample } : null;
   return { entries, mine: null, mineProgress };
-}
-
-// ---- friends board ------------------------------------------------------
-
-/**
- * Every friend, with the caller's head-to-head record against each.
- *
- * Friends with no shared history are kept rather than filtered out: "you two
- * have never played" is the thing the board exists to fix, and dropping them
- * would make an empty board look broken to someone who has friends but no
- * duels yet. They sort last.
- */
-export async function getFriendsBoard(profileId: string): Promise<FriendBoardEntry[]> {
-  const friendIds = await listFriendIds(profileId);
-  if (friendIds.length === 0) return [];
-
-  const [summaries, profiles] = await Promise.all([
-    getHeadToHeadSummaries(profileId, friendIds),
-    getPublicProfilesByIds(friendIds),
-  ]);
-
-  const entries = friendIds.flatMap((friendId) => {
-    const profile = profiles.get(friendId);
-    // Same reasoning as the friends drawer's own hydrate(): a row whose
-    // profile has vanished mid-deletion is dropped rather than rendered blank.
-    if (!profile) return [];
-    const summary = summaries.get(friendId);
-    return [{
-      profileId: friendId,
-      displayName: profile.displayName,
-      avatarUrl: profile.avatarUrl,
-      accent: profile.accent,
-      wins: summary?.wins ?? 0,
-      losses: summary?.losses ?? 0,
-      draws: summary?.draws ?? 0,
-      currentStreak: summary?.currentStreak ?? 0,
-      bestStreak: summary?.bestStreak ?? 0,
-      games: (summary?.games ?? []).map((game) => ({
-        gameId: game.gameId,
-        label: game.label,
-        wins: game.wins,
-        losses: game.losses,
-        draws: game.draws,
-        currentStreak: game.currentStreak,
-      })),
-    }];
-  });
-
-  const played = (entry: FriendBoardEntry) => entry.wins + entry.losses + entry.draws;
-  return entries.sort((a, b) => played(b) - played(a) || a.displayName.localeCompare(b.displayName));
 }
 
 // ---- global read --------------------------------------------------------
@@ -556,14 +479,4 @@ export async function getGlobalLeaderboard(limit = 10): Promise<GlobalLeaderboar
     .map(([profileId, entry]) => ({ profileId, score: entry.score, gamesCounted: entry.gamesCounted }))
     .sort((a, b) => b.score - a.score);
   return decorateGlobalRows(sorted.slice(0, limit));
-}
-
-/** One profile's own Global standing, even outside the top of the board. Null if they qualify in no game yet. */
-export async function getGlobalStanding(profileId: string): Promise<GlobalLeaderboardEntry | null> {
-  const scores = await globalScores();
-  const mine = scores.get(profileId);
-  if (!mine) return null;
-  const rank = 1 + [...scores.values()].filter((entry) => entry.score > mine.score).length;
-  const [decorated] = await decorateGlobalRows([{ profileId, score: mine.score, gamesCounted: mine.gamesCounted }]);
-  return decorated ? { ...decorated, rank } : null;
 }

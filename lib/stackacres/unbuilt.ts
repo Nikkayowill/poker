@@ -19,10 +19,6 @@
  *  starting cutter in the data, which is untouched. */
 export const UNBUILT_CUTTERS: readonly string[] = ["scythe", "mower"];
 
-/** The Forage Drone: buyable at 1.2M, and its hangar and forage hooks are
- *  no-ops, so it can never bring anything back. */
-export const DRONE_IS_UNBUILT = true;
-
 export function isUnbuiltCutter(id: string): boolean {
   return UNBUILT_CUTTERS.includes(id);
 }

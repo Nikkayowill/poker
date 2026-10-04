@@ -74,9 +74,8 @@ export interface YardRect {
  * yard -- every district touches its neighbour with the same ~24-unit gap
  * `zones.test.ts` holds as the floor -- which is what actually shrinks the
  * footprint, not a shorter road. Same nine ids, same sizes throughout: only
- * positions and the road graph connecting them changed. `WORLD_BOUND_MARGIN`
- * and `STACKACRES_ZOOM_MIN` in ./world.ts were retuned alongside the first
- * pass and hold for this one too.
+ * positions and the road graph connecting them changed. `STACKACRES_ZOOM_MIN`
+ * in ./world.ts was retuned alongside the first pass and holds for this one too.
  *
  * Both components are multiples of 8, which keeps every yard literal that was
  * on an 8-unit boundary on one afterwards. It is deliberately NOT a multiple
@@ -95,12 +94,6 @@ export function yardPoint(x: number, y: number): YardPoint {
  *  a yard rect that changed size would not be one. */
 export function yardRect(x: number, y: number, width: number, height: number): YardRect {
   return { x: x + YARD_DELTA.x, y: y + YARD_DELTA.y, width, height };
-}
-
-/** Moves a whole run of yard literals at once -- the lily pads, the reeds, the
- *  ripple spots, the seventeen props. Same offset, applied per entry. */
-export function yardPoints<T extends YardPoint>(points: readonly T[]): T[] {
-  return points.map((p) => ({ ...p, x: p.x + YARD_DELTA.x, y: p.y + YARD_DELTA.y }));
 }
 
 /**

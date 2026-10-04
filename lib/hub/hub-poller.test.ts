@@ -6,8 +6,7 @@ const SLOW = 60_000;
 
 /**
  * No jsdom in this repo, so the globals the poller touches are stubbed by
- * hand -- the same shape lib/ui/visible-poll.test.ts already uses, plus a
- * fetch that records the `include` each request asked for.
+ * hand, plus a fetch that records the `include` each request asked for.
  */
 function stubDom() {
   const listeners = new Set<() => void>();

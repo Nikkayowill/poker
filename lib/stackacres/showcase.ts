@@ -112,10 +112,6 @@ export function isShowcaseReaction(value: unknown): value is ShowcaseReactionId 
   return typeof value === "string" && (SHOWCASE_REACTION_IDS as readonly string[]).includes(value);
 }
 
-export function showcaseReactionLabel(id: ShowcaseReactionId): string {
-  return SHOWCASE_REACTIONS.find((reaction) => reaction.id === id)?.label ?? id;
-}
-
 export type ShowcaseReactionCounts = Readonly<Record<ShowcaseReactionId, number>>;
 
 export function emptyReactionCounts(): ShowcaseReactionCounts {

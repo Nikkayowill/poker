@@ -69,11 +69,6 @@ export function shelfFeedOrder(stock: StackAcresStock): readonly ShelfFeedItem[]
   return isShelfFedStock(stock) ? SHELF_FEED_ORDERS[stock].order : [];
 }
 
-/** Whether `stock` eats off the shelf before touching the Feed Sack. */
-export function eatsShelfFeed(stock: StackAcresStock): boolean {
-  return shelfFeedOrder(stock).length > 0;
-}
-
 /** Extra eggs a serving from `source` adds. Only hen greens add any. */
 export function servingBonusEggs(source: ServingSource): number {
   return isHenFeedItem(source) ? HEN_FEED_BONUS_EGGS[source] : 0;
@@ -97,11 +92,6 @@ export function servingBonus(stock: StackAcresStock, source: ServingSource, curr
     return Math.min(room, servingBonusWeight(stock, source));
   }
   return servingBonusEggs(source);
-}
-
-/** How many hen servings the shelf holds, across every hen feed item. */
-export function henFeedOnShelf(inventory: StackAcresInventory): number {
-  return shelfFeedFor("hen", inventory);
 }
 
 /** How many shelf servings `inventory` holds for `stock`. */

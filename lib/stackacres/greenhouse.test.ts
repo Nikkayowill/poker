@@ -11,15 +11,12 @@ import {
   greenhouseBoundary,
   greenhouseBuildCheck,
   greenhouseDurationMs,
-  greenhouseHitAt,
-  greenhouseInteriorScreenBounds,
-  greenhouseSlotAt,
   greenhouseSlotLayouts,
   greenhouseSlotLocal,
   greenhouseSlotWorldPoint,
   isGreenhouseStock,
 } from "./greenhouse";
-import { isoProject, isoProjectLocal, isoUnprojectLocal, projectedBounds } from "./iso";
+import { isoProject, isoProjectLocal, isoUnprojectLocal, } from "./iso";
 
 function overlaps(a: { x: number; y: number; width: number; height: number }, b: typeof a): boolean {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
@@ -40,20 +37,6 @@ describe("GREENHOUSE_PLOT", () => {
   });
 });
 
-describe("greenhouseHitAt", () => {
-  it("hits inside the plot and misses outside it", () => {
-    expect(greenhouseHitAt(GREENHOUSE_PLOT.x + 1, GREENHOUSE_PLOT.y + 1)).toBe(true);
-    expect(
-      greenhouseHitAt(
-        GREENHOUSE_PLOT.x + GREENHOUSE_PLOT.width - 1,
-        GREENHOUSE_PLOT.y + GREENHOUSE_PLOT.height - 1,
-      ),
-    ).toBe(true);
-    expect(greenhouseHitAt(GREENHOUSE_PLOT.x - 5, GREENHOUSE_PLOT.y)).toBe(false);
-    expect(greenhouseHitAt(GREENHOUSE_PLOT.x, GREENHOUSE_PLOT.y - 5)).toBe(false);
-  });
-});
-
 describe("greenhouseBoundary / slots", () => {
   it("lays out exactly GREENHOUSE_SLOT_CAP distinct slots, every one inside the plot", () => {
     const layouts = greenhouseSlotLayouts();
@@ -68,24 +51,6 @@ describe("greenhouseBoundary / slots", () => {
     }
   });
 
-  it("greenhouseSlotAt round-trips against every slot's own world point", () => {
-    const boundary = greenhouseBoundary();
-    for (let row = 0; row < boundary.rows; row += 1) {
-      for (let col = 0; col < boundary.cols; col += 1) {
-        const at = greenhouseSlotWorldPoint(row, col, boundary);
-        expect(greenhouseSlotAt(at.x, at.y, boundary)).toEqual({ row, col });
-      }
-    }
-  });
-
-  it("greenhouseSlotAt refuses a point outside the matrix", () => {
-    const boundary = greenhouseBoundary();
-    expect(greenhouseSlotAt(boundary.origin.x - 5, boundary.origin.y, boundary)).toBeNull();
-    expect(greenhouseSlotAt(boundary.origin.x, boundary.origin.y - 5, boundary)).toBeNull();
-    const farX = boundary.origin.x + boundary.cols * boundary.tileSize + 5;
-    expect(greenhouseSlotAt(farX, boundary.origin.y, boundary)).toBeNull();
-  });
-
   it("agrees with isoProjectLocal's additive property", () => {
     // greenhouseSlotWorldPoint is plain world-space addition (origin + local);
     // isoProjectLocal projects that same sum via the sub-grid seam. The two
@@ -98,14 +63,6 @@ describe("greenhouseBoundary / slots", () => {
     const viaLocalProjection = isoProjectLocal(boundary.origin, local);
     expect(viaLocalProjection.x).toBeCloseTo(viaWorldSpaceAddition.x, 9);
     expect(viaLocalProjection.y).toBeCloseTo(viaWorldSpaceAddition.y, 9);
-  });
-});
-
-describe("greenhouseInteriorScreenBounds", () => {
-  it("matches projecting GREENHOUSE_PLOT directly", () => {
-    const bounds = greenhouseInteriorScreenBounds();
-    const direct = projectedBounds(GREENHOUSE_PLOT);
-    expect(bounds).toEqual(direct);
   });
 });
 

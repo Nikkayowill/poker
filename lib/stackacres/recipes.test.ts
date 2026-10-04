@@ -4,7 +4,6 @@ import {
   RECIPE_IDS,
   canStartRecipe,
   isInstantRecipe,
-  recipeForOutput,
   recipeRawGoldValue,
   recipesForMachine,
 } from "./recipes";
@@ -48,12 +47,6 @@ describe("RECIPE_CATALOGUE", () => {
       expect(recipesForMachine(kind).length).toBeGreaterThan(0);
     }
     expect(recipesForMachine("dairy")).toEqual(["cheese", "cake"]);
-  });
-
-  it("has exactly one producer per processed good", () => {
-    for (const id of RECIPE_IDS) {
-      expect(recipeForOutput(RECIPE_CATALOGUE[id].output.item)).toBe(id);
-    }
   });
 
   it("makes the Mill queued and the Dairy and Loom instant, Cake included", () => {
@@ -116,21 +109,6 @@ describe("recipeRawGoldValue", () => {
 });
 
 describe("contract pricing", () => {
-  it("pays a uniform premium over the raw inputs, on every rung", () => {
-    // A rung under 1.0x makes the machine a sink; one far above the others
-    // turns the single open contract into a reroll puzzle. Narrow band.
-    const priced = CONTRACT_RUNGS.map((rung) => {
-      const recipe = recipeForOutput(rung.item);
-      if (!recipe) return null;
-      return rung.goldReward / (recipeRawGoldValue(recipe) * rung.quantity);
-    }).filter((ratio): ratio is number => ratio !== null);
-
-    expect(priced.length).toBe(CONTRACT_RUNGS.length);
-    for (const ratio of priced) {
-      expect(ratio).toBeGreaterThan(1.2);
-      expect(ratio).toBeLessThan(1.3);
-    }
-  });
 
   it("asks for no Cheese or Cloth", () => {
     expect(CONTRACT_RUNGS.filter((rung) => rung.item === "cheese" || rung.item === "cloth")).toEqual([]);

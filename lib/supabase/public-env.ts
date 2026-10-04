@@ -33,13 +33,3 @@ export function readSupabaseUrl(): string {
 export function hasSupabasePublicConfig(): boolean {
   return Boolean(readSupabaseUrl() && readSupabasePublicKey());
 }
-
-/**
- * The env var name a deployment is actually using, for error messages that
- * would otherwise name a variable the operator never set.
- */
-export function supabasePublicKeyVariableName(): string {
-  return process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim()
-    ? "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
-    : "NEXT_PUBLIC_SUPABASE_ANON_KEY";
-}

@@ -63,10 +63,6 @@ export const STACKACRES_QUEST_FLAGS = [
 
 export type StackAcresQuestFlag = (typeof STACKACRES_QUEST_FLAGS)[number];
 
-export function isStackAcresQuestFlag(value: unknown): value is StackAcresQuestFlag {
-  return typeof value === "string" && (STACKACRES_QUEST_FLAGS as readonly string[]).includes(value);
-}
-
 /**
  * What a locked row says is missing.
  *

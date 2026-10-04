@@ -16,7 +16,7 @@
  * mapping was ever really for), and `growAreaBounds` answers "where in that
  * district do its units stand" -- one rect per district, not one per plot.
  *
- * The camera is bounded (see ./bounds.ts): a hard edge sits a margin past
+ * The camera is bounded: a hard edge sits a margin past
  * the outermost district, past which the camera cannot scroll. Inside that
  * edge the player can still roam past any district into procedurally-grown
  * scenery (see `chunkScenery`) -- bounding the camera did not touch that
@@ -138,12 +138,6 @@ const STOCK_ZONE: Readonly<Record<StackAcresStock, ZoneId>> = {
 
 export function stockZone(stock: StackAcresStock): ZoneId {
   return STOCK_ZONE[stock];
-}
-
-/** Whether this stock may be bought/stocked while standing in this district
- *  -- checked before a Bushel or a piece of Gold moves. */
-export function stockAllowedInZone(zone: ZoneId, stock: StackAcresStock): boolean {
-  return STOCK_ZONE[stock] === zone;
 }
 
 /** Every stock kind sold/kept in this district -- the complement of
@@ -276,31 +270,6 @@ export function soilTileInCropFieldBeds(tx: number, ty: number): boolean {
  */
 export const BARN_FOOTPRINT: WorldRect = yardRect(63, -25, 74, 62);
 
-/** The barn's own single generated elevation has no reverse angle to turn
- *  to -- it is a straight-on picture, not an isometric volume -- so "rotate
- *  the barn" is a horizontal mirror, the one real reorientation a flat
- *  sprite can take (see `paintBarn` in stackacres-scene.ts, the only place
- *  that draws it). Declared here rather than in stackacres-scene.ts so the
- *  yard placement dev panel (components/dev/StackAcresPlacementPanel.tsx)
- *  can read it without importing that Phaser-dependent module, which breaks
- *  under SSR (`window` at module scope). */
-export const BARN_FLIPPED = true;
-
-/** How far north (away from the barn) `paintRayHouse` draws the house's
- *  picture and shadow from `RAY_HOUSE_FOOTPRINT`'s own true south edge --
- *  `RAY_HOUSE_FOOTPRINT` itself, `rayHouseHitAt`, pathing and wild-growth
- *  exclusion are all untouched; this only nudges the drawn picture. Declared
- *  here for the same SSR reason as `BARN_FLIPPED` above. */
-export const RAY_HOUSE_VISUAL_NUDGE = -35;
-
-/** Same story as `BARN_FLIPPED` above, for Ray's house's own single
- *  generated elevation: a horizontal mirror is the one real reorientation a
- *  flat, straight-on picture can take (see `paintRayHouse`). Off by default
- *  -- the shipped art faces the barn correctly as drawn -- but the yard
- *  placement dev panel exposes it for whenever a repositioned house needs
- *  to face the other way. */
-export const RAY_HOUSE_FLIPPED = false;
-
 /** Whether a tapped ground point (post `isoUnproject`, the same space
  *  `growAreaAt` and every `PropPlacement` live in) lands on the barn --
  *  the supply store's entryway. */
@@ -391,26 +360,6 @@ export function rayHouseHitAt(x: number, y: number): boolean {
 export const FACTORY_FOOTPRINT: WorldRect = yardRect(94, 277, 250, 150);
 
 /**
- * The signpost's footprint: the box `PROP_SIZE.signpost` gives (18 wide,
- * 26 tall) at props.ts's `yardPoint(130, 84)`, restated here for the same
- * import-cycle reason as Ray's box. The signpost used to be scenery. Now it
- * is the Town Board's entryway, a fixed spot you walk up to instead of a
- * floating button.
- */
-const SIGNPOST_FOOTPRINT: WorldRect = yardRect(130 - 18 / 2, 84 - 26, 18, 26);
-
-/** Whether a tapped ground point lands on the signpost, the Town Board's
- *  entryway. */
-export function signpostHitAt(x: number, y: number): boolean {
-  return (
-    x >= SIGNPOST_FOOTPRINT.x &&
-    x <= SIGNPOST_FOOTPRINT.x + SIGNPOST_FOOTPRINT.width &&
-    y >= SIGNPOST_FOOTPRINT.y &&
-    y <= SIGNPOST_FOOTPRINT.y + SIGNPOST_FOOTPRINT.height
-  );
-}
-
-/**
  * Where the windmill used to stand: the box `PROP_SIZE.windmill` gives (30
  * wide, 70 tall) at the same `yardPoint(330, 28)` props.ts once placed it
  * at. NOT PAINTED ANY MORE (props.ts's own header) -- kept only so
@@ -429,24 +378,6 @@ export function windmillHitAt(x: number, y: number): boolean {
     x <= WINDMILL_FOOTPRINT.x + WINDMILL_FOOTPRINT.width &&
     y >= WINDMILL_FOOTPRINT.y &&
     y <= WINDMILL_FOOTPRINT.y + WINDMILL_FOOTPRINT.height
-  );
-}
-
-/**
- * The yard's own well by the barn, where the watering can gets filled. The
- * box `PROP_SIZE.well` gives (28 by 32) at props.ts's `yardPoint(238, 30)`,
- * restated here for the same import-cycle reason as Ray's box above. Every
- * farm has this well from the start, so nobody needs to dig one to water.
- */
-const YARD_WELL_FOOTPRINT: WorldRect = yardRect(238 - 28 / 2, 30 - 32, 28, 32);
-
-/** Whether a tapped ground point lands on the yard's well. */
-export function yardWellHitAt(x: number, y: number): boolean {
-  return (
-    x >= YARD_WELL_FOOTPRINT.x &&
-    x <= YARD_WELL_FOOTPRINT.x + YARD_WELL_FOOTPRINT.width &&
-    y >= YARD_WELL_FOOTPRINT.y &&
-    y <= YARD_WELL_FOOTPRINT.y + YARD_WELL_FOOTPRINT.height
   );
 }
 
@@ -532,11 +463,7 @@ export function powerOfTwoCeil(n: number): number {
  *
  * 0.6 -> 0.65 with the 2026-09-08 map restructure, one of the two engine
  * tuning knobs the design project flagged directly: a tighter world (see
- * `WORLD_BOUND_MARGIN` below and ./yard.ts's `YARD_DELTA`) needs less room to
- * zoom all the way out to. bounds.test.ts's own worst-case mobile-viewport
- * check keeps its independent 0.6 literal -- that is a floor on how far this
- * constant could ever fall, not a mirror of it, and 0.65 is comfortably above
- * it. */
+ * ./yard.ts's `YARD_DELTA`) needs less room to zoom all the way out to. */
 export const STACKACRES_ZOOM_MIN = 0.65;
 export const STACKACRES_ZOOM_MAX = 5;
 
@@ -545,46 +472,9 @@ export function clampZoom(zoom: number): number {
   return Math.min(STACKACRES_ZOOM_MAX, Math.max(STACKACRES_ZOOM_MIN, zoom));
 }
 
-/**
- * Where to put the camera after a zoom so the world point that was under the
- * player's finger is still under it. Phaser's camera scales about the centre
- * of the view, so the scroll that keeps `world` under `screen` is the world
- * point, less the view's half-size, less the finger's offset from centre
- * divided by the new zoom.
- */
-export function scrollToKeepUnderPointer(
-  world: WorldPoint,
-  screen: WorldPoint,
-  viewWidth: number,
-  viewHeight: number,
-  zoom: number,
-): WorldPoint {
-  return {
-    x: world.x - viewWidth / 2 - (screen.x - viewWidth / 2) / zoom,
-    y: world.y - viewHeight / 2 - (screen.y - viewHeight / 2) / zoom,
-  };
-}
-
 /* ------------------------------------------------------------------ */
 /* Animals                                                             */
 /* ------------------------------------------------------------------ */
-
-/** Walking speed in units per second. A hen scurries, a cow does not. */
-export function critterSpeed(stock: StackAcresStock | null): number {
-  switch (stock) {
-    case "hen":
-      return 14;
-    case "pig":
-      return 9;
-    case "cattle":
-    case "steer":
-      return 7;
-    case "hog":
-      return 9;
-    default:
-      return 0;
-  }
-}
 
 export interface Critter {
   x: number;
@@ -746,41 +636,6 @@ export function seedFromId(id: string): number {
   return hash >>> 0;
 }
 
-/**
- * A crop's rank among its siblings: its position once the whole set is
- * sorted by a hash of each id.
- *
- * NOT used by `cropSpot` any more (2026-09-10) -- a crop's world point comes
- * only from its own fixed `soilSlot`, never a rank-hash guess at a tile; see
- * `CropPlacement`'s own header for why that guessing let crops stack. This
- * stays for whatever still wants a stable, order-independent ranking over a
- * sibling set without touching soil at all -- e.g. the (currently inert)
- * farmhand reference modules' own crop targeting.
- *
- * Sorted by HASH, never by the order the rows arrived, for the reason
- * `wheatPlotSpot` states directly below: a rank taken from list position
- * would slide every surviving plant sideways the moment an earlier one was
- * cashed.
- *
- * Ties on the hash fall back to the id itself, so the ordering is total and
- * two crops can never be handed the same rank.
- */
-export function cropRanks(siblingIds: readonly string[]): Map<string, number> {
-  const ranked = [...siblingIds].sort(
-    (a, b) => seedFromId(a) - seedFromId(b) || (a < b ? -1 : a > b ? 1 : 0),
-  );
-  const out = new Map<string, number>();
-  ranked.forEach((id, index) => out.set(id, index));
-  return out;
-}
-
-/** One crop's rank. A convenience over `cropRanks` for a single lookup; the
- *  scene builds the whole map once per `setUnits` instead, since ranking one
- *  crop costs the same sort as ranking all of them. */
-export function cropRank(unitId: string, siblingIds: readonly string[]): number {
-  return cropRanks(siblingIds).get(unitId) ?? siblingIds.length;
-}
-
 /** What `cropSpot` needs to put a crop on the player's own soil rather than
  *  scattering it: the placed tiles, and this crop's FIXED slot, when it has
  *  one. Optional at the call site -- see `cropSpot`. */
@@ -895,20 +750,6 @@ export const HUD_VIEW_EXPANSION = 1.1;
 
 /** How wide the open world's procedural-scenery chunks are, in world units. */
 export const STACKACRES_CHUNK = 160;
-
-/** How far past the union of every district's own bounds the hard camera
- *  boundary sits (./bounds.ts), in world units -- one scenery chunk, so at
- *  least one ring of the woodland `chunkScenery` already thins into still
- *  stands between the outermost district and the wall, rather than the
- *  districts' own fences butting straight up against it.
- *
- *  1.5 chunks (240) -> 1 chunk (160) with the 2026-09-08 map restructure, the
- *  other engine tuning knob the design project flagged directly: the tighter
- *  district layout (./yard.ts's `YARD_DELTA`) already leaves less open
- *  woodland to cross between districts, and a full 1.5-chunk margin on top of
- *  that padded the world with scenery nobody was walking through -- fewer
- *  scenery chunks generated overall is the whole point of tightening the map. */
-export const WORLD_BOUND_MARGIN = STACKACRES_CHUNK * 1;
 
 /**
  * The rectangle kept clear of wild scenery. Its yard half is x 20..440,

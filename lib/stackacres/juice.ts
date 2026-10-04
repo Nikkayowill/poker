@@ -16,150 +16,11 @@
  * ever looks up.
  */
 
-import { STACKACRES_STOCK, type StackAcresStock } from "./catalogue";
-import { yieldItemOf, type StackAcresItem } from "./items";
+import { STACKACRES_STOCK, } from "./catalogue";
 
 /* ------------------------------------------------------------------ */
 /* Harvest pop: procedural shard styling per stock                     */
 /* ------------------------------------------------------------------ */
-
-/**
- * One stock's harvest-pop shard style.
- *
- * `ramp` names a components/arcade/stackacres/art-palette.ts RAMPS entry,
- * kept a plain string for the same reason StackAcresItemDef.icon (./items.ts)
- * is: this file stays free of a components/ import, and the caller casts the
- * name back to `RampName` to look the colour up.
- */
-export interface JuiceShardStyle {
-  /** RAMPS key the shard's fill is drawn from. */
-  ramp: string;
-  /** How many shards one harvest pop throws. */
-  shardCount: number;
-  /** Shard fill radius, screen px, before any crit scaling. */
-  shardRadius: number;
-  /** Outward launch speed range, screen px/s. */
-  speed: { min: number; max: number };
-  /** Downward accel applied after launch, screen px/s^2. A crop's husk or
-   *  kernel falls harder than livestock's soft produce drifting down --
-   *  this is the whole reason gravity is per-style and not one constant. */
-  gravity: number;
-  /** How long a shard lives, ms. */
-  lifeMs: { min: number; max: number };
-}
-
-/**
- * Every real StackAcres stock gets a style; nothing here is optional.
- * Crops throw hard, small, fast-falling shards (a kernel or a shred of
- * leaf popping off); livestock throws softer, slower, longer-hanging
- * puffs (a feather, a tuft of fleece, a splash of milk) -- the same
- * "which track is this" split ./catalogue.ts's own `isLivestock` draws
- * everywhere else, just spent on how a burst FEELS instead of how it is
- * tended.
- */
-export const STACKACRES_JUICE_STYLES: Readonly<Record<StackAcresStock, JuiceShardStyle>> = {
-  /* ---- All 16 crops: non-ramp fields carried over unchanged from the old
-   * roster's own tier styles -- only `ramp` varies, by each crop's own
-   * dominant colour against art-palette.ts's existing RAMPS table (no
-   * purple ramp exists, so eggplant falls back to green). */
-
-  // Tier 1.
-  lettuce: { ramp: "leaf", shardCount: 9, shardRadius: 2.2, speed: { min: 70, max: 150 }, gravity: 340, lifeMs: { min: 380, max: 620 } },
-  spinach: { ramp: "leaf", shardCount: 9, shardRadius: 2.2, speed: { min: 70, max: 150 }, gravity: 340, lifeMs: { min: 380, max: 620 } },
-  radish: { ramp: "roof", shardCount: 9, shardRadius: 2.2, speed: { min: 70, max: 150 }, gravity: 340, lifeMs: { min: 380, max: 620 } },
-  onion: { ramp: "cream", shardCount: 9, shardRadius: 2.2, speed: { min: 70, max: 150 }, gravity: 340, lifeMs: { min: 380, max: 620 } },
-  carrot: { ramp: "carrot", shardCount: 9, shardRadius: 2.2, speed: { min: 70, max: 150 }, gravity: 340, lifeMs: { min: 380, max: 620 } },
-  potato: { ramp: "cream", shardCount: 9, shardRadius: 2.2, speed: { min: 70, max: 150 }, gravity: 340, lifeMs: { min: 380, max: 620 } },
-  cabbage: { ramp: "cream", shardCount: 9, shardRadius: 2.2, speed: { min: 70, max: 150 }, gravity: 340, lifeMs: { min: 380, max: 620 } },
-
-  // Tier 2.
-  broccoli: { ramp: "pine", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
-  pepper: { ramp: "carrot", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
-  bell_pepper: { ramp: "roof", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
-  celery: { ramp: "leaf", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
-  green_bean: { ramp: "leaf", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
-  tomato: { ramp: "roof", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
-
-  // Tier 3.
-  corn: { ramp: "corn", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
-  eggplant: { ramp: "pine", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
-  wheat: { ramp: "straw", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
-
-  hen: {
-    ramp: "chalk",
-    shardCount: 7,
-    shardRadius: 2,
-    speed: { min: 50, max: 110 },
-    gravity: 220,
-    lifeMs: { min: 460, max: 720 },
-  },
-  pig: {
-    ramp: "chalk",
-    shardCount: 10,
-    shardRadius: 2.4,
-    speed: { min: 60, max: 120 },
-    gravity: 200,
-    lifeMs: { min: 500, max: 780 },
-  },
-  cattle: {
-    ramp: "chalk",
-    shardCount: 8,
-    shardRadius: 2.8,
-    speed: { min: 40, max: 90 },
-    gravity: 160,
-    lifeMs: { min: 560, max: 860 },
-  },
-  hog: {
-    ramp: "chalk",
-    shardCount: 8,
-    shardRadius: 2.6,
-    speed: { min: 50, max: 100 },
-    gravity: 180,
-    lifeMs: { min: 520, max: 800 },
-  },
-  steer: {
-    ramp: "chalk",
-    shardCount: 8,
-    shardRadius: 2.8,
-    speed: { min: 40, max: 90 },
-    gravity: 160,
-    lifeMs: { min: 560, max: 860 },
-  },
-};
-
-export function juiceStyleFor(stock: StackAcresStock): JuiceShardStyle {
-  return STACKACRES_JUICE_STYLES[stock];
-}
-
-/** Which item a stock's own harvest pop is celebrating -- lifted straight
- *  off ./items.ts, never a second guess at what a Hen Coop pays. Null for a
- *  hog or steer, which is shipped rather than collected from. */
-export function juiceItemFor(stock: StackAcresStock): StackAcresItem | null {
-  return yieldItemOf(stock);
-}
-
-/**
- * The launch cone every shard emitter is configured with: ~100 degrees
- * centred straight up (screen-space "up" is angle 270), so a burst reads as
- * "popped into the air" rather than "sprayed sideways". Kept here as the one
- * source of truth for that physics rather than restated as a literal angle
- * range at the emitter config -- game-juice-manager.ts's own
- * `ensureShardEmitter` reads this to build the Phaser
- * `ParticleEmitterConfig.angle` range it hands to `add.particles`, which is
- * what actually launches shards; there is no second, Phaser-free copy of the
- * launch math to keep in sync with it.
- */
-export const HARVEST_POP_CONE_DEGREES = 100;
-/** Degrees, matching Phaser's own angle convention (0 = +x/right, increasing
- *  clockwise); 270 is straight up. */
-export const HARVEST_POP_UP_ANGLE_DEGREES = 270;
-
-export function harvestPopAngleRange(): { min: number; max: number } {
-  return {
-    min: HARVEST_POP_UP_ANGLE_DEGREES - HARVEST_POP_CONE_DEGREES / 2,
-    max: HARVEST_POP_UP_ANGLE_DEGREES + HARVEST_POP_CONE_DEGREES / 2,
-  };
-}
 
 /* ------------------------------------------------------------------ */
 /* Crit flash                                                          */
@@ -200,7 +61,6 @@ export function critShakeIntensity(multiplier: number): number {
 }
 
 export const CRIT_SHAKE_DURATION_MS = 90;
-export const CRIT_FLASH_DURATION_MS = 120;
 
 /* ------------------------------------------------------------------ */
 /* Gold count-up ticker                                                */
@@ -248,70 +108,6 @@ export function goldTickerValue(total: number, t: number): number {
 export interface Point {
   x: number;
   y: number;
-}
-
-/** A point on the quadratic Bezier from `p0` through control `p1` to `p2`,
- *  at t in [0, 1]. One control point is enough to arc an item up and over
- *  into the barn -- nothing here needs a cubic. */
-export function quadraticBezierPoint(p0: Point, p1: Point, p2: Point, t: number): Point {
-  const mt = 1 - t;
-  return {
-    x: mt * mt * p0.x + 2 * mt * t * p1.x + t * t * p2.x,
-    y: mt * mt * p0.y + 2 * mt * t * p1.y + t * t * p2.y,
-  };
-}
-
-/**
- * The control point for a barn-absorb arc: lifted straight up from the
- * flight's own midpoint, never off to a side -- a diamond-tiled isometric
- * world has no natural "left" or "right" for an arc to lean toward, so
- * height is the only bias that reads as intentional rather than arbitrary.
- *
- * Lift scales with the flight's own length (a longer flight arcs higher),
- * floored so a short hop from right next to the barn still visibly leaves
- * the ground.
- */
-const BARN_ARC_LIFT_RATIO = 0.35;
-const BARN_ARC_LIFT_MIN = 24;
-
-export function barnArcControlPoint(start: Point, end: Point): Point {
-  const midX = (start.x + end.x) / 2;
-  const midY = (start.y + end.y) / 2;
-  const dist = Math.hypot(end.x - start.x, end.y - start.y);
-  const lift = Math.max(BARN_ARC_LIFT_MIN, dist * BARN_ARC_LIFT_RATIO);
-  return { x: midX, y: midY - lift };
-}
-
-/** Where the fade to nothing starts along the flight, as a fraction of its
- *  own duration -- full size and fully opaque until the last quarter, then
- *  shrinking and fading into the barn. A `linear` fade across the WHOLE
- *  flight would read as "half-gone while still clearly mid-air", which is
- *  not what "fading out upon contact" means. */
-const BARN_ABSORB_FADE_START = 0.75;
-
-export function barnAbsorbScale(t: number): number {
-  if (t <= BARN_ABSORB_FADE_START) return 1;
-  const local = (t - BARN_ABSORB_FADE_START) / (1 - BARN_ABSORB_FADE_START);
-  return 1 - local * 0.6;
-}
-
-export function barnAbsorbAlpha(t: number): number {
-  if (t <= BARN_ABSORB_FADE_START) return 1;
-  const local = (t - BARN_ABSORB_FADE_START) / (1 - BARN_ABSORB_FADE_START);
-  return 1 - local;
-}
-
-/**
- * The flight's depth at `t`: a straight lerp between the two ends' own
- * isoDepthAt values (see ./iso.ts), not a third projection of some point
- * along the screen-space arc -- the arc itself is drawn in screen space and
- * does not correspond to any single world point along its curve. Depth only
- * has to be MONOTONIC across the flight for the item to slot correctly
- * between the crop layer it left and the barn it is entering, and a lerp of
- * two already-correct depths is exactly that, at no extra projection cost.
- */
-export function barnAbsorbDepth(startDepth: number, endDepth: number, t: number): number {
-  return startDepth + (endDepth - startDepth) * t;
 }
 
 export { STACKACRES_STOCK };

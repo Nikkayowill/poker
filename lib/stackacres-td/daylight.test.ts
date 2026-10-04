@@ -5,7 +5,6 @@ import {
   NIGHT_FLOOR,
   brightness,
   daylightAt,
-  hourOf,
   indoorDaylightAt,
   sunlightAt,
   tintColor,
@@ -82,11 +81,7 @@ describe("daylightAt", () => {
   });
 });
 
-describe("hourOf and tintColor", () => {
-  it("reads a local clock as a fractional hour", () => {
-    expect(hourOf(new Date(2026, 8, 16, 18, 30, 0))).toBe(18.5);
-  });
-
+describe("tintColor", () => {
   it("packs a tint as 0xRRGGBB", () => {
     expect(tintColor({ r: 1, g: 0.5, b: 0, lamps: 0 })).toBe(0xff8000);
   });

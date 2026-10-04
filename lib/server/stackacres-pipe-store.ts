@@ -42,10 +42,6 @@ export interface StoredPipe extends PlacedPipe {
   readonly version: number;
 }
 
-/** How many tiles one farm may place, and it may have at most one well.
- *  Mirrors `homestead_pipes_enforce_cap()`. */
-export const PIPE_LAYOUT_CAP = 120;
-
 export interface PipeDbRow {
   tx: number | string;
   ty: number | string;

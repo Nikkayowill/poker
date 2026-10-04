@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CATTLE_FEED_ORDER, HEN_FEED_ORDER, feedingToast, henFeedOnShelf, planServings, shelfFeedFor } from "./feeding";
+import { CATTLE_FEED_ORDER, HEN_FEED_ORDER, feedingToast, planServings, shelfFeedFor } from "./feeding";
 
 describe("the hen feeding order", () => {
   it("is Spinach, Wheat, Lettuce, Cabbage, then the Feed Sack", () => {
@@ -38,9 +38,6 @@ describe("the hen feeding order", () => {
     expect(plan.fed).toBe(1);
   });
 
-  it("counts every hen feed item on the shelf", () => {
-    expect(henFeedOnShelf({ spinach: 1, wheat: 2, lettuce: 3, cabbage: 4, potato: 9 })).toBe(10);
-  });
 });
 
 describe("the cattle feeding order", () => {

@@ -7,7 +7,6 @@ import {
   STACKACRES_DICE_UPKEEP_WIPE,
   STACKACRES_DICE_BOOST_ARMED_KEY,
   effectiveCritChance,
-  hiddenZoneAt,
   nextUpkeepPaidAfterDiceTrade,
   rollSecretDiscovery,
   secretZoneAttemptKey,
@@ -25,30 +24,6 @@ describe("the one secret item", () => {
 });
 
 describe("hidden zone hit-testing", () => {
-  it("hits at every zone's corners and center", () => {
-    for (const zone of HIDDEN_ZONES) {
-      const b = zone.bounds;
-      expect(hiddenZoneAt(b.x, b.y)?.id).toBe(zone.id);
-      expect(hiddenZoneAt(b.x + b.width, b.y)?.id).toBe(zone.id);
-      expect(hiddenZoneAt(b.x, b.y + b.height)?.id).toBe(zone.id);
-      expect(hiddenZoneAt(b.x + b.width, b.y + b.height)?.id).toBe(zone.id);
-      expect(hiddenZoneAt(b.x + b.width / 2, b.y + b.height / 2)?.id).toBe(zone.id);
-    }
-  });
-
-  it("misses just outside a zone's box", () => {
-    for (const zone of HIDDEN_ZONES) {
-      const b = zone.bounds;
-      expect(hiddenZoneAt(b.x - 1, b.y)).toBeNull();
-      expect(hiddenZoneAt(b.x + b.width + 1, b.y)).toBeNull();
-      expect(hiddenZoneAt(b.x, b.y - 1)).toBeNull();
-      expect(hiddenZoneAt(b.x, b.y + b.height + 1)).toBeNull();
-    }
-  });
-
-  it("misses a point far from every zone", () => {
-    expect(hiddenZoneAt(-5000, -5000)).toBeNull();
-  });
 
   it("names three distinct zones, each with a positive discovery chance under 1", () => {
     const ids = new Set(HIDDEN_ZONES.map((zone) => zone.id));

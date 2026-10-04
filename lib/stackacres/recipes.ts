@@ -307,13 +307,6 @@ export function recipesForMachine(kind: MachineKind): readonly RecipeId[] {
   return RECIPE_IDS.filter((id) => RECIPE_CATALOGUE[id].machine === kind);
 }
 
-/** The recipe that produces `item`, or null. One producer per good today; a
- *  second one would make this ambiguous and needs a real choice in the UI
- *  before it is added. */
-export function recipeForOutput(item: MachineProcessedItem): RecipeId | null {
-  return RECIPE_IDS.find((id) => RECIPE_CATALOGUE[id].output.item === item) ?? null;
-}
-
 /** Whether the inventory holds enough of every input to start `recipe`. */
 export function canStartRecipe(inventory: StackAcresInventory, recipe: RecipeId): boolean {
   return RECIPE_CATALOGUE[recipe].inputs.every((input) => hasEnough(inventory, input.item, input.quantity));

@@ -60,9 +60,8 @@ export interface StackAcresItemDef {
   plural: string;
   /**
    * Name of a vector painter in components/arcade/stackacres/stackacres-art.ts
-   * (its `PainterName` union). Kept as a plain string, same reason as
-   * StackAcresToolDef.icon in ./tools.ts: this file stays free of a
-   * components/ import, and the caller casts the name back for
+   * (its `PainterName` union). Kept as a plain string so this file stays free
+   * of a components/ import, and the caller casts the name back for
    * `<StackAcresIcon>`.
    */
   icon: string;
@@ -117,10 +116,6 @@ export interface StackAcresYield {
 /** Every stock that makes something to collect. Hogs and steers make
  *  nothing: they are the thing sold (see STACKACRES_MARKET_ANIMALS). */
 export type StackAcresProduceStock = Exclude<StackAcresStock, StackAcresMarketLivestock>;
-
-export function makesProduce(stock: StackAcresStock): stock is StackAcresProduceStock {
-  return !isMarketLivestock(stock);
-}
 
 export const STACKACRES_YIELDS: Readonly<Record<StackAcresProduceStock, StackAcresYield>> = {
   hen: { item: "eggs", quantity: 4 },
@@ -177,18 +172,6 @@ export function yieldValue(stock: StackAcresStock): number {
 export function itemLabel(item: StackAcresItem, quantity: number): string {
   const def = STACKACRES_ITEM_CATALOGUE[item];
   return `${quantity.toLocaleString()} ${quantity === 1 ? def.label : def.plural}`;
-}
-
-/**
- * Sanity net: every stock must sell for more than its seed, or the farm is a
- * sink.
- *
- * Note this is the net BEFORE Land Maintenance, which is now a standalone
- * daily wallet charge rather than something netted out of a per-unit sale --
- * see ./upkeep.ts.
- */
-export function netPerCycle(stock: StackAcresStock, seedCost: number): number {
-  return yieldValue(stock) - seedCost;
 }
 
 export { STACKACRES_STOCK };

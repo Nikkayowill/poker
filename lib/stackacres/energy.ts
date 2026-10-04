@@ -93,9 +93,3 @@ export function applyEnergyDelta(
   return { level: Math.min(ENERGY_MAX, next), updatedAt: settled.updatedAt };
 }
 
-/** When the next regen point lands, or null when waiting adds nothing. */
-export function nextEnergyPointAt(anchor: StackAcresEnergyAnchor | null, now: Date): Date | null {
-  const settled = settleEnergy(anchor, now);
-  if (settled.level >= ENERGY_REGEN_CAP) return null;
-  return new Date(Date.parse(settled.updatedAt) + ENERGY_REGEN_MS);
-}

@@ -12,9 +12,7 @@ import {
   acreGate,
   acreGateMessage,
   acrePrice,
-  acreUpkeepFee,
   acresView,
-  boughtAcreCount,
   isAcreId,
 } from "./acres";
 import { LAND_OBSTACLES, LAND_OBSTACLE_DEFS } from "./land-clearing";
@@ -172,17 +170,6 @@ describe("price and upkeep", () => {
   it("treats a nonsense count as none owned", () => {
     expect(acrePrice(-3)).toEqual(acrePrice(0));
     expect(acrePrice(Number.NaN)).toEqual(acrePrice(0));
-  });
-
-  it("bills bought acres a flat fee and grandfathered ones nothing", () => {
-    const owned = [
-      { id: "W1", source: "bought" as const },
-      { id: "W2", source: "bought" as const },
-      { id: "W3", source: "grandfathered" as const },
-    ];
-    expect(boughtAcreCount(owned)).toBe(2);
-    expect(acreUpkeepFee(owned)).toBe(2 * ACRE_UPKEEP_GOLD);
-    expect(acreUpkeepFee([])).toBe(0);
   });
 
   it("prices the next acre off everything owned, grandfathered too, and runs out", () => {

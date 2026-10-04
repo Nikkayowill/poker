@@ -46,5 +46,3 @@ export function pickWordGuessWords(randomInt: RandomInt, pressure: StakePressure
   }
   return pool.slice(0, count);
 }
-
-export const WORD_GUESS_WORD_COUNT = WORD_GUESS_WORDS.length;

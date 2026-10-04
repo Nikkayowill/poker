@@ -7,8 +7,6 @@ import {
   applyEnergyDelta,
   energyAt,
   isFoodItem,
-  nextEnergyPointAt,
-  settleEnergy,
 } from "./energy";
 
 const T0 = new Date("2026-09-18T12:00:00.000Z");
@@ -60,17 +58,6 @@ describe("applyEnergyDelta", () => {
   it("starts regen from now when a spend drops below the cap", () => {
     const next = applyEnergyDelta(anchor(52), -5, at(ENERGY_REGEN_MS * 3));
     expect(next).toEqual({ level: 47, updatedAt: at(ENERGY_REGEN_MS * 3).toISOString() });
-  });
-});
-
-describe("settleEnergy and nextEnergyPointAt", () => {
-  it("moves the anchor forward by whole points only", () => {
-    expect(settleEnergy(anchor(10), at(ENERGY_REGEN_MS * 2 + 1000))).toEqual({
-      level: 12,
-      updatedAt: at(ENERGY_REGEN_MS * 2).toISOString(),
-    });
-    expect(nextEnergyPointAt(anchor(10), at(1000))?.toISOString()).toBe(at(ENERGY_REGEN_MS).toISOString());
-    expect(nextEnergyPointAt(anchor(50), T0)).toBeNull();
   });
 });
 

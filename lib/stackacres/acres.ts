@@ -182,11 +182,6 @@ export function acrePrice(owned: number): AcrePrice {
   };
 }
 
-/** The daily fee for these acres. Only bought acres are billed. */
-export function acreUpkeepFee(acres: readonly OwnedAcre[]): number {
-  return boughtAcreCount(acres) * ACRE_UPKEEP_GOLD;
-}
-
 /** What the client needs to render the deed: what is owned, and what the next acre costs. */
 export interface StackAcresAcresView {
   /** Every acre the farm may build on. */

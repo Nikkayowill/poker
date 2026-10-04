@@ -28,7 +28,3 @@ export function enrichedGrowthMultiplier(enriched: boolean): number {
   return enriched ? ENRICHED_GROWTH_MULTIPLIER : 1;
 }
 
-/** Whether a bed is enriched after `stock` is harvested from it. Never stacks. */
-export function enrichedAfterHarvest(wasEnriched: boolean, stock: StackAcresStock): boolean {
-  return wasEnriched || enrichesSoil(stock);
-}

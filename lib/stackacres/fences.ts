@@ -51,7 +51,6 @@ export function isFenceableMapTile(tx: number, ty: number): boolean {
 export const FENCE_JOIN_NORTH = 1;
 export const FENCE_JOIN_EAST = 2;
 export const FENCE_JOIN_WEST = 4;
-export const FENCE_FRAMES = 8;
 
 export function fenceFrame(pieces: ReadonlySet<string>, tx: number, ty: number): number {
   return (

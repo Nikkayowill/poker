@@ -8,8 +8,6 @@ import {
   SECTOR_LADDER,
   STACKACRES_SECTORS,
   cropFieldOvergrowth,
-  isSectorUnlocked,
-  lockedSectors,
   sectorClearCheck,
   sectorLabel,
   sectorOvergrowth,
@@ -28,7 +26,6 @@ import {
   type StackAcresLivestock,
   type StackAcresStock,
 } from "./catalogue";
-import { isMachineRawItem } from "./machine-items";
 import { nearPath } from "./paths";
 // Test-only, and Phaser-free at runtime (that module imports Phaser as a
 // TYPE only): the scene's painter table, so overgrowth can be held to what
@@ -117,12 +114,6 @@ describe("unlockedSectors", () => {
     expect(a).toEqual(SECTOR_IDS.filter((id) => a.includes(id)));
   });
 
-  it("splits cleanly against lockedSectors", () => {
-    const open = unlockedSectors(["wallow"], []);
-    const shut = lockedSectors(open);
-    expect([...open, ...shut].sort()).toEqual([...SECTOR_IDS].sort());
-    for (const id of shut) expect(isSectorUnlocked(id, open)).toBe(false);
-  });
 });
 
 describe("sectorClearCheck", () => {

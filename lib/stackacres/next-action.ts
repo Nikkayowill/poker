@@ -268,7 +268,7 @@ export function nextAction(input: JournalInput, view: JournalView): NextAction |
       return {
         id: canEmpty ? "water:fill" : "water",
         cue,
-        title: canEmpty ? "Fill your can at the well" : "Water the beds that have gone dry",
+        title: canEmpty ? "Fill your can at the well" : "Water your beds",
         why: canEmpty
           ? "The can is empty, and a dry bed stops growing altogether. Tap the well, then water the beds."
           : "A dry bed stops growing altogether, and the time it stands dry is never credited back.",

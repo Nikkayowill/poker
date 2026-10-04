@@ -2716,7 +2716,16 @@
 .sa-theme .htp-modal .htp-body > .sa-cta {
   position: sticky;
   bottom: 0;
+  z-index: 1;
+  /* The sheet's own paper behind and around it, so whatever scrolls under the
+     pinned button doesn't show through the painted edge (the Greenhouse's
+     material cards did). */
+  background-color: var(--sa-paint-fill-open);
+  box-shadow: 0 0 0 6px var(--sa-paint-fill-open);
 }
+/* Disabled keys fade elsewhere; a pinned one fading lets the copy under it show
+   through, so it keeps full opacity and says "not yet" with the washed-out colour. */
+.sa-theme .htp-modal .htp-body > .sa-cta:disabled { opacity: 1; }
 
 /* The "While you were away" list (stackacres-away-report.tsx). */
 .sa-away-lines {

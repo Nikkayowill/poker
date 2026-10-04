@@ -83,7 +83,7 @@ test("Iris buys Stone at the general store, and Dale turns it away", async ({ co
   await tapPerson(page, DALE);
   const elevator = page.getByRole("dialog", { name: "Grain Elevator" });
   await expect(elevator).toBeVisible();
-  await expect(elevator).toContainText("You have nothing Dale buys yet.");
+  await expect(elevator).toContainText("Nothing on hand that Dale buys.");
   await elevator.getByRole("button", { name: "Close" }).click();
   await expect(elevator).toHaveCount(0);
 

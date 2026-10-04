@@ -74,12 +74,15 @@ test("the planner names the Mill, then advances to the Oven once the Mill is up"
   const panel = page.locator(".sa-next");
   await expect(panel).toBeVisible();
 
-  // One objective, why it matters, what is missing, and where the missing
-  // thing comes from. Every one of those numbers is the machine catalogue's.
+  // One objective and what is missing. The reason and where the missing thing
+  // comes from wait behind a tap on the objective, so the panel stays small
+  // over the map. Every one of those numbers is the machine catalogue's.
   await expect(panel.getByRole("heading", { name: "Build the Feed Grinder" })).toBeVisible();
-  await expect(panel).toContainText("Grow wheat");
   await expect(panel).toContainText("Missing:");
   await expect(panel).toContainText("15 Wood");
+  await expect(panel).not.toContainText("Chop the trees");
+  await panel.getByRole("button", { name: "Build the Feed Grinder" }).click();
+  await expect(panel).toContainText("Grow wheat");
   await expect(panel).toContainText("Chop the trees");
   // The Gold is already in hand, so it is not on the missing list.
   await expect(panel.locator(".sa-next-missing")).not.toContainText("Gold");
@@ -89,7 +92,7 @@ test("the planner names the Mill, then advances to the Oven once the Mill is up"
   await grantWood(context, profileId, 15);
   await enterFarm(page);
   await expect(panel.getByRole("heading", { name: "Build the Feed Grinder" })).toBeVisible();
-  await expect(panel).toContainText("Everything it needs is in hand");
+  await expect(panel).toContainText("All done.");
 
   // The button goes to the room the Mill actually goes up in.
   await panel.getByRole("button", { name: "Open Workshop" }).click();

@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronRight, Compass, X } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, ChevronRight, Compass, X } from "lucide-react";
 import clsx from "clsx";
 import {
   actionProgress,
@@ -30,6 +31,12 @@ import {
  * `sa-ray-welcomed` and the picked cutter), not on the profile -- it is a
  * preference about this screen, not farm state, and there is nothing for the
  * server to be authoritative about.
+ *
+ * COMPACT UNTIL ASKED. On a phone held sideways the full panel covered a
+ * quarter of the map and caught taps meant for the crops under it. So it shows
+ * the objective, the meter, one "Missing" line and its button; tapping the
+ * objective opens the reason and the full list of what is short and where it
+ * comes from.
  *
  * It re-renders off the snapshot like everything else on this screen, so an
  * objective finished by an optimistic tap is already gone before the server
@@ -72,6 +79,8 @@ export function StackAcresNextActionPanel({
   const missing = missingRequirements(action);
   const summary = missingSummary(action);
   const progress = actionProgress(action);
+  const [open, setOpen] = useState(false);
+  const hasDetails = Boolean(action.why) || action.requirements.length > 0;
   return (
     <aside
       className={clsx("sa-next", { "is-ready": isActionable(action) })}
@@ -96,9 +105,16 @@ export function StackAcresNextActionPanel({
           replaces another, rather than only on first render. */}
       <div role="status">
         <h2 id="sa-next-title" className="sa-next-title">
-          {action.title}
+          {hasDetails ? (
+            <button type="button" className="sa-next-toggle" aria-expanded={open} onClick={() => setOpen((was) => !was)}>
+              <span>{action.title}</span>
+              <ChevronDown size={14} aria-hidden="true" className="sa-next-toggle-icon" />
+            </button>
+          ) : (
+            action.title
+          )}
         </h2>
-        <p className="sa-next-why">{action.why}</p>
+        {open && <p className="sa-next-why">{action.why}</p>}
       </div>
 
       {action.requirements.length > 0 && (
@@ -111,19 +127,21 @@ export function StackAcresNextActionPanel({
               <strong>Missing:</strong> {summary}
             </p>
           ) : (
-            <p className="sa-next-missing is-met">Everything it needs is in hand.</p>
+            <p className="sa-next-missing is-met">All done.</p>
           )}
-          <ul className="sa-next-reqs">
-            {(summary ? missing : action.requirements).map((requirement) => (
-              <Requirement
-                key={requirement.label}
-                label={requirement.label}
-                have={requirement.have}
-                need={requirement.need}
-                source={requirement.source}
-              />
-            ))}
-          </ul>
+          {open && (
+            <ul className="sa-next-reqs">
+              {(summary ? missing : action.requirements).map((requirement) => (
+                <Requirement
+                  key={requirement.label}
+                  label={requirement.label}
+                  have={requirement.have}
+                  need={requirement.need}
+                  source={requirement.source}
+                />
+              ))}
+            </ul>
+          )}
         </>
       )}
 

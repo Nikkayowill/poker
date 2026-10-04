@@ -2536,6 +2536,37 @@ export async function hireStackAcresHand(
   return { ...(await view(await ensureProfile(token), now)), hiredHand: true };
 }
 
+/**
+ * Sows each bed the hand just picked with the crop that came off it, from the
+ * player's own seed. A crop owned outright regrows by itself and is skipped.
+ * Stops at the first bed that can't be sown (out of seed); a bed the player
+ * sowed in the meantime is refused by the sow itself and skipped.
+ */
+async function resowHarvestedBeds(
+  token: string,
+  profileId: string,
+  rows: readonly StoredStackAcresUnit[],
+  harvested: readonly string[],
+  now: Date,
+): Promise<number> {
+  const soil = soilMapFor(await listStackAcresSoilTiles(profileId));
+  let sown = 0;
+  for (const id of harvested) {
+    const row = rows.find((candidate) => candidate.id === id);
+    if (!row || row.permanent || row.soilSlot === null || !isStackAcresCrop(row.stock)) continue;
+    const bed = soilSlotTile(soil, row.soilSlot);
+    if (!bed) continue;
+    if (((await readStackAcresSeedStock(profileId))[row.stock] ?? 0) < 1) break;
+    try {
+      await stockStackAcres(token, { stock: row.stock, tile: { tx: bed.tx, ty: bed.ty } }, now);
+      sown += 1;
+    } catch (error) {
+      if (!(error instanceof StackAcresRequestError)) throw error;
+    }
+  }
+  return sown;
+}
+
 /** Lets the hand go. Whatever was paid for today stays paid; nothing is owed after. */
 export async function dismissStackAcresHand(token: string, now = new Date()): Promise<StackAcresView> {
   const profile = await ensureProfile(token);
@@ -2558,7 +2589,9 @@ export async function dismissStackAcresHand(token: string, now = new Date()): Pr
  * THE PASS. Claimed by moving `chores_at` under the version guard, so two tabs
  * can't both take one. Watering is the hand's own, from the well: it never
  * touches the player's can. Harvesting goes through `harvestStackAcres`, so
- * produce lands in inventory exactly as if the player had picked it.
+ * produce lands in inventory exactly as if the player had picked it. Each bed
+ * he picks he sows again with the same crop through `stockStackAcres`, so the
+ * seed comes off the player's shelf and no Gold moves. He stops when it runs out.
  */
 export async function runStackAcresHiredHand(
   token: string,
@@ -2623,12 +2656,17 @@ export async function runStackAcresHiredHand(
   if (watered.length > 0) await recordStoryEvents(profile.id, [{ kind: "watered", count: watered.length }], now);
 
   if (picked.harvest.length > 0) {
+    let done: Awaited<ReturnType<typeof harvestStackAcres>> | null = null;
     try {
-      const done = await harvestStackAcres(token, { unitIds: picked.harvest }, now);
-      return { ...done, handChores: { watered, harvested: picked.harvest, wagePaid, quit: false } };
+      done = await harvestStackAcres(token, { unitIds: picked.harvest }, now);
     } catch (error) {
       // The player picked them first, or they moved on. The pass still counts.
       if (!(error instanceof StackAcresRequestError)) throw error;
+    }
+    if (done) {
+      const sown = await resowHarvestedBeds(token, profile.id, rows, picked.harvest, now);
+      const final = sown > 0 ? { ...done, ...(await view(await ensureProfile(token), now)) } : done;
+      return { ...final, handChores: { watered, harvested: picked.harvest, wagePaid, quit: false } };
     }
   }
   return {

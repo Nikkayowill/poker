@@ -1,6 +1,7 @@
 /**
  * The hired hand: Earl, hired at Ray's for a daily wage, who walks the farm
- * watering dry beds and bringing in ripe ones while the player is playing.
+ * watering dry beds and bringing in ripe ones while the player is playing. A
+ * bed he picks he sows again with the same crop, from the player's seed.
  *
  * The wage is charged by the chores pass, once per game day (lib/stackacres/
  * clock.ts), and only while the farm is open: days spent away are never
@@ -27,6 +28,7 @@ export const HIRED_HAND_CHORES_EVERY_MS = 20_000;
 /** Beds Earl works in one pass, watering first, then harvesting. */
 export const HIRED_HAND_BEDS_PER_PASS = 4;
 
+export const HIRED_HAND_BLURB = "Waters your dry beds, picks the ripe ones and sows them again from your seed while you play.";
 export const HIRED_HAND_ALREADY = `${HIRED_HAND_NAME} already works for you.`;
 export const HIRED_HAND_NOT_ENOUGH_BEDS = `${HIRED_HAND_NAME} wants ${HIRED_HAND_BEDS_TO_HIRE} beds to work before he signs on.`;
 export const HIRED_HAND_CANT_PAY = `${HIRED_HAND_NAME} wants his first day's ${HIRED_HAND_DAILY_WAGE} Gold up front.`;

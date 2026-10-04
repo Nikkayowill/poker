@@ -260,6 +260,7 @@ import {
 } from "@/lib/stackacres/tractor";
 import {
   HIRED_HAND_BEDS_TO_HIRE,
+  HIRED_HAND_BLURB,
   HIRED_HAND_CHORES_EVERY_MS,
   HIRED_HAND_DAILY_WAGE,
   HIRED_HAND_NAME,
@@ -2155,7 +2156,7 @@ export function StackAcresFarm() {
         }
         if (body.action === "hire-hand" && data.hiredHand) {
           goldSound();
-          setLastCollect({ text: `${HIRED_HAND_NAME} is on the farm. He waters and picks your beds.`, nonce: Date.now() });
+          setLastCollect({ text: `${HIRED_HAND_NAME} is on the farm. He waters, picks and sows your beds.`, nonce: Date.now() });
         }
         if (body.action === "hand-chores" && data.handChores) {
           const chores = data.handChores;
@@ -5048,8 +5049,8 @@ export function StackAcresFarm() {
                           <span className="sa-hand-art" aria-hidden="true" />
                           <h3>{HIRED_HAND_NAME}</h3>
                           <p className="sa-stock-terms">
-                            Waters your dry beds and picks the ripe ones while you play. {HIRED_HAND_DAILY_WAGE} Gold a day,
-                            paid each morning. If you can&apos;t pay, he quits.
+                            {HIRED_HAND_BLURB} {HIRED_HAND_DAILY_WAGE} Gold a day, paid each morning. If you can&apos;t
+                            pay, he quits.
                           </p>
                           {hand ? (
                             <>

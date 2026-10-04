@@ -16,7 +16,7 @@ import { adjustGold, ensureProfile } from "./profile-store";
 import { __resetStackAcresHiredHandForTest, readStackAcresHiredHand } from "./stackacres-hired-hand-store";
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
 import { __resetStackAcresRevisionsForTest } from "./stackacres-revision-store";
-import { __resetStackAcresSeedStockForTest, adjustStackAcresSeedStock } from "./stackacres-seed-store";
+import { __resetStackAcresSeedStockForTest, adjustStackAcresSeedStock, readStackAcresSeedStock } from "./stackacres-seed-store";
 import {
   StackAcresRequestError,
   dismissStackAcresHand,
@@ -175,6 +175,22 @@ describe("Earl's chores", () => {
     const pass = await runStackAcresHiredHand(token, at(PASS + 10 * 60_000));
     expect(pass.handChores.harvested).toHaveLength(1);
     expect(pass.inventory.wheat ?? 0).toBeGreaterThan(before);
+  });
+
+  it("sows each bed he picks again from the player's seed, and stops when it runs out", async () => {
+    const { token, profileId, tiles } = await farm(1_000);
+    await stockStackAcres(token, { stock: "wheat", tile: tiles[0] }, T0);
+    await stockStackAcres(token, { stock: "wheat", tile: tiles[1] }, T0);
+    await hireStackAcresHand(token, T0);
+    await runStackAcresHiredHand(token, at(PASS));
+    // Leave one seed: the first bed goes back in, the second waits for more.
+    const held = (await readStackAcresSeedStock(profileId)).wheat ?? 0;
+    await adjustStackAcresSeedStock(profileId, "wheat", 1 - held);
+    const pass = await runStackAcresHiredHand(token, at(PASS + 10 * 60_000));
+    expect(pass.handChores.harvested).toHaveLength(2);
+    expect(pass.units.filter((unit) => unit.stock === "wheat")).toHaveLength(1);
+    expect((await readStackAcresSeedStock(profileId)).wheat ?? 0).toBe(0);
+    expect(await gold(token)).toBe(1_000 - HIRED_HAND_DAILY_WAGE);
   });
 
   it("takes one pass per interval", async () => {

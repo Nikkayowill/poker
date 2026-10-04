@@ -233,6 +233,8 @@ export interface StoryQuest {
    * state.ts refuses the turn-in until a valid choice is posted.
    */
   readonly rewards?: readonly StoryItemId[];
+  /** Seed handed over on turn-in, straight into the pouch. Never Gold. */
+  readonly seeds?: { readonly crop: StackAcresCrop; readonly quantity: number };
   /** Absent for almost every quest. See `QuestRequirement`. */
   readonly requires?: readonly QuestRequirement[];
 }
@@ -280,6 +282,7 @@ export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>
       title: "First Furrows",
       objectives: [{ kind: "water", target: 3 }],
       turnInLabel: "Show him the beds",
+      seeds: { crop: "wheat", quantity: 12 },
     },
     {
       id: "ray.q2",

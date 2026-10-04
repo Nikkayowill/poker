@@ -1722,6 +1722,8 @@ export type StackAcresActionResult = StackAcresView & {
     traveler: TravelerId;
     outcome: "met" | "already-met" | "advanced" | "completed" | "reward-required" | "quest-locked";
     granted: readonly StoryItemId[];
+    /** Seed the quest handed over, if it hands any. */
+    seeds?: { crop: StackAcresCrop; quantity: number };
   };
 };
 
@@ -7146,9 +7148,19 @@ export async function turnInStackAcresTravelerQuest(
       });
     }
     if (written === "ok") {
+      // After the version-guarded write, so it lands once per turn-in. Seed is not
+      // money: a failed grant is logged rather than unwinding a quest already handed in.
+      let seeds: { crop: StackAcresCrop; quantity: number } | undefined;
+      if (quest.seeds) {
+        const given = await adjustStackAcresSeedStock(profile.id, quest.seeds.crop, quest.seeds.quantity).catch((error: unknown) => {
+          console.error("stackacres.quest_seeds_failed", { profileId: profile.id, quest: quest.id, error });
+          return null;
+        });
+        if (given !== null) seeds = { ...quest.seeds };
+      }
       return {
         ...(await view(profile, now)),
-        storyResult: { traveler, outcome: result.outcome, granted: result.granted },
+        storyResult: { traveler, outcome: result.outcome, granted: result.granted, ...(seeds ? { seeds } : {}) },
       };
     }
   }

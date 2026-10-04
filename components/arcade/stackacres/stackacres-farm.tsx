@@ -670,6 +670,8 @@ interface StackAcresResponse {
     traveler: TravelerId;
     outcome: "met" | "already-met" | "advanced" | "completed" | "reward-required";
     granted: readonly string[];
+    /** Seed the quest handed over, straight into the pouch. */
+    seeds?: { crop: StackAcresCrop; quantity: number };
   };
 }
 
@@ -2298,9 +2300,13 @@ export function StackAcresFarm() {
           // "completed" outcome. Both can be present at once on a line's
           // final quest that also declares its own `rewards`.
           const granted = data.storyResult.granted.filter(isStoryItemId).map((id) => STORY_ITEM_CATALOGUE[id]);
-          if (granted.length > 0) {
-            const text = granted.map((item) => `${item.icon} ${item.label}`).join(", ");
-            setLastCollect({ text: `${TRAVELER_CATALOGUE[data.storyResult.traveler].name} leaves you ${text}`, nonce: Date.now() });
+          const seeds = data.storyResult.seeds;
+          const gifts = [
+            ...granted.map((item) => `${item.icon} ${item.label}`),
+            ...(seeds ? [`${seeds.quantity} ${STACKACRES_CATALOGUE[seeds.crop].label} seed`] : []),
+          ];
+          if (gifts.length > 0) {
+            setLastCollect({ text: `${TRAVELER_CATALOGUE[data.storyResult.traveler].name} gives you ${gifts.join(", ")}`, nonce: Date.now() });
           }
         }
         return { ok: true, reward: data.contractReward, groceryPaid: data.groceryPaid, shipped: data.shipped };

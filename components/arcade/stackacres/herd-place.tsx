@@ -33,6 +33,8 @@ export interface HerdPlaceProps {
   active: boolean;
   units: readonly (HerdUnit & { id: string })[];
   dogs: readonly GuardDog[];
+  /** Gold on hand, so the Dog key only shows once a dog is something the farm can buy. */
+  gold: number;
   act: (action: Action) => Promise<ContractActionResult>;
 }
 
@@ -60,7 +62,7 @@ function noun(unit: HerdUnit): string {
   return "animal";
 }
 
-export function useHerdPlace({ active, units, dogs, act }: HerdPlaceProps): HerdPlace {
+export function useHerdPlace({ active, units, dogs, gold, act }: HerdPlaceProps): HerdPlace {
   const [mode, setMode] = useState<Mode>("closed");
   /** The one just lifted (or the dog about to be bought), so the next tap sets that down and not another. */
   const [carrying, setCarrying] = useState<Carrying | null>(null);
@@ -130,7 +132,8 @@ export function useHerdPlace({ active, units, dogs, act }: HerdPlaceProps): Herd
 
   const inHand = carrying ?? (waiting[0] ? { kind: "animal" as const, id: waiting[0].id } : null);
   const inHandUnit = inHand?.kind === "animal" ? herd.find((unit) => unit.id === inHand.id) : undefined;
-  const canBuyDog = dogs.length < GUARD_DOG_CAP;
+  // Out of reach, the key was only a 20,000 Gold price sitting beside a first pig.
+  const canBuyDog = dogs.length < GUARD_DOG_CAP && gold >= GUARD_DOG_GOLD;
 
   let say: string;
   if (inHand?.kind === "new-dog") say = `Tap open grass to set your dog down. It keeps animals within ${GUARD_DOG_RANGE} squares home at night.`;

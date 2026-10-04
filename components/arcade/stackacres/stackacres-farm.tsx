@@ -2826,7 +2826,7 @@ export function StackAcresFarm() {
     act,
     farmerTile,
   });
-  const herdPlace = useHerdPlace({ active: onHomesteadMap, units: liveUnits, dogs: guardDogs, act });
+  const herdPlace = useHerdPlace({ active: onHomesteadMap, units: liveUnits, dogs: guardDogs, gold, act });
   const openHerd = herdPlace.open;
   const acreDeed = useAcreDeed({
     active: onHomesteadMap,
@@ -4525,7 +4525,7 @@ export function StackAcresFarm() {
               earns nothing. It only appears when there is something to bring
               in -- a permanently-visible disabled key on a canvas is chrome a
               player learns to stop reading. */}
-          {carrying > 0 && (
+          {carrying > 0 && onHomesteadMap && (
             <button
               type="button"
               className="sa-harvest-all"
@@ -4534,7 +4534,7 @@ export function StackAcresFarm() {
             >
               <StackAcresIcon name="ico-harvest" size={18} />
               <span>
-                Harvest {carrying} {carrying === 1 ? "field" : "fields"}
+                Bring in {carrying}
               </span>
             </button>
           )}
@@ -4591,7 +4591,7 @@ export function StackAcresFarm() {
                       void act({ action: "buy-seed", crop, quantity });
                     }}
                   />
-                  <p className="sa-sheet-note">{held} in the barn</p>
+                  <p className="sa-sheet-note">{held} in your pouch</p>
                 </div>
               );
             })}

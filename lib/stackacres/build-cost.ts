@@ -37,7 +37,7 @@ const PLACE: Record<MachineKind, BuildPlace> = {
 
 /** Where a material comes from, in the words a player can act on. */
 const SOURCE: Partial<Record<MachineItemId, string>> = {
-  wood: "Chop the trees around the farm",
+  wood: "Chop the trees by the workshop and the house",
   stone: "Break the boulders in the Crop Fields",
   metal: "Smelt Iron Ore at the Smelter",
 };

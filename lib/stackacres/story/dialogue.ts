@@ -117,7 +117,7 @@ const SCRIPTS: Readonly<Record<TravelerId, TravelerScript>> = {
       {
         progress:
           "Wheat's only wheat until you grind it. Put up a feed grinder in the workshop and run a batch through. You'll want timber off those trees first.",
-        done: "Flour. That's the whole trick of this place: nothing leaves here as the thing it grew as.",
+        done: "Flour. Some weeks it pays to grind it, some weeks the elevator pays better for the grain. You'll learn which.",
       },
       {
         progress: "Now let it grow. Ten of anything, doesn't matter what. A farm is patience with a fence around it.",

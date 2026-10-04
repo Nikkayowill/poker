@@ -92,7 +92,7 @@ test("the planner names the Mill, then advances to the Oven once the Mill is up"
   await grantWood(context, profileId, 15);
   await enterFarm(page);
   await expect(panel.getByRole("heading", { name: "Build the Feed Grinder" })).toBeVisible();
-  await expect(panel).toContainText("All done.");
+  await expect(panel).toContainText("You have everything.");
 
   // The button goes to the room the Mill actually goes up in.
   await panel.getByRole("button", { name: "Open Workshop" }).click();

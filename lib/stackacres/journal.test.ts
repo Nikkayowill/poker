@@ -270,7 +270,7 @@ describe("the one line", () => {
   // keeps the rest. A one-sentence cue is its own short form.
   it("gives the chip the first sentence and the sheet the whole line", () => {
     const gather = journalView(farm()).now;
-    expect(gather.line).toBe("The Feed Grinder still wants 15 more Wood. Chop the trees around the farm.");
+    expect(gather.line).toBe("The Feed Grinder still wants 15 more Wood. Chop the trees by the workshop and the house.");
     expect(gather.short).toBe("The Feed Grinder still wants 15 more Wood.");
     const build = journalView(farm({ gold: 200, inventory: holding("wood", 15) })).now;
     expect(build.short).toBe(build.line);

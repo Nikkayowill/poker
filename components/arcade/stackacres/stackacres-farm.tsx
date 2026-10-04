@@ -4035,16 +4035,23 @@ export function StackAcresFarm() {
   // Earl works while the farm is open and on screen: every so often the server
   // is asked to pay his wage if a new day is owed and let him take a pass at the
   // beds. It decides everything; a call too soon after the last does nothing.
+  // `act` is a new function on most renders, and every answer renders, so the
+  // timer reads it through a ref. Depending on it directly restarted the timer
+  // and asked again on every answer, about twice a second.
   const handWorking = hand !== null && hasStarted && bootPhase === "hidden";
+  const actForHand = useRef(act);
+  useEffect(() => {
+    actForHand.current = act;
+  }, [act]);
   useEffect(() => {
     if (!handWorking) return;
     const ask = () => {
-      if (document.visibilityState === "visible") void act({ action: "hand-chores" });
+      if (document.visibilityState === "visible") void actForHand.current({ action: "hand-chores" });
     };
     ask();
     const timer = window.setInterval(ask, HIRED_HAND_CHORES_EVERY_MS);
     return () => window.clearInterval(timer);
-  }, [handWorking, act]);
+  }, [handWorking]);
 
   const upkeepAskedFor = useRef<string | null>(null);
   const canPayUpkeep = hasStarted && bootPhase === "hidden" && upkeep.due > 0 && gold > 0;

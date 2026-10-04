@@ -99,6 +99,12 @@ test("hire Earl at Ray's, see him on the farm, and watch him water the seed", as
     const card = sheet.getByTestId("sa-hire-hand");
     await card.scrollIntoViewIfNeeded();
     await expect(card).toBeVisible();
+    // The page asks for his chores on a timer. Counted from the hire, so a timer that
+    // restarts on every answer (it once asked about twice a second) fails below.
+    let choresAsked = 0;
+    page.on("request", (request) => {
+      if (request.url().includes("/api/stackacres/actions") && (request.postData() ?? "").includes("hand-chores")) choresAsked += 1;
+    });
     const hired = page.waitForResponse(
       (response) => response.url().includes("/api/stackacres/actions") && (response.request().postData() ?? "").includes("hire-hand"),
     );
@@ -131,6 +137,8 @@ test("hire Earl at Ray's, see him on the farm, and watch him water the seed", as
       { timeout: 5_000 },
     );
     await page.screenshot({ path: test.info().outputPath("earl-at-work.png") });
+    // One ask when he starts, then one every 20 seconds while the test waits for his first pass.
+    expect(choresAsked).toBeLessThanOrEqual(5);
   } finally {
     await farmerContext.close();
     await adminContext.close();

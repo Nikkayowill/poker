@@ -96,7 +96,7 @@ export function TownBuyerSheet({
           )}
           {saleBarn && <SaleBarnPanel {...saleBarn} isPending={isPending} onNote={setNote} />}
           {takes.length > 0 && held.length === 0 && (
-            <p className="sa-stock-terms">You have nothing {def.name} buys yet.</p>
+            <p className="sa-stock-terms">Nothing on hand that {def.name} buys.</p>
           )}
           {held.length > 0 && (
             <div className="sa-stock-cards">

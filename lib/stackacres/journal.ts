@@ -555,8 +555,8 @@ function candidateCues(input: JournalInput, chapters: readonly JournalChapter[])
   if (dry > 0) {
     cues.push(
       input.water !== undefined && input.water < 1
-        ? cue("water", "Your can is empty and a bed has gone dry. Fill the can at the well.", "The well")
-        : cue("water", dry === 1 ? "A bed has gone dry, and nothing grows dry." : `${dry} beds have gone dry, and nothing grows dry.`),
+        ? cue("water", "Your can is empty and a bed needs water. Fill the can at the well.", "The well")
+        : cue("water", dry === 1 ? "A bed needs water. Nothing grows dry." : `${dry} beds need water. Nothing grows dry.`),
     );
   }
 

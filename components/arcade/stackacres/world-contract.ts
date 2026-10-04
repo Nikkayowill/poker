@@ -190,6 +190,9 @@ export interface StackAcresWorldApi {
    * alone -- see `critFlashLabel` in lib/stackacres/juice.ts.
    */
   celebrateCrit: (unitId: string, multiplier: number) => void;
+  /** Walks the farmer to a traveler, or to the door of the building they are in. Null when they
+   *  can't be reached from the map he is on. */
+  walkToPerson: (name: string) => "here" | "inside" | null;
   /** Earl walks to the beds his last chores pass worked and acts each one out (lib/stackacres/hired-hand.ts). */
   handChores: (jobs: { unitId: string; kind: "water" | "harvest" }[]) => void;
   /** The farmer acts out a water, harvest, hoe or planting drop where he stands. */

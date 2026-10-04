@@ -3868,9 +3868,16 @@ export function StackAcresFarm() {
         case "travel":
           travelToPlace(target.place);
           return;
+        case "person": {
+          const name = TRAVELER_CATALOGUE[target.who].name;
+          const where = onHomesteadMap ? world.current?.walkToPerson(target.who) ?? null : null;
+          if (where === "inside") setLastCollect({ text: `${name} is in the barn.`, nonce: Date.now() });
+          else if (where === null) setLastCollect({ text: `${name} is back on the Homestead.`, nonce: Date.now() });
+          return;
+        }
       }
     },
-    [travelToPlace],
+    [travelToPlace, onHomesteadMap],
   );
 
 

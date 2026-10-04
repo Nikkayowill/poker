@@ -4027,6 +4027,36 @@ export class TopdownScene extends Phaser.Scene {
     return { drawn: this.tractor.drawn, driving: this.tractor.driving, at: this.tractor.position };
   }
 
+  /**
+   * Walks him to someone who keeps a daily round: straight up to them when they are on this map,
+   * or to the door of the building they are in (Ray behind his counter in the barn). Arriving
+   * opens them the way a tap on them does. Null when they can't be reached from here.
+   */
+  walkToPerson(name: string): "here" | "inside" | null {
+    if (!this.booted || this.travelling || this.visitor) return null;
+    const node = this.npcSprites.get(name);
+    let goal: Point;
+    if (node?.sprite.visible) {
+      goal = { x: node.sprite.x, y: node.sprite.y + 10 };
+      this.pending = { kind: "npc", name, anchor: goal, face: { x: node.sprite.x, y: node.sprite.y } };
+    } else {
+      const pose = this.walkers.pose(name, this.routineDay(), this.routineHour(), this.reducedMotion);
+      const door = pose ? this.area.exits.find((exit) => exit.to === pose.area) : undefined;
+      if (!door) return null;
+      goal = { x: door.x + door.w / 2, y: door.y + door.h / 2 };
+      this.pending = null;
+    }
+    this.homeCamera();
+    this.path = findPath(this.grid, this.pos, goal);
+    if (this.path.length === 0) {
+      if (this.pending) this.arrive();
+      return node?.sprite.visible ? "here" : "inside";
+    }
+    this.callbacks.onViewMoved();
+    this.drawMarker(goal);
+    return node?.sprite.visible ? "here" : "inside";
+  }
+
   /** e2e only: whether Earl is drawn here, where he stands, and whether he has beds to work. */
   handState(): { drawn: boolean; busy: boolean; at: Point } {
     return { drawn: this.hand.drawn, busy: this.hand.busy, at: this.hand.position };

@@ -1042,8 +1042,14 @@ export function StackAcresFarm() {
     setWasNearWater(nearWater);
     if (!nearWater && belt === "rod") setBelt("hand");
   }
-  /** The crop the seed pouch sows, and whether its wheel is open. */
-  const [seed, setSeed] = useState<StackAcresCrop | null>(null);
+  /** The crop the seed pouch sows, and whether its wheel is open. Until one is
+   *  picked, or once the picked one runs out, the pouch takes the first seed
+   *  held, so a new farm with only Ray's wheat can sow without opening the wheel. */
+  const [pickedSeed, setSeed] = useState<StackAcresCrop | null>(null);
+  const seed =
+    pickedSeed && (seedStock[pickedSeed] ?? 0) > 0
+      ? pickedSeed
+      : STACKACRES_CROPS.find((crop) => (seedStock[crop] ?? 0) > 0) ?? pickedSeed;
   const [seedWheelOpen, setSeedWheelOpen] = useState(false);
   /** The one bed the hoe has asked about lifting. Cleared by anything else the player does. */
   const [armedLift, setArmedLift] = useState<{ tx: number; ty: number } | null>(null);
@@ -3531,6 +3537,8 @@ export function StackAcresFarm() {
    */
   const onUseSquare = useCallback(
     (square: UseSquare) => {
+      // Driving, a tap on the ground is where to drive, not a bed to work.
+      if (square.bare && (driving || (belt !== "hoe" && belt !== "seeds" && belt !== "fence"))) return;
       const unit = square.unitId ? liveUnits.find((candidate) => candidate.id === square.unitId) ?? null : null;
       const targetFor = (tile: { tx: number; ty: number } | null, on: StackAcresUnitSnapshot | null): BeltTarget => ({
         unit: on,

@@ -2050,6 +2050,11 @@ export class TopdownScene extends Phaser.Scene {
       this.callbacks.onViewMoved();
       return;
     }
+    // Ground that can't take a bed is still somewhere to walk. With a bed tool held the
+    // tap was meant to dig or sow there, so the shell is told and says why it can't.
+    if (target.kind === "nothing" && this.areaName === "homestead") {
+      this.callbacks.onUseSquare({ tile: null, unitId: null, at: this.mapToCss(map), stroke: false, bare: true });
+    }
     const goal =
       target.kind === "nothing"
         ? map

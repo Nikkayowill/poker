@@ -86,6 +86,9 @@ export interface UseSquare {
   stroke: boolean;
   /** Which way he is facing, which is the way a tractor row runs (lib/stackacres/tractor.ts). */
   facing?: Facing;
+  /** A tap on Homestead ground that can't take a bed. He just walks there; the shell only
+   *  says why when the tool held works beds (the hoe, the seed pouch, the fence). */
+  bare?: boolean;
 }
 
 /**

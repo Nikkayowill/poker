@@ -344,26 +344,6 @@
   line-height: 1;
 }
 
-.pv-cards { position: relative; width: 30px; height: 28px; }
-.pv-card {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 17px;
-  height: 23px;
-  border-radius: 2px;
-  font-size: 7px;
-  font-weight: 700;
-}
-.pv-card-back {
-  top: 1px;
-  left: 0;
-  background: linear-gradient(160deg, var(--neon-purple-deep), var(--neon-purple));
-  box-shadow: 0 0 0 1px rgba(255, 210, 63, .3);
-}
-.pv-card-face { top: 5px; left: 10px; background: var(--neon-chalk); box-shadow: var(--elevation-1); }
-
 .pv-trivia { display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .pv-trivia-mark { color: var(--neon-yellow); font: 700 16px Georgia, serif; line-height: 1; }
 .pv-trivia-bar { width: 26px; height: 4px; border-radius: 2px; }
@@ -372,12 +352,6 @@
 .pv-peg { width: 6px; height: 6px; border-radius: 50%; background: var(--brand-surface-2); }
 .pv-peg.pv-tone-gold { box-shadow: 0 0 4px var(--neon-yellow); }
 .pv-peg.pv-tone-purple-bright { box-shadow: 0 0 4px var(--neon-purple-bright); }
-
-/* .floor-row is a dense list row -- the tiled/card previews above are sized
-   for a card's own breathing room, so shrink them to fit the 34px swatch
-   the row gives them (only Blackjack uses .floor-row today). */
-.floor-row .pv-cards { width: 26px; height: 24px; }
-.floor-row .pv-card { width: 14px; height: 19px; }
 
 .floor-staked-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
 

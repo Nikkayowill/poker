@@ -1128,15 +1128,6 @@
  * exactly why a drag was worth building here rather than sizing another
  * fixed arc.
  */
-.sa-gel {
-  position: absolute;
-  inset: 0;
-  z-index: 4;
-  pointer-events: none;
-}
-
-.sa-gel.is-dragging .sa-gel-arrow { opacity: .35; }
-.sa-gel.is-settling .sa-gel-arrow { opacity: 0; }
 
 /* The scrollable strip inside the row above -- split out from `.sa-gel-row`
    so the outer padding/edge stay put while only this part scrolls. Capped to
@@ -1409,111 +1400,6 @@
 .sa-monk-dialogue-no:hover { filter: brightness(1.05); }
 
 .sa-monk-dialogue-yes:disabled { opacity: .6; cursor: default; }
-
-/* ---- the fence-upgrade popup ------------------------------------------
- * Same screen-pinned real-DOM shape as .sa-monk-dialogue above (see
- * stackacres-fence-upgrade-popup.tsx's own header) -- structure and
- * interaction copied one for one, only the palette differs (wood tones,
- * to read as "this is about the fence line"). */
-
-.sa-fence-upgrade {
-  position: absolute;
-  z-index: 5;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-}
-
-.sa-fence-upgrade-pin {
-  position: absolute;
-  left: -6px;
-  top: -6px;
-  width: 12px;
-  height: 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-wood, #a9784f);
-  box-shadow: var(--sa-drop);
-}
-
-.sa-fence-upgrade-card {
-  position: absolute;
-  left: 16px;
-  top: -18px;
-  width: 220px;
-  padding: 12px 14px 14px;
-  border: 2px solid var(--sa-paint-line);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-paint-fill-open);
-  box-shadow: var(--sa-paint-rim), var(--sa-drop-lg);
-  color: var(--sa-ink);
-  pointer-events: auto;
-  animation: sa-radial-in 160ms var(--sa-bounce) backwards;
-}
-
-.sa-fence-upgrade-close {
-  position: absolute;
-  right: 8px;
-  top: 6px;
-  border: 0;
-  background: none;
-  font-size: 16px;
-  line-height: 1;
-  color: var(--sa-ink);
-  cursor: pointer;
-  opacity: .6;
-}
-
-.sa-fence-upgrade-close:hover { opacity: 1; }
-
-.sa-fence-upgrade-line {
-  margin: 0 18px 6px 0;
-  font-size: 13px;
-  font-weight: 800;
-  line-height: 1.35;
-}
-
-.sa-fence-upgrade-durability {
-  margin: 0 0 10px;
-  font-size: 12px;
-  color: var(--sa-ink-soft);
-}
-
-.sa-fence-upgrade-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.sa-fence-upgrade-yes,
-.sa-fence-upgrade-no {
-  flex: 1;
-  min-height: var(--sa-tap);
-  border: 2px solid var(--sa-paint-line);
-  border-radius: var(--sa-r-chip);
-  font-size: 12.5px;
-  font-weight: 800;
-  cursor: pointer;
-  transition:
-    transform var(--duration-fast) var(--sa-ease-out),
-    box-shadow var(--duration-fast) var(--sa-ease-out);
-}
-
-.sa-fence-upgrade-yes {
-  background: var(--sa-tint-corn);
-  box-shadow: var(--sa-paint-rim-lit);
-  color: var(--sa-ink);
-}
-
-.sa-fence-upgrade-no {
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: var(--sa-paint-rim-sm);
-  color: var(--sa-ink);
-}
-
-.sa-fence-upgrade-yes:hover:not(:disabled),
-.sa-fence-upgrade-no:hover { filter: brightness(1.05); }
-
-.sa-fence-upgrade-yes:disabled { opacity: .6; cursor: default; }
 
 /* ---- the NPC friendship gift dialogue ---------------------------------
  * Same screen-anchored speech-bubble posture as .sa-monk-dialogue above --
@@ -3400,54 +3286,6 @@
   color: var(--sa-lit-leaf);
 }
 
-.sa-clear-cta { margin-top: 16px; }
-
-/* The map, folded into the town board now that the places list is gone. A
- * plain wrapped list of small tags, since it is a reference for anyone who
- * wants it and not chrome that sits over the map. */
-.sa-board-map { margin: 14px 0 0; }
-
-.sa-board-map-kicker {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0 0 8px;
-  color: var(--sa-ink-soft);
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.sa-board-map-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.sa-board-map-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 34px;
-  padding: 6px 12px;
-  border: 2px solid var(--sa-paint-line-soft);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-  color: var(--sa-ink);
-  font-size: 12.5px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.sa-board-map-item:hover { filter: brightness(1.05); }
-
-.sa-board-map-item.is-wild { color: var(--sa-ink-soft); }
-
 .sa-contracts-standing {
   display: flex;
   align-items: center;
@@ -3925,7 +3763,6 @@
    portrait it is one column in that same order. */
 .sa-workshop-col { min-width: 0; }
 
-.sa-workshop-hint,
 .sa-workshop-empty,
 .sa-workshop-job {
   margin: 6px 0 0;
@@ -3976,14 +3813,6 @@
   font-size: 10px;
   font-weight: 600;
   line-height: 1.2;
-}
-
-.sa-workshop-shelf .sa-workshop-sell {
-  flex: none;
-  margin-top: 0;
-  min-height: 36px;
-  padding: 4px 12px;
-  font-size: 13.5px;
 }
 
 /* A machine card: unbuilt reads plain, running gets a leaf ring,
@@ -4097,7 +3926,6 @@
   .sa-workshop .sa-sheet-head { padding-top: 6px; padding-bottom: 6px; }
   .sa-workshop .sa-sheet-note { margin-top: 4px; font-size: 13px; line-height: 1.3; }
   .sa-workshop .sa-group-label { margin-top: 10px; }
-  .sa-workshop-hint,
   .sa-workshop-empty,
   .sa-workshop-job { font-size: 12.5px; line-height: 1.3; }
   .sa-workshop .sa-cta { min-height: 42px; padding: 6px 14px; font-size: 14.5px; }
@@ -4140,19 +3968,10 @@
      spring in, and the component throws no motes at all (it checks the same
      query in JS and counts straight to the total). */
   .sa-contract-ticker { animation: none; }
-  /* The ring still appears at once; it just does not spring in. Keeping the
-     transform means the buttons stay centred on their own arc points. */
-  .sa-radial-btn { animation: none; }
-  /* The gel dock's tokens, shell and circle hold still too. A drag still
-     works; only the idle bob, pulse, pop-in, marching arrow and drop burst
-     go. */
+  /* The gel dock's tokens hold still too. */
   .sa-gel-row,
   .sa-gel-token,
-  .sa-gel-token .sa-ico,
-  .sa-gel-target,
-  .sa-gel-arrow-line,
-  .sa-gel-splash,
-  .sa-gel-burst i { animation: none; }
+  .sa-gel-token .sa-ico { animation: none; }
 }
 
 /* ---- the drag-and-drop tools ------------------------------------------
@@ -4211,9 +4030,6 @@
   .sa-contract-head h3 { font-size: 15px; }
   .sa-contract-req { margin-top: 8px; }
 
-  .sa-ground-tool { min-width: 44px; min-height: 44px; }
-  .sa-ground-tool .sa-ico { width: 20px; height: 20px; }
-
   /* The drawer is the tallest thing on a short landscape phone. It gives back
      padding rather than width: a narrower drawer wraps every buy button onto
      two lines, which costs more height than the padding saved. */
@@ -4223,13 +4039,6 @@
 
   .sa-sheet { max-height: 92dvh; }
   .sa-sheet-head h2 { font-size: 19px; }
-
-  /* The ring is dropped under a thumb on the shortest screen there is, so it
-     tightens rather than sprawling off the top of the map. It keeps its
-     travel and its outline, same rule as every other block in this block. */
-  .sa-radial-btn { width: 72px; min-height: 60px; padding: 5px 4px; }
-  .sa-radial-name { font-size: 11px; }
-  .sa-radial-cost { font-size: 11px; }
 }
 
 /* Chapter 1: the energy tag beside Gold, and Ray's Kitchen tab. */
@@ -4405,18 +4214,6 @@
   max-width: 560px;
 }
 
-.sa-kitchen-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.sa-kitchen-buttons .sa-cta {
-  flex: 1 1 180px;
-  margin-top: 0;
-}
-
 .sa-kitchen-energy {
   display: flex;
   align-items: center;
@@ -4480,24 +4277,6 @@
 .sa-kitchen-cellar-line {
   margin: 0;
   font-size: 13px;
-}
-
-/* The Farm Kitchen's standing-order picker. */
-.sa-kitchen-order {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 0;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.sa-kitchen-order select {
-  flex: 1;
-  min-width: 0;
-  min-height: 40px;
-  font: inherit;
-  font-weight: 600;
 }
 
 /* A kitchen building's card names the seeds it opens. */
@@ -5304,9 +5083,6 @@
 /* ---- the boot screen ----------------------------------------------------- */
 .sa-loading { background: var(--sa-lake); }
 .sa-loading-logo { filter: drop-shadow(0 4px 0 rgba(58, 21, 17, .35)); }
-
-/* Pixel logos are drawn at 1x; keep them crisp at any size. */
-.sa-px-logo { image-rendering: pixelated; }
 
 @media (orientation: landscape) and (max-height: 520px) {
   .sa-theme .floor-back,

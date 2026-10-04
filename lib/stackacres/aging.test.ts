@@ -2,21 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   AGING_TIERS,
   CELLAR_AGING_TIERS,
-  CELLAR_CAPACITY,
-  cellarBaseGoldValue,
-  cellarSealQuantity,
-  VAT_INPUT_QUANTITY,
   agedGoldValue,
-  baseGoldValueForSeal,
   firstAgingTier,
   msUntilAgingTier,
   nextAgingTier,
   toVatContainer,
   vatTierForElapsed,
-  type AgingManifest,
 } from "./aging";
-import { recipeRawGoldValue } from "./recipes";
-import { machineItemSellPrice } from "./machine-items";
 
 describe("AGING_TIERS", () => {
   it("is three rungs of 1.5x/2x/3x, the same ladder as the Cellar", () => {
@@ -83,14 +75,6 @@ describe("agedGoldValue", () => {
   });
 });
 
-describe("baseGoldValueForSeal", () => {
-  it("is VAT_INPUT_QUANTITY times what one Cheese costs in forgone Milk Gold", () => {
-    const perUnit = recipeRawGoldValue("cheese");
-    expect(perUnit).not.toBeNull();
-    expect(baseGoldValueForSeal()).toBe(Math.round((perUnit as number) * VAT_INPUT_QUANTITY));
-  });
-});
-
 describe("toVatContainer", () => {
   const machine = { id: "vat-1" };
 
@@ -102,41 +86,6 @@ describe("toVatContainer", () => {
     expect(snap.maxGoldValue).toBe(0);
   });
 
-  it("is aging and uncollectible before the first tier clears", () => {
-    const now = new Date("2026-09-06T12:00:00.000Z");
-    const manifest: AgingManifest = {
-      item: "cheese",
-      quantity: VAT_INPUT_QUANTITY,
-      baseGoldValue: 1000,
-      sealedAt: now.toISOString(),
-      readyAt: new Date(now.getTime() + AGING_TIERS[0].durationMs).toISOString(),
-    };
-    const snap = toVatContainer(machine, manifest, now);
-    expect(snap.status).toBe("aging");
-    expect(snap.currentTier).toBeNull();
-    expect(snap.nextTier?.tier).toBe(1);
-    expect(snap.collectibleGoldValue).toBe(0);
-    // The ceiling value is always known, even while still aging -- it is what
-    // the "wait and this is worth N" line in the UI reads off of.
-    expect(snap.maxGoldValue).toBe(agedGoldValue(1000, AGING_TIERS[2]));
-  });
-
-  it("is collectible at exactly the value the reached tier pays", () => {
-    const sealedAt = new Date("2026-09-06T12:00:00.000Z");
-    const now = new Date(sealedAt.getTime() + AGING_TIERS[1].durationMs);
-    const manifest: AgingManifest = {
-      item: "cheese",
-      quantity: VAT_INPUT_QUANTITY,
-      baseGoldValue: 1000,
-      sealedAt: sealedAt.toISOString(),
-      readyAt: new Date(sealedAt.getTime() + AGING_TIERS[0].durationMs).toISOString(),
-    };
-    const snap = toVatContainer(machine, manifest, now);
-    expect(snap.status).toBe("collectible");
-    expect(snap.currentTier?.tier).toBe(2);
-    expect(snap.nextTier?.tier).toBe(3);
-    expect(snap.collectibleGoldValue).toBe(agedGoldValue(1000, AGING_TIERS[1]));
-  });
 });
 
 describe("the Preserves Cellar ladder", () => {
@@ -148,13 +97,6 @@ describe("the Preserves Cellar ladder", () => {
     expect(vatTierForElapsed(4 * hour, CELLAR_AGING_TIERS)?.label).toBe("Well-Aged");
     expect(vatTierForElapsed(48 * hour, CELLAR_AGING_TIERS)?.label).toBe("Cellar-Aged");
     expect(CELLAR_AGING_TIERS[0].multiplier).toBeGreaterThan(1);
-  });
-
-  it("stores everything on the shelf up to capacity, priced off today's sell price", () => {
-    expect(cellarSealQuantity(0)).toBe(0);
-    expect(cellarSealQuantity(5)).toBe(5);
-    expect(cellarSealQuantity(40)).toBe(CELLAR_CAPACITY);
-    expect(cellarBaseGoldValue("pickles", 12)).toBe(12 * machineItemSellPrice("pickles"));
   });
 
   it("shows the cellar's own ladder in its container", () => {

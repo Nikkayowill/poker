@@ -53,4 +53,3 @@ export type StoryEvent =
   | { readonly kind: "stone-mined"; readonly count: number }
   | { readonly kind: "forage-picked"; readonly count: number };
 
-export type StoryEventKind = StoryEvent["kind"];

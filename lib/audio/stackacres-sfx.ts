@@ -131,16 +131,6 @@ export function expandSound() {
   window.setTimeout(() => playFarmVoice("post-hammer", 0.6), 260);
 }
 
-/** Retiring a permanent animal. A gate shutting, once, with nothing after it. */
-export function retireSound() {
-  playFarmVoice("crate-down", 0.6);
-}
-
-/** The scythe cutting standing grass. Fired per stroke, from the scene. */
-export function scytheSound() {
-  playFarmSample("whoosh", 0.7);
-}
-
 /** Travelling to a district via the signpost. */
 export function travelSound() {
   playFarmVoice("travel-steps", 0.7);

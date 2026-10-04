@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CHAPTERS, chapterFinishedBy, chapterViews, currentChapter, limitingNeed, nextStep, stepReadiness } from "./chapters";
+import { CHAPTERS, chapterFinishedBy, chapterViews, currentChapter, nextStep, } from "./chapters";
 import { MACHINE_CATALOGUE, isRetiredMachine, type MachineKind } from "./machines";
 
 const built = (...kinds: MachineKind[]) => new Set(kinds);
@@ -63,22 +63,6 @@ describe("what a building still needs", () => {
     ]);
   });
 
-  it("names the need furthest from done", () => {
-    const [mill] = chapterViews(built(), stock(5000, { wood: 4 }))[0].steps;
-    expect(limitingNeed(mill).label).toBe("Wood");
-    const [poor] = chapterViews(built(), stock(50, { wood: 15 }))[0].steps;
-    expect(limitingNeed(poor).label).toBe("Gold");
-  });
-
-  it("reads 1 when the player can afford it", () => {
-    const [mill] = chapterViews(built(), stock(200, { wood: 15 }))[0].steps;
-    expect(stepReadiness(mill)).toBe(1);
-  });
-
-  it("reads a fraction while they are short", () => {
-    const [oven] = chapterViews(built("mill"), stock(250))[0].steps.slice(1);
-    expect(stepReadiness(oven)).toBeCloseTo(0.5);
-  });
 });
 
 describe("chapterFinishedBy", () => {

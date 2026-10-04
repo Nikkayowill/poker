@@ -11,8 +11,6 @@ import {
   blockudokuView,
   placeBlockudokuPiece,
   resignBlockudokuRound,
-  blockudokuShapeById,
-  isBlockudokuPieceSet,
   startBlockudokuRound,
   type BlockudokuPieceSet,
   type BlockudokuRound,
@@ -268,16 +266,7 @@ describe("piece sets", () => {
       expect(Math.min(...entry.cells.map(([row]) => row))).toBe(0);
       expect(Math.min(...entry.cells.map(([, col]) => col))).toBe(0);
       expect(new Set(entry.cells.map(([row, col]) => `${row},${col}`)).size).toBe(entry.cells.length);
-      expect(blockudokuShapeById(entry.id)).toBe(entry);
     }
-    expect(blockudokuShapeById("nope")).toBeNull();
-  });
-
-  it("recognises only the known set names", () => {
-    expect(isBlockudokuPieceSet("classic")).toBe(true);
-    expect(isBlockudokuPieceSet("expert")).toBe(true);
-    expect(isBlockudokuPieceSet("master")).toBe(true);
-    expect(isBlockudokuPieceSet("hardcore")).toBe(false);
   });
 });
 
@@ -323,7 +312,7 @@ describe("dealing by piece set", () => {
 
   it("jams on a board with no room for a 3x3 block", () => {
     // Only the middle cell of each box is filled, so nothing needing a clean 3x3 fits.
-    const round = withInventory([shape("single"), blockudokuShapeById("square-3"), null]);
+    const round = withInventory([shape("single"), BLOCKUDOKU_PIECE_SETS.expert.find((entry) => entry.id === "square-3") ?? null, null]);
     for (const box of [10, 13, 16, 37, 40, 43, 64, 67, 70]) round.board[box] = 1;
     const next = placeBlockudokuPiece(round, 0, 0, 0, NOW);
     expect(next.status).toBe("over");

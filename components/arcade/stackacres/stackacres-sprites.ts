@@ -509,13 +509,3 @@ export function onSpriteReady(cb: () => void): () => void {
   return () => waiting.delete(cb);
 }
 
-/**
- * True once every sprite anything has ASKED for has arrived -- which is what
- * a caller subscribing to `onSpriteReady` actually wants to know, since the
- * only sprites that will ever arrive now are the ones something requested.
- * False before the first request, so a canvas that has not painted yet keeps
- * listening.
- */
-export function allSpritesReady(): boolean {
-  return requested.size > 0 && [...requested].every((n) => spriteImage(n) !== null);
-}

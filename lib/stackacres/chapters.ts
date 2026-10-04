@@ -106,17 +106,6 @@ export function nextStep(view: ChapterView): StepView | null {
   return view.steps.find((step) => !step.built) ?? null;
 }
 
-/** The need furthest from done, which is what is holding the building back. */
-export function limitingNeed(step: StepView): Need {
-  return step.needs.reduce((worst, need) => (need.have / need.need < worst.have / worst.need ? need : worst));
-}
-
-/** 0..1: how close the player is to affording a building. */
-export function stepReadiness(step: StepView): number {
-  const need = limitingNeed(step);
-  return need.need === 0 ? 1 : Math.min(1, need.have / need.need);
-}
-
 /** The chapter that building `kind` just finished, or null. `built` includes `kind`. */
 export function chapterFinishedBy(kind: MachineKind, built: ReadonlySet<MachineKind>): Chapter | null {
   return CHAPTERS.find((chapter) => chapter.steps.includes(kind) && chapter.steps.every((step) => built.has(step))) ?? null;

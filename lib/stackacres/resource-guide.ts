@@ -66,9 +66,6 @@ export type ResourceUseKind =
   | "soil"
   | "sell";
 
-/** Kinds that spend the item as a cost someone has to pay before something else happens. */
-const GATING_KINDS: readonly ResourceUseKind[] = ["recipe", "build", "axe", "empire", "contract", "vat", "quest"];
-
 export interface ResourceUse {
   kind: ResourceUseKind;
   label: string;
@@ -79,10 +76,6 @@ export interface ResourceUse {
   machine?: MachineKind;
   /** The recipe behind a recipe use, for the unlock check. */
   recipe?: RecipeId;
-}
-
-export function isGatingUse(use: ResourceUse): boolean {
-  return GATING_KINDS.includes(use.kind);
 }
 
 export interface ResourceSource {
@@ -361,7 +354,3 @@ export function resourceGuideEntry(item: GuideItemId): ResourceGuideEntry {
   };
 }
 
-/** The uses that are not just "sell it", in the order the guide lists them. */
-export function nonSellUses(item: GuideItemId): ResourceUse[] {
-  return resourceUses(item).filter((use) => use.kind !== "sell");
-}

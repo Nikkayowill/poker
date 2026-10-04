@@ -252,8 +252,6 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
   },
 };
 
-export const ZONE_LIST: readonly ZoneDef[] = ZONE_IDS.map((id) => STACKACRES_ZONES[id]);
-
 /** Districts other than the farmstead: the three this pass adds, the ones
  *  that grow their own scenery and fence their own grow area. */
 export const OUTER_ZONE_IDS: readonly ZoneId[] = ZONE_IDS.filter((id) => id !== "farmstead");
@@ -335,27 +333,6 @@ export const zoneToolPolicy: Readonly<Record<StackAcresTool, readonly ZoneId[]>>
   feed: ["farmstead", ...PEN_ZONE_IDS],
   harvest: ["farmstead", ...PEN_ZONE_IDS],
 };
-
-export type ZoneActionCheck =
-  | { ok: true; zone: ZoneId }
-  | { ok: false; zone: ZoneId | null; reason: string };
-
-/**
- * Whether the held tool may act at this world point, and if not, why.
- *
- * The user-facing half of `zoneToolPolicy`. `reason` is written to be shown
- * verbatim -- it names the place the tool DOES work, because a refusal that
- * only says no leaves the player to go and find out where by trial.
- */
-export function isActionValidInZone(x: number, y: number, tool: StackAcresTool): ZoneActionCheck {
-  const zone = zoneAt(x, y);
-  const allowed = zoneToolPolicy[tool];
-  if (zone !== null && allowed.includes(zone)) return { ok: true, zone };
-  const homes = allowed.map((id) => STACKACRES_ZONES[id].label);
-  const where =
-    homes.length === 1 ? homes[0] : `${homes.slice(0, -1).join(", ")} and ${homes[homes.length - 1]}`;
-  return { ok: false, zone, reason: `That only works in ${where}.` };
-}
 
 /**
  * A deterministic random source. Mulberry32, the same one ./world.ts uses,

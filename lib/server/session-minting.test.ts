@@ -55,7 +55,6 @@ describe("session minting", () => {
     const readRoutes = [
       "app/api/cosmetics/route.ts",
       "app/api/leaderboard/route.ts",
-      "app/api/legal/status/route.ts",
       "app/api/stripe/tiers/route.ts",
     ];
 

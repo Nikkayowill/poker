@@ -136,7 +136,3 @@ export function rewardsBetween(fromTier: number, toTier: number): TierReward[] {
   return rewards;
 }
 
-/** Total Gold owed for climbing from one tier to another. */
-export function goldForTierUps(fromTier: number, toTier: number): number {
-  return rewardsBetween(fromTier, toTier).reduce((sum, reward) => sum + reward.gold, 0);
-}

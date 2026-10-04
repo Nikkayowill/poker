@@ -5,7 +5,6 @@ import {
   GOLD_PER_XP,
   RANK_TIERS,
   TOP_TIER,
-  goldForTierUps,
   rankProgress,
   rewardsBetween,
   tierByNumber,
@@ -115,7 +114,6 @@ describe("tier rewards", () => {
   it("pays every tier crossed, in order, when one win jumps several", () => {
     const rewards = rewardsBetween(1, 4);
     expect(rewards.map((reward) => reward.tier.id)).toEqual(["silver", "platinum", "emerald"]);
-    expect(goldForTierUps(1, 4)).toBe(RANK_TIERS[1].rewardGold + RANK_TIERS[2].rewardGold + RANK_TIERS[3].rewardGold);
   });
 
   it("pays nothing when rank stands still or falls", () => {
@@ -141,7 +139,7 @@ describe("tier rewards", () => {
     // way to print Gold that undermines what a real-money purchase is worth.
     // The cheapest route to GOAT is Easy-band wins at the minimum stake, at weight 1.
     const turnover = (RANK_TIERS[RANK_TIERS.length - 1].from / RANK_POINTS_PER_WIN) * MIN_ANTE_UP_WAGER;
-    const paid = goldForTierUps(1, TOP_TIER);
+    const paid = rewardsBetween(1, TOP_TIER).reduce((sum, reward) => sum + reward.gold, 0);
     expect(paid / turnover).toBeLessThan(0.03);
   });
 });

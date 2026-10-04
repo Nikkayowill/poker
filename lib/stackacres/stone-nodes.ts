@@ -127,20 +127,6 @@ export function applyMiningSwing(
   };
 }
 
-/** "any moment", "12m" -- how long until a broken node regrows, sharing
- *  ./tap-action.ts's own `timeLeftLabel` wording so the two never read
- *  differently for the same kind of wait. */
-export function regrowLabel(node: StoneNodeRow, nowMs: number): string {
-  if (!node.brokenAt) return "any moment";
-  const ms = Date.parse(node.brokenAt) + REGROW_MS - nowMs;
-  if (!Number.isFinite(ms) || ms <= 0) return "any moment";
-  const minutes = Math.ceil(ms / 60_000);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest > 0 ? `${hours}h ${rest}m` : `${hours}h`;
-}
-
 /** What the client needs to render one boulder: whether it can be mined right
  *  now, how many swings are left before it breaks, and (while regrowing) how
  *  far along its respawn clock is. Same shape as ./wood.ts's

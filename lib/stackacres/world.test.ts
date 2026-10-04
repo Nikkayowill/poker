@@ -21,12 +21,10 @@ import {
   powerOfTwoCeil,
   RAY_HOUSE_FOOTPRINT,
   rayHouseHitAt,
-  scrollToKeepUnderPointer,
   seedFromId,
   seededRandom,
   spawnCritter,
   stepCritter,
-  stockAllowedInZone,
   stockZone,
   stocksInZone,
 } from "./world";
@@ -44,15 +42,6 @@ describe("stock zoning", () => {
     expect(stockZone("corn")).toBe("farmstead");
     expect(stockZone("pig")).toBe("wallow");
     expect(stockZone("cattle")).toBe("oxfields");
-  });
-
-  it("agrees with itself: a stock is only allowed in its own zone", () => {
-    for (const stock of STACKACRES_STOCK) {
-      const home = stockZone(stock);
-      for (const zone of ZONE_IDS) {
-        expect(stockAllowedInZone(zone, stock)).toBe(zone === home);
-      }
-    }
   });
 
   it("names every zone's stock as the exact reverse of stockZone", () => {
@@ -208,19 +197,6 @@ describe("zoom", () => {
     expect(clampZoom(Number.NaN)).toBe(STACKACRES_ZOOM_MIN);
   });
 
-  it("keeps the world point under the finger through a zoom", () => {
-    const view = { width: 800, height: 400 };
-    const finger = { x: 600, y: 100 };
-    const world = { x: 250, y: 120 };
-    for (const zoom of [1, 2, 3.5]) {
-      const scroll = scrollToKeepUnderPointer(world, finger, view.width, view.height, zoom);
-      // Phaser: worldX = scrollX + width/2 + (screenX - width/2) / zoom.
-      const back = scroll.x + view.width / 2 + (finger.x - view.width / 2) / zoom;
-      expect(back).toBeCloseTo(world.x);
-      const backY = scroll.y + view.height / 2 + (finger.y - view.height / 2) / zoom;
-      expect(backY).toBeCloseTo(world.y);
-    }
-  });
 });
 
 describe("animals", () => {

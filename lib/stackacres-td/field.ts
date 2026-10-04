@@ -52,13 +52,6 @@ export interface MapPoint {
 /** Map pixels between a soil world point and where it is drawn: the shared grid's offset. */
 const SOIL_OFFSET = { x: SOIL_TO_MAP.tx * SOIL_TILE, y: SOIL_TO_MAP.ty * SOIL_TILE } as const;
 
-/** Map pixel of the Crop Fields' top-left corner (map tile 6, 2), on the shared grid. */
-export const FIELD_ORIGIN = {
-  x: CROP_FIELD_BEDS.x + SOIL_OFFSET.x,
-  y: CROP_FIELD_BEDS.y + SOIL_OFFSET.y,
-} as const;
-export const FIELD_SIZE = CROP_FIELD_BEDS.width;
-
 /** Homestead map pixels for the landmarks the shell anchors drags to: Hen Haven's trough and the
  *  end of the lake dock (art/stackacres-td/areas/rig/homestead.py). */
 export const HOMESTEAD_TROUGH = { x: 640, y: 464 } as const;
@@ -93,17 +86,6 @@ export function soilTileToMap(tx: number, ty: number): { x: number; y: number } 
  *  Everywhere else is road, water or a roof. */
 export function isBedSquare(tx: number, ty: number): boolean {
   return isHoeableSoilTile(tx, ty);
-}
-
-/** A Crop Fields world point, in Homestead map pixels. */
-export function fieldWorldToMap(world: WorldPoint): { x: number; y: number } {
-  return soilWorldToMap(world);
-}
-
-/** A Homestead map pixel, as a Crop Fields world point, or null when it is off the field. */
-export function fieldMapToWorld(map: { x: number; y: number }): WorldPoint | null {
-  const world = mapToSoilWorld(map);
-  return inCropField(world) ? world : null;
 }
 
 /** Where a world point the shell asks about is drawn, or null when it isn't on a playable map. */

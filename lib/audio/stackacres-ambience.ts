@@ -25,17 +25,13 @@
 import {
   ambienceCues,
   ambienceMix,
-  cueSuppressedByRain,
   livestockCue,
-  rainBedGain,
-  RAIN_INSECT_DUCK,
   riverBedGain,
   rollGapMs,
   type AmbienceBed,
   type AmbienceCue,
   type AmbienceCueName,
   type AmbienceTimeOfDay,
-  type AmbienceWeather,
 } from "@/lib/stackacres/ambience-plan";
 import { RandomWalk, noiseSource, playVoice, type SynthVoice } from "./synth-voices";
 import { respectSilentSwitch } from "./audio-session";
@@ -170,17 +166,10 @@ class Ambience {
   private sfxBus: GainNode | null = null;
   private sfxMuted = false;
   private beds = new Map<AmbienceBed, Bed>();
-  /**
-   * The rain bed, kept apart from `beds` rather than folded into
-   * `AmbienceBed`: it ramps on weather's own clock, not the tod crossfade
-   * `applyPlan` drives every entry in `beds` on. See ambience-plan.ts's
-   * `rainBedGain` for why the two must not share a ramp.
-   */
-  private rainBed: Bed | null = null;
   /** The river layer, gated on the wet sector being cleared -- see
    *  ambience-plan.ts's `riverBedGain` for why this is a permanent farm-wide
-   *  fact rather than a positional one, and kept apart from `beds` for the
-   *  same reason `rainBed` is: its own ramp, on its own trigger. */
+   *  fact rather than a positional one, and kept apart from `beds` because it
+   *  ramps on its own trigger, not the tod crossfade. */
   private riverBed: Bed | null = null;
   private buffers = new Map<SampleName, AudioBuffer>();
   /** Samples already fetched or in flight, so `ensureSample` is idempotent. */
@@ -191,7 +180,6 @@ class Ambience {
   private livestock: ScheduledAnimal[] = [];
 
   private tod: AmbienceTimeOfDay = "day";
-  private weather: AmbienceWeather = "clear";
   private riverUnlocked = false;
   private herd: Partial<Record<SampleName, number>> = {};
   private muted = false;
@@ -271,10 +259,8 @@ class Ambience {
     for (const type of UNLOCK_EVENTS) window.removeEventListener(type, this.unlock, { capture: true });
     this.timer = null;
     for (const bed of this.beds.values()) this.teardownBed(bed);
-    if (this.rainBed) this.teardownBed(this.rainBed);
     if (this.riverBed) this.teardownBed(this.riverBed);
     this.beds.clear();
-    this.rainBed = null;
     this.riverBed = null;
     this.cues = [];
     this.livestock = [];
@@ -457,34 +443,14 @@ class Ambience {
     this.applyPlan();
   }
 
-  /**
-   * Whether it is raining, per WeatherOverlayManager -- the audio half of the
-   * same state that already drives the screen's tint and rain streaks. Ramps
-   * the `rain` bed and ducks the daytime hum independently of `applyPlan`'s
-   * tod crossfade; see ambience-plan.ts's `rainBedGain` for why the two
-   * clocks stay apart.
-   */
-  setWeather(weather: AmbienceWeather): void {
-    if (weather === this.weather) return;
-    this.weather = weather;
-    this.applyPlan();
-    const ctx = this.ctx;
-    if (!ctx || !this.rainBed) return;
-    // Three seconds: quicker than the four-second tod crossfade, because a
-    // shower starting is a sharper event than the hour turning over, but
-    // still a ramp rather than a switch -- a rain bed slammed to full gain
-    // reads as a glitch, not as weather arriving.
-    this.rainBed.gain.gain.linearRampToValueAtTime(rainBedGain(this.weather), ctx.currentTime + 3);
-  }
 
   /**
    * Whether the farm's one wet sector (the Sheep Pens' mud hollow, `wallow`
    * -- see sectors.ts) has been cleared. Fades the `river` bed in once,
    * permanently, for the whole farm -- see ambience-plan.ts's `riverBedGain`
    * for why this is a farm-wide fact and not a "how close is the camera"
-   * one. Eight seconds: slower than either the tod crossfade or the rain
-   * ramp, because clearing a sector is a milestone to notice arriving, not
-   * a moment to react to.
+   * one. Eight seconds: slower than the tod crossfade, because clearing a
+   * sector is a milestone to notice arriving, not a moment to react to.
    */
   setRiverUnlocked(unlocked: boolean): void {
     if (unlocked === this.riverUnlocked) return;
@@ -524,7 +490,7 @@ class Ambience {
     // for, just moved rather than removed. Fixed, static filter -- a steady
     // rustle, no gusts.
     this.beds.set("grass", this.bed(ctx, bus, (out) => {
-      const source = noiseSource(ctx, "white");
+      const source = noiseSource(ctx);
       const high = ctx.createBiquadFilter();
       high.type = "highpass";
       high.frequency.value = 1400;
@@ -541,7 +507,7 @@ class Ambience {
     // `water`: a narrow low band, the body of moving water. The individual
     // plips on top of it are cues, not part of this bed.
     this.beds.set("water", this.bed(ctx, bus, (out) => {
-      const source = noiseSource(ctx, "white");
+      const source = noiseSource(ctx);
       const band = ctx.createBiquadFilter();
       band.type = "bandpass";
       band.Q.value = 1.8;
@@ -562,7 +528,7 @@ class Ambience {
     // each other, kept far back in the mix -- audible as warmth rather than
     // as a pitch, which is what stops it becoming a mosquito in the room.
     this.beds.set("insects", this.bed(ctx, bus, (out) => {
-      const source = noiseSource(ctx, "white");
+      const source = noiseSource(ctx);
       const band = ctx.createBiquadFilter();
       band.type = "bandpass";
       band.Q.value = 9;
@@ -579,23 +545,6 @@ class Ambience {
       };
     }));
 
-    // `rain`: a wide, soft patter -- brown noise (see synth-voices.ts's own
-    // noiseBuffers for why brown carries the low body) opened up by a gentle
-    // highpass, with a fast, shallow wander on its level so the shower
-    // breathes rather than sitting at one dead-flat volume. No band-pass
-    // peak the way `water`/`insects` get one: rain is broadband by nature,
-    // and narrowing it would turn a downpour back into a stream.
-    this.rainBed = this.bed(ctx, bus, (out) => {
-      const source = noiseSource(ctx, "brown");
-      const high = ctx.createBiquadFilter();
-      high.type = "highpass";
-      high.frequency.value = 900;
-      const level = ctx.createGain();
-      level.gain.value = 0.6;
-      source.connect(high).connect(level).connect(out);
-      return { sources: [source], walks: [new RandomWalk(level.gain, 0.45, 0.75, 900, ctx)] };
-    });
-
     // `river`: a livelier, higher, more restless cousin of `water` above --
     // that bed is "a body of moving water", pitched low and wandering slow;
     // this is the audible reward for actually having running water on the
@@ -604,7 +553,7 @@ class Ambience {
     // why this is gated on the wet sector being cleared, farm-wide, rather
     // than on standing near it.
     this.riverBed = this.bed(ctx, bus, (out) => {
-      const source = noiseSource(ctx, "white");
+      const source = noiseSource(ctx);
       const band = ctx.createBiquadFilter();
       band.type = "bandpass";
       band.Q.value = 2.4;
@@ -622,9 +571,7 @@ class Ambience {
     });
   }
 
-  /** Stops a bed's walks and sources. Shared by `stop()` and by nothing else
-   *  yet -- `rainBed` tears down through the same path rather than a second
-   *  copy of this loop. */
+  /** Stops a bed's walks and sources. */
   private teardownBed(bed: Bed): void {
     for (const walk of bed.walks) walk.stop();
     for (const source of bed.sources) {
@@ -656,14 +603,10 @@ class Ambience {
     if (!ctx) return;
 
     const mix = ambienceMix(this.tod);
-    const raining = this.weather === "rain";
     for (const [name, bed] of this.beds) {
-      // Insects duck under rain the same way they duck at night: the hour's
-      // own mix, multiplied down rather than replaced, so dusk-in-the-rain
-      // is still dusk. Four seconds either way -- the day/night handover and
-      // a rain duck are both gradual on purpose, never a cut between rooms.
-      const target = name === "insects" && raining ? mix[name] * RAIN_INSECT_DUCK : mix[name];
-      bed.gain.gain.linearRampToValueAtTime(target, ctx.currentTime + 4);
+      // Four seconds: the day/night handover is gradual on purpose, never a
+      // cut between rooms.
+      bed.gain.gain.linearRampToValueAtTime(mix[name], ctx.currentTime + 4);
     }
 
     const now = ctx.currentTime;
@@ -711,16 +654,10 @@ class Ambience {
     const horizon = ctx.currentTime + LOOKAHEAD_S;
     const prefetchHorizon = ctx.currentTime + SAMPLE_PREFETCH_S;
 
-    const rainSilenced = this.weather === "rain";
     for (const entry of this.cues) {
       if (isSample(entry.cue.cue) && entry.nextAt <= prefetchHorizon) {
         this.ensureSample(entry.cue.cue);
       }
-      // Paused, not advanced: a bird due mid-shower simply waits at its own
-      // `nextAt` rather than rolling a fresh gap it would only sit through,
-      // so it picks back up on its existing schedule once the rain clears
-      // instead of going quiet for a fixed cooldown of its own.
-      if (rainSilenced && cueSuppressedByRain(entry.cue.cue)) continue;
       if (entry.nextAt > horizon) continue;
       this.fire(entry.cue.cue, Math.max(entry.nextAt, ctx.currentTime), entry.cue.gain);
       entry.nextAt = entry.nextAt + rollGapMs(entry.cue, Math.random) / 1000;
@@ -840,12 +777,6 @@ export function stopAmbience(): void {
 /** What hour the farm is in. Safe to call on every render. */
 export function setAmbiencePlace(tod: AmbienceTimeOfDay): void {
   ambience.setPlace(tod);
-}
-
-/** Whether it is raining, per WeatherOverlayManager. Fades in the rain bed
- *  and ducks birds/insects; safe to call every frame with the same value. */
-export function setAmbienceWeather(weather: AmbienceWeather): void {
-  ambience.setWeather(weather);
 }
 
 /** Whether the farm's wet sector is cleared. Fades the river bed in

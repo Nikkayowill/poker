@@ -8,27 +8,11 @@ import {
   FENCE_POST_W,
   FENCE_RAIL_AT,
   bayFitsDistrict,
-  fenceBayStep,
 } from "./fence";
-import { isoProject } from "./iso";
 import { ZONE_IDS } from "./zones";
 import { growAreaBounds } from "./world";
 
 describe("fence bay geometry", () => {
-  it("leans by exactly what the projection does to a bay-length world step", () => {
-    // The whole point of the standing fence. The rails are drawn to
-    // FENCE_BAY_DROP; if that ever stops matching isoProject, a bay's far
-    // post no longer sits on the ground its neighbour starts from.
-    expect(fenceBayStep("x")).toEqual({ x: FENCE_BAY, y: FENCE_BAY_DROP });
-    expect(fenceBayStep("y")).toEqual({ x: -FENCE_BAY, y: FENCE_BAY_DROP });
-    expect(FENCE_BAY_DROP).toBeCloseTo(isoProject(FENCE_BAY, 0).y, 9);
-  });
-
-  it("drops by the same amount whichever axis the run follows", () => {
-    // One box shape serves both edge directions only because of this.
-    expect(fenceBayStep("x").y).toBeCloseTo(fenceBayStep("y").y, 9);
-    expect(fenceBayStep("x").x).toBeCloseTo(-fenceBayStep("y").x, 9);
-  });
 
   it("anchors on the near post's foot, mirrored for the +y run", () => {
     expect(FENCE_BOX.ax * FENCE_BOX.w).toBeCloseTo(FENCE_BOX.footX, 9);

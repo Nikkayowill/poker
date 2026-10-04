@@ -321,13 +321,6 @@ export const CARE_GIFT_LADDER: readonly CareGiftRung[] = [
   },
 ];
 
-/** The most feed Ray's care gifts can ever hand out to one farm. Asserted in
- *  the tests: the ladder is closed, so this number is the whole exposure. */
-export const CARE_GIFT_TOTAL_SERVINGS = CARE_GIFT_LADDER.reduce(
-  (total, rung) => total + rung.servings,
-  0,
-);
-
 /**
  * The gift rung a tend that lands on `streak` earns, given the rungs already
  * handed out. Null when it earns nothing -- which is every tend but three,

@@ -126,15 +126,6 @@ export const BLOCKUDOKU_PIECE_SETS: Readonly<Record<BlockudokuPieceSet, readonly
   ],
 };
 
-export function isBlockudokuPieceSet(value: unknown): value is BlockudokuPieceSet {
-  return value === "classic" || value === "big" || value === "expert" || value === "master";
-}
-
-/** Every shape any set can deal, by id. */
-export function blockudokuShapeById(id: string): BlockudokuShape | null {
-  return BLOCKUDOKU_PIECE_SETS.expert.find((shape) => shape.id === id) ?? null;
-}
-
 export const GRID_SIDE = 9;
 export const GRID_CELLS = GRID_SIDE * GRID_SIDE;
 export const INVENTORY_SIZE = 3;

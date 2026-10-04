@@ -36,7 +36,6 @@ import { mulberry32 } from "@/lib/seeded-random";
 import {
   SOLUTION_EMPTY,
   SOLUTION_FILLED,
-  isNoGuessNonogram,
   nonogramClues,
   nonogramConfig,
   solveNonogram,
@@ -223,15 +222,4 @@ export function dealNonogram(seed: number, difficulty: NonogramDifficulty): Nono
   const grown = dealGrown(random, size);
   const transform = Math.floor(random() * NONOGRAM_TRANSFORMS);
   return { ...grown, solution: transformNonogramCells(grown.solution, size, transform).join("") };
-}
-
-/**
- * Whether a dealt board is finishable by line logic alone.
- *
- * The deal path already guarantees this -- drawings are checked once by the
- * test suite, grown shapes are repaired here until they pass -- so this exists
- * for the tests to assert it directly rather than infer it.
- */
-export function isDealSolvable(deal: NonogramDeal, size: number): boolean {
-  return isNoGuessNonogram(deal.solution, size);
 }

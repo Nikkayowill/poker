@@ -59,26 +59,6 @@ function stoneNodeFromRow(row: {
   };
 }
 
-/** The node as it stands right now, with a regrow already applied for
- *  reading purposes -- never mutates the stored row (see
- *  `effectiveNodeState`'s own header on why that write only ever happens
- *  inside the guarded swing itself). */
-export async function readStoneNode(nodeId: StoneNodeId, now: Date): Promise<StoneNodeRow> {
-  const supabase = adminClient();
-  if (!supabase) {
-    const row = memoryNodes.get(nodeId) ?? freshStoneNode(nodeId);
-    return effectiveNodeState(row, now);
-  }
-
-  const { data, error } = await supabase
-    .from("homestead_stone_nodes")
-    .select("node_id, hits_remaining, broken_at, version")
-    .eq("node_id", nodeId)
-    .single();
-  if (error) throw new Error(`Could not read that boulder: ${error.message}`);
-  return effectiveNodeState(stoneNodeFromRow(data), now);
-}
-
 /** Every Stone node's current state, in one round trip rather than one per
  *  `STONE_NODE_IDS` entry -- this is global, not per-profile, so it can't
  *  join `read_homestead_batch` (see that function's own header), but there

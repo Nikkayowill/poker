@@ -1,52 +1,10 @@
-/**
- * The Fermenting Vat: a multi-stage aging chamber, the fourth processing
- * building alongside the Mill, the Dairy and the Loom (./machines.ts).
- *
- * A DELIBERATELY DIFFERENT SHAPE FROM A RECIPE (./recipes.ts). Every other
- * machine either runs a fixed-duration queue entry (the Mill) or converts in
- * one instant transaction (the Dairy, the Loom) -- one input, one output, one
- * clock. The Vat's whole point is that WAITING LONGER PAYS MORE: a batch
- * sealed inside can be pulled the moment it clears the first tier, or left to
- * ride out a second or third, and each tier it reaches multiplies what it is
- * worth. That needs a locked record that outlives a single ready/collect
- * pair and remembers how long it has actually been sealed -- `AgingManifest`
- * below, backed by its own table (`homestead_vat_manifests`) rather than
- * squeezed into `homestead_machines`' generic recipe/queue columns, which
- * only ever describe one flat run.
- *
- * THE ONLY DOOR BACK TO GOLD HERE IS THE VAT ITSELF, credited in
- * `collectStackAcresVat` (lib/server/stackacres-service.ts) once the manifest
- * is settled. Aging a batch longer makes THIS batch worth more; StackAcres
- * has no daily cap on Gold any more (see lib/stackacres/exchange.ts's header)
- * so that is simply more Gold, with nothing to weigh it against.
- *
- * PURE FUNCTION OF TIMESTAMPS, same discipline as every other clock in
- * StackAcres (./wheat-plot.ts, ./machines.ts's own `isMachineDone`): there is
- * no cron ticking a manifest through its tiers, and no "session loop" counter
- * stored anywhere. `vatTierForElapsed` derives the reached tier from
- * `Date.now() - sealedAt` on every read, and the server's own guarded collect
- * (checking `ready_at`, the earliest a batch may be pulled at all) is the
- * only authority -- a fast-forwarded phone clock cannot cash a tier early,
- * and a stalled tab cannot lose one either: the next read simply computes
- * whichever tier the real elapsed time has actually reached.
- *
- * VALUE IS SNAPSHOTTED AT SEAL TIME, never re-read from a live price table at
- * collection -- the same rule `StoredWordStackRound.wagerLadder` and
- * `StackAcresMachineRow.recipeId`/`unitsProcessing` already state: what a
- * settlement pays must not change while it is in flight. `AgingManifest.
- * baseGoldValue` is `recipeRawGoldValue("cheese") * quantity` at the moment
- * the vat is sealed; a later retune of milk's Gold value or the cheese
- * recipe cannot change what an already-sealed batch is worth.
- */
 
-import { recipeRawGoldValue } from "./recipes";
-import { machineItemSellPrice, type MachineProcessedItem } from "./machine-items";
+import { type MachineProcessedItem } from "./machine-items";
 
 /** What one seal takes in, and how many. Cheese only, for now -- the same
  *  "start with one good, grow the ladder later" posture the Mill took when it
  *  was the only machine. */
 export const VAT_INPUT_ITEM: MachineProcessedItem = "cheese";
-export const VAT_INPUT_QUANTITY = 2;
 
 /**
  * One rung of the aging ladder. `durationMs` is measured from the moment the
@@ -100,25 +58,8 @@ export const CELLAR_AGING_TIERS: readonly AgingTier[] = [
   { tier: 3, label: "Cellar-Aged", durationMs: 12 * 60 * 60 * 1000, multiplier: 3, stars: 3 },
 ];
 
-export const CELLAR_ITEMS = ["pickles", "sauerkraut"] as const;
-export type CellarItem = (typeof CELLAR_ITEMS)[number];
-
 /** The most jars one batch holds. The cap is what keeps time away honest. */
 export const CELLAR_CAPACITY = 12;
-
-export function isCellarItem(value: string): value is CellarItem {
-  return (CELLAR_ITEMS as readonly string[]).includes(value);
-}
-
-/** How many jars a seal takes from `held`: all of them, up to capacity. */
-export function cellarSealQuantity(held: number): number {
-  return Math.max(0, Math.min(CELLAR_CAPACITY, Math.floor(held)));
-}
-
-/** A batch's worth at 1x: what the jars sell for today, snapshotted at seal. */
-export function cellarBaseGoldValue(item: CellarItem, quantity: number): number {
-  return machineItemSellPrice(item) * quantity;
-}
 
 /**
  * Which tier `elapsedMs` of sealed time has reached, or null when it has not
@@ -255,14 +196,3 @@ export function toVatContainer(
   };
 }
 
-/** What a fresh seal's manifest should be built with, given the input this
- *  file's own `VAT_INPUT_ITEM`/`VAT_INPUT_QUANTITY` fix. Null when the input
- *  has no Gold-track price to base a value on (impossible for cheese today,
- *  since milk always does -- see ./recipes.ts's `recipeRawGoldValue` -- but a
- *  future non-dairy input could hit this, and the caller must refuse to seal
- *  rather than seal a batch worth nothing). */
-export function baseGoldValueForSeal(): number | null {
-  const perUnit = recipeRawGoldValue("cheese");
-  if (perUnit === null) return null;
-  return Math.round(perUnit * VAT_INPUT_QUANTITY);
-}

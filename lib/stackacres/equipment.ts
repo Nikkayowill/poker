@@ -64,8 +64,8 @@ export interface StackAcresToolTierDef extends StackAcresShopLock {
   sprite: string;
   /**
    * Name of a painter in components/arcade/stackacres/stackacres-art.ts (its
-   * `PainterName` union). Kept a plain string for the same reason
-   * StackAcresToolDef.icon is: this file stays free of a components/ import.
+   * `PainterName` union). Kept a plain string so this file stays free of a
+   * components/ import.
    *
    * One per rung: a sprite-backed painter fronting the same PNG `sprite` above
    * points the store shelf at (the painter is the canvas route to that file,

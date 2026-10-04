@@ -1,17 +1,14 @@
 import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createGame } from "@/lib/game/engine";
-import { __resetFriendsMemory, respondToFriendRequest, sendFriendRequest } from "./friends-store";
 import { __resetHeadToHeadMemory } from "./head-to-head-store";
 import {
   __resetLeaderboardMemory,
-  getFriendsBoard,
   getGameBoard,
   getGameLeaderboard,
   getGameQualifyProgress,
   getGameStanding,
   getGlobalLeaderboard,
-  getGlobalStanding,
   recordDuelResult,
   recordMultiWayResult,
 } from "./leaderboard-store";
@@ -24,17 +21,9 @@ async function newPlayer(name: string) {
   return { token, id: profile.id };
 }
 
-/** Sends and immediately accepts, the same helper friends-store.test.ts uses. */
-async function befriend(a: string, b: string) {
-  const sent = await sendFriendRequest(a, b);
-  if (sent.status !== "sent") throw new Error(`expected sent, got ${sent.status}`);
-  await respondToFriendRequest(b, sent.requestId, "accept");
-}
-
 beforeEach(() => {
   __resetLeaderboardMemory();
   __resetHeadToHeadMemory();
-  __resetFriendsMemory();
 });
 
 describe("recordDuelResult", () => {
@@ -240,7 +229,7 @@ describe("getGameBoard", () => {
   });
 });
 
-describe("getGlobalLeaderboard / getGlobalStanding", () => {
+describe("getGlobalLeaderboard", () => {
   it("blends two separate games into one comparable rank", async () => {
     const ace = await newPlayer("Ace"); // best at both
     const middling = await newPlayer("Middling");
@@ -256,9 +245,7 @@ describe("getGlobalLeaderboard / getGlobalStanding", () => {
     expect(board[0].profileId).toBe(ace.id);
     expect(board[0].gamesCounted).toBe(2);
 
-    const standing = await getGlobalStanding(middling.id);
-    expect(standing).not.toBeNull();
-    expect(standing!.rank).toBe(2);
+    expect(board[1]).toMatchObject({ profileId: middling.id, rank: 2 });
   });
 
   it("excludes a player from the blend entirely until they qualify in at least one game", async () => {
@@ -266,7 +253,6 @@ describe("getGlobalLeaderboard / getGlobalStanding", () => {
     const b = await newPlayer("B");
     await recordDuelResult("chess", [a.id, b.id], 0); // only 1 decided game -- under minSample
 
-    expect(await getGlobalStanding(a.id)).toBeNull();
     expect((await getGlobalLeaderboard(10)).find((row) => row.profileId === a.id)).toBeUndefined();
   });
 
@@ -291,83 +277,7 @@ describe("getGlobalLeaderboard / getGlobalStanding", () => {
 
     const board = await getGlobalLeaderboard(10);
     expect(board.some((row) => row.profileId === grinder.id)).toBe(true);
-    expect(await getGlobalStanding(casual.id)).toBeNull();
+    expect(board.some((row) => row.profileId === casual.id)).toBe(false);
   });
 });
 
-describe("getFriendsBoard", () => {
-  it("shows the caller's own record against each friend, both sides agreeing", async () => {
-    const me = await newPlayer("Me");
-    const her = await newPlayer("Her");
-    await befriend(me.id, her.id);
-
-    // Five straight losses to one person -- the thing this board is for.
-    for (let i = 0; i < 5; i += 1) await recordDuelResult("chess", [me.id, her.id], 1);
-
-    const mine = await getFriendsBoard(me.id);
-    expect(mine).toHaveLength(1);
-    expect(mine[0]).toMatchObject({ profileId: her.id, wins: 0, losses: 5, draws: 0, currentStreak: -5 });
-    expect(mine[0].games).toEqual([
-      { gameId: "chess", label: "Chess", wins: 0, losses: 5, draws: 0, currentStreak: -5 },
-    ]);
-
-    const hers = await getFriendsBoard(her.id);
-    expect(hers[0]).toMatchObject({ profileId: me.id, wins: 5, losses: 0, currentStreak: 5 });
-  });
-
-  it("splits a mixed history per game, most played first", async () => {
-    const me = await newPlayer("Me");
-    const friend = await newPlayer("Friend");
-    await befriend(me.id, friend.id);
-
-    await recordDuelResult("chess", [me.id, friend.id], 0);
-    await recordDuelResult("chess", [me.id, friend.id], 1);
-    await recordMultiWayResult("cribbage", [me.id, friend.id, (await newPlayer("Third")).id], me.id);
-
-    const [entry] = await getFriendsBoard(me.id);
-    expect(entry).toMatchObject({ wins: 2, losses: 1 });
-    expect(entry.games.map((game) => game.label)).toEqual(["Chess", "Cribbage"]);
-  });
-
-  it("keeps a friend you have never played, sorted below the ones you have", async () => {
-    const me = await newPlayer("Me");
-    const played = await newPlayer("Played");
-    const unplayed = await newPlayer("Unplayed");
-    await befriend(me.id, played.id);
-    await befriend(me.id, unplayed.id);
-
-    await recordDuelResult("checkers", [me.id, played.id], 0);
-
-    const board = await getFriendsBoard(me.id);
-    expect(board.map((entry) => entry.profileId)).toEqual([played.id, unplayed.id]);
-    // "You have never played" is the thing the board exists to fix, so it is
-    // a row with an empty record, not a missing row.
-    expect(board[1]).toMatchObject({ wins: 0, losses: 0, draws: 0, games: [] });
-  });
-
-  it("is empty for a player with no friends, whatever they have played", async () => {
-    const me = await newPlayer("Me");
-    const stranger = await newPlayer("Stranger");
-    await recordDuelResult("chess", [me.id, stranger.id], 0);
-    expect(await getFriendsBoard(me.id)).toEqual([]);
-  });
-
-  it("never counts poker, which has no named opponent", async () => {
-    const me = await newPlayer("Me");
-    const friend = await newPlayer("Friend");
-    await befriend(me.id, friend.id);
-
-    // A real poker hand, won at a table -- poker is never head-to-head: one
-    // pot at a six-handed table is not a result between two named players.
-    const state = createGame(me.token);
-    const seat = state.seats[0];
-    seat.holeCards = [{ rank: "A", suit: "spades" }, { rank: "K", suit: "spades" }];
-    seat.committed = 100;
-    state.winners = [{ seatId: seat.id, name: seat.name, amount: 500, hand: "Flush", bestFive: null }];
-    state.id = randomUUID();
-    await recordHandStats(state);
-
-    const [entry] = await getFriendsBoard(me.id);
-    expect(entry).toMatchObject({ wins: 0, losses: 0, draws: 0, games: [] });
-  });
-});

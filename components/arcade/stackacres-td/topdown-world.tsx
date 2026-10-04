@@ -301,6 +301,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       celebrateCascade: (unitIds) => sceneRef.current?.celebrate(unitIds),
       celebrateCrit: (unitId, multiplier) => sceneRef.current?.celebrateCrit(unitId, multiplier),
       handChores: (jobs) => sceneRef.current?.handChores(jobs),
+      walkToPerson: (name) => sceneRef.current?.walkToPerson(name) ?? null,
       floatAt: (at, text, tone) => sceneRef.current?.floatAt(at, text, tone),
       setTravelerUnlocks: (unlocked) => sceneRef.current?.setTravelerUnlocks(unlocked),
       soilTiles: () => sceneRef.current?.soilTiles() ?? [],

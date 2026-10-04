@@ -5495,6 +5495,32 @@
   line-height: 1.25;
 }
 
+/* The objective is the panel's own details toggle: tap it for the reason and
+   the full list of what is short. Unpainted, so it still reads as a title. */
+.sa-next-toggle {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sa-next-toggle-icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--sa-ink-soft);
+  transition: transform var(--duration-fast, 120ms) var(--sa-ease-out);
+}
+
+.sa-next-toggle[aria-expanded="true"] .sa-next-toggle-icon { transform: rotate(180deg); }
+
 .sa-next-why {
   margin: 0;
   color: var(--sa-ink-soft);
@@ -5598,15 +5624,14 @@
   cursor: pointer;
 }
 
-/* A short landscape phone has the clock, the belt and the stick to fit; the
-   panel narrows and drops its "why" line rather than covering half the map. */
+/* A short landscape phone has the clock, the belt and the stick to fit, so
+   the panel narrows. Its details only show once the objective is tapped. */
 @media (orientation: landscape) and (max-height: 520px) {
   .sa-next {
     top: calc(var(--sa-header-h) + 42px);
     width: min(232px, 38%);
     gap: 4px;
   }
-  .sa-next-why { display: none; }
   .sa-next-reopen { top: calc(var(--sa-header-h) + 42px); }
 }
 

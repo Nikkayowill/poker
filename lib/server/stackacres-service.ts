@@ -1722,6 +1722,8 @@ export type StackAcresActionResult = StackAcresView & {
     traveler: TravelerId;
     outcome: "met" | "already-met" | "advanced" | "completed" | "reward-required" | "quest-locked";
     granted: readonly StoryItemId[];
+    /** Seed the quest handed over, if it hands any. */
+    seeds?: { crop: StackAcresCrop; quantity: number };
   };
 };
 
@@ -2534,6 +2536,37 @@ export async function hireStackAcresHand(
   return { ...(await view(await ensureProfile(token), now)), hiredHand: true };
 }
 
+/**
+ * Sows each bed the hand just picked with the crop that came off it, from the
+ * player's own seed. A crop owned outright regrows by itself and is skipped.
+ * Stops at the first bed that can't be sown (out of seed); a bed the player
+ * sowed in the meantime is refused by the sow itself and skipped.
+ */
+async function resowHarvestedBeds(
+  token: string,
+  profileId: string,
+  rows: readonly StoredStackAcresUnit[],
+  harvested: readonly string[],
+  now: Date,
+): Promise<number> {
+  const soil = soilMapFor(await listStackAcresSoilTiles(profileId));
+  let sown = 0;
+  for (const id of harvested) {
+    const row = rows.find((candidate) => candidate.id === id);
+    if (!row || row.permanent || row.soilSlot === null || !isStackAcresCrop(row.stock)) continue;
+    const bed = soilSlotTile(soil, row.soilSlot);
+    if (!bed) continue;
+    if (((await readStackAcresSeedStock(profileId))[row.stock] ?? 0) < 1) break;
+    try {
+      await stockStackAcres(token, { stock: row.stock, tile: { tx: bed.tx, ty: bed.ty } }, now);
+      sown += 1;
+    } catch (error) {
+      if (!(error instanceof StackAcresRequestError)) throw error;
+    }
+  }
+  return sown;
+}
+
 /** Lets the hand go. Whatever was paid for today stays paid; nothing is owed after. */
 export async function dismissStackAcresHand(token: string, now = new Date()): Promise<StackAcresView> {
   const profile = await ensureProfile(token);
@@ -2556,7 +2589,9 @@ export async function dismissStackAcresHand(token: string, now = new Date()): Pr
  * THE PASS. Claimed by moving `chores_at` under the version guard, so two tabs
  * can't both take one. Watering is the hand's own, from the well: it never
  * touches the player's can. Harvesting goes through `harvestStackAcres`, so
- * produce lands in inventory exactly as if the player had picked it.
+ * produce lands in inventory exactly as if the player had picked it. Each bed
+ * he picks he sows again with the same crop through `stockStackAcres`, so the
+ * seed comes off the player's shelf and no Gold moves. He stops when it runs out.
  */
 export async function runStackAcresHiredHand(
   token: string,
@@ -2621,12 +2656,17 @@ export async function runStackAcresHiredHand(
   if (watered.length > 0) await recordStoryEvents(profile.id, [{ kind: "watered", count: watered.length }], now);
 
   if (picked.harvest.length > 0) {
+    let done: Awaited<ReturnType<typeof harvestStackAcres>> | null = null;
     try {
-      const done = await harvestStackAcres(token, { unitIds: picked.harvest }, now);
-      return { ...done, handChores: { watered, harvested: picked.harvest, wagePaid, quit: false } };
+      done = await harvestStackAcres(token, { unitIds: picked.harvest }, now);
     } catch (error) {
       // The player picked them first, or they moved on. The pass still counts.
       if (!(error instanceof StackAcresRequestError)) throw error;
+    }
+    if (done) {
+      const sown = await resowHarvestedBeds(token, profile.id, rows, picked.harvest, now);
+      const final = sown > 0 ? { ...done, ...(await view(await ensureProfile(token), now)) } : done;
+      return { ...final, handChores: { watered, harvested: picked.harvest, wagePaid, quit: false } };
     }
   }
   return {
@@ -7146,9 +7186,19 @@ export async function turnInStackAcresTravelerQuest(
       });
     }
     if (written === "ok") {
+      // After the version-guarded write, so it lands once per turn-in. Seed is not
+      // money: a failed grant is logged rather than unwinding a quest already handed in.
+      let seeds: { crop: StackAcresCrop; quantity: number } | undefined;
+      if (quest.seeds) {
+        const given = await adjustStackAcresSeedStock(profile.id, quest.seeds.crop, quest.seeds.quantity).catch((error: unknown) => {
+          console.error("stackacres.quest_seeds_failed", { profileId: profile.id, quest: quest.id, error });
+          return null;
+        });
+        if (given !== null) seeds = { ...quest.seeds };
+      }
       return {
         ...(await view(profile, now)),
-        storyResult: { traveler, outcome: result.outcome, granted: result.granted },
+        storyResult: { traveler, outcome: result.outcome, granted: result.granted, ...(seeds ? { seeds } : {}) },
       };
     }
   }

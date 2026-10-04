@@ -380,7 +380,8 @@ describe("locked content", () => {
     const action = planned({ built: ALL_BUILT, story });
     expect(action.cue).toBe("caller");
     expect(action.title).toBe("Talk to Ray");
-    expect(action.button).toBeNull();
+    // He keeps a daily round, so the button walks the farmer to him.
+    expect(action.button).toEqual({ label: "Find Ray", target: { kind: "person", who: "ray" } });
   });
 
   it("names the quest a traveler is holding, with its own objective counts", () => {
@@ -418,7 +419,7 @@ describe("locked content", () => {
       if (action?.button) targets.add(action.button.target.kind);
     }
     for (const kind of targets) {
-      expect(["workshop", "house", "contracts", "travel"]).toContain(kind);
+      expect(["workshop", "house", "contracts", "travel", "person"]).toContain(kind);
     }
   });
 });

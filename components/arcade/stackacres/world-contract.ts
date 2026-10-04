@@ -86,6 +86,9 @@ export interface UseSquare {
   stroke: boolean;
   /** Which way he is facing, which is the way a tractor row runs (lib/stackacres/tractor.ts). */
   facing?: Facing;
+  /** A tap on Homestead ground that can't take a bed. He just walks there; the shell only
+   *  says why when the tool held works beds (the hoe, the seed pouch, the fence). */
+  bare?: boolean;
 }
 
 /**
@@ -187,6 +190,9 @@ export interface StackAcresWorldApi {
    * alone -- see `critFlashLabel` in lib/stackacres/juice.ts.
    */
   celebrateCrit: (unitId: string, multiplier: number) => void;
+  /** Walks the farmer to a traveler, or to the door of the building they are in. Null when they
+   *  can't be reached from the map he is on. */
+  walkToPerson: (name: string) => "here" | "inside" | null;
   /** Earl walks to the beds his last chores pass worked and acts each one out (lib/stackacres/hired-hand.ts). */
   handChores: (jobs: { unitId: string; kind: "water" | "harvest" }[]) => void;
   /** The farmer acts out a water, harvest, hoe or planting drop where he stands. */

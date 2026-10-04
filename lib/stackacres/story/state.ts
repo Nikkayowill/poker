@@ -47,7 +47,9 @@ export interface StoredTravelerStory {
   readonly met: boolean;
   /** Index into TRAVELER_QUESTS[id]. Equals the line's length once done. */
   readonly questIndex: number;
-  /** One per objective of the active quest. Deliver and hold-tool stay 0. */
+  /** One per objective of the active quest. Deliver and hold-tool stay 0. Before
+   *  meeting a traveler open from the first tap (Ray), these count toward their
+   *  first quest, so work done before saying hello is not lost. */
   readonly counts: readonly number[];
 }
 
@@ -103,10 +105,23 @@ export function meetTraveler(story: StoredStory, id: TravelerId, progress: Stack
     return { story, outcome: "locked" };
   }
   const first = TRAVELER_QUESTS[id][0];
+  const fresh = questFlatObjectives(first).map(() => 0);
+  const counts = entry.counts.length === fresh.length ? entry.counts : fresh;
   return {
-    story: withTraveler(story, id, { met: true, questIndex: 0, counts: questFlatObjectives(first).map(() => 0) }),
+    story: withTraveler(story, id, { met: true, questIndex: 0, counts }),
     outcome: "met",
   };
+}
+
+/**
+ * The quest a farm event counts toward. Normally the active one. A traveler open
+ * from the first tap counts toward their first quest before being met too: Ray's
+ * welcome tells a new player to water before they ever talk to him, and that
+ * watering used to count for nothing.
+ */
+function countingQuest(entry: StoredTravelerStory, id: TravelerId): StoryQuest | null {
+  if (!entry.met && TRAVELER_CATALOGUE[id].unlock.kind === "always") return TRAVELER_QUESTS[id][0];
+  return activeQuest(entry, id);
 }
 
 /* ------------------------------------------------------------------ */
@@ -137,10 +152,11 @@ export function applyStoryEvent(story: StoredStory, event: StoryEvent): StoredSt
   let travelers: Record<TravelerId, StoredTravelerStory> | null = null;
   for (const id of TRAVELER_IDS) {
     const entry = story.travelers[id];
-    const quest = activeQuest(entry, id);
+    const quest = countingQuest(entry, id);
     if (quest === null) continue;
-    const counts = advanceCounts(quest, entry.counts, event);
-    if (counts === entry.counts) continue;
+    const base = entry.counts.length > 0 ? entry.counts : questFlatObjectives(quest).map(() => 0);
+    const counts = advanceCounts(quest, base, event);
+    if (counts === base) continue;
     if (travelers === null) travelers = { ...story.travelers };
     travelers[id] = { ...entry, counts };
   }

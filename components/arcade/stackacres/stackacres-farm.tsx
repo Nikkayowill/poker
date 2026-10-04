@@ -260,6 +260,7 @@ import {
 } from "@/lib/stackacres/tractor";
 import {
   HIRED_HAND_BEDS_TO_HIRE,
+  HIRED_HAND_BLURB,
   HIRED_HAND_CHORES_EVERY_MS,
   HIRED_HAND_DAILY_WAGE,
   HIRED_HAND_NAME,
@@ -670,6 +671,8 @@ interface StackAcresResponse {
     traveler: TravelerId;
     outcome: "met" | "already-met" | "advanced" | "completed" | "reward-required";
     granted: readonly string[];
+    /** Seed the quest handed over, straight into the pouch. */
+    seeds?: { crop: StackAcresCrop; quantity: number };
   };
 }
 
@@ -1042,8 +1045,14 @@ export function StackAcresFarm() {
     setWasNearWater(nearWater);
     if (!nearWater && belt === "rod") setBelt("hand");
   }
-  /** The crop the seed pouch sows, and whether its wheel is open. */
-  const [seed, setSeed] = useState<StackAcresCrop | null>(null);
+  /** The crop the seed pouch sows, and whether its wheel is open. Until one is
+   *  picked, or once the picked one runs out, the pouch takes the first seed
+   *  held, so a new farm with only Ray's wheat can sow without opening the wheel. */
+  const [pickedSeed, setSeed] = useState<StackAcresCrop | null>(null);
+  const seed =
+    pickedSeed && (seedStock[pickedSeed] ?? 0) > 0
+      ? pickedSeed
+      : STACKACRES_CROPS.find((crop) => (seedStock[crop] ?? 0) > 0) ?? pickedSeed;
   const [seedWheelOpen, setSeedWheelOpen] = useState(false);
   /** The one bed the hoe has asked about lifting. Cleared by anything else the player does. */
   const [armedLift, setArmedLift] = useState<{ tx: number; ty: number } | null>(null);
@@ -2147,7 +2156,7 @@ export function StackAcresFarm() {
         }
         if (body.action === "hire-hand" && data.hiredHand) {
           goldSound();
-          setLastCollect({ text: `${HIRED_HAND_NAME} is on the farm. He waters and picks your beds.`, nonce: Date.now() });
+          setLastCollect({ text: `${HIRED_HAND_NAME} is on the farm. He waters, picks and sows your beds.`, nonce: Date.now() });
         }
         if (body.action === "hand-chores" && data.handChores) {
           const chores = data.handChores;
@@ -2292,9 +2301,13 @@ export function StackAcresFarm() {
           // "completed" outcome. Both can be present at once on a line's
           // final quest that also declares its own `rewards`.
           const granted = data.storyResult.granted.filter(isStoryItemId).map((id) => STORY_ITEM_CATALOGUE[id]);
-          if (granted.length > 0) {
-            const text = granted.map((item) => `${item.icon} ${item.label}`).join(", ");
-            setLastCollect({ text: `${TRAVELER_CATALOGUE[data.storyResult.traveler].name} leaves you ${text}`, nonce: Date.now() });
+          const seeds = data.storyResult.seeds;
+          const gifts = [
+            ...granted.map((item) => `${item.icon} ${item.label}`),
+            ...(seeds ? [`${seeds.quantity} ${STACKACRES_CATALOGUE[seeds.crop].label} seed`] : []),
+          ];
+          if (gifts.length > 0) {
+            setLastCollect({ text: `${TRAVELER_CATALOGUE[data.storyResult.traveler].name} gives you ${gifts.join(", ")}`, nonce: Date.now() });
           }
         }
         return { ok: true, reward: data.contractReward, groceryPaid: data.groceryPaid, shipped: data.shipped };
@@ -3531,6 +3544,8 @@ export function StackAcresFarm() {
    */
   const onUseSquare = useCallback(
     (square: UseSquare) => {
+      // Driving, a tap on the ground is where to drive, not a bed to work.
+      if (square.bare && (driving || (belt !== "hoe" && belt !== "seeds" && belt !== "fence"))) return;
       const unit = square.unitId ? liveUnits.find((candidate) => candidate.id === square.unitId) ?? null : null;
       const targetFor = (tile: { tx: number; ty: number } | null, on: StackAcresUnitSnapshot | null): BeltTarget => ({
         unit: on,
@@ -3860,9 +3875,16 @@ export function StackAcresFarm() {
         case "travel":
           travelToPlace(target.place);
           return;
+        case "person": {
+          const name = TRAVELER_CATALOGUE[target.who].name;
+          const where = onHomesteadMap ? world.current?.walkToPerson(target.who) ?? null : null;
+          if (where === "inside") setLastCollect({ text: `${name} is in the barn.`, nonce: Date.now() });
+          else if (where === null) setLastCollect({ text: `${name} is back on the Homestead.`, nonce: Date.now() });
+          return;
+        }
       }
     },
-    [travelToPlace],
+    [travelToPlace, onHomesteadMap],
   );
 
 
@@ -5027,8 +5049,8 @@ export function StackAcresFarm() {
                           <span className="sa-hand-art" aria-hidden="true" />
                           <h3>{HIRED_HAND_NAME}</h3>
                           <p className="sa-stock-terms">
-                            Waters your dry beds and picks the ripe ones while you play. {HIRED_HAND_DAILY_WAGE} Gold a day,
-                            paid each morning. If you can&apos;t pay, he quits.
+                            {HIRED_HAND_BLURB} {HIRED_HAND_DAILY_WAGE} Gold a day, paid each morning. If you can&apos;t
+                            pay, he quits.
                           </p>
                           {hand ? (
                             <>

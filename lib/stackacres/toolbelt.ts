@@ -236,7 +236,7 @@ function canAction(target: BeltTarget, ctx: BeltContext): BeltAction {
  * never throw one away.
  */
 function hoeAction(target: BeltTarget, ctx: BeltContext): BeltAction {
-  if (!target.tile) return blocked("Beds go on the grass by the house, or in the Crop Fields.");
+  if (!target.tile) return blocked("Can't dig here. Beds go on open grass by the house, or in the Crop Fields.");
   if (target.fenced) return blocked("There's a fence there.");
   const { tx, ty } = target.tile;
   if (target.bedded) {
@@ -259,7 +259,7 @@ function seedAction(target: BeltTarget, ctx: BeltContext): BeltAction {
   if (!target.tile) return blocked("Seeds go in a soil bed.");
   if (target.unit) return blocked("Something is already growing here.");
   if (!target.bedded) return blocked("Break the ground with the hoe first.");
-  if (!ctx.seed) return blocked("Tap the seed pouch to pick what to sow.");
+  if (!ctx.seed) return blocked("No seed in your pouch. Cora sells it in town.");
   if (ctx.seedsHeld < 1) return blocked(`No ${STACKACRES_CATALOGUE[ctx.seed].label} seeds left.`);
   return { kind: "plant", tx: target.tile.tx, ty: target.tile.ty, stock: ctx.seed };
 }

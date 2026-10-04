@@ -155,9 +155,17 @@ describe("meetTraveler", () => {
 });
 
 describe("applyStoryEvent", () => {
-  it("ignores everything before a traveler is met", () => {
-    const story = freshStory();
-    expect(applyStoryEvent(story, { kind: "watered", count: 3 })).toBe(story);
+  it("counts toward Ray's first quest before he is met, and keeps it when he is", () => {
+    // His welcome sends a new player to water before they ever talk to him.
+    const watered = applyStoryEvent(freshStory(), { kind: "watered", count: 2 });
+    expect(watered.travelers.ray).toMatchObject({ met: false, counts: [2] });
+    expect(met(watered, "ray", FRESH_FARM).travelers.ray).toMatchObject({ met: true, questIndex: 0, counts: [2] });
+  });
+
+  it("ignores everything for a traveler who is not open yet", () => {
+    const story = applyStoryEvent(freshStory(), { kind: "watered", count: 3 });
+    expect(story.travelers.pierre).toEqual(freshStory().travelers.pierre);
+    expect(story.travelers.ivy).toEqual(freshStory().travelers.ivy);
   });
 
   it("ticks only the objectives an event matches, capped at target", () => {

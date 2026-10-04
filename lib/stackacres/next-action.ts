@@ -43,6 +43,7 @@
 import type { BuildLine } from "./build-cost";
 import { machineItemLabel } from "./machine-items";
 import type { MapPlaceId } from "./map-places";
+import type { TravelerId } from "./story/travelers";
 import { SEED_SELLER_WHERE } from "./seed-seller";
 import {
   STACKACRES_QUEST_LABELS,
@@ -71,7 +72,9 @@ export type NextActionTarget =
   | { readonly kind: "workshop" }
   | { readonly kind: "house" }
   | { readonly kind: "contracts" }
-  | { readonly kind: "travel"; readonly place: MapPlaceId };
+  | { readonly kind: "travel"; readonly place: MapPlaceId }
+  /** Walk up to a traveler, or to the door of the building they are in. */
+  | { readonly kind: "person"; readonly who: TravelerId };
 
 export interface NextActionButton {
   /** "Open Workshop", "Go to the Crop Fields". */
@@ -333,9 +336,9 @@ export function nextAction(input: JournalInput, view: JournalView): NextAction |
                 need: objective.need,
                 source: null,
               })),
-        // Travelers live on the Homestead, which is the only place the panel shows, so they are already
-        // in sight and a button to travel there would go nowhere.
-        button: null,
+        // They keep a daily round, so they are often off-screen or behind Ray's counter in the barn.
+        // The button walks the farmer to them.
+        button: { label: `Find ${caller.name}`, target: { kind: "person", who: caller.traveler } },
       };
     }
 

@@ -160,6 +160,13 @@ import {
 } from "@/lib/stackacres/tractor";
 import { readStackAcresEquipment, recordStackAcresEquipment } from "./stackacres-equipment-store";
 import {
+  deleteStackAcresHiredHand,
+  insertStackAcresHiredHand,
+  readStackAcresHiredHand,
+  updateStackAcresHiredHand,
+  type StoredHiredHand,
+} from "./stackacres-hired-hand-store";
+import {
   HERD_PLACEMENT_MESSAGES,
   herdKey,
   herdPlacementProblem,
@@ -463,7 +470,21 @@ import {
   type FoodItem,
   type StackAcresEnergyAnchor,
 } from "@/lib/stackacres/energy";
-import { NOT_SLEEPY, canSleepAt, gameHourAt, offsetAfterSleep } from "@/lib/stackacres/clock";
+import { NOT_SLEEPY, canSleepAt, gameDayAt, gameHourAt, offsetAfterSleep } from "@/lib/stackacres/clock";
+import {
+  HIRED_HAND_ALREADY,
+  HIRED_HAND_BEDS_TO_HIRE,
+  HIRED_HAND_CANT_PAY,
+  HIRED_HAND_DAILY_WAGE,
+  HIRED_HAND_NAME,
+  HIRED_HAND_NOT_ENOUGH_BEDS,
+  NO_HAND_CHORES,
+  hiredHandChoresDue,
+  hiredHandWageDue,
+  pickHiredHandChores,
+  type HiredHandChores,
+  type HiredHandView,
+} from "@/lib/stackacres/hired-hand";
 import { isActiveStock } from "@/lib/stackacres/scope";
 import { isUnbuiltCutter } from "@/lib/stackacres/unbuilt";
 import { feedingToast, servingBonus, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
@@ -825,6 +846,8 @@ export interface StackAcresView {
   guardDogs: GuardDog[];
   /** Machines this farm owns outright, like the tractor (lib/stackacres/tractor.ts). */
   equipment: StackAcresEquipment[];
+  /** The hired hand (lib/stackacres/hired-hand.ts), or null when nobody works here. */
+  hand: HiredHandView | null;
   /** The farm clock (lib/stackacres/clock.ts): this farm's offset, and the
    *  server's `now` for this read, so the client can correct for its own
    *  clock being off. */
@@ -1129,7 +1152,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   // called a second time here, or every live-Supabase view() pays for a
   // real, wasted extra round trip whose result nothing reads.
   // Equipment is read on its own too: its table is newer than the batch RPC.
-  const [batch, stoneNodeRows, fallback, equipment] = await Promise.all([
+  const [batch, stoneNodeRows, fallback, equipment, storedHand] = await Promise.all([
     supabase ? readStackAcresBatch(profile.id, day) : Promise.resolve(null),
     readAllStoneNodes(now),
     supabase
@@ -1182,6 +1205,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
           listStackAcresAcres(profile.id),
         ] as const),
     readStackAcresEquipment(profile.id),
+    readStackAcresHiredHand(profile.id),
   ]);
 
   let rows: StoredStackAcresUnit[];
@@ -1445,6 +1469,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     acres: acresView(ownedAcres),
     guardDogs,
     equipment,
+    hand: storedHand ? handView(storedHand) : null,
     clock: { offsetMs: clockOffset, serverNowMs: now.getTime() },
     revision,
     // Wood and Metal are the shared inventory's, since that is what the Far
@@ -2458,6 +2483,156 @@ export async function buyStackAcresEquipment(
     throw new StackAcresRequestError("That was already bought.", 409, { round: await snapshots(profile.id, now) });
   }
   return { ...(await view(await ensureProfile(token), now)), boughtEquipment: kind };
+}
+
+function handView(hand: StoredHiredHand): HiredHandView {
+  return { name: hand.name, wage: HIRED_HAND_DAILY_WAGE, paidThroughDay: hand.paidThroughDay };
+}
+
+async function farmGameDay(profileId: string, now: Date): Promise<number> {
+  return gameDayAt(now.getTime(), await readStackAcresClockOffset(profileId));
+}
+
+/**
+ * Hires Earl at Ray's (lib/stackacres/hired-hand.ts). Rule 1: today's wage
+ * leaves first, then the row is written, guarded by its primary key. A write
+ * that lands nothing (another tab hired him first) or fails without landing
+ * gives the Gold back.
+ */
+export async function hireStackAcresHand(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresView & { hiredHand: true }> {
+  const profile = await ensureProfile(token);
+  if (await readStackAcresHiredHand(profile.id)) {
+    throw new StackAcresRequestError(HIRED_HAND_ALREADY, 409, { round: await snapshots(profile.id, now) });
+  }
+  if ((await listStackAcresSoilTiles(profile.id)).length < HIRED_HAND_BEDS_TO_HIRE) {
+    throw new StackAcresRequestError(HIRED_HAND_NOT_ENOUGH_BEDS, 409, { round: await snapshots(profile.id, now) });
+  }
+  const today = await farmGameDay(profile.id, now);
+  const correlation = `hired-hand:${profile.id}:hire:${randomUUID()}`;
+  const paid = await spendGoldByProfileLedgered(profile.id, HIRED_HAND_DAILY_WAGE, correlation, "stackacres_hired_hand");
+  if (!paid.success) {
+    throw new StackAcresRequestError(HIRED_HAND_CANT_PAY, 400, { round: await snapshots(profile.id, now) });
+  }
+
+  let hired: StoredHiredHand | null;
+  try {
+    hired = await insertStackAcresHiredHand(profile.id, HIRED_HAND_NAME, today, now);
+  } catch (error) {
+    hired = await readStackAcresHiredHand(profile.id).catch(() => null);
+    if (!hired) {
+      await refundGoldLedgered(profile.id, HIRED_HAND_DAILY_WAGE, correlation);
+      throw error;
+    }
+  }
+  if (!hired) {
+    await refundGoldLedgered(profile.id, HIRED_HAND_DAILY_WAGE, correlation);
+    throw new StackAcresRequestError(HIRED_HAND_ALREADY, 409, { round: await snapshots(profile.id, now) });
+  }
+  return { ...(await view(await ensureProfile(token), now)), hiredHand: true };
+}
+
+/** Lets the hand go. Whatever was paid for today stays paid; nothing is owed after. */
+export async function dismissStackAcresHand(token: string, now = new Date()): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  await deleteStackAcresHiredHand(profile.id);
+  return view(profile, now);
+}
+
+/**
+ * Pays today's wage if it is owed, then lets the hand take one pass at the
+ * beds. The browser asks for this every so often while the farm is open; it
+ * names nothing, so the server picks the beds.
+ *
+ * THE WAGE. Charged at most once per game day and only from here, so days the
+ * farm sat closed are never billed. The debit is keyed by the day, so a second
+ * tab finds it already made. It goes first; then `paid_through_day` moves on
+ * under the version guard. If that loses to another tab, a fresh read decides:
+ * a row already paid through today keeps the Gold (it was this same day's one
+ * debit), anything else gets it back. A wage that can't be paid ends the job.
+ *
+ * THE PASS. Claimed by moving `chores_at` under the version guard, so two tabs
+ * can't both take one. Watering is the hand's own, from the well: it never
+ * touches the player's can. Harvesting goes through `harvestStackAcres`, so
+ * produce lands in inventory exactly as if the player had picked it.
+ */
+export async function runStackAcresHiredHand(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresView & { handChores: HiredHandChores }> {
+  const profile = await ensureProfile(token);
+  let hand = await readStackAcresHiredHand(profile.id);
+  if (!hand) return { ...(await view(profile, now)), handChores: NO_HAND_CHORES };
+
+  let wagePaid = 0;
+  const today = await farmGameDay(profile.id, now);
+  if (hiredHandWageDue(hand.paidThroughDay, today)) {
+    const correlation = `hired-hand:${profile.id}:${hand.hiredAt}:${today}`;
+    const paid = await spendGoldByProfileLedgered(profile.id, HIRED_HAND_DAILY_WAGE, correlation, "stackacres_hired_hand");
+    if (!paid.success) {
+      const left = await deleteStackAcresHiredHand(profile.id, hand.version);
+      return { ...(await view(await ensureProfile(token), now)), handChores: { ...NO_HAND_CHORES, quit: left } };
+    }
+    const giveBack = async () => {
+      if (!paid.alreadyApplied) await refundGoldLedgered(profile.id, HIRED_HAND_DAILY_WAGE, correlation);
+    };
+    let moved: StoredHiredHand | null;
+    try {
+      moved = await updateStackAcresHiredHand(hand, { paidThroughDay: today });
+      if (!moved) {
+        const fresh = await readStackAcresHiredHand(profile.id);
+        if (fresh && fresh.hiredAt === hand.hiredAt) {
+          moved = fresh.paidThroughDay >= today ? fresh : await updateStackAcresHiredHand(fresh, { paidThroughDay: today });
+        }
+      }
+    } catch (error) {
+      await giveBack();
+      throw error;
+    }
+    if (!moved) {
+      await giveBack();
+      return { ...(await view(await ensureProfile(token), now)), handChores: NO_HAND_CHORES };
+    }
+    hand = moved;
+    if (!paid.alreadyApplied) wagePaid = HIRED_HAND_DAILY_WAGE;
+  }
+
+  const idle = async () => ({
+    ...(await view(await ensureProfile(token), now)),
+    handChores: { ...NO_HAND_CHORES, wagePaid },
+  });
+  if (!hiredHandChoresDue(Date.parse(hand.choresAt), now.getTime())) return idle();
+  if (!(await updateStackAcresHiredHand(hand, { choresAt: now }))) return idle();
+
+  const rows = await listStackAcresUnits(profile.id);
+  const irrigated = await irrigatedUnitIdsFor(profile.id, rows);
+  const picked = pickHiredHandChores(rows, now, irrigated);
+
+  const watered: string[] = [];
+  for (const id of picked.water) {
+    const unit = rows.find((row) => row.id === id);
+    if (!unit) continue;
+    const { pushed, restartedAt } = waterPushFor(unit, now);
+    // A miss means the player or a pipe got there first. Nothing was spent, so it is just skipped.
+    if (await waterStackAcresUnit(unit, now, pushed, restartedAt)) watered.push(id);
+  }
+  if (watered.length > 0) await recordStoryEvents(profile.id, [{ kind: "watered", count: watered.length }], now);
+
+  if (picked.harvest.length > 0) {
+    try {
+      const done = await harvestStackAcres(token, { unitIds: picked.harvest }, now);
+      return { ...done, handChores: { watered, harvested: picked.harvest, wagePaid, quit: false } };
+    } catch (error) {
+      // The player picked them first, or they moved on. The pass still counts.
+      if (!(error instanceof StackAcresRequestError)) throw error;
+    }
+  }
+  return {
+    ...(await view(await ensureProfile(token), now)),
+    handChores: { watered, harvested: [], wagePaid, quit: false },
+  };
 }
 
 /**

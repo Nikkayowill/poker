@@ -187,6 +187,8 @@ export interface StackAcresWorldApi {
    * alone -- see `critFlashLabel` in lib/stackacres/juice.ts.
    */
   celebrateCrit: (unitId: string, multiplier: number) => void;
+  /** Earl walks to the beds his last chores pass worked and acts each one out (lib/stackacres/hired-hand.ts). */
+  handChores: (jobs: { unitId: string; kind: "water" | "harvest" }[]) => void;
   /** The farmer acts out a water, harvest, hoe or planting drop where he stands. */
   farmerAction: (action: FarmerAction, impact?: TapPoint) => void;
   /** A small emote bubble over someone's head for a moment: a heart when a gift lands, a note when a
@@ -346,6 +348,8 @@ export interface StackAcresWorldProps {
   onStaffTap: (name: string, at: TapPoint) => void;
   /** The farm owns a tractor, so one is parked by the barn to climb onto. */
   tractorOwned: boolean;
+  /** Earl, the hired hand, works this farm, so he is on the Homestead. */
+  handHired: boolean;
   /** He climbed onto the tractor or off it. */
   onDrivingChanged: (driving: boolean) => void;
   tool: StackAcresTool;

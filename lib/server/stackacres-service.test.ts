@@ -2358,6 +2358,8 @@ describe("the currency wall", () => {
       "collect-cellar",
       "collect-vat",
       "consume-secret-item",
+      // Moves no Gold either way: Earl let go, today's wage already spent.
+      "dismiss-hand",
       "donate-secret-item",
       "draw-water",
       "eat",
@@ -2385,6 +2387,10 @@ describe("the currency wall", () => {
       "grocery-store",
       // Moves no Gold either way: the store taken over, development only until it can be bought.
       "grocery-take-over",
+      // SPENDS Gold: Earl's wage, once a game day while the farm is open, keyed by the day. Unpaid, he quits.
+      "hand-chores",
+      // SPENDS Gold: Earl's first day's wage, refunded if the hire can't be written.
+      "hire-hand",
       "mine-stone",
       // Moves no Gold either way: a dog the player owns, moved to another square.
       "move-dog",

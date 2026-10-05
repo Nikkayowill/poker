@@ -1532,8 +1532,9 @@ async function payOutGold(profileId: string, gold: number, correlationId: string
       lastError = error;
     }
   }
+  // 500, not 503: the goods are already gone, and the client resends a 503 under the same key, selling again.
   console.error("stackacres.payout_failed", { profileId, gold, correlationId, reason, error: lastError });
-  throw new StackAcresRequestError("We couldn't pay that out just now. Please contact support so it can be made good.", 503);
+  throw new StackAcresRequestError("We couldn't pay that out just now. Please contact support so it can be made good.", 500);
 }
 
 /**

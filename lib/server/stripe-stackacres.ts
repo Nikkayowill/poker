@@ -21,3 +21,12 @@ export async function settleStackAcresSession(
   await fulfillStackAcresPurchase(session.id, profileId, paymentIntentId, mode === "live");
   return true;
 }
+
+/**
+ * Whether a closed dispute gives the farm back. "won" is a chargeback we won;
+ * "warning_closed" is an inquiry that ended without becoming one. Either way
+ * the money stayed, so the access the dispute took away comes back.
+ */
+export function disputeCloseRestoresAccess(status: string): boolean {
+  return status === "won" || status === "warning_closed";
+}

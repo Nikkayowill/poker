@@ -83,7 +83,12 @@ export function StackAcresBuy({ offer, registered }: { offer: StackAcresOffer; r
         });
         response = await purchase();
       }
-      const data = (await response.json()) as { url?: string; error?: string };
+      const data = (await response.json()) as { url?: string; error?: string; owned?: boolean };
+      // Already theirs (bought before, or another tab finished first): go straight in.
+      if (data.owned) {
+        window.location.replace("/games/stackacres");
+        return;
+      }
       if (!response.ok || !data.url) throw new Error(data.error ?? "Could not start checkout.");
       window.location.assign(data.url);
     } catch (caught) {

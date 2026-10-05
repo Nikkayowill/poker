@@ -144,7 +144,7 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   catfish: { label: "Catfish", plural: "Catfish", icon: "ico-fish-catfish", sellPrice: 26 },
   // A logged sighting yields both at once (see ./hunting.ts's
   // QUARRY_CATALOGUE), so these are priced as a PAIR, not one at a time: a
-  // Rabbit is 29 Gold, a Deer 67, a Boar 105. Against the fishing ladder's
+  // Rabbit is 6 Gold, a Deer 14, a Boar 22 (cut 5x with fish on 2026-10-05). Against the fishing ladder's
   // own weights that makes an average stalk worth about half again an
   // average cast -- it takes several times longer, and unlike a cast it can
   // be lost outright. Trail Photos carry the higher price of the two: Field
@@ -154,8 +154,8 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   // reskin from the earlier hunting frame only ever changed the label a
   // player reads, never the key already written into production
   // `homestead_inventory` rows.
-  meat: { label: "Field Notes", plural: "Field Notes", icon: "ico-fieldnotes", sellPrice: 9 },
-  pelt: { label: "Trail Photo", plural: "Trail Photos", icon: "ico-trailphoto", sellPrice: 20 },
+  meat: { label: "Field Notes", plural: "Field Notes", icon: "ico-fieldnotes", sellPrice: 2 },
+  pelt: { label: "Trail Photo", plural: "Trail Photos", icon: "ico-trailphoto", sellPrice: 4 },
   // Chopped off the Homestead's own treeline (./wood.ts). Priced low and
   // deliberately: Wood's real job is being spent on machine placement
   // (./machines.ts's `MachineDef.woodCost`), not being sold -- a Sell price

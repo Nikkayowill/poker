@@ -136,11 +136,12 @@ export interface MachineItemDef {
 export const MACHINE_ITEM_CATALOGUE: Readonly<
   Record<MachineRawItem | MachineProcessedItem, MachineItemDef>
 > = {
-  // Common/uncommon/rare, same feel as the Vat's aging tiers -- see
-  // ./fishing.ts's FISH_WEIGHTS for the odds these prices are tuned against.
-  bluegill: { label: "Bluegill", plural: "Bluegill", icon: "ico-fish-bluegill", sellPrice: 15 },
-  trout: { label: "Trout", plural: "Trout", icon: "ico-fish-trout", sellPrice: 45 },
-  catfish: { label: "Catfish", plural: "Catfish", icon: "ico-fish-catfish", sellPrice: 130 },
+  // Common/uncommon/rare -- see ./fishing.ts's FISH_WEIGHTS for the odds.
+  // Cut 5x on 2026-10-05: one instant Stew is ten casts, and at the old
+  // prices that turned about 10 Gold of crops into about 720 Gold of fish.
+  bluegill: { label: "Bluegill", plural: "Bluegill", icon: "ico-fish-bluegill", sellPrice: 3 },
+  trout: { label: "Trout", plural: "Trout", icon: "ico-fish-trout", sellPrice: 9 },
+  catfish: { label: "Catfish", plural: "Catfish", icon: "ico-fish-catfish", sellPrice: 26 },
   // A logged sighting yields both at once (see ./hunting.ts's
   // QUARRY_CATALOGUE), so these are priced as a PAIR, not one at a time: a
   // Rabbit is 29 Gold, a Deer 67, a Boar 105. Against the fishing ladder's

@@ -187,7 +187,7 @@ describe("buying an acre", () => {
   it("refunds everything when another tap already wrote the acre", async () => {
     const { token, id } = await player();
     const before = await purse(token, id);
-    vi.mocked(acreStore.insertStackAcresAcre).mockResolvedValueOnce(false);
+    vi.mocked(acreStore.insertStackAcresAcre).mockResolvedValueOnce("owned");
 
     await expect(buyStackAcresAcre(token, { acreId: FIRST.id }, T0)).rejects.toThrow("already own");
 
@@ -210,6 +210,29 @@ describe("buying an acre", () => {
       wood: before.wood - price.wood,
       stone: before.stone - price.stone,
     });
+  });
+
+  it("never sells two acres at the first acre's price when both are bought at once", async () => {
+    const { token, id } = await player();
+    const before = await purse(token, id);
+
+    const results = await Promise.allSettled([
+      buyStackAcresAcre(token, { acreId: FIRST.id }, T0),
+      buyStackAcresAcre(token, { acreId: SECOND.id }, T0),
+    ]);
+
+    // One lands at the first price; the other read the same count and is turned away with everything back.
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const refused = results.find((result) => result.status === "rejected");
+    expect((refused as PromiseRejectedResult).reason).toBeInstanceOf(StackAcresRequestError);
+    expect(((refused as PromiseRejectedResult).reason as StackAcresRequestError).status).toBe(409);
+    const price = acrePrice(0);
+    expect(await purse(token, id)).toEqual({
+      gold: before.gold - price.gold,
+      wood: before.wood - price.wood,
+      stone: before.stone - price.stone,
+    });
+    expect((await readStackAcres(token, T0)).acres.owned).toHaveLength(1);
   });
 
   it("never charges an account with unlimited Gold, and still refunds only what moved", async () => {

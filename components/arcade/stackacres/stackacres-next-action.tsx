@@ -127,7 +127,7 @@ export function StackAcresNextActionPanel({
               <strong>Missing:</strong> {summary}
             </p>
           ) : (
-            <p className="sa-next-missing is-met">All done.</p>
+            <p className="sa-next-missing is-met">You have everything.</p>
           )}
           {open && (
             <ul className="sa-next-reqs">

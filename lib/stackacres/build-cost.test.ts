@@ -7,7 +7,7 @@ describe("buildCost", () => {
     const cost = buildCost("mill", 500, { wood: 6 });
     expect(cost.lines).toEqual([
       { label: "Gold", have: 500, need: 200, met: true, source: "Sell your harvest in town. Dale buys grain and Iris buys the rest" },
-      { label: "Wood", have: 6, need: 15, met: false, source: "Chop the trees around the farm" },
+      { label: "Wood", have: 6, need: 15, met: false, source: "Chop the trees by the workshop and the house" },
     ]);
     expect(cost.affordable).toBe(false);
   });
@@ -68,14 +68,14 @@ describe("buildShortfall", () => {
 
   it("names the shortfall and where to get it", () => {
     expect(buildShortfall(buildCost("mill", 200, { wood: 6 }))).toBe(
-      "You need 9 more Wood. Chop the trees around the farm.",
+      "You need 9 more Wood. Chop the trees by the workshop and the house.",
     );
   });
 
   it("names both when Gold and material are short", () => {
     // Both are at none of what they need, so the tie keeps the listed order.
     expect(buildShortfall(buildCost("mill", 0, {}))).toBe(
-      "You need 200 more Gold and 15 more Wood. Sell your harvest in town. Dale buys grain and Iris buys the rest. Chop the trees around the farm.",
+      "You need 200 more Gold and 15 more Wood. Sell your harvest in town. Dale buys grain and Iris buys the rest. Chop the trees by the workshop and the house.",
     );
   });
 

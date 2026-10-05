@@ -2538,9 +2538,10 @@ export async function hireStackAcresHand(
 
 /**
  * Sows each bed the hand just picked with the crop that came off it, from the
- * player's own seed. A crop owned outright regrows by itself and is skipped.
- * Stops at the first bed that can't be sown (out of seed); a bed the player
- * sowed in the meantime is refused by the sow itself and skipped.
+ * player's own seed, and waters it from his well so it starts growing straight
+ * away. A crop owned outright regrows by itself and is skipped. Stops at the
+ * first bed that can't be sown (out of seed); a bed the player sowed in the
+ * meantime is refused by the sow itself and skipped.
  */
 async function resowHarvestedBeds(
   token: string,
@@ -2550,6 +2551,7 @@ async function resowHarvestedBeds(
   now: Date,
 ): Promise<number> {
   const soil = soilMapFor(await listStackAcresSoilTiles(profileId));
+  const sownSlots = new Set<number>();
   let sown = 0;
   for (const id of harvested) {
     const row = rows.find((candidate) => candidate.id === id);
@@ -2559,9 +2561,18 @@ async function resowHarvestedBeds(
     if (((await readStackAcresSeedStock(profileId))[row.stock] ?? 0) < 1) break;
     try {
       await stockStackAcres(token, { stock: row.stock, tile: { tx: bed.tx, ty: bed.ty } }, now);
+      sownSlots.add(row.soilSlot);
       sown += 1;
     } catch (error) {
       if (!(error instanceof StackAcresRequestError)) throw error;
+    }
+  }
+  if (sownSlots.size > 0) {
+    for (const seed of await listStackAcresUnits(profileId)) {
+      if (seed.status !== "working" || seed.soilSlot === null || !sownSlots.has(seed.soilSlot) || !isUnwateredSeedRow(seed)) continue;
+      const { pushed, restartedAt } = waterPushFor(seed, now);
+      // A miss means something else stamped it first. The next pass waters it.
+      await waterStackAcresUnit(seed, now, pushed, restartedAt);
     }
   }
   return sown;

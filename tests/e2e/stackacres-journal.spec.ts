@@ -101,7 +101,7 @@ test("the sheet shows both tracks: the buildings and the reach", async ({ contex
   const mill = sheet.locator(".sa-goals-list > li").first().locator("ul > li").first();
   await expect(mill).toContainText("in the Workshop");
   await expect(mill).toContainText("0 / 15 Wood");
-  await expect(mill).toContainText("Chop the trees around the farm");
+  await expect(mill).toContainText("Chop the trees by the workshop and the house");
   await expect(mill).toContainText("Opens Corn and Green Bean seeds");
 
   // The expansion track, which had no surface at all before this sheet.

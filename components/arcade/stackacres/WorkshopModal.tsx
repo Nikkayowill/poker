@@ -223,7 +223,7 @@ const MACHINE_JOB: Partial<Record<MachineKind, string>> = {
 
 /** Where an ingredient comes from, for a player who is short of it. */
 const ITEM_SOURCE: Partial<Record<MachineItemId, string>> = {
-  wheat: "your beds (Wheat seed is at Ray's)",
+  wheat: "your beds (Cora sells Wheat seed in town)",
   flour: `the ${MACHINE_CATALOGUE.mill.label}`,
   milk: "your cows",
   eggs: "your hens",

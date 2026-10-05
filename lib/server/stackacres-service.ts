@@ -185,7 +185,12 @@ import {
   type OwnedAcre,
   type StackAcresAcresView,
 } from "@/lib/stackacres/acres";
-import { insertStackAcresAcre, listStackAcresAcres, stackAcresAcresFromBatchRows } from "./stackacres-acre-store";
+import {
+  insertStackAcresAcre,
+  listStackAcresAcres,
+  stackAcresAcresFromBatchRows,
+  type AcreAddition,
+} from "./stackacres-acre-store";
 import {
   listStackAcresFences,
   placeStackAcresFence as placeFenceRow,
@@ -4230,6 +4235,7 @@ export async function pickUpStackAcresAnimal(
 }
 
 const ACRE_ALREADY_OWNED = "You already own that acre.";
+const ACRE_PRICE_MOVED = "Another acre was just bought, so this one's price went up. Try again.";
 
 /**
  * The beds, fences, animals and other dogs a dog's square is checked against
@@ -4509,9 +4515,9 @@ export async function buyStackAcresAcre(
     await refundMaterials();
   };
 
-  let wrote: boolean;
+  let wrote: AcreAddition;
   try {
-    wrote = await insertStackAcresAcre(profile.id, acreId);
+    wrote = await insertStackAcresAcre(profile.id, acreId, owned.length);
   } catch (error) {
     // The write may have landed with only its answer lost; then the acre is theirs and stays paid for.
     const landed = await listStackAcresAcres(profile.id)
@@ -4521,11 +4527,13 @@ export async function buyStackAcresAcre(
       await giveBack();
       throw error;
     }
-    wrote = true;
+    wrote = "added";
   }
-  if (!wrote) {
+  if (wrote !== "added") {
     await giveBack();
-    throw new StackAcresRequestError(ACRE_ALREADY_OWNED, 409, { round: await snapshots(profile.id, now) });
+    throw new StackAcresRequestError(wrote === "owned" ? ACRE_ALREADY_OWNED : ACRE_PRICE_MOVED, 409, {
+      round: await snapshots(profile.id, now),
+    });
   }
   return view(await ensureProfile(token), now);
 }
@@ -5133,9 +5141,9 @@ export async function tapStackAcresSecretZone(
 
   // Marks the attempt BEFORE rolling -- see the header above.
   const marked = await adjustStackAcresSecretLedger(profile.id, attemptKey, 1);
-  if (marked === null) {
-    // Could not even record the attempt; refuse the roll rather than risk one
-    // that never gets marked and so could be replayed.
+  if (marked !== 1) {
+    // Could not record the attempt, or another tap marked it first (the count
+    // is past 1). Either way this request does not roll.
     return { ...(await view(profile, now)), discovery: null };
   }
 

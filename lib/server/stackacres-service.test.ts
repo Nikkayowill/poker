@@ -3755,6 +3755,17 @@ describe("hidden secrets", () => {
       expect(await readStackAcresSecretLedgerQty(id, DICE)).toBe(1);
     });
 
+    it("rolls once a day however many taps arrive at the same moment", async () => {
+      const { token, id } = await funded();
+      const roll = vi.spyOn(Math, "random").mockReturnValue(0);
+      try {
+        await Promise.all(Array.from({ length: 10 }, () => tapStackAcresSecretZone(token, ZONE.id, T0)));
+      } finally {
+        roll.mockRestore();
+      }
+      expect(await readStackAcresSecretLedgerQty(id, DICE)).toBe(1);
+    });
+
     it("finds nothing on a miss", async () => {
       const { token, id } = await funded();
       const roll = vi.spyOn(Math, "random").mockReturnValue(0.999);

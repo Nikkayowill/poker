@@ -48,24 +48,32 @@ export async function listStackAcresAcres(profileId: string): Promise<OwnedAcre[
   return stackAcresAcresFromBatchRows((data ?? []) as { acre_id: string; source: string }[]);
 }
 
+/** What `insertStackAcresAcre` did: wrote it, found it already owned, or found the farm's acre count moved. */
+export type AcreAddition = "added" | "owned" | "stale";
+
 /**
- * Writes one bought acre. True when this call wrote it, false when the farm
- * already held it (a second tap, or another tab), so the caller can put the
- * price back. The insert ignores a duplicate and returns the row at most once.
+ * Writes one bought acre, under a per-farm lock (`add_homestead_acre`).
+ * `expectedOwned` is the count the price was worked out from; when another
+ * purchase landed since, the write is refused as "stale" so the caller can put
+ * the price back instead of selling a later acre at an earlier price.
  */
-export async function insertStackAcresAcre(profileId: string, id: AcreId): Promise<boolean> {
+export async function insertStackAcresAcre(profileId: string, id: AcreId, expectedOwned: number): Promise<AcreAddition> {
   const supabase = adminClient();
   if (!supabase) {
     const owned = memoryAcres.get(profileId) ?? new Map<AcreId, AcreSource>();
-    if (owned.has(id)) return false;
+    if (owned.has(id)) return "owned";
+    if (owned.size !== expectedOwned) return "stale";
     owned.set(id, "bought");
     memoryAcres.set(profileId, owned);
-    return true;
+    return "added";
   }
-  const { data, error } = await supabase
-    .from("homestead_acres")
-    .upsert({ profile_id: profileId, acre_id: id, source: "bought" }, { onConflict: "profile_id,acre_id", ignoreDuplicates: true })
-    .select("acre_id");
+  const { data, error } = await supabase.rpc("add_homestead_acre", {
+    p_profile_id: profileId,
+    p_acre_id: id,
+    p_expected_owned: expectedOwned,
+  });
   if (error) throw new Error(`Could not record your acre: ${error.message}`);
-  return (data ?? []).length > 0;
+  const outcome = String(data);
+  if (outcome === "added" || outcome === "owned" || outcome === "stale") return outcome;
+  throw new Error(`Could not record your acre: unexpected answer ${outcome}`);
 }

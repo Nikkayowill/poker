@@ -20,8 +20,8 @@ import {
 import { __resetStackAcresSoilTilesForTest, placeStackAcresSoilTile } from "./stackacres-soil-store";
 import {
   __resetStackAcresForTest,
-  raiseStackAcresUpkeep,
   recordStackAcresCropFieldsUnlocked,
+  takeStackAcresUpkeep,
   recordStackAcresSectorCleared,
 } from "./stackacres-store";
 
@@ -59,7 +59,7 @@ vi.mock("./profile-store", async (importOriginal) => {
 
 vi.mock("./stackacres-store", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./stackacres-store")>();
-  return { ...actual, raiseStackAcresUpkeep: vi.fn(actual.raiseStackAcresUpkeep) };
+  return { ...actual, takeStackAcresUpkeep: vi.fn(actual.takeStackAcresUpkeep) };
 });
 
 /** What the 05:00 sweep would hand back. */
@@ -134,7 +134,7 @@ describe("farm Gold spends and the nightly orphan sweep", () => {
     const profile = await ensureProfile(token);
     for (const sector of SECTOR_LADDER) await recordStackAcresSectorCleared(profile.id, sector, T0);
     const before = await gold(token);
-    vi.mocked(raiseStackAcresUpkeep).mockResolvedValueOnce(false);
+    vi.mocked(takeStackAcresUpkeep).mockResolvedValueOnce(0);
     expect((await payStackAcresUpkeep(token, T0)).upkeepCharged).toBe(0);
     expect(await gold(token)).toBe(before);
     expect(ledger.debits.size).toBe(1);

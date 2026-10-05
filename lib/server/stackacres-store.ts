@@ -1403,6 +1403,39 @@ export async function raiseStackAcresUpkeep(
   return data === true;
 }
 
+/**
+ * Takes up to `amount` toward today's fee of `fee`, atomically, and returns
+ * what it took. Never more than the fee in total, however many sales or
+ * opens land at once: each one adds to the paid total under a row lock,
+ * where raising to a target read beforehand let overlapping payouts each
+ * keep their own cut.
+ */
+export async function takeStackAcresUpkeep(
+  profileId: string,
+  day: string,
+  fee: number,
+  amount: number,
+): Promise<number> {
+  if (!Number.isInteger(fee) || !Number.isInteger(amount) || fee <= 0 || amount <= 0) return 0;
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${profileId}:${day}`;
+    const paid = memoryUpkeep.get(key) ?? 0;
+    const take = Math.min(amount, Math.max(0, fee - paid));
+    if (take > 0) memoryUpkeep.set(key, paid + take);
+    return take;
+  }
+
+  const { data, error } = await supabase.rpc("take_homestead_upkeep", {
+    p_profile_id: profileId,
+    p_day: day,
+    p_fee: fee,
+    p_amount: amount,
+  });
+  if (error) throw new Error(`Could not settle today's land fee: ${error.message}`);
+  return Math.max(0, Number(data ?? 0));
+}
+
 /* ------------------------------------------------------------------ */
 /* Equipment                                                           */
 /* ------------------------------------------------------------------ */

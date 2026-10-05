@@ -77,6 +77,7 @@ import {
   listStackAcresUnits,
   markStackAcresDonated,
   raiseStackAcresUpkeep,
+  takeStackAcresUpkeep,
   readStackAcresSecretLedgerQty,
   readStackAcresFeed,
   readStackAcresWater,
@@ -222,6 +223,7 @@ vi.mock("./stackacres-store", async (importOriginal) => {
     // hidden-secrets Land Maintenance trade -- the memory branch's own
     // raise-to-target check cannot be raced from a single synchronous test.
     raiseStackAcresUpkeep: vi.fn(actual.raiseStackAcresUpkeep),
+    takeStackAcresUpkeep: vi.fn(actual.takeStackAcresUpkeep),
     // Passthrough spy, so one test can stand in for a catch credit failing
     // after the bait was spent.
     adjustStackAcresInventory: vi.fn(actual.adjustStackAcresInventory),
@@ -1750,9 +1752,27 @@ describe("Land Maintenance", () => {
   it("gives the Gold back when another tab settled the day first", async () => {
     const { token } = await unpaid();
     const before = await balance(token);
-    vi.mocked(raiseStackAcresUpkeep).mockResolvedValueOnce(false);
+    // Another tab or a sale paid the whole day between the read and the take.
+    vi.mocked(takeStackAcresUpkeep).mockResolvedValueOnce(0);
     expect((await payStackAcresUpkeep(token, HEN_READY)).upkeepCharged).toBe(0);
     expect(await balance(token)).toBe(before);
+  });
+
+  it("takes the fee once when sales land together, and pays the rest in full", async () => {
+    const { token, id } = await unpaid();
+    const fee = (await readStackAcres(token, HEN_READY)).upkeep.fee;
+    const eggPrice = itemSellPrice("eggs");
+    const each = Math.ceil((fee * 0.8) / eggPrice);
+    await adjustStackAcresInventory(id, "eggs", each * 3);
+    const before = await balance(token);
+
+    const sales = await Promise.all(
+      [0, 1, 2].map(() => sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity: each }, HEN_READY)),
+    );
+
+    const gross = sales.reduce((sum, sale) => sum + sale.sold.gold, 0);
+    expect(await readStackAcresUpkeep(id, DAY)).toBe(fee);
+    expect(await balance(token)).toBe(before + gross - fee);
   });
 });
 

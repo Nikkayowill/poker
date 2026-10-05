@@ -65,6 +65,7 @@ import {
 import {
   stackacresUpkeepDay,
   stackacresUpkeepDue,
+  stackacresUpkeepFee,
   upkeepState,
   type StackAcresUpkeepState,
 } from "@/lib/stackacres/upkeep";
@@ -335,6 +336,7 @@ import {
   fillStackAcresWater,
   readStackAcresMuseum,
   raiseStackAcresUpkeep,
+  takeStackAcresUpkeep,
   readStackAcresSectors,
   readStackAcresUpkeep,
   recordStackAcresHarvest,
@@ -1587,6 +1589,8 @@ async function assignSoilSlot(
   stock: StackAcresStock,
   inGreenhouse: boolean,
   tile: SoilTileCoord | null = null,
+  /** Only the named bed: never fall back to another free one. */
+  exact = false,
 ): Promise<{ slot: number | null; growthMultiplier: number; enriched: boolean }> {
   const plain = { slot: null, growthMultiplier: 1, enriched: false };
   if (inGreenhouse) return plain;
@@ -1606,7 +1610,7 @@ async function assignSoilSlot(
     const tapped = soilSlotForTile(soil, tile.tx, tile.ty);
     if (tapped !== null && !taken.includes(tapped)) slot = tapped;
   }
-  if (slot === null) slot = nextFreeSoilSlot(soil, taken);
+  if (slot === null && !exact) slot = nextFreeSoilSlot(soil, taken);
   if (slot === null) return plain;
   const tileRow = soilSlotTile(soil, slot);
   if (!tileRow) return plain;
@@ -1989,16 +1993,12 @@ async function netUpkeepFromPayout(profileId: string, now: Date, grossGold: numb
       readStackAcresCropFieldsUnlocked(profileId),
       listStackAcresAcres(profileId),
     ]);
-    const due = stackacresUpkeepDue(
-      unlockedPlotCount(sectors, capacity, cropFieldsUnlocked),
-      upkeepPaid,
-      boughtAcreCount(acres),
-    );
-    if (due <= 0) return grossGold;
+    const fee = stackacresUpkeepFee(unlockedPlotCount(sectors, capacity, cropFieldsUnlocked), boughtAcreCount(acres));
+    if (fee - upkeepPaid <= 0) return grossGold;
 
-    const skimmed = Math.min(due, grossGold);
-    const raised = await raiseStackAcresUpkeep(profileId, day, upkeepPaid + skimmed);
-    return raised ? grossGold - skimmed : grossGold;
+    // Atomic, so two sales landing together cannot both take the same part of the fee.
+    const taken = await takeStackAcresUpkeep(profileId, day, fee, grossGold);
+    return grossGold - taken;
   } catch (error) {
     console.error("stackacres.upkeep_net_failed", { profileId, error });
     return grossGold;
@@ -2042,19 +2042,18 @@ export async function payStackAcresUpkeep(
   // Not enough Gold after all (spent in another tab), or this exact charge was already made.
   if (!paid.success || paid.alreadyApplied) return { ...(await view(await ensureProfile(token), now)), upkeepCharged: 0 };
 
-  let raised: boolean;
+  const fee = upkeepPaid + due;
+  let taken: number;
   try {
-    raised = await raiseStackAcresUpkeep(profile.id, day, target);
+    taken = await takeStackAcresUpkeep(profile.id, day, fee, charge);
   } catch (error) {
     await refundGoldLedgered(profile.id, charge, correlation);
     throw error;
   }
-  if (!raised) {
-    await refundGoldLedgered(profile.id, charge, correlation);
-    return { ...(await view(await ensureProfile(token), now)), upkeepCharged: 0 };
-  }
-  await confirmGoldSpent(correlation);
-  return { ...(await view(await ensureProfile(token), now)), upkeepCharged: charge };
+  // A sale or another tab paid part of the day meanwhile: hand back what the fee no longer needed.
+  if (taken < charge) await refundGoldLedgered(profile.id, charge - taken, correlation);
+  if (taken > 0) await confirmGoldSpent(correlation);
+  return { ...(await view(await ensureProfile(token), now)), upkeepCharged: taken };
 }
 
 /**
@@ -2584,7 +2583,8 @@ async function resowHarvestedBeds(
     if (!bed) continue;
     if (((await readStackAcresSeedStock(profileId))[row.stock] ?? 0) < 1) break;
     try {
-      await stockStackAcres(token, { stock: row.stock, tile: { tx: bed.tx, ty: bed.ty } }, now);
+      // Exact: if the player sowed this bed first, Earl leaves it rather than spend a seed on another one.
+      await stockStackAcres(token, { stock: row.stock, tile: { tx: bed.tx, ty: bed.ty }, exactTile: true }, now);
       sownSlots.add(row.soilSlot);
       sown += 1;
     } catch (error) {
@@ -2837,6 +2837,12 @@ export async function buyStackAcresStock(
           );
         }
         soilAssignment = await assignSoilSlot(profile.id, stock, false, null);
+        // The race took the last free bed: refuse (the catch below refunds) rather than plant in the grass.
+        if (isStackAcresCrop(stock) && soilAssignment.slot === null) {
+          throw new StackAcresRequestError(`${def.label}'s bed was just taken by another purchase. Try again.`, 409, {
+            round: await snapshots(profile.id, now),
+          });
+        }
       }
     }
   } catch (error) {
@@ -2865,7 +2871,13 @@ export async function buyStackAcresStock(
  */
 export async function stockStackAcres(
   token: string,
-  input: { stock: string; inGreenhouse?: boolean; tile?: SoilTileCoord | null },
+  input: {
+    stock: string;
+    inGreenhouse?: boolean;
+    tile?: SoilTileCoord | null;
+    /** Sow the named bed or nothing, never the next free one. Earl's re-sow uses it. */
+    exactTile?: boolean;
+  },
   now = new Date(),
 ): Promise<StackAcresView> {
   if (!isStackAcresStock(input.stock)) throw new StackAcresRequestError("Not a real stock.", 400);
@@ -2874,6 +2886,7 @@ export async function stockStackAcres(
   const profile = await ensureProfile(token);
   const inGreenhouse = input.inGreenhouse === true;
   const tile = input.tile ?? null;
+  const exactTile = input.exactTile === true && tile !== null;
 
   const land = await readLand(profile.id);
   const zone = stockZone(stock);
@@ -2963,7 +2976,7 @@ export async function stockStackAcres(
   // sub-grid instead, so both keep a null slot and the plain multiplier. The
   // two effects do not stack for the additional reason that they would
   // otherwise multiply into a cycle far shorter than either was tuned for.
-  let soilAssignment = await assignSoilSlot(profile.id, stock, inGreenhouse, tile);
+  let soilAssignment = await assignSoilSlot(profile.id, stock, inGreenhouse, tile, exactTile);
 
   // A crop needs a bed under it (2026-09-09). `assignSoilSlot` answers
   // `slot: null` for "this farm has no free bed anywhere" -- it used to sow
@@ -3026,7 +3039,7 @@ export async function stockStackAcres(
         break;
       } catch (error) {
         if (!(error instanceof SoilSlotConflictError)) throw error;
-        if (attempt >= 2) {
+        if (exactTile || attempt >= 2) {
           // Same refusal `buyStackAcresStock` makes on the identical race:
           // three losses in a row means another sow keeps taking the free
           // bed out from under this one, not that there was never a bed.
@@ -3038,7 +3051,13 @@ export async function stockStackAcres(
             { round: await snapshots(profile.id, now) },
           );
         }
-        soilAssignment = await assignSoilSlot(profile.id, stock, inGreenhouse, tile);
+        soilAssignment = await assignSoilSlot(profile.id, stock, inGreenhouse, tile, exactTile);
+        // The race took the last free bed: refuse (the catch below refunds the seed) rather than plant in the grass.
+        if (!inGreenhouse && isStackAcresCrop(stock) && soilAssignment.slot === null) {
+          throw new StackAcresRequestError(`${def.label}'s bed was just taken by another sow. Try again.`, 409, {
+            round: await snapshots(profile.id, now),
+          });
+        }
       }
     }
   } catch (error) {

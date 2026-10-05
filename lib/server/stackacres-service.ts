@@ -427,6 +427,7 @@ import {
 } from "./stackacres-intent-store";
 import { bumpStackAcresRevision, readStackAcresRevision } from "./stackacres-revision-store";
 import {
+  confirmGoldDebitLedgered,
   creditGoldByProfile,
   creditGoldByProfileLedgered,
   debitGoldByProfile,
@@ -1528,11 +1529,27 @@ async function payOutGold(profileId: string, gold: number, correlationId: string
   throw new StackAcresRequestError("We couldn't pay that out just now. Please contact support so it can be made good.", 503);
 }
 
-/** The same for a spend made through the Gold ledger: the refund is keyed off the spend, so it lands once. */
+/**
+ * The same for a spend made through the Gold ledger. The refund is credited
+ * under the spend's own correlation id, so it lands once and the nightly
+ * orphan sweep (reconcileOrphanedGoldDebits) sees the debit as settled
+ * instead of refunding it a second time.
+ */
 async function refundGoldLedgered(profileId: string, gold: number, spent: string): Promise<void> {
   if (gold <= 0) return;
-  await creditGoldByProfileLedgered(profileId, gold, `${spent}:refund`, "stackacres_refund").catch((error) =>
+  await creditGoldByProfileLedgered(profileId, gold, spent, "stackacres_refund").catch((error) =>
     console.error("stackacres.refund_failed", { profileId, gold, spent, error }),
+  );
+}
+
+/**
+ * Marks a ledgered spend as having bought what it paid for. Without this the
+ * nightly orphan sweep treats the debit as stranded and hands the Gold back.
+ * Best effort, like the other games' confirms.
+ */
+async function confirmGoldSpent(spent: string): Promise<void> {
+  await confirmGoldDebitLedgered(spent).catch((error) =>
+    console.error("stackacres.confirm_failed", { spent, error }),
   );
 }
 
@@ -2031,6 +2048,7 @@ export async function payStackAcresUpkeep(
     await refundGoldLedgered(profile.id, charge, correlation);
     return { ...(await view(await ensureProfile(token), now)), upkeepCharged: 0 };
   }
+  await confirmGoldSpent(correlation);
   return { ...(await view(await ensureProfile(token), now)), upkeepCharged: charge };
 }
 
@@ -2533,6 +2551,7 @@ export async function hireStackAcresHand(
     await refundGoldLedgered(profile.id, HIRED_HAND_DAILY_WAGE, correlation);
     throw new StackAcresRequestError(HIRED_HAND_ALREADY, 409, { round: await snapshots(profile.id, now) });
   }
+  await confirmGoldSpent(correlation);
   return { ...(await view(await ensureProfile(token), now)), hiredHand: true };
 }
 
@@ -2642,6 +2661,7 @@ export async function runStackAcresHiredHand(
       return { ...(await view(await ensureProfile(token), now)), handChores: NO_HAND_CHORES };
     }
     hand = moved;
+    await confirmGoldSpent(correlation);
     if (!paid.alreadyApplied) wagePaid = HIRED_HAND_DAILY_WAGE;
   }
 
@@ -4649,6 +4669,7 @@ export async function hireStackAcresGroceryWorker(token: string, input: { name: 
     await refundGoldLedgered(profile.id, fee, correlation);
     throw error;
   }
+  await confirmGoldSpent(correlation);
   return view(await ensureProfile(token), now);
 }
 
@@ -4727,6 +4748,7 @@ export async function buyStackAcresGroceryItem(
     await refundGoldLedgered(profile.id, def.gold, correlation);
     throw error;
   }
+  await confirmGoldSpent(correlation);
   return view(await ensureProfile(token), now);
 }
 

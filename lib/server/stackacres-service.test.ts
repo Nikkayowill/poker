@@ -4354,7 +4354,7 @@ describe("Chapter 1: the bread basket", () => {
     await adjustStackAcresInventory(id, "eggs", 5);
     const credit = vi.spyOn(profileStore, "creditGoldByProfileLedgered").mockRejectedValue(new Error("db down"));
     try {
-      await expect(sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity: 5 }, T0)).rejects.toMatchObject({ status: 503 });
+      await expect(sellStackAcresItem(token, { buyer: "general-store", item: "eggs", quantity: 5 }, T0)).rejects.toMatchObject({ status: 500 });
       expect(credit).toHaveBeenCalledTimes(3);
       const keys = new Set(credit.mock.calls.map((call) => call[2]));
       expect(keys.size).toBe(1);

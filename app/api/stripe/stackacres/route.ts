@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { ensureProfile } from "@/lib/server/profile-store";
+import { ensureProfile, setStackAcresAccess } from "@/lib/server/profile-store";
 import { pendingAcceptances } from "@/lib/server/legal-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
 import { publicErrorMessage } from "@/lib/server/public-error";
 import { tokenHasStackAcresAccess } from "@/lib/server/stackacres-access";
 import { buildCheckoutSession, resolveStackAcresPrice, stripeClient } from "@/lib/server/stripe";
+import { hasPaidStackAcresPurchase } from "@/lib/server/stripe-store";
 
 export const runtime = "nodejs";
 
@@ -46,6 +47,12 @@ export async function POST(request: NextRequest) {
     }
     if (await tokenHasStackAcresAccess(token)) {
       return NextResponse.json({ error: "You already have StackAcres.", owned: true }, { status: 409 });
+    }
+    // Paid before but the access never landed (a lost return trip, or an admin
+    // switch-off): open the farm again rather than take a second payment.
+    if (await hasPaidStackAcresPurchase(profile.id)) {
+      await setStackAcresAccess(profile.id, true);
+      return NextResponse.json({ error: "You already bought StackAcres. Your farm is open again.", owned: true }, { status: 409 });
     }
 
     const pending = await pendingAcceptances(profile.id);

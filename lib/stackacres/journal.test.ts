@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { stackacresStockPrice } from "./market";
 import {
   journalCue,
   journalView,
@@ -10,9 +9,10 @@ import {
 import { CHAPTERS } from "./chapters";
 import { emptyInventory, type StackAcresInventory } from "./inventory";
 import type { MachineKind } from "./machines";
-import { STACKACRES_QUEST_FLAGS } from "./shop-locks";
+import { STACKACRES_QUEST_FLAGS, type StackAcresShopProgress } from "./shop-locks";
 import type { StackAcresUnitSnapshot } from "./units";
-import type { StackAcresStock } from "./catalogue";
+import { STACKACRES_CATALOGUE, type StackAcresStock } from "./catalogue";
+import { GREENHOUSE_BUILD_COST } from "./greenhouse";
 import type { StackAcresUnitState } from "./units";
 import type { VatContainer } from "./aging";
 import type { StackAcresContractRow } from "./contracts";
@@ -35,12 +35,25 @@ const FRESH: JournalInput = {
   stoneNodes: [],
   forageNodes: [],
   seedStock: {},
+  beds: 0,
+  hand: null,
+  equipment: [],
   nowMs: Date.parse("2026-09-21T12:00:00.000Z"),
 };
 
 /** A farm with a crop already in the ground. A truly empty one is `FRESH` itself, which is where the
  *  seed cues live (Ray's pouch, then Cora). */
 const farm = (patch: Partial<JournalInput> = {}): JournalInput => ({ ...FRESH, units: [unit("working")], ...patch });
+
+/** Every building up, and every milestone flag earned. */
+const ALL_BUILT = new Set<MachineKind>(CHAPTERS.flatMap((chapter) => chapter.steps));
+const EVERY_FLAG: StackAcresShopProgress = {
+  sectors: ["wallow", "oxfields"],
+  influence: 10,
+  greenhouseBuilt: true,
+  cropFieldsUnlocked: true,
+};
+const EARL = { name: "Earl", wage: 60, paidThroughDay: 1 };
 
 const unit = (state: StackAcresUnitState, stock: StackAcresStock = "wheat"): StackAcresUnitSnapshot => ({
   id: `u-${state}-${stock}`,
@@ -258,6 +271,11 @@ describe("the one line", () => {
       { units: [unit("dry")] },
       { gold: 200, inventory: holding("wood", 15) },
       { built: new Set(CHAPTERS.flatMap((chapter) => chapter.steps)) },
+      { beds: 6 },
+      { built: new Set<MachineKind>(["mill", "oven"]), gold: 300 },
+      { built: ALL_BUILT, units: [unit("working"), unit("working", "hog")], inventory: holding("metal", 8) },
+      { built: ALL_BUILT, progress: EVERY_FLAG, acrePrice: { gold: 450, wood: 18, stone: 5 } },
+      { built: ALL_BUILT, progress: EVERY_FLAG },
     ];
     for (const patch of farms) expect(journalView(farm(patch)).now.line).not.toMatch(/[—–]/);
   });
@@ -274,6 +292,121 @@ describe("the one line", () => {
     expect(gather.short).toBe("The Feed Grinder still wants 15 more Wood.");
     const build = journalView(farm({ gold: 200, inventory: holding("wood", 15) })).now;
     expect(build.short).toBe(build.line);
+  });
+});
+
+// Farm, harvest, hire, expand: the steps after the first crop that the ladder used to skip.
+describe("hiring and growing the farm", () => {
+  it("points a farm with six beds and no hand at Earl, at Ray's counter in the barn", () => {
+    const cue = journalView(farm({ beds: 6 })).now;
+    expect(cue.kind).toBe("hire");
+    expect(cue.line).toBe("Earl will work your beds for 60 Gold a day. Hire him at Ray's counter in the barn.");
+    expect(cue.where).toBe("The barn");
+  });
+
+  it("says nothing of Earl below six beds, or once he works here", () => {
+    expect(cueFor({ beds: 5 })).not.toBe("hire");
+    expect(cueFor({ beds: 6, hand: EARL })).not.toBe("hire");
+  });
+
+  it("puts Earl above the next building, and a traveler waiting to be met above Earl", () => {
+    expect(cueFor({ beds: 6, gold: 200, inventory: holding("wood", 15) })).toBe("hire");
+    const story = {
+      level: 1,
+      items: [],
+      travelers: Object.fromEntries(
+        TRAVELER_IDS.map((id) => [id, { unlocked: id === "ray", hint: null, met: false, done: false, quest: null, ready: false }]),
+      ),
+    } as unknown as StackAcresStoryView;
+    expect(cueFor({ beds: 6, story })).toBe("caller");
+    // Ripe beds still come first. Earl picks them too, but not until he is hired.
+    expect(cueFor({ beds: 6, units: [unit("ready")] })).toBe("harvest");
+  });
+
+  it("sends a farm with a Feed Grinder and Gold to spare to Hank for a feeder pig", () => {
+    const cue = journalView(farm({ built: new Set<MachineKind>(["mill", "oven"]), gold: 300 })).now;
+    expect(cue.kind).toBe("raise");
+    expect(cue.line).toBe("Hank sells feeder pigs at the sale barn in town. Fatten one up and he buys it back by weight.");
+    expect(cue.where).toBe("The City");
+  });
+
+  it("lets a building the farm can afford go first, and leaves Hank out while one is growing", () => {
+    // The Oven is 500 Gold, so with 600 it goes up first.
+    expect(cueFor({ built: new Set<MachineKind>(["mill"]), gold: 600 })).toBe("build");
+    const growing = [unit("working"), unit("working", "hog")];
+    const cue = journalView(farm({ built: new Set<MachineKind>(["mill", "oven"]), gold: 300, units: growing })).now;
+    expect(cue.kind).toBe("gather");
+    expect(cue.line).toContain("Stew Pot");
+    // A steer counts the same.
+    expect(cueFor({ built: new Set<MachineKind>(["mill", "oven"]), gold: 300, units: [unit("working"), unit("working", "steer")] })).toBe(
+      "gather",
+    );
+  });
+
+  it("does not send a farm to Hank before it has a Feed Grinder, or without the Gold for a pig", () => {
+    // Corn seed comes with the Feed Grinder, and it grinds the Cattle Feed hogs fatten on.
+    expect(cueFor({ gold: 5_000 })).toBe("gather");
+    expect(cueFor({ built: new Set<MachineKind>(["mill", "oven"]), gold: 249 })).toBe("gather");
+  });
+
+  it("stops sending the farm to Hank once it holds the flag a hog or a sheep earns", () => {
+    // Keeping one is the Sheep Pen milestone, and from there the milestones lead.
+    const progress = { ...FRESH.progress, sectors: ["wallow" as const] };
+    expect(cueFor({ built: new Set<MachineKind>(["mill", "oven"]), gold: 300, progress })).toBe("gather");
+    expect(cueFor({ built: ALL_BUILT, gold: 300, progress })).toBe("reach");
+  });
+
+  it("points at the tractor once the Metal for it is in hand, and says what Gold is left", () => {
+    const hog = [unit("working"), unit("working", "hog")];
+    const short = journalView(farm({ built: ALL_BUILT, units: hog, gold: 8_000, inventory: holding("metal", 8) })).now;
+    expect(short.kind).toBe("tractor");
+    expect(short.line).toBe("The tractor is 4,000 Gold away. Sell your harvest in town. Dale buys grain and Iris buys the rest.");
+    expect(short.where).toBe("The barn");
+    const ready = journalView(farm({ built: ALL_BUILT, units: hog, gold: 12_000, inventory: holding("metal", 8) })).now;
+    expect(ready.line).toBe("You can buy the tractor from Ray now.");
+    // Short of Metal, or already parked by the barn: the milestones lead instead.
+    expect(cueFor({ built: ALL_BUILT, units: hog, gold: 12_000, inventory: holding("metal", 7) })).toBe("reach");
+    expect(
+      cueFor({ built: ALL_BUILT, units: hog, gold: 12_000, inventory: holding("metal", 8), equipment: ["tractor"] }),
+    ).toBe("reach");
+  });
+
+  it("leaves the tractor below the farm's own next building", () => {
+    const hog = [unit("working"), unit("working", "hog")];
+    expect(cueFor({ built: new Set<MachineKind>(["mill"]), units: hog, gold: 300, inventory: holding("metal", 8) })).toBe(
+      "gather",
+    );
+  });
+
+  it("points a farm with every building and milestone at another acre in the Crop Fields", () => {
+    const at = (gold: number, inventory: StackAcresInventory) =>
+      journalView(farm({ built: ALL_BUILT, progress: EVERY_FLAG, gold, inventory, acrePrice: { gold: 450, wood: 18, stone: 5 } }))
+        .now;
+    const ready = at(450, { wood: 18, stone: 5 });
+    expect(ready.kind).toBe("acre");
+    expect(ready.line).toBe("You can buy another acre in the Crop Fields now.");
+    expect(ready.where).toBe("Crop Fields");
+    // A hand-gathered material leads, the same as a building's.
+    expect(at(450, { wood: 18, stone: 2 }).line).toBe("The next acre still wants 3 more Stone. Break the boulders in the Crop Fields.");
+    expect(at(100, { wood: 18, stone: 5 }).line).toBe(
+      "The next acre is 350 Gold away. Sell your harvest in town. Dale buys grain and Iris buys the rest.",
+    );
+  });
+
+  it("leaves land for last, below the milestones", () => {
+    const acrePrice = { gold: 450, wood: 18, stone: 5 };
+    const progress = { ...EVERY_FLAG, greenhouseBuilt: false };
+    expect(cueFor({ built: ALL_BUILT, progress, acrePrice })).toBe("reach");
+    // The first acre is that milestone's own price, so a farm that has not broken ground out there is
+    // told to do that instead.
+    expect(cueFor({ built: ALL_BUILT, progress: { ...EVERY_FLAG, cropFieldsUnlocked: false }, acrePrice })).toBe("reach");
+  });
+
+  it("does not promise anyone turning up once every traveler has arrived", () => {
+    const cue = journalView(farm({ built: ALL_BUILT, progress: EVERY_FLAG, acrePrice: null })).now;
+    expect(cue.kind).toBe("idle");
+    expect(cue.line).not.toContain("turns up");
+    expect(cue.line).toBe("Nothing's waiting on you right now.");
   });
 });
 
@@ -393,17 +526,46 @@ describe("the expansion track", () => {
     expect(view.reach.find((step) => step.flag === "town_trusted")?.done).toBe(true);
   });
 
-  it("prices every rung that is bought", () => {
+  it("prices every rung that costs something", () => {
     const view = journalView({ ...FRESH, acrePrice: { gold: 300, wood: 15, stone: 5 } });
     const cost = (flag: string) => view.reach.find((step) => step.flag === flag)?.cost;
     // The first wild bed needs a bought acre, so the acre is the Crop Fields' price.
     expect(cost("crop_fields_unlocked")).toBe("300 Gold + 15 Wood + 5 Stone");
-    // The first sheep or cow opens its district.
-    expect(cost("cleared_wallow")).toBe(`${stackacresStockPrice("pig").toLocaleString()} Gold`);
-    expect(cost("cleared_oxfields")).toBe(`${stackacresStockPrice("cattle").toLocaleString()} Gold`);
-    // The other two are acts, not purchases.
+    // Keeping one sheep or cow earns the flag, so the cheapest way in is one Cycle Lease, not the pen outright.
+    expect(cost("cleared_wallow")).toBe(`${STACKACRES_CATALOGUE.pig.seedCost.toLocaleString()} Gold`);
+    expect(cost("cleared_oxfields")).toBe(`${STACKACRES_CATALOGUE.cattle.seedCost.toLocaleString()} Gold`);
+    // The Greenhouse is built from goods, not Gold.
+    expect(cost("greenhouse_raised")).toBe(`${GREENHOUSE_BUILD_COST.flour} Flour + ${GREENHOUSE_BUILD_COST.cloth} Cloth`);
+    // A town order is an act, not a purchase.
     expect(cost("town_trusted")).toBeNull();
-    expect(cost("greenhouse_raised")).toBeNull();
+  });
+
+  it("says where the Greenhouse's Flour and Cloth come from", () => {
+    const greenhouse = journalView({ ...FRESH, inventory: holding("flour", 25) }).reach.find(
+      (step) => step.flag === "greenhouse_raised",
+    );
+    expect(greenhouse?.lines).toEqual([
+      { label: "Flour", have: 25, need: 20, met: true, source: "Grind wheat at the Feed Grinder in the Workshop" },
+      {
+        label: "Cloth",
+        have: 0,
+        need: 12,
+        met: false,
+        source: "Weave Fleece from your sheep on the Loom, under More machines in the Workshop",
+      },
+    ]);
+    expect(greenhouse?.how).toBe("Flour comes from the Feed Grinder and Cloth from the Loom, both in the Workshop.");
+  });
+
+  it("names the cheaper ways into the Sheep and Cattle Pens, and who sells them", () => {
+    const how = (flag: string) => journalView(FRESH).reach.find((step) => step.flag === flag)?.how;
+    const hog = STACKACRES_CATALOGUE.hog.seedCost.toLocaleString();
+    const steer = STACKACRES_CATALOGUE.steer.seedCost.toLocaleString();
+    expect(how("cleared_wallow")).toBe(`Cycle Lease one at the barn, or buy a feeder pig from Hank in town for ${hog}. Either counts.`);
+    expect(how("cleared_oxfields")).toBe(`Cycle Lease one at the barn, or buy a calf from Hank in town for ${steer}. Either counts.`);
+    expect(how("crop_fields_unlocked")).toBeNull();
+    expect(how("town_trusted")).toBeNull();
+    for (const step of journalView(FRESH).reach) expect(step.how ?? "").not.toMatch(/[—–]/);
   });
 
   it("shows no acre price once every acre is owned", () => {

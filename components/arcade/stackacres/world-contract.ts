@@ -356,6 +356,8 @@ export interface StackAcresWorldProps {
   tractorOwned: boolean;
   /** Earl, the hired hand, works this farm, so he is on the Homestead. */
   handHired: boolean;
+  /** The Greenhouse is built, so it stands on its stone footing. */
+  greenhouseBuilt: boolean;
   /** He climbed onto the tractor or off it. */
   onDrivingChanged: (driving: boolean) => void;
   tool: StackAcresTool;

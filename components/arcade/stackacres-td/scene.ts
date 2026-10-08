@@ -235,6 +235,18 @@ function areaArt(area: TopdownArea, spec: AreaSpec): { key: string; file: string
   for (const sheet of ["props", ...(AREA_ATLASES[area] ?? [])]) art.push({ key: `${sheet}:${area}`, file: `${dir}/${sheet}`, atlas: true });
   return art;
 }
+/** `image` drawn smoothed into a new canvas of `width` x `height`. */
+function shrunk(image: HTMLImageElement | HTMLCanvasElement, width: number, height: number): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("No 2D canvas to shrink a picture on.");
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(image, 0, 0, width, height);
+  return canvas;
+}
+
 /** What the place tag says on arriving somewhere: the map's own names, plus the two rooms.
  *  Exported so the shell (stackacres-farm.tsx) can key its own per-place UI (the empire
  *  district's resource HUD) off the same name this scene hands `onPlaceEntered`, rather than
@@ -262,6 +274,22 @@ const FOREST_SCALE = 0.5;
 const FOREST_SHRINK = 16;
 /** How fast a waterfall's water drops, in map units a second. */
 const FALL_SPEED = 40;
+/**
+ * The built Greenhouse, put up on the stone footing the Homestead's `greenhouse` zone covers. Its picture is
+ * the supplied glasshouse in public/stackacres/sprites, the only one there is, fetched once a farm has built
+ * it and shrunk to the props sheet's two texels per map unit (`bakeGreenhouse`). `front` is where its two
+ * front walls meet the ground, as a share of the picture: that corner stands on the footing's front edge.
+ */
+const GREENHOUSE = {
+  tag: "greenhouse",
+  art: "/stackacres/sprites/greenhouse.webp",
+  source: "greenhouse-source",
+  texture: "greenhouse",
+  /** Map units across: the footing's 80 and the brick path round it. */
+  width: 100,
+  scale: 0.5,
+  front: { x: 0.49, y: 0.87 },
+} as const;
 
 /** Above the daylight tint and the cue bubbles: the dissolving view is the screen's own. */
 const TRAVEL_DEPTH = 20_000;
@@ -709,6 +737,10 @@ export class TopdownScene extends Phaser.Scene {
   private handHired = false;
   /** What the shell last said about owning one, kept for a push that lands before boot. */
   private tractorOwned = false;
+  /** Whether the Greenhouse is built, kept for an area rebuild and for a push that lands before boot. */
+  private greenhouseBuilt = false;
+  /** The Greenhouse's picture has been asked for and has not landed yet. */
+  private greenhouseLoading = false;
   /** When a refused gate last said so, so a stick held into it does not say it every frame. */
   private gateRefusedAt = 0;
 
@@ -748,6 +780,9 @@ export class TopdownScene extends Phaser.Scene {
     this.load.image("water-film", `${ASSETS}/common/water-film.png`);
     this.load.spritesheet("fish", `${ASSETS}/common/fish.png`, { frameWidth: FISH_CELL, frameHeight: FISH_CELL });
     for (const texture of LAND_TEXTURES) this.load.image(texture, `${ASSETS}/common/${texture}.png`);
+    // A farm that has its Greenhouse already gets the picture with everything else, so it is standing
+    // when the map first shows. Everyone else fetches it the day they build one (`greenhouseArtReady`).
+    if (this.greenhouseBuilt) this.load.image(GREENHOUSE.source, GREENHOUSE.art);
     for (const name of CHARACTERS) {
       this.load.aseprite(name, `${ASSETS}/characters/${name}.png`, `${ASSETS}/characters/${name}.json`);
     }
@@ -1296,11 +1331,8 @@ export class TopdownScene extends Phaser.Scene {
       }
     }
     this.buildLandObstacles();
-    this.seeThrough.track(
-      this.area.indoor
-        ? []
-        : this.propImages.filter(({ stump }) => !stump).map(({ spec, image, canopy }) => ({ images: canopy ? [image, canopy] : [image], baseY: spec.y })),
-    );
+    this.placeGreenhouse();
+    this.trackSeeThrough();
     // Someone who keeps a routine is placed by the clock wherever their day has taken them, so they are
     // made in every area and shown only in the one they are in (npc-walkers.ts). Everyone else stands
     // where area.json puts them.
@@ -1350,6 +1382,15 @@ export class TopdownScene extends Phaser.Scene {
     this.hand.build(name);
     // Nothing of the place he left is drawn any more, so its pictures go (LOADS_WITH).
     for (const place of [...this.placesLoaded]) if (place !== "homestead" && place !== LOADS_WITH[name]) this.dropPlace(place);
+  }
+
+  /** Hands the see-through everything standing on this map that can hide him. */
+  private trackSeeThrough(): void {
+    this.seeThrough.track(
+      this.area.indoor
+        ? []
+        : this.propImages.filter(({ stump }) => !stump).map(({ spec, image, canopy }) => ({ images: canopy ? [image, canopy] : [image], baseY: spec.y })),
+    );
   }
 
   private keep<T extends Phaser.GameObjects.GameObject>(object: T): T {
@@ -3602,6 +3643,84 @@ export class TopdownScene extends Phaser.Scene {
       const image = this.add.image(base.x, base.y, "buildings", building.kind).setOrigin(0.5, 1).setScale(0.5).setDepth(base.y);
       this.buildingImages.push(shadow, image);
     }
+  }
+
+  setGreenhouseBuilt(built: boolean): void {
+    if (built === this.greenhouseBuilt) return;
+    this.greenhouseBuilt = built;
+    if (this.booted) this.redrawGreenhouse();
+  }
+
+  /** Puts the Greenhouse up, or takes it down, on the map he is already standing on. */
+  private redrawGreenhouse(): void {
+    if (!this.placeGreenhouse()) return;
+    // The see-through starts every prop over from solid, so nothing it was fading is left half see-through.
+    for (const { image, canopy } of this.propImages) {
+      image.setAlpha(1);
+      canopy?.setAlpha(1);
+    }
+    this.trackSeeThrough();
+  }
+
+  /**
+   * The built Greenhouse on its footing, as an ordinary tagged prop: a tap anywhere on it opens it, and it fades
+   * when he walks in behind the glass. It blocks nothing, since a greenhouse is walked into, and Ray and Ivy
+   * still tend its beds. True when what stands on this map changed.
+   */
+  private placeGreenhouse(): boolean {
+    const standing = this.propImages.findIndex(({ spec }) => spec.tag === GREENHOUSE.tag);
+    if (standing !== -1) this.propImages.splice(standing, 1)[0].image.destroy();
+    const footing = this.area.zones.find((zone) => zone.tag === GREENHOUSE.tag);
+    if (!this.greenhouseBuilt || !footing || !this.greenhouseArtReady()) return standing !== -1;
+    const image = this.keep(this.add.image(0, 0, GREENHOUSE.texture).setOrigin(0, 0).setScale(GREENHOUSE.scale));
+    const x = footing.x + footing.w / 2;
+    const y = footing.y + footing.h;
+    const w = image.displayWidth;
+    const h = image.displayHeight;
+    const ax = w * GREENHOUSE.front.x;
+    const ay = h * GREENHOUSE.front.y;
+    image.setPosition(x - ax, y - ay).setDepth(y);
+    this.propImages.push({
+      spec: { frame: GREENHOUSE.texture, frames: [], x, y, ax, ay, w, h, scale: GREENHOUSE.scale, tag: GREENHOUSE.tag, blocks: [] },
+      image,
+    });
+    return true;
+  }
+
+  /** Whether the Greenhouse's picture is ready to draw. The first time it is not, it is fetched, and put up
+   *  once it lands. */
+  private greenhouseArtReady(): boolean {
+    if (this.textures.exists(GREENHOUSE.texture)) return true;
+    if (this.textures.exists(GREENHOUSE.source)) {
+      this.bakeGreenhouse();
+      return true;
+    }
+    if (!this.greenhouseLoading) {
+      this.greenhouseLoading = true;
+      this.load.once(`filecomplete-image-${GREENHOUSE.source}`, () => {
+        this.greenhouseLoading = false;
+        this.redrawGreenhouse();
+      });
+      this.load.image(GREENHOUSE.source, GREENHOUSE.art);
+      this.load.start();
+    }
+    return false;
+  }
+
+  /**
+   * The supplied picture is drawn for a far bigger screen. This camera samples nearest, which would break the
+   * thin glazing bars up as he walks, so it is shrunk once, in halves, to the props sheet's two texels per map
+   * unit, and the full-size picture is let go.
+   */
+  private bakeGreenhouse(): void {
+    const source = this.textures.get(GREENHOUSE.source).getSourceImage();
+    if (!(source instanceof HTMLImageElement)) throw new Error("The Greenhouse picture did not load as an image.");
+    const width = Math.round(GREENHOUSE.width / GREENHOUSE.scale);
+    const height = Math.round((source.height * width) / source.width);
+    let step: HTMLImageElement | HTMLCanvasElement = source;
+    while (step.width / 2 >= width) step = shrunk(step, Math.round(step.width / 2), Math.round(step.height / 2));
+    this.textures.addCanvas(GREENHOUSE.texture, shrunk(step, width, height));
+    this.textures.remove(GREENHOUSE.source);
   }
 
   /** The building being placed: its squares green where it may stand and red where it may not, the square

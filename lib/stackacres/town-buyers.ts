@@ -6,9 +6,14 @@
  * general store, and Hank on the market square is the sale barn. Real buildings come with a later redraw of
  * the City; for now the person is the place.
  *
- * Every item has exactly one buyer (`ITEM_BUYER` below is a full Record, so a new item will not compile
- * until someone decides who takes it). The `sell` action names its buyer and the server refuses an item
- * that buyer does not take, so selling means walking to the right person.
+ * Every item has exactly one buyer, or none (`ITEM_BUYER` below is a full Record, so a new item will not
+ * compile until someone decides who takes it). The `sell` action names its buyer and the server refuses an
+ * item that buyer does not take, so selling means walking to the right person.
+ *
+ * NOBODY BUYS STONE, IRON ORE OR METAL. The Crop Fields' boulders are the only Stone and Ore a farm will
+ * ever have and they never grow back, and the acres, the Feed Silo, the Smelter and the Far Field are all
+ * built out of them. A farm that sold its Stone could never build those, so it is kept for building
+ * instead. Their sell prices in ./machine-items.ts still price the recipes that use them.
  */
 
 import type { MachineItemId } from "./machine-items";
@@ -60,9 +65,9 @@ export const TOWN_BUYERS: Readonly<Record<TownBuyerId, TownBuyerDef>> = {
 const GRAIN: TownBuyerId = "grain-elevator";
 const STORE: TownBuyerId = "general-store";
 
-/** The one buyer for each item. The sale barn takes no item: it buys whole animals, through
- *  `ship-livestock` (./sale-barn.ts), not anything off the shelf. */
-const ITEM_BUYER: Readonly<Record<MachineItemId, TownBuyerId>> = {
+/** The one buyer for each item, or null for what the farm builds with. The sale barn takes no item: it
+ *  buys whole animals, through `ship-livestock` (./sale-barn.ts), not anything off the shelf. */
+const ITEM_BUYER: Readonly<Record<MachineItemId, TownBuyerId | null>> = {
   // Grain and what the feed grinder makes from it.
   wheat: GRAIN,
   corn: GRAIN,
@@ -101,24 +106,25 @@ const ITEM_BUYER: Readonly<Record<MachineItemId, TownBuyerId>> = {
   sauerkraut: STORE,
   bean_casserole: STORE,
   harvest_feast: STORE,
-  metal: STORE,
-  // What the pond, the woods and the boulders give.
+  // What the pond and the woods give.
   bluegill: STORE,
   trout: STORE,
   catfish: STORE,
   meat: STORE,
   pelt: STORE,
   wood: STORE,
-  stone: STORE,
-  iron_ore: STORE,
+  // What the boulders give, and the bars smelted from it: kept for building.
+  stone: null,
+  iron_ore: null,
+  metal: null,
 };
 
 export function isTownBuyer(value: string): value is TownBuyerId {
   return (TOWN_BUYER_IDS as readonly string[]).includes(value);
 }
 
-/** Who buys `item`. */
-export function townBuyerFor(item: MachineItemId): TownBuyerId {
+/** Who buys `item`, or null when nobody in town does. */
+export function townBuyerFor(item: MachineItemId): TownBuyerId | null {
   return ITEM_BUYER[item];
 }
 
@@ -137,8 +143,9 @@ export function townBuyerOfNpc(name: string): TownBuyerId | null {
   return TOWN_BUYER_IDS.find((id) => TOWN_BUYERS[id].npc === name) ?? null;
 }
 
-/** "Dale buys this at the grain elevator." */
+/** "Dale buys this at the grain elevator.", or what to do with something nobody buys. */
 export function whoBuysLine(item: MachineItemId): string {
-  const buyer = TOWN_BUYERS[townBuyerFor(item)];
-  return `${buyer.name} buys this at ${buyer.place} in town.`;
+  const buyer = townBuyerFor(item);
+  if (buyer === null) return "Nobody in town buys this. Keep it for building.";
+  return `${TOWN_BUYERS[buyer].name} buys this at ${TOWN_BUYERS[buyer].place} in town.`;
 }

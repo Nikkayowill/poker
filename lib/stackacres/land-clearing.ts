@@ -15,7 +15,7 @@
  */
 
 import { AXE_DAMAGE, type AxeLevel } from "./axe";
-import { ORE_PER_BREAK } from "./stone-nodes";
+import { ORE_PER_BREAK, STONE_NODES_ON_A_MAP } from "./stone-nodes";
 import type { MachineRawItem } from "./machine-items";
 import type { SectorId } from "./sectors";
 import { seededRandom } from "./world";
@@ -128,6 +128,16 @@ export function landObstacle(id: string): LandObstacle | null {
   return BY_ID.get(id) ?? null;
 }
 
+/**
+ * Whether the farmer can walk up to this obstacle and swing at it. Only the Crop Fields' overgrowth
+ * stands on a map: ./crop-field-obstacles.ts deals every piece of it round the Homestead's yard and the
+ * scene draws that deal. The two sectors' lists stand nowhere since their maps went (see
+ * CLEARABLE_SECTORS), so a swing at one is refused. land-clearing.test.ts holds this to the deal.
+ */
+export function isLandObstacleOnAMap(obstacle: LandObstacle): boolean {
+  return obstacle.ground === "cropfields";
+}
+
 /** One obstacle's stored state, as much as the pure math needs. */
 export interface LandObstacleState {
   readonly hitsRemaining: number;
@@ -170,6 +180,31 @@ export function swingAtLandObstacle(
     quantity,
     cleared,
   };
+}
+
+/** What the rest of an obstacle's swings will pay. Nothing once it is down. */
+function landObstacleYieldLeft(kind: LandObstacleKind, state: LandObstacleState): number {
+  if (isLandObstacleCleared(state)) return 0;
+  const def = LAND_OBSTACLE_DEFS[kind];
+  return def.item === null ? 0 : def.perHit * state.hitsRemaining + def.clearBonus;
+}
+
+/**
+ * Stone this farm can still break out of the boulders on the map, off its stored obstacle states (an
+ * obstacle with no row has never been touched, so it is whole). Boulders never grow back, so this only
+ * goes down, and the Daily Farm Board reads it so it never asks for Stone the land no longer holds. A
+ * Mine boulder back on a map grows back, so then there is no end to it.
+ */
+export function stoneLeftToBreak(states: Readonly<Record<string, LandObstacleState>>): number {
+  if (STONE_NODES_ON_A_MAP.length > 0) return Number.POSITIVE_INFINITY;
+  let left = 0;
+  for (const ground of CLEARING_GROUNDS) {
+    for (const obstacle of LAND_OBSTACLES[ground]) {
+      if (!isLandObstacleOnAMap(obstacle) || LAND_OBSTACLE_DEFS[obstacle.kind].item !== "stone") continue;
+      left += landObstacleYieldLeft(obstacle.kind, states[obstacle.id] ?? freshLandObstacleState(obstacle.kind));
+    }
+  }
+  return left;
 }
 
 /**

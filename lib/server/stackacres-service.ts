@@ -498,6 +498,7 @@ import { isUnbuiltCutter } from "@/lib/stackacres/unbuilt";
 import { feedingToast, servingBonus, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
 import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/feed-silo";
 import { isSeedUnlocked, seedLockedMessage } from "@/lib/stackacres/seed-unlocks";
+import { SEED_SELLER_NAME, SEED_SELLER_WHERE } from "@/lib/stackacres/seed-seller";
 import { TOWN_BUYERS, buyerTakes, isTownBuyer, townBuyerFor } from "@/lib/stackacres/town-buyers";
 import { STARTER_SEED_COUNT, STARTER_SEED_CROP, STARTER_SEEDS_LEDGER_KEY } from "@/lib/stackacres/starter-seeds";
 import { QUARRY_CATALOGUE, pickQuarry, type QuarrySpecies } from "@/lib/stackacres/hunting";
@@ -869,11 +870,9 @@ export interface StackAcresView {
   revision: number;
   /**
    * The second map's own resource HUD (docs/stackacres-second-map-direction.md
-   * section 6a): Gold is the existing shared balance above, and Wood/Wheat/
-   * Workers are honest zeros until that map's own clearing/hiring economy is
-   * built. Not `woodNodes`/`wheatPlots` above -- those are the Homestead's
-   * real chop/grow systems; these are the empire district's own counters,
-   * currently always 0 rather than aliased onto a different economy.
+   * section 6a): Gold is the existing shared balance above, Wood, Wheat and
+   * Metal are what the shared inventory holds, and Workers is the city
+   * grocery's staff.
    */
   empire: EmpireSnapshot;
   /** The city grocery, owned or not; null where owning it isn't open yet (lib/stackacres/grocery.ts). */
@@ -1480,12 +1479,11 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     hand: storedHand ? handView(storedHand) : null,
     clock: { offsetMs: clockOffset, serverNowMs: now.getTime() },
     revision,
-    // Wood and Metal are the shared inventory's, since that is what the Far
-    // Field's buildings are paid from. Wheat and Workers stay zero until that
-    // map's own farming and hiring exist (docs/stackacres-second-map-direction.md).
+    // Wood, Wheat and Metal are the shared inventory's: the barn the Far
+    // Field's buildings are paid from. Workers are the city grocery's staff.
     empire: {
       wood: inventory.wood ?? 0,
-      wheat: 0,
+      wheat: inventory.wheat ?? 0,
       workers: groceryState?.staff.length ?? 0,
       metal: inventory.metal ?? 0,
       buildings: empireBuildings,
@@ -1755,7 +1753,60 @@ export type StackAcresActionResult = StackAcresView & {
 };
 
 /**
- * The part of a result a duplicate has to be told a second time.
+ * Every key a view carries. What a result has beyond these is the action's
+ * own answer. A full Record, so a new view field does not compile until it is
+ * listed here, and so can never be stored as part of a replay.
+ */
+const VIEW_KEYS: ReadonlySet<string> = new Set(
+  Object.keys({
+    units: true,
+    profile: true,
+    feed: true,
+    water: true,
+    energy: true,
+    capacity: true,
+    sectors: true,
+    upkeep: true,
+    tool: true,
+    axe: true,
+    cutters: true,
+    wheatPlots: true,
+    machines: true,
+    inventory: true,
+    contract: true,
+    influence: true,
+    secrets: true,
+    secretDonations: true,
+    greenhouseBuilt: true,
+    cropFieldsUnlocked: true,
+    irrigation: true,
+    soilTiles: true,
+    seedStock: true,
+    friendship: true,
+    vat: true,
+    cellar: true,
+    farmBoard: true,
+    story: true,
+    woodNodes: true,
+    stoneNodes: true,
+    forageNodes: true,
+    landObstacles: true,
+    fences: true,
+    acres: true,
+    guardDogs: true,
+    equipment: true,
+    hand: true,
+    clock: true,
+    revision: true,
+    empire: true,
+    grocery: true,
+  } satisfies Record<keyof StackAcresView, true>),
+);
+
+/**
+ * The part of a result a duplicate has to be told a second time: everything
+ * the action answered on top of its view (`sold`, `greet`, `woodChopped` and
+ * the rest), so a retried request reads exactly like the original.
  *
  * Never the view: a replay is answered with a freshly read one, so a duplicate
  * can only ever hand back numbers at least as current as the original did.
@@ -1763,16 +1814,9 @@ export type StackAcresActionResult = StackAcresView & {
  * repainted the farm as it looked ten minutes ago.
  */
 function replayDelta(result: StackAcresActionResult): Record<string, unknown> | null {
-  const delta: Record<string, unknown> = {};
-  if (result.harvest !== undefined) delta.harvest = result.harvest;
-  if (result.discovery !== undefined) delta.discovery = result.discovery;
-  if (result.gift !== undefined) delta.gift = result.gift;
-  if (result.vatCollected !== undefined) delta.vatCollected = result.vatCollected;
-  if (result.fishCaught !== undefined) delta.fishCaught = result.fishCaught;
-  if (result.fed !== undefined) delta.fed = result.fed;
-  if (result.cared !== undefined) delta.cared = result.cared;
-  if (result.storyResult !== undefined) delta.storyResult = result.storyResult;
-  if (result.shipped !== undefined) delta.shipped = result.shipped;
+  const delta = Object.fromEntries(
+    Object.entries(result).filter(([key, value]) => !VIEW_KEYS.has(key) && value !== undefined),
+  );
   return Object.keys(delta).length > 0 ? delta : null;
 }
 
@@ -2563,9 +2607,9 @@ export async function hireStackAcresHand(
 /**
  * Sows each bed the hand just picked with the crop that came off it, from the
  * player's own seed, and waters it from his well so it starts growing straight
- * away. A crop owned outright regrows by itself and is skipped. Stops at the
- * first bed that can't be sown (out of seed); a bed the player sowed in the
- * meantime is refused by the sow itself and skipped.
+ * away. A crop owned outright regrows by itself and is skipped. A bed whose
+ * crop is out of seed is left bare and he goes on to the next; a bed the
+ * player sowed in the meantime is refused by the sow itself and skipped.
  */
 async function resowHarvestedBeds(
   token: string,
@@ -2582,7 +2626,7 @@ async function resowHarvestedBeds(
     if (!row || row.permanent || row.soilSlot === null || !isStackAcresCrop(row.stock)) continue;
     const bed = soilSlotTile(soil, row.soilSlot);
     if (!bed) continue;
-    if (((await readStackAcresSeedStock(profileId))[row.stock] ?? 0) < 1) break;
+    if (((await readStackAcresSeedStock(profileId))[row.stock] ?? 0) < 1) continue;
     try {
       // Exact: if the player sowed this bed first, Earl leaves it rather than spend a seed on another one.
       await stockStackAcres(token, { stock: row.stock, tile: { tx: bed.tx, ty: bed.ty }, exactTile: true }, now);
@@ -2627,7 +2671,8 @@ export async function dismissStackAcresHand(token: string, now = new Date()): Pr
  * touches the player's can. Harvesting goes through `harvestStackAcres`, so
  * produce lands in inventory exactly as if the player had picked it. Each bed
  * he picks he sows again with the same crop through `stockStackAcres`, so the
- * seed comes off the player's shelf and no Gold moves. He stops when it runs out.
+ * seed comes off the player's shelf and no Gold moves. A crop that is out of
+ * seed leaves its bed bare; the others still go back in.
  */
 export async function runStackAcresHiredHand(
   token: string,
@@ -2942,7 +2987,7 @@ export async function stockStackAcres(
   // different currencies now. Livestock still spends Gold straight out of
   // the purse, unchanged: there is no "hen seed" bought ahead of time. A crop
   // spends one seed off the shelf instead -- the Gold for it already left at
-  // Ray's shop (buyStackAcresSeed), so charging Gold again here would be a
+  // Cora's stall (buyStackAcresSeed), so charging Gold again here would be a
   // second debit for the same seed. Either way a null/refusal here means
   // nothing was sown.
   const baseYield = baseYieldQuantity(stock);
@@ -2962,7 +3007,7 @@ export async function stockStackAcres(
     const heldSeeds = await adjustStackAcresSeedStock(profile.id, stock, -1);
     if (heldSeeds === null) {
       throw new StackAcresRequestError(
-        `You have no ${def.label} seeds. Buy some from Ray's shop first.`,
+        `You have no ${def.label} seeds. ${SEED_SELLER_NAME} sells them at ${SEED_SELLER_WHERE}.`,
         400,
         { round: await snapshots(profile.id, now) },
       );
@@ -3974,24 +4019,39 @@ export async function drawStackAcresWater(token: string, now = new Date()): Prom
   return view(profile, now);
 }
 
+/** Tries at moving energy before giving up on a busy row. */
+const ENERGY_WRITE_ATTEMPTS = 5;
+
+/** What the player is told when every try lost to another swing. */
+const ENERGY_BUSY = "Catch your breath and try that again.";
+
 /**
- * Moves energy by `delta` with a version-guarded write, retrying a couple of
- * times when another write lands in between. Returns null when a spend
- * would go below zero. Only the extras (fishing) spend energy; farm work
- * never does.
+ * A short random wait before trying the energy write again. Swings that
+ * arrive together would otherwise retry together and collide again.
+ */
+function energyRetryPause(attempt: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, Math.random() * 10 * 2 ** attempt));
+}
+
+/**
+ * Moves energy by `delta` with a version-guarded write, retrying after a
+ * short random wait when another write lands in between. Returns null when a
+ * spend would go below zero. Swings, casts and stalks spend energy, and a
+ * swing that misses gets it back through here too.
  */
 async function moveStackAcresEnergy(
   profileId: string,
   delta: number,
   now: Date,
 ): Promise<StackAcresEnergyAnchor | null> {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < ENERGY_WRITE_ATTEMPTS; attempt += 1) {
+    if (attempt > 0) await energyRetryPause(attempt);
     const stored = await readStackAcresEnergy(profileId);
     const next = applyEnergyDelta(stored, delta, now);
     if (!next) return null;
     if (await writeStackAcresEnergy(profileId, stored?.version ?? 0, next)) return next;
   }
-  throw new StackAcresRequestError("That moved on.", 409);
+  throw new StackAcresRequestError(ENERGY_BUSY, 409, { round: await snapshots(profileId, now) });
 }
 
 /**
@@ -4854,8 +4914,9 @@ export async function workStackAcresLand(
   const written = swing ? await writeStackAcresLandObstacle(current, swing.nextState) : null;
   if (!swing || !written) {
     // Already down, or another tap got there first. Nothing happened, so the
-    // energy goes back.
-    await moveStackAcresEnergy(profile.id, LAND_SWING_ENERGY, now);
+    // energy goes back. A refund that loses every try leaves the energy spent
+    // rather than turn a missed swing into an error.
+    await moveStackAcresEnergy(profile.id, LAND_SWING_ENERGY, now).catch(() => null);
     return { ...(await view(profile, now)), landCleared: null };
   }
 
@@ -4951,7 +5012,7 @@ export async function chopStackAcresWoodTree(
   // (another swing wrote first): a quiet no-op, and the energy goes back.
   const written = swing ? await writeStackAcresWoodNodeSwing(current, swing.nextState) : null;
   if (!swing || !written) {
-    await moveStackAcresEnergy(profile.id, AXE_SWING_ENERGY, now);
+    await moveStackAcresEnergy(profile.id, AXE_SWING_ENERGY, now).catch(() => null);
     return { ...(await view(profile, now)), woodChopped: null };
   }
 
@@ -6600,7 +6661,15 @@ export async function sellStackAcresItem(
   // Each item has one buyer in town (lib/stackacres/town-buyers.ts). The
   // wrong one turns it away before anything moves.
   if (!isTownBuyer(input.buyer) || !buyerTakes(input.buyer, item)) {
-    const right = TOWN_BUYERS[townBuyerFor(item)];
+    const rightBuyer = townBuyerFor(item);
+    if (rightBuyer === null) {
+      throw new StackAcresRequestError(
+        `Nobody in town buys ${machineItemNoun(item, 2)}. Keep it for building.`,
+        400,
+        { round: await snapshots(profile.id, now) },
+      );
+    }
+    const right = TOWN_BUYERS[rightBuyer];
     const asked = isTownBuyer(input.buyer) ? TOWN_BUYERS[input.buyer].name : "They";
     throw new StackAcresRequestError(
       `${asked} doesn't buy ${machineItemNoun(item, 2)}. ${right.name} does, at ${right.place}.`,
@@ -6872,8 +6941,8 @@ export async function moveStackAcresSoilTileGroup(
 }
 
 /**
- * Buys seeds of one crop at Ray's supply store. Rule 1: the Gold leaves
- * before the seeds exist, and a failed credit refunds it.
+ * Buys seeds of one crop from Cora at the market in town. Rule 1: the Gold
+ * leaves before the seeds exist, and a failed credit refunds it.
  *
  * THE SHOP NEVER PLANTS ANYTHING. It sells a seed; `stockStackAcres` decides
  * where and when one gets planted and spends it. That split is why this
@@ -6898,7 +6967,7 @@ export async function buyStackAcresSeed(
   }
   const crop: StackAcresCrop = cropInput;
   if (!isActiveStock(crop)) {
-    throw new StackAcresRequestError(`Ray doesn't sell ${STACKACRES_CATALOGUE[crop].label} seed any more.`, 400);
+    throw new StackAcresRequestError(`${SEED_SELLER_NAME} doesn't sell ${STACKACRES_CATALOGUE[crop].label} seed any more.`, 400);
   }
   const profile = await ensureProfile(token);
   const built = await builtMachineKinds(profile.id);

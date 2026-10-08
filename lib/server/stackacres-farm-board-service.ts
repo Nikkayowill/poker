@@ -29,11 +29,18 @@ import {
  * The Daily Farm Board, server side: when it is drawn, how an action moves
  * it, and what a claim does.
  *
- * THREE ENTRY POINTS, and the split is what keeps the cost down.
+ * FOUR ENTRY POINTS, and the split is what keeps the cost down.
  *
  *   `farmBoardView`      runs inside view(), where every fact the draw
- *                        needs is already loaded, so drawing costs no extra
- *                        read. This is the ONLY place a board is drawn.
+ *                        needs is already loaded. A period with no stored
+ *                        board shows the one its first action will store,
+ *                        drawn the same way, and stores nothing: a read
+ *                        never writes, a visitor's read of someone else's
+ *                        farm included.
+ *   `storeFarmBoardBeforeAction` runs before every farm action. It is the
+ *                        ONLY place a board is stored, and the farm's facts
+ *                        are read for it only when a period has no board yet,
+ *                        so once a period's board exists it costs one read.
  *   `recordFarmBoardEvents` runs inside the action that produced the
  *                        events. It needs no facts at all -- eligibility is
  *                        a question about the draw, and the draw already
@@ -45,17 +52,19 @@ import {
  *                        `advanceFarmBoard` for why the reward is claimed
  *                        rather than credited the moment a line finishes.
  *
- * A board a player has not looked at yet does not exist, and an action
- * before the day's first read therefore counts toward nothing. In practice
- * every action answers with view(), so the board is drawn by the farm load
- * or by the first tap's own response; only the very first tap of a new day
- * on an already-open tab can miss, and it misses by one.
+ * STORED BEFORE THE ACTION, NOT AFTER. The draw depends on what the farm can
+ * do, and an action can change that (the first seed, the first machine). The
+ * period's first action stores the board from the farm as it stood before it
+ * acted, which is the farm the player's last read showed the board for, so
+ * the board on screen is the board that gets stored and it stays put for the
+ * rest of the period. Storing it first also means that action's own work
+ * already counts toward it.
  *
  * BEST-EFFORT, EXCEPT THE CLAIM. A draw or an advance is wrapped: a board
- * hiccup must never turn a settled, credited farm action into an error
- * response, the same posture `recordStoryEvents` takes. A claim is the
- * opposite -- it is the whole point of the request, so its refusals are
- * answers the route turns into a line the player reads.
+ * hiccup must never turn a farm action into an error response, the same
+ * posture `recordStoryEvents` takes. A claim is the opposite -- it is the
+ * whole point of the request, so its refusals are answers the route turns
+ * into a line the player reads.
  */
 
 /** How many times a board write is re-read and retried after losing a
@@ -95,8 +104,36 @@ export function farmBoardPeriods(now: Date): readonly FarmBoardPeriod[] {
 }
 
 /* ------------------------------------------------------------------ */
-/* Reading, and drawing on first read                                  */
+/* Reading, and storing before the first action                        */
 /* ------------------------------------------------------------------ */
+
+/**
+ * What a farm can be asked to do, from its units' stock, its seed shelf and
+ * its machines. One function for both the read and the store, so the board
+ * a read shows and the board an action stores come from the same answer.
+ */
+export function farmBoardFacts(
+  stocks: readonly StackAcresStock[],
+  seedStock: SeedStock,
+  machines: readonly MachineKind[],
+): FarmBoardFacts {
+  return {
+    machines,
+    // Seed on the shelf counts as "has crops" as much as a bed already
+    // sown does: a board that asked a player with seed to harvest is
+    // asking for work they can do, and one drawn the other way would
+    // have nothing to water on the morning they spend it.
+    hasCrops: stocks.some(isStackAcresCrop) || Object.values(seedStock).some((held) => (held ?? 0) > 0),
+    hasLivestock: stocks.some(isLivestock),
+  };
+}
+
+/** The board `period` gets for these facts, or null when no slot has a
+ *  candidate at all. Not stored: see `storeFarmBoardBeforeAction`. */
+function periodBoard(profileId: string, period: FarmBoardPeriod, facts: FarmBoardFacts): StoredFarmBoard | null {
+  const codes = drawFarmBoardCodes(period.kind, profileId, period.start, facts);
+  return codes.length > 0 ? freshFarmBoard(codes) : null;
+}
 
 /** Rows already fetched by `stackacres_read_batch`, so `farmBoardView` can
  *  skip its own reads on the live-Supabase path. Undefined means "not
@@ -117,8 +154,8 @@ export function farmBoardsFromBatch(
 }
 
 /**
- * The board this player sees, drawing either period that has not been drawn
- * yet.
+ * The board this player sees. A period with no stored board yet shows the
+ * one its first action will store, without storing it.
  *
  * Never throws: a board is a side panel, and a farm that cannot read one
  * still has to load. An unreadable board comes back empty, which the UI
@@ -132,7 +169,7 @@ export async function farmBoardView(
 ): Promise<FarmBoardView> {
   try {
     const periods = farmBoardPeriods(now);
-    const rows = await Promise.all(
+    const boards = await Promise.all(
       periods.map(async (period) => {
         const existing =
           batched !== undefined
@@ -140,27 +177,55 @@ export async function farmBoardView(
               ? batched.daily
               : batched.weekly
             : await readStackAcresFarmBoard(profileId, period.kind, period.start);
-        if (existing) return { period, row: existing };
-
-        const codes = drawFarmBoardCodes(period.kind, profileId, period.start, facts);
-        if (codes.length === 0) return { period, row: null };
-        const drawn = await drawStackAcresFarmBoard(
-          profileId,
-          period.kind,
-          period.start,
-          freshFarmBoard(codes),
-        );
-        return { period, row: drawn };
+        return { period, board: existing ? existing.board : periodBoard(profileId, period, facts) };
       }),
     );
 
-    const lines = rows.flatMap(({ period, row }) =>
-      row ? farmBoardLines(row.board, period.end) : [],
+    const lines = boards.flatMap(({ period, board }) =>
+      board ? farmBoardLines(board, period.end) : [],
     );
     return { lines: sortFarmBoardLines(lines) };
   } catch (error) {
     console.error("stackacres.farm_board_read_failed", { profileId, error });
     return { lines: [] };
+  }
+}
+
+/**
+ * Stores each period's board that is not stored yet, before an action runs.
+ *
+ * `readFacts` is only called when a period has no board, so most actions pay
+ * one read here and nothing more. The facts are read before the action
+ * changes anything, so the stored board is the one the player's last read
+ * showed. Two first actions at once store one board: the draw keeps whichever
+ * row landed first.
+ *
+ * Never throws, like `recordFarmBoardEvents`: a board that could not be
+ * stored must not stop the action. That action's events then count toward
+ * nothing, and the next action tries again.
+ */
+export async function storeFarmBoardBeforeAction(
+  profileId: string,
+  now: Date,
+  readFacts: () => Promise<FarmBoardFacts>,
+): Promise<void> {
+  try {
+    const periods = farmBoardPeriods(now);
+    const stored = await Promise.all(
+      periods.map((period) => readStackAcresFarmBoard(profileId, period.kind, period.start)),
+    );
+    const missing = periods.filter((_, i) => stored[i] === null);
+    if (missing.length === 0) return;
+
+    const facts = await readFacts();
+    await Promise.all(
+      missing.map(async (period) => {
+        const board = periodBoard(profileId, period, facts);
+        if (board) await drawStackAcresFarmBoard(profileId, period.kind, period.start, board);
+      }),
+    );
+  } catch (error) {
+    console.error("stackacres.farm_board_store_failed", { profileId, error });
   }
 }
 

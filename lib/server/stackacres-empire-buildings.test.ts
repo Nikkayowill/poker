@@ -182,3 +182,12 @@ describe("Far Field buildings", () => {
     ).rejects.toBeInstanceOf(StackAcresRequestError);
   });
 });
+
+describe("the Far Field's counts", () => {
+  it("shows the Wood, Wheat and Metal the barn really holds", async () => {
+    const { token, id } = await player();
+    await adjustStackAcresInventory(id, "wheat", 4);
+    const view = await readStackAcres(token, T0);
+    expect(view.empire).toMatchObject({ wood: 500, wheat: 4, metal: 100 });
+  });
+});

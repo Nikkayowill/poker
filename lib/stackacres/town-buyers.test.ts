@@ -9,17 +9,33 @@ import {
   itemsBoughtBy,
   townBuyerFor,
   townBuyerOfNpc,
+  whoBuysLine,
 } from "./town-buyers";
+
+/** What the farm builds with and nobody in town buys. */
+const KEPT_FOR_BUILDING = ["stone", "iron_ore", "metal"] as const;
 
 describe("town buyers", () => {
   it("gives every sellable item exactly one buyer", () => {
-    for (const item of new Set(ALL_MACHINE_ITEM_IDS)) {
+    const sellable = [...new Set(ALL_MACHINE_ITEM_IDS)].filter(
+      (item) => !(KEPT_FOR_BUILDING as readonly string[]).includes(item),
+    );
+    for (const item of sellable) {
       const takers = TOWN_BUYER_IDS.filter((buyer) => buyerTakes(buyer, item));
       expect(takers, item).toEqual([townBuyerFor(item)]);
     }
     const listed = TOWN_BUYER_IDS.flatMap((buyer) => itemsBoughtBy(buyer));
     expect(listed.length).toBe(new Set(listed).size);
-    expect(new Set(listed)).toEqual(new Set(ALL_MACHINE_ITEM_IDS));
+    expect(new Set(listed)).toEqual(new Set(sellable));
+  });
+
+  it("buys no Stone, Iron Ore or Metal anywhere, so the farm keeps it for building", () => {
+    for (const item of KEPT_FOR_BUILDING) {
+      expect(townBuyerFor(item), item).toBeNull();
+      for (const buyer of TOWN_BUYER_IDS) expect(buyerTakes(buyer, item), `${buyer} ${item}`).toBe(false);
+      expect(whoBuysLine(item)).toBe("Nobody in town buys this. Keep it for building.");
+    }
+    expect(whoBuysLine("wood")).toBe("Iris buys this at the general store in town.");
   });
 
   it("sends grain to the elevator and eggs, milk and garden crops to the store", () => {

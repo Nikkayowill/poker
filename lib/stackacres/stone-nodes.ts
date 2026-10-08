@@ -50,6 +50,18 @@ export function isStoneNodeId(value: string): value is StoneNodeId {
   return (STONE_NODE_IDS as readonly string[]).includes(value);
 }
 
+/**
+ * The Mine boulders that stand on a map, as a `stone:` tag on some area.json. None do: the Mine's map
+ * went with the six districts on 2026-09-28, so a swing at one is refused instead of paid
+ * (`mineStackAcresStoneNode`). stone-nodes.test.ts holds this list to the maps, so the day a boulder
+ * is drawn again that test fails until it is named here.
+ */
+export const STONE_NODES_ON_A_MAP: readonly StoneNodeId[] = [];
+
+export function isStoneNodeOnAMap(nodeId: StoneNodeId): boolean {
+  return STONE_NODES_ON_A_MAP.includes(nodeId);
+}
+
 /** The durable half of a node: what a store round-trips. `hitsRemaining` is
  *  meaningless once `brokenAt` is set -- it is left at 0 rather than
  *  recomputed, and callers read the node through `effectiveNodeState` (which

@@ -1,8 +1,14 @@
 /**
- * Where one animal's serving comes from. Hens and cattle eat off the shelf
- * first, each in its own order (`HEN_FEED_ORDER`, `CATTLE_FEED_ORDER`), one
- * item per serving, and fall back to the bought Feed Sack, so they are always
- * feedable. Every other animal eats from the Feed Sack.
+ * Where one animal's serving comes from. Hens, cattle, hogs and steers eat
+ * off the shelf, each from its own list (`HEN_FEED_ORDER` and the rest), one
+ * item per serving, with the bought Feed Sack in its place in the line
+ * (`servingOrder`), so they are always feedable. Every other animal eats from
+ * the Feed Sack.
+ *
+ * Feed made for the animals comes before the sack: a hen's Spinach, Cattle
+ * Feed, and a hog's corn. A hen's Wheat, Lettuce and Cabbage come after it.
+ * The farm grows those for the mill and the kitchen, so a hen only eats them
+ * once the sack is empty.
  *
  * A serving of Spinach also adds an egg to that hen's current batch
  * (`HEN_FEED_BONUS_EGGS`).
@@ -21,9 +27,10 @@ export const HEN_FEED_ORDER = ["spinach", "wheat", "lettuce", "cabbage"] as cons
 /** What cattle eat off the shelf. Cattle Feed is milled from corn. */
 export const CATTLE_FEED_ORDER = ["cattle_feed"] as const;
 
-/** What a hog eats off the shelf: whole corn first, then milled feed. Each
- *  serving puts on weight (STACKACRES_MARKET_ANIMALS in ./catalogue.ts). */
-export const HOG_FEED_ORDER = ["corn", "cattle_feed"] as const;
+/** What a hog eats off the shelf: milled feed first, since one corn grinds
+ *  into four servings of it, then whole corn. Each serving puts on weight
+ *  (STACKACRES_MARKET_ANIMALS in ./catalogue.ts). */
+export const HOG_FEED_ORDER = ["cattle_feed", "corn"] as const;
 
 /** What a steer eats off the shelf. */
 export const STEER_FEED_ORDER = ["cattle_feed"] as const;
@@ -67,6 +74,17 @@ function isShelfFedStock(stock: StackAcresStock): stock is ShelfFedStock {
 /** What `stock` eats off the shelf, best first. Empty for Feed-Sack-only animals. */
 export function shelfFeedOrder(stock: StackAcresStock): readonly ShelfFeedItem[] {
   return isShelfFedStock(stock) ? SHELF_FEED_ORDERS[stock].order : [];
+}
+
+/** The hen's shelf items that wait until the Feed Sack is empty. */
+const HEN_FEED_AFTER_SACK: readonly ShelfFeedItem[] = ["wheat", "lettuce", "cabbage"];
+
+/** Where `stock`'s servings come from, first to last, with the Feed Sack
+ *  ("feed") in its place. */
+export function servingOrder(stock: StackAcresStock): readonly ServingSource[] {
+  const shelf = shelfFeedOrder(stock);
+  const after = shelf.filter((item) => HEN_FEED_AFTER_SACK.includes(item));
+  return [...shelf.filter((item) => !after.includes(item)), "feed", ...after];
 }
 
 /** Extra eggs a serving from `source` adds. Only hen greens add any. */
@@ -141,17 +159,15 @@ export function planServings(
   const sources: ServingSource[] = [];
   const shelfUsed: Partial<Record<ShelfFeedItem, number>> = {};
   for (const stock of stocks) {
-    const shelfItem = shelfFeedOrder(stock).find((item) => left[item] > 0);
-    if (shelfItem) {
-      left[shelfItem] -= 1;
-      shelfUsed[shelfItem] = (shelfUsed[shelfItem] ?? 0) + 1;
-      sources.push(shelfItem);
-    } else if (feedLeft > 0) {
+    const source = servingOrder(stock).find((item) => (item === "feed" ? feedLeft > 0 : left[item] > 0));
+    if (source === undefined) break;
+    if (source === "feed") {
       feedLeft -= 1;
-      sources.push("feed");
     } else {
-      break;
+      left[source] -= 1;
+      shelfUsed[source] = (shelfUsed[source] ?? 0) + 1;
     }
+    sources.push(source);
   }
   return {
     fed: sources.length,

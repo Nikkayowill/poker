@@ -324,9 +324,12 @@ export function resourceUses(item: GuideItemId): ResourceUse[] {
   if (item === FISHING_BAIT_ITEM) uses.push({ kind: "bait", label: "Fishing bait" });
   if (isSoilEnrichingItem(item)) uses.push({ kind: "soil", label: SOIL_ENRICH_USE_LABEL });
 
-  if ((STACKACRES_ITEMS as readonly string[]).includes(item) || item in MACHINE_ITEM_CATALOGUE) {
+  const sellable = (STACKACRES_ITEMS as readonly string[]).includes(item) || item in MACHINE_ITEM_CATALOGUE;
+  // Nobody in town buys what the farm builds with (./town-buyers.ts), so that has no sell row.
+  const buyerId = sellable ? townBuyerFor(item as MachineItemId) : null;
+  if (buyerId !== null) {
     const price = machineItemSellPrice(item as MachineItemId);
-    const buyer = TOWN_BUYERS[townBuyerFor(item as MachineItemId)];
+    const buyer = TOWN_BUYERS[buyerId];
     uses.push({
       kind: "sell",
       label: `Sell for ${price.toLocaleString()} Gold each`,

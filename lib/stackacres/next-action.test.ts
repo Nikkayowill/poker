@@ -11,12 +11,12 @@ import {
   nextAction,
   type NextAction,
 } from "./next-action";
-import { STACKACRES_QUEST_LABELS } from "./shop-locks";
+import { STACKACRES_QUEST_LABELS, type StackAcresShopProgress } from "./shop-locks";
 import { stackacresStockPrice } from "./market";
 import type { StackAcresContractRow } from "./contracts";
 import type { StackAcresStoryView } from "./story/state";
 import { TRAVELER_IDS } from "./story/travelers";
-import type { StackAcresStock } from "./catalogue";
+import { STACKACRES_CATALOGUE, type StackAcresStock } from "./catalogue";
 import type { StackAcresUnitSnapshot, StackAcresUnitState } from "./units";
 
 /* Same fixtures ./journal.test.ts uses, so a farm described here means the
@@ -38,6 +38,9 @@ const FRESH: JournalInput = {
   stoneNodes: [],
   forageNodes: [],
   seedStock: {},
+  beds: 0,
+  hand: null,
+  equipment: [],
   nowMs: Date.parse("2026-09-21T12:00:00.000Z"),
 };
 
@@ -90,6 +93,14 @@ const order = (item: StackAcresContractRow["item"], quantity: number): StackAcre
 });
 
 const ALL_BUILT = new Set<MachineKind>(CHAPTERS.flatMap((chapter) => chapter.steps));
+
+/** Every milestone flag earned. */
+const EVERY_FLAG: StackAcresShopProgress = {
+  sectors: ["wallow", "oxfields"],
+  influence: 10,
+  greenhouseBuilt: true,
+  cropFieldsUnlocked: true,
+};
 
 /** Every traveler locked except the ones named, none of them met. */
 const storyWith = (unlocked: readonly string[], patch: Record<string, unknown> = {}): StackAcresStoryView =>
@@ -352,9 +363,9 @@ describe("advancing when the objective is done", () => {
 });
 
 describe("locked content", () => {
-  it("points at the sheep once the two first milestones are done", () => {
-    // Sheep are sold in the Store, so the Fold is the next rung and the panel
-    // quotes the pen's price.
+  it("points at the sheep once the two first milestones are done, at the price of one Cycle Lease", () => {
+    // Keeping one sheep earns the flag, so the panel quotes a lease at the barn rather than the
+    // 8,500 Gold pen, and says Hank's feeder pig counts too.
     const action = planned({
       built: ALL_BUILT,
       gold: 0,
@@ -362,8 +373,56 @@ describe("locked content", () => {
     });
     expect(action.title).toBe(STACKACRES_QUEST_LABELS.cleared_wallow);
     expect(action.requirements).toEqual([
-      { label: "Gold", have: 0, need: stackacresStockPrice("pig"), source: "Sell your harvest in town. Dale buys grain and Iris buys the rest" },
+      {
+        label: "Gold",
+        have: 0,
+        need: STACKACRES_CATALOGUE.pig.seedCost,
+        source: "Sell your harvest in town. Dale buys grain and Iris buys the rest",
+      },
     ]);
+    expect(STACKACRES_CATALOGUE.pig.seedCost).toBeLessThan(stackacresStockPrice("pig"));
+    expect(action.why).toBe(
+      `It raises your Standing, which opens Botanist Ivy. Cycle Lease one at the barn, or buy a feeder pig from Hank in town for ${STACKACRES_CATALOGUE.hog.seedCost}. Either counts.`,
+    );
+    expect(action.button).toEqual({ label: "Open the barn", target: { kind: "barn", shelf: "livestock" } });
+  });
+
+  it("points at the Cattle Pen the same way, with a calf from Hank as the other way in", () => {
+    const action = planned({
+      built: ALL_BUILT,
+      progress: { sectors: ["wallow"], influence: 1, greenhouseBuilt: true, cropFieldsUnlocked: true },
+    });
+    expect(action.title).toBe(STACKACRES_QUEST_LABELS.cleared_oxfields);
+    expect(action.requirements.map((requirement) => [requirement.label, requirement.need])).toEqual([
+      ["Gold", STACKACRES_CATALOGUE.cattle.seedCost],
+    ]);
+    expect(action.why).toContain("buy a calf from Hank in town");
+    expect(action.button).toEqual({ label: "Open the barn", target: { kind: "barn", shelf: "livestock" } });
+  });
+
+  it("lists the Greenhouse's Flour and Cloth, where each comes from, and promises nothing that does not open", () => {
+    const action = planned({
+      built: ALL_BUILT,
+      inventory: holding("flour", 6),
+      progress: { sectors: ["wallow"], influence: 1, greenhouseBuilt: false, cropFieldsUnlocked: true },
+    });
+    expect(action.title).toBe(STACKACRES_QUEST_LABELS.greenhouse_raised);
+    expect(action.requirements).toEqual([
+      {
+        label: "Cloth",
+        have: 0,
+        need: 12,
+        source: "Weave Fleece from your sheep on the Loom, under More machines in the Workshop",
+      },
+      { label: "Flour", have: 6, need: 20, source: "Grind wheat at the Feed Grinder in the Workshop" },
+    ]);
+    expect(missingSummary(action)).toBe("12 Cloth, 14 Flour");
+    // Nothing new arrives on a fourth flag, so the reason is just the Standing.
+    expect(action.why).toBe(
+      "It raises your Standing. Flour comes from the Feed Grinder and Cloth from the Loom, both in the Workshop.",
+    );
+    expect(action.why).not.toContain("another rung");
+    expect(action.button).toEqual({ label: "Open the Greenhouse", target: { kind: "greenhouse" } });
   });
 
   it("never names a traveler who will not talk yet", () => {
@@ -414,12 +473,86 @@ describe("locked content", () => {
       { contract: order("flour", 2), inventory: holding("flour", 2), built: new Set<MachineKind>(["mill"]) },
       { units: [unit("dry")] },
       { units: [unit("hungry", "hen")] },
+      { beds: 6 },
+      { built: new Set<MachineKind>(["mill", "oven"]), gold: 300 },
+      { built: ALL_BUILT, units: [unit("working"), unit("working", "hog")], inventory: holding("metal", 8) },
+      { built: ALL_BUILT, progress: { sectors: ["wallow"], influence: 1, greenhouseBuilt: false, cropFieldsUnlocked: true } },
+      { built: ALL_BUILT, progress: EVERY_FLAG, acrePrice: { gold: 450, wood: 18, stone: 5 } },
     ] as Partial<JournalInput>[]) {
       const action = plan(patch);
       if (action?.button) targets.add(action.button.target.kind);
     }
-    for (const kind of targets) {
-      expect(["workshop", "house", "contracts", "travel", "person"]).toContain(kind);
-    }
+    expect([...targets].sort()).toEqual(["barn", "contracts", "greenhouse", "house", "person", "travel", "workshop"]);
+  });
+});
+
+describe("hiring and growing the farm", () => {
+  it("sends a farm with six beds to Ray's counter to hire Earl, for his first day's wage", () => {
+    const action = planned({ beds: 6, gold: 35 });
+    expect(action.cue).toBe("hire");
+    expect(action.title).toBe("Hire Earl");
+    expect(action.why).toBe(
+      "Waters your dry beds, picks the ripe ones and sows them again from your seed while you play. 60 Gold a day, paid each morning.",
+    );
+    expect(action.requirements).toEqual([
+      { label: "Gold", have: 35, need: 60, source: "Sell your harvest in town. Dale buys grain and Iris buys the rest" },
+    ]);
+    // His card is on the store's Tools shelf.
+    expect(action.button).toEqual({ label: "Open the barn", target: { kind: "barn", shelf: "equipment" } });
+  });
+
+  it("sends a farm with a Feed Grinder to Hank for a feeder pig", () => {
+    const action = planned({ built: new Set<MachineKind>(["mill", "oven"]), gold: 300 });
+    expect(action.cue).toBe("raise");
+    expect(action.title).toBe("Buy a feeder pig from Hank");
+    // Hank's own offer, so a retune of the hog moves this line with it.
+    expect(action.why).toContain("Hank sells feeder pigs and calves at the sale barn in town and buys them back by weight.");
+    expect(action.why).toContain("Ready to sell in 2 hours.");
+    expect(action.requirements).toEqual([{ label: "Gold", have: 300, need: STACKACRES_CATALOGUE.hog.seedCost, source: null }]);
+    expect(action.button).toEqual({ label: "Go to the City", target: { kind: "travel", place: "city" } });
+  });
+
+  it("names the tractor's Gold and Metal once the Metal is in hand, and opens the barn's Tools shelf", () => {
+    const action = planned({
+      built: ALL_BUILT,
+      units: [unit("working"), unit("working", "hog")],
+      gold: 8_000,
+      inventory: holding("metal", 8),
+    });
+    expect(action.cue).toBe("tractor");
+    expect(action.title).toBe("Buy the tractor from Ray");
+    expect(action.why).toContain("six beds in a row");
+    expect(action.requirements).toEqual([
+      { label: "Gold", have: 8_000, need: 12_000, source: "Sell your harvest in town. Dale buys grain and Iris buys the rest" },
+      { label: "Metal", have: 8, need: 8, source: null },
+    ]);
+    expect(action.button).toEqual({ label: "Open the barn", target: { kind: "barn", shelf: "equipment" } });
+  });
+
+  it("points a farm with everything else done at another acre, priced off the deed", () => {
+    const action = planned({
+      built: ALL_BUILT,
+      progress: EVERY_FLAG,
+      gold: 100,
+      inventory: { wood: 18, stone: 2 },
+      acrePrice: { gold: 450, wood: 18, stone: 5 },
+    });
+    expect(action.cue).toBe("acre");
+    expect(action.title).toBe("Buy another acre");
+    expect(action.why).toContain("40 Gold a day");
+    expect(action.requirements).toEqual([
+      { label: "Gold", have: 100, need: 450, source: "Sell your harvest in town. Dale buys grain and Iris buys the rest" },
+      { label: "Stone", have: 2, need: 5, source: "Break the boulders in the Crop Fields" },
+      { label: "Wood", have: 18, need: 18, source: null },
+    ]);
+    expect(action.button).toEqual({ label: "Go to the Crop Fields", target: { kind: "travel", place: "cropfields" } });
+    // Each acre costs more than the last, so the next one is a new objective.
+    expect(planned({ built: ALL_BUILT, progress: EVERY_FLAG, acrePrice: { gold: 500, wood: 21, stone: 5 } }).id).not.toBe(
+      action.id,
+    );
+  });
+
+  it("goes quiet only once every acre is the farm's", () => {
+    expect(plan({ built: ALL_BUILT, progress: EVERY_FLAG, acrePrice: null })).toBeNull();
   });
 });

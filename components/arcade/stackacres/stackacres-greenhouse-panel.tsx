@@ -3,7 +3,12 @@
 import { useMemo, type SyntheticEvent } from "react";
 import { X } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
-import { STACKACRES_CATALOGUE, type StackAcresStock } from "@/lib/stackacres/catalogue";
+import {
+  STACKACRES_CATALOGUE,
+  type SeedStock,
+  type StackAcresCrop,
+  type StackAcresStock,
+} from "@/lib/stackacres/catalogue";
 import {
   GREENHOUSE_ALLOWED_STOCK,
   GREENHOUSE_GROWTH_MULTIPLIER,
@@ -14,29 +19,34 @@ import {
 } from "@/lib/stackacres/greenhouse";
 import { machineItemIcon, machineItemLabel } from "@/lib/stackacres/machine-items";
 import type { StackAcresInventory } from "@/lib/stackacres/inventory";
+import { SEED_SELLER_NAME, SEED_SELLER_WHERE } from "@/lib/stackacres/seed-seller";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { StackAcresIcon } from "./stackacres-icon";
 import type { PainterName } from "./stackacres-art";
 
 /**
- * The Greenhouse panel: reached by tapping its footprint on the map
- * (`onGreenhouseTap` in stackacres-scene.ts / stackacres-world.tsx), which
- * also eases the camera inside it (`enterGreenhouse`). Two very different
+ * The Greenhouse panel: reached by tapping the Greenhouse, or the stone
+ * footing it goes up on, on the Homestead (`onGreenhouseTap`,
+ * components/arcade/stackacres-td/scene.ts). Two very different
  * screens live behind one component because they are the same PLACE at two
  * moments -- before a single piece of Flour or Cloth has been spent on it,
  * and after -- the same way `sectorClearCheck`'s modal and a cleared
  * district's own sidebar row are two faces of one `SectorId`.
+ *
+ * THE MAP DRAWS THE GREENHOUSE, NOT WHAT GROWS IN IT, so this panel is the
+ * only place a housed crop is sown, watered and collected. A crop goes in as
+ * dry seed and only grows once watered, from the same can as a crop outside.
  *
  * SLOTS ARE A CAPACITY VISUALIZATION, NOT A PLOT. `homestead_units` stores
  * no row/col -- only `housed_in = 'greenhouse'` and a count the database
  * caps at `GREENHOUSE_SLOT_CAP`. That is a deliberate continuation of
  * StackAcres' own "places, not plots" rule (lib/stackacres/world.ts's own
  * header): a unit you own has no position of its own to look up, on the open
- * farm or in here. `greenhouseSlotLayouts()` gives this panel (and the
- * scene's own static footprint) six STABLE positions to draw against, and
- * `slotsFor` below pairs them with housed units positionally, in the same
- * creation order the server already returns them in -- a real, deterministic
- * picture, not a claim that unit N truly stands in slot N. Sowing therefore
+ * farm or in here. `greenhouseSlotLayouts()` gives this panel six STABLE
+ * positions to draw against, and `slotsFor` below pairs them with housed
+ * units positionally, in the same creation order the server already returns
+ * them in -- a real, deterministic picture, not a claim that unit N truly
+ * stands in slot N. Sowing therefore
  * asks for a STOCK KIND, never a slot: whichever slot is empty next is
  * simply the one a fresh crop's picture lands in.
  */
@@ -74,6 +84,41 @@ export function slotsFor(units: readonly StackAcresUnitSnapshot[]): GreenhouseSl
   });
 }
 
+/** How much sooner a crop finishes under glass, as a whole percent, worked
+ *  out from the multiplier the server puts on its `ready_at`. Both screens
+ *  say it the same way. */
+export const GREENHOUSE_FASTER_PERCENT = Math.round((1 - GREENHOUSE_GROWTH_MULTIPLIER) * 100);
+
+/** What the next empty bed says when there is no seed to sow: the Journal's
+ *  own line for it. */
+export const GREENHOUSE_NO_SEED = `You're out of seed. ${SEED_SELLER_NAME} sells it at ${SEED_SELLER_WHERE}.`;
+
+/** What the panel says when a crop is thirsty and the can is empty: the
+ *  watering can's own line for it out on the farm. */
+export const GREENHOUSE_CAN_EMPTY = "Your watering can is empty. Fill it at the well.";
+
+/** A crop the farm can sow under glass right now, and how much of its seed
+ *  is on hand. */
+export interface GreenhouseSeedChoice {
+  readonly stock: StackAcresCrop;
+  readonly held: number;
+}
+
+/** Every crop the farm holds seed for, in the catalogue's order. Sowing
+ *  spends one seed, so a crop with none is not offered at all. */
+export function greenhouseSeedChoices(seedStock: SeedStock): GreenhouseSeedChoice[] {
+  return GREENHOUSE_ALLOWED_STOCK.flatMap((stock) => {
+    const held = seedStock[stock] ?? 0;
+    return held > 0 ? [{ stock, held }] : [];
+  });
+}
+
+/** What a sow button says: the crop, and the seed on hand for it. */
+export function greenhouseSowLabel(choice: GreenhouseSeedChoice): string {
+  const seeds = choice.held === 1 ? "seed" : "seeds";
+  return `Sow ${STACKACRES_CATALOGUE[choice.stock].label} (${choice.held.toLocaleString()} ${seeds})`;
+}
+
 export interface GreenhousePanelProps {
   /** Whether the Greenhouse has been built yet -- gates which of the two
    *  screens this panel shows. */
@@ -83,12 +128,20 @@ export interface GreenhousePanelProps {
   /** Every owned unit -- filtered to the housed, unmucked ones by
    *  `slotsFor`. */
   units: readonly StackAcresUnitSnapshot[];
+  /** Seed on hand, by crop: which crops the next empty bed offers, and how
+   *  much of each. */
+  seedStock: SeedStock;
+  /** Water left in the watering can. A thirsty crop drinks one. */
+  water: number;
   /** Something else on the page is already talking to the server. */
   busy: boolean;
   /** Posts `build-greenhouse`. */
   onBuild: () => void;
   /** Posts `stock` with `inGreenhouse: true` for the given crop kind. */
   onSow: (stock: StackAcresStock) => void;
+  /** Posts `water` for one thirsty housed crop. Not held back by `busy`: a
+   *  seed sown a moment ago can be watered straight away, like one outside. */
+  onWater: (unitId: string) => void;
   /** Posts `collect` for one ready housed unit. */
   onCollect: (unitId: string) => void;
   onClose: () => void;
@@ -119,7 +172,7 @@ function BuildScreen({
     <>
       <p className="sa-checklist-intro">
         &ldquo;Glass walls, a Flour sack for grout and a bolt of Cloth for the
-        canopy. Keeps a crop growing at {Math.round(GREENHOUSE_GROWTH_MULTIPLIER * 100)}% pace,
+        canopy. Crops grow {GREENHOUSE_FASTER_PERCENT}% faster in here,
         rain or shine, up to {GREENHOUSE_SLOT_CAP} at once.&rdquo;
       </p>
       <ul className="sa-checklist-items">
@@ -155,13 +208,23 @@ function BuildScreen({
 
 function SlotCard({
   slot,
+  sowing,
+  choices,
+  water,
   busy,
   onSow,
+  onWater,
   onCollect,
 }: {
   slot: GreenhouseSlotView;
+  /** This is the empty bed the next sowing lands in, so it carries the
+   *  seed list. The other empty beds just say they are empty. */
+  sowing: boolean;
+  choices: readonly GreenhouseSeedChoice[];
+  water: number;
   busy: boolean;
   onSow: (stock: StackAcresStock) => void;
+  onWater: (unitId: string) => void;
   onCollect: (unitId: string) => void;
 }) {
   if (slot.kind === "ready") {
@@ -190,55 +253,88 @@ function SlotCard({
         <span className="sa-checklist-item-status">
           {slot.thirsty ? "Needs water" : `${Math.round(slot.progress * 100)}% grown`}
         </span>
+        {slot.thirsty && (
+          <button
+            type="button"
+            className="sa-cta"
+            disabled={water < 1}
+            onClick={contain(() => onWater(slot.unitId))}
+            onPointerDown={contain()}
+          >
+            Water
+          </button>
+        )}
       </li>
     );
   }
   return (
     <li className="sa-checklist-item is-unfound sa-greenhouse-empty-slot">
       <span className="sa-checklist-item-status">Empty bed</span>
-      <span className="sa-greenhouse-empty-hint">Choose a crop to grow here</span>
-      {GREENHOUSE_ALLOWED_STOCK.map((stock) => {
-        const def = STACKACRES_CATALOGUE[stock];
-        return (
-          <button
-            key={stock}
-            type="button"
-            className="sa-cta sa-greenhouse-sow-btn"
-            disabled={busy}
-            onClick={contain(() => onSow(stock))}
-            onPointerDown={contain()}
-          >
-            Sow {def.label} ({def.seedCost.toLocaleString()} Gold)
-          </button>
-        );
-      })}
+      {sowing && choices.length === 0 && <span className="sa-greenhouse-empty-hint">{GREENHOUSE_NO_SEED}</span>}
+      {sowing && choices.length > 0 && (
+        <>
+          <span className="sa-greenhouse-empty-hint">Choose a crop to grow here</span>
+          {choices.map((choice) => (
+            <button
+              key={choice.stock}
+              type="button"
+              className="sa-cta sa-greenhouse-sow-btn"
+              disabled={busy}
+              onClick={contain(() => onSow(choice.stock))}
+              onPointerDown={contain()}
+            >
+              {greenhouseSowLabel(choice)}
+            </button>
+          ))}
+        </>
+      )}
     </li>
   );
 }
 
 function GrowScreen({
   units,
+  seedStock,
+  water,
   busy,
   onSow,
+  onWater,
   onCollect,
 }: {
   units: readonly StackAcresUnitSnapshot[];
+  seedStock: SeedStock;
+  water: number;
   busy: boolean;
   onSow: (stock: StackAcresStock) => void;
+  onWater: (unitId: string) => void;
   onCollect: (unitId: string) => void;
 }) {
   const slots = useMemo(() => slotsFor(units), [units]);
+  const choices = useMemo(() => greenhouseSeedChoices(seedStock), [seedStock]);
   const growing = slots.filter((slot) => slot.kind !== "empty").length;
+  const nextEmpty = slots.findIndex((slot) => slot.kind === "empty");
+  const thirsty = slots.some((slot) => slot.kind === "growing" && slot.thirsty);
   return (
     <>
       <p className="sa-checklist-intro">
         {growing} of {GREENHOUSE_SLOT_CAP} slots growing. Sealed from the weather outside, and
         {" "}
-        {Math.round((1 - GREENHOUSE_GROWTH_MULTIPLIER) * 100)}% faster than the open field.
+        {GREENHOUSE_FASTER_PERCENT}% faster than the open field.
       </p>
+      {thirsty && water < 1 && <p className="sa-checklist-intro">{GREENHOUSE_CAN_EMPTY}</p>}
       <ul className="sa-checklist-items sa-greenhouse-slots">
         {slots.map((slot, index) => (
-          <SlotCard key={index} slot={slot} busy={busy} onSow={onSow} onCollect={onCollect} />
+          <SlotCard
+            key={index}
+            slot={slot}
+            sowing={index === nextEmpty}
+            choices={choices}
+            water={water}
+            busy={busy}
+            onSow={onSow}
+            onWater={onWater}
+            onCollect={onCollect}
+          />
         ))}
       </ul>
     </>
@@ -249,9 +345,12 @@ export function StackAcresGreenhousePanel({
   built,
   inventory,
   units,
+  seedStock,
+  water,
   busy,
   onBuild,
   onSow,
+  onWater,
   onCollect,
   onClose,
 }: GreenhousePanelProps) {
@@ -278,7 +377,15 @@ export function StackAcresGreenhousePanel({
         </header>
         <div className="htp-body">
           {built ? (
-            <GrowScreen units={units} busy={busy} onSow={onSow} onCollect={onCollect} />
+            <GrowScreen
+              units={units}
+              seedStock={seedStock}
+              water={water}
+              busy={busy}
+              onSow={onSow}
+              onWater={onWater}
+              onCollect={onCollect}
+            />
           ) : (
             <BuildScreen check={check} busy={busy} onBuild={onBuild} />
           )}

@@ -24,7 +24,12 @@ import {
   type AnteUpBlockudokuSnapshot,
   type BlockudokuDifficulty,
 } from "@/lib/arcade/ante-up-blockudoku";
-import { GRID_SIDE, type BlockudokuShape } from "@/lib/arcade/puzzles/blockudoku";
+import {
+  GRID_SIDE,
+  type BlockudokuClearGroup,
+  type BlockudokuClearGroupKind,
+  type BlockudokuShape,
+} from "@/lib/arcade/puzzles/blockudoku";
 import { formatDuration } from "@/lib/arcade/puzzles/sudoku";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { createRequestSequence } from "@/lib/ui/request-sequence";
@@ -199,8 +204,11 @@ function fitsAnywhere(board: readonly number[], shape: BlockudokuShape): boolean
 
 /** Every row, column and 3x3 box that is full on `board`, flattened to cell indices. */
 function fullLines(board: readonly number[]): Set<number> {
-  const out = new Set<number>();
-  const groups: number[][] = [];
+  return new Set(clearGroups(board).flatMap((group) => group.cells));
+}
+
+function clearGroups(board: readonly number[]): BlockudokuClearGroup[] {
+  const groups: BlockudokuClearGroup[] = [];
   for (let i = 0; i < GRID_SIDE; i += 1) {
     const row: number[] = [];
     const col: number[] = [];
@@ -212,12 +220,16 @@ function fullLines(board: readonly number[]): Set<number> {
       const c = (i % 3) * 3 + (j % 3);
       box.push(r * GRID_SIDE + c);
     }
-    groups.push(row, col, box);
+    if (row.every((index) => board[index] === 1)) groups.push({ kind: "row", index: i, cells: row });
+    if (col.every((index) => board[index] === 1)) groups.push({ kind: "column", index: i, cells: col });
+    if (box.every((index) => board[index] === 1)) groups.push({ kind: "box", index: i, cells: box });
   }
-  for (const group of groups) {
-    if (group.every((index) => board[index] === 1)) for (const index of group) out.add(index);
-  }
-  return out;
+  return groups;
+}
+
+function clearGroupLabel(group: Pick<BlockudokuClearGroup, "kind" | "index">): string {
+  const label = group.kind === "row" ? "ROW" : group.kind === "column" ? "COLUMN" : "BOX";
+  return `${label} ${group.index + 1}`;
 }
 
 function isShadedBox(index: number): boolean {
@@ -265,6 +277,8 @@ export function AnteUpBlockudoku() {
   // stagger delay -- a full row wipes left to right instead of every cell
   // popping in lockstep.
   const [clearing, setClearing] = useState<readonly number[]>([]);
+  const [clearingKinds, setClearingKinds] = useState<Record<number, BlockudokuClearGroupKind>>({});
+  const [clearCue, setClearCue] = useState<{ groups: readonly BlockudokuClearGroup[]; streak: number; key: number } | null>(null);
   const [combo, setCombo] = useState(false);
   const [gain, setGain] = useState<{ points: number; key: number } | null>(null);
 
@@ -381,6 +395,9 @@ export function AnteUpBlockudoku() {
       const next = data.attempt;
       const points = next && before ? next.board.score - before.board.score : 0;
       if (next && points > 0) setGain({ points, key: next.version });
+      if (next && next.board.lastClearGroups.length > 0) {
+        setClearCue({ groups: next.board.lastClearGroups, streak: next.board.streak, key: next.version });
+      }
       return true;
     } catch {
       if (mounted.current) setError("Could not reach the table. Check your connection.");
@@ -474,6 +491,9 @@ export function AnteUpBlockudoku() {
     if (sending.current || !anteUpTierAllowed("blockudoku", difficulty, wager)) return;
     setSelected(null);
     setAim(null);
+    setClearCue(null);
+    setClearing([]);
+    setClearingKinds({});
     placements.clear();
     void send("/api/ante-up-blockudoku", { difficulty, wager });
   };
@@ -488,7 +508,8 @@ export function AnteUpBlockudoku() {
     const cells = cellsAt(shape, anchor);
     const after = board.slice();
     for (const index of cells) after[index] = 1;
-    const cleared = fullLines(after);
+    const groups = clearGroups(after);
+    const cleared = new Set(groups.flatMap((group) => group.cells));
 
     play("ui");
     setSelected(null);
@@ -501,12 +522,16 @@ export function AnteUpBlockudoku() {
       const isCombo = order.length > GRID_SIDE;
       if (isCombo) comboSound(); else clearSound();
       setClearing(order);
+      setClearingKinds(Object.fromEntries(groups.flatMap((group) => group.cells.map((index) => [index, group.kind]))) as Record<number, BlockudokuClearGroupKind>);
+      setClearCue({ groups, streak: (attempt?.board.streak ?? 0) + 1, key: Date.now() });
       setCombo(isCombo);
       if (clearTimer.current !== null) window.clearTimeout(clearTimer.current);
       clearTimer.current = window.setTimeout(() => {
         clearTimer.current = null;
         if (mounted.current) {
           setClearing([]);
+          setClearingKinds({});
+          setClearCue(null);
           setCombo(false);
         }
       }, CLEAR_FLASH_MS);
@@ -626,6 +651,9 @@ export function AnteUpBlockudoku() {
     setSelected(null);
     setAim(null);
     setGain(null);
+    setClearCue(null);
+    setClearing([]);
+    setClearingKinds({});
   };
 
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;
@@ -788,6 +816,7 @@ export function AnteUpBlockudoku() {
               <Target size={13} aria-hidden="true" />
               <strong>{attempt.board.score.toLocaleString()}</strong>
               <small>/ {attempt.targetScore.toLocaleString()}</small>
+              {attempt.board.streak > 0 && <span className="bk-streak">STREAK ×{attempt.board.streak}</span>}
               {gain && (
                 <span key={gain.key} className="bk-gain" aria-hidden="true">+{gain.points}</span>
               )}
@@ -804,6 +833,14 @@ export function AnteUpBlockudoku() {
           <div className="bk-progress" aria-hidden="true">
             <span style={{ width: `${progress * 100}%` }} />
           </div>
+
+          {clearCue && (
+            <div key={clearCue.key} className={clsx("bk-clear-cue", clearCue.groups.length > 1 && "bk-clear-cue-combo")} role="status">
+              <strong>{clearCue.groups.length > 1 ? `COMBO ×${clearCue.groups.length}` : "CLEAR"}</strong>
+              <span>{clearCue.groups.map(clearGroupLabel).join(" + ")}</span>
+              {clearCue.streak > 1 && <small>STREAK ×{clearCue.streak}</small>}
+            </div>
+          )}
 
           <div className="bk-play">
             <div
@@ -831,6 +868,7 @@ export function AnteUpBlockudoku() {
                       inGhost && (ghost?.legal ? "bk-cell-ghost" : "bk-cell-ghost-bad"),
                       ghost?.legal && ghost.completes.has(index) && "bk-cell-will-clear",
                       clearOrder !== -1 && "bk-cell-clearing",
+                      clearOrder !== -1 && clearingKinds[index] && `bk-cell-clearing-${clearingKinds[index]}`,
                     )}
                     style={clearOrder !== -1 ? ({ "--bk-clear-i": clearOrder } as React.CSSProperties) : undefined}
                     disabled={!active}

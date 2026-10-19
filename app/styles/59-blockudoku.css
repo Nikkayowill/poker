@@ -34,6 +34,13 @@
 .bk-score svg { align-self: center; color: var(--bk-gold); }
 .bk-score strong { font-size: 16px; }
 .bk-score small { color: var(--text-muted); font-size: 12px; }
+.bk-streak {
+  margin-left: 4px;
+  color: var(--bk-gold);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .06em;
+}
 
 /* Beside the score rather than on top of it, so the number stays readable
    while the pop rises. */
@@ -78,6 +85,37 @@
   border-radius: inherit;
   background: var(--bk-gold);
   transition: width .3s ease;
+}
+
+.bk-clear-cue {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: min(100%, 440px);
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--bk-gold) 65%, transparent);
+  border-radius: 999px;
+  color: var(--bk-gold);
+  background: color-mix(in srgb, var(--bk-gold) 12%, var(--brand-surface));
+  box-shadow: 0 0 18px rgba(255, 210, 63, .18);
+  animation: bk-clear-cue-in .32s cubic-bezier(.2, .8, .2, 1) both;
+  font-size: 11px;
+  letter-spacing: .06em;
+}
+.bk-clear-cue strong { font-size: 12px; }
+.bk-clear-cue span { color: var(--text-primary); }
+.bk-clear-cue small { color: var(--text-muted); font-size: 10px; }
+.bk-clear-cue-combo {
+  color: #fff;
+  background: linear-gradient(90deg, rgba(255, 210, 63, .18), rgba(166, 82, 255, .2));
+  border-color: var(--bk-gold);
+  box-shadow: 0 0 26px rgba(255, 210, 63, .35);
+}
+@keyframes bk-clear-cue-in {
+  from { opacity: 0; transform: translateY(-5px) scale(.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* ---- Board and tray ---- */
@@ -144,11 +182,17 @@
   animation: bk-clear 420ms cubic-bezier(.32, 0, .67, 0) both;
   animation-delay: calc(var(--bk-clear-i, 0) * 16ms);
 }
+.bk-cell-clearing-row { --bk-clear-color: #c18cff; }
+.bk-cell-clearing-column { --bk-clear-color: #6fe7ff; }
+.bk-cell-clearing-box { --bk-clear-color: var(--bk-gold); }
 @keyframes bk-clear {
   0% { background: var(--bk-block); box-shadow: inset 1.5px 1.5px 0 rgba(255,255,255,.28), inset -1.5px -1.5px 0 rgba(0,0,0,.3); transform: scale(1) rotate(0deg); }
-  25% { background: #fff; box-shadow: 0 0 16px 4px var(--bk-gold); transform: scale(1.22) rotate(0deg); }
-  60% { background: var(--bk-gold); box-shadow: 0 0 10px var(--bk-gold); transform: scale(.75) rotate(12deg); opacity: 1; }
-  100% { background: var(--bk-gold); transform: scale(0) rotate(30deg); opacity: 0; }
+  25% { background: #fff; box-shadow: 0 0 16px 4px var(--bk-clear-color, var(--bk-gold)); transform: scale(1.22) rotate(0deg); }
+  60% { background: var(--bk-clear-color, var(--bk-gold)); box-shadow: 0 0 10px var(--bk-clear-color, var(--bk-gold)); transform: scale(.75) rotate(12deg); opacity: 1; }
+  100% { background: var(--bk-clear-color, var(--bk-gold)); transform: scale(0) rotate(30deg); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bk-clear-cue { animation: none; }
 }
 
 /* A double (or overlapping) clear on the same drop: the whole board answers,

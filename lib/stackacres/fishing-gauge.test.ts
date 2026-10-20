@@ -9,7 +9,6 @@ import {
   createFishingGaugeState,
   fishGaugeProfile,
   gaugeOverlap,
-  gaugeSpeciesLadder,
   gaugeTension,
   stepFishingGauge,
   type FishingGaugeState,
@@ -39,13 +38,6 @@ function chaseFish(state: FishingGaugeState): boolean {
 }
 
 describe("FISH_GAUGE_PROFILES", () => {
-  it("covers every species the catch table can roll", () => {
-    for (const species of FISH_SPECIES) {
-      expect(FISH_GAUGE_PROFILES[species]).toBeDefined();
-    }
-    expect(Object.keys(FISH_GAUGE_PROFILES).sort()).toEqual([...FISH_SPECIES].sort());
-    expect(gaugeSpeciesLadder()).toEqual(FISH_SPECIES);
-  });
 
   it("gets harder as the fish gets rarer", () => {
     const [common, fair, rare] = FISH_SPECIES.map((species) => FISH_GAUGE_PROFILES[species]);

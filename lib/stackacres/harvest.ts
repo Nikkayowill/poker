@@ -8,14 +8,11 @@
  * quantity (a crit) to apply against. Keeping it pure is what lets that
  * arithmetic be tested without a database.
  *
- * THIS USED TO ALSO CARRY BOUNTIFUL HARVEST, THE PRESTIGE MULTIPLIER AND LAND
- * MAINTENANCE, all multiplying or netting a Gold payout that no longer
- * exists. Bountiful Harvest is retired outright (see the deleted
- * lib/stackacres/bounty.ts) -- a sweep-composition bonus has no clean meaning
- * against "sum the produce," and re-deriving one was explicitly out of scope
- * for this pass. The Prestige Reset Valve's multiplier moved to the Sell
- * action (lib/server/stackacres-service.ts's `sellStackAcresItem`), since
- * that is StackAcres' only Gold-paying step now. Land Maintenance nets off
+ * THIS USED TO ALSO CARRY BOUNTIFUL HARVEST AND LAND MAINTENANCE, both
+ * multiplying or netting a Gold payout that no longer exists. Bountiful
+ * Harvest is retired outright (see the deleted lib/stackacres/bounty.ts) -- a
+ * sweep-composition bonus has no clean meaning against "sum the produce," and
+ * re-deriving one was explicitly out of scope for this pass. Land Maintenance nets off
  * whatever payout DOES credit Gold (`netUpkeepFromPayout`, lib/server/
  * stackacres-service.ts) -- Sell, a Town Contract, or the Vat -- since this
  * function doesn't produce one of its own to net against.
@@ -23,12 +20,10 @@
  * `lines`/`gross` still exist because `homestead_harvests.payout` is written
  * from exactly these numbers -- see the write site in stackacres-service.ts.
  * That ledger is now a pure PRODUCTION record (what was grown, valued at
- * today's sell price) rather than "what was paid", and Prestige's own
- * eligibility math (lib/stackacres/prestige.ts) still reads it as gross
- * lifetime production, unaffected by that reframing.
+ * today's sell price) rather than "what was paid".
  */
 
-import { STACKACRES_YIELDS, itemSellPrice, type StackAcresItem } from "./items";
+import { itemSellPrice, yieldItemOf, type StackAcresItem } from "./items";
 import type { StackAcresStock } from "./catalogue";
 
 /** A ready unit, as much of it as tallying needs. */
@@ -46,30 +41,34 @@ export interface HarvestLine {
   item: StackAcresItem;
   quantity: number;
   /** This line's nominal value at today's sell price -- a production figure
-   *  for the ledger and for Prestige eligibility, not Gold actually paid. */
+   *  for the ledger, not Gold actually paid. */
   gold: number;
 }
 
 export interface HarvestSettlement {
   lines: HarvestLine[];
   /** Every unit's yield valued at today's sell price. A production figure,
-   *  written to `homestead_harvests.payout` for Prestige eligibility -- see
-   *  this module's own header. */
+   *  written to `homestead_harvests.payout` -- see this module's own header. */
   gross: number;
 }
 
 /** Tallies a sweep: what each unit contributed, and the sweep's total
  *  nominal value. */
 export function settleHarvest(units: readonly HarvestCandidate[]): HarvestSettlement {
-  const lines: HarvestLine[] = units.map((unit) => {
-    const item = STACKACRES_YIELDS[unit.stock].item;
-    return {
-      unitId: unit.unitId,
-      stock: unit.stock,
-      item,
-      quantity: unit.yieldQuantity,
-      gold: itemSellPrice(item) * unit.yieldQuantity,
-    };
+  // A hog or steer makes nothing to collect (it is shipped instead), so it
+  // never adds a line here.
+  const lines: HarvestLine[] = units.flatMap((unit) => {
+    const item = yieldItemOf(unit.stock);
+    if (item === null) return [];
+    return [
+      {
+        unitId: unit.unitId,
+        stock: unit.stock,
+        item,
+        quantity: unit.yieldQuantity,
+        gold: itemSellPrice(item) * unit.yieldQuantity,
+      },
+    ];
   });
 
   const gross = lines.reduce((total, line) => total + line.gold, 0);

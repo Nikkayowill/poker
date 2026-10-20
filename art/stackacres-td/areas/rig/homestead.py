@@ -275,7 +275,6 @@ def build(for_game=False):
     _flowers(a)
     _wild(a)
     a.character("ray", 460, 330)
-    a.character("pilgrim", 260, 150)
     a.character("pierre", 580, 352)
     a.character("ivy", 690, 370)
     a.spawn = SPAWN

@@ -31,25 +31,9 @@
  *      Word Stack's own wager ladder). A retune of the multiplier therefore
  *      cannot change what a crop already growing under glass returns.
  *
- *   2. AMBIENT-WEATHER ISOLATION. `applyWeatherModifiers` (./weather.ts) has
- *      exactly one live caller today, `WeatherOverlayManager`
- *      (components/arcade/stackacres/weather-overlay-manager.ts), which is a
- *      screen-wide visual/session query with no wiring into real settlement
- *      -- `harvestStackAcres` never calls it, and weather.ts's own header
- *      says its economy hooks are deliberately unwired pending a separately
- *      reviewed pass. This module does not perform that wiring: doing so
- *      would touch the flat daily Gold ceiling every other file here is
- *      careful never to move outside of a dedicated review (see
- *      lib/server/stackacres-service.ts's own header on that asymmetry).
- *      What IS real and live -- the weather overlay's screen-wide tint and
- *      particle fields -- is what "ignores ambient weather" means here, and
- *      it IS wired: `environmentModifierFor(true).ignoresAmbientWeather`
- *      documents the invariant, and `WeatherOverlayManager.setSuppressed`
- *      (components/arcade/stackacres/weather-overlay-manager.ts), called
- *      from the scene's own `update()` off `steppedInGreenhouse`, is what
- *      actually freezes the weather clock and hides the layer while the
- *      camera is inside -- exactly as a real greenhouse's glass keeps the
- *      weather outside where the player standing under it can still see it.
+ *   2. AMBIENT-WEATHER ISOLATION. There is no live weather system right now,
+ *      so `environmentModifierFor(true).ignoresAmbientWeather` only records
+ *      the rule for when one comes back.
  *
  * ONLY CROPS ARE HOUSED. Livestock keeps its own trough and pen; "a
  * greenhouse full of cattle" is not a place, so `GREENHOUSE_ALLOWED_STOCK`
@@ -58,7 +42,6 @@
 
 import type { MachineItemId } from "./machine-items";
 import { inventoryQuantity, type StackAcresInventory } from "./inventory";
-import { projectedBounds } from "./iso";
 import { STACKACRES_CROPS, type StackAcresCrop, type StackAcresStock } from "./catalogue";
 import type { WorldPoint, WorldRect } from "./world";
 // A strict leaf (./yard.ts imports nothing), so this is a plain value import
@@ -171,46 +154,6 @@ export function greenhouseSlotLayouts(boundary: ZoneBoundary = greenhouseBoundar
     }
   }
   return out;
-}
-
-/** Which slot (if any) a world point hit-tests to, or null outside the
- *  matrix entirely -- the sub-grid's own version of `growAreaAt`. Reuses the
- *  boundary's own tile size rather than a fixed radius, so a resized matrix
- *  needs no change here. */
-export function greenhouseSlotAt(
-  x: number,
-  y: number,
-  boundary: ZoneBoundary = greenhouseBoundary(),
-): { row: number; col: number } | null {
-  const localX = x - boundary.origin.x;
-  const localY = y - boundary.origin.y;
-  if (localX < 0 || localY < 0) return null;
-  const col = Math.floor(localX / boundary.tileSize);
-  const row = Math.floor(localY / boundary.tileSize);
-  if (row < 0 || row >= boundary.rows || col < 0 || col >= boundary.cols) return null;
-  return { row, col };
-}
-
-/** Whether a tapped ground point (post `isoUnproject`, the same space
- *  `growAreaAt` and `barnHitAt` (./world.ts) already work in) lands on the
- *  Greenhouse's own footprint -- the structure's entryway, checked the same
- *  way `barnHitAt` is before offering the fenced ground behind it. */
-export function greenhouseHitAt(x: number, y: number): boolean {
-  return (
-    x >= GREENHOUSE_PLOT.x &&
-    x <= GREENHOUSE_PLOT.x + GREENHOUSE_PLOT.width &&
-    y >= GREENHOUSE_PLOT.y &&
-    y <= GREENHOUSE_PLOT.y + GREENHOUSE_PLOT.height
-  );
-}
-
-/** The screen-space rect a "stepped inside" camera should be bounded to --
- *  pass straight to `camera.setBounds(x, y, width, height)`, the same
- *  contract `worldBoundsScreenRect` (./bounds.ts) already has for the open
- *  world. Restoring the open world's own bounds on exit is `worldBoundsScreenRect()`
- *  itself; this module does not restate it. */
-export function greenhouseInteriorScreenBounds(): WorldRect {
-  return projectedBounds(GREENHOUSE_PLOT);
 }
 
 /* ------------------------------------------------------------------ */

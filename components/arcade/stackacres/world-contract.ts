@@ -1,4 +1,5 @@
 import type { FencePiece } from "@/lib/stackacres/fences";
+import type { GuardDog } from "@/lib/stackacres/guard-dog";
 import type { EmpireBuildingKind, PlacedEmpireBuilding, Tile } from "@/lib/stackacres/empire-buildings";
 import type { GroceryItemKind, GroceryPlacement } from "@/lib/stackacres/grocery-layout";
 import type { Ref } from "react";
@@ -7,6 +8,7 @@ import type { StackAcresTool } from "@/lib/stackacres/tools";
 import type { StackAcresCutter } from "@/lib/stackacres/cutters";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
+import type { TownBuyerId } from "@/lib/stackacres/town-buyers";
 import type { QuestPlaceId } from "@/lib/stackacres/story/places";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
@@ -20,6 +22,7 @@ import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
 import type { StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
 import type { ForageNodeSnapshot } from "@/lib/stackacres/forage";
 import type { LandObstacleSnapshot } from "@/lib/stackacres/land-clearing";
+import type { Facing } from "@/lib/stackacres/tractor";
 
 /**
  * What the farm shell (stackacres-farm.tsx) hands the map under it, and what it
@@ -81,6 +84,11 @@ export interface UseSquare {
   at: TapPoint;
   /** True while the Use key is held down and he is walking a row, false for a single press or a tap. */
   stroke: boolean;
+  /** Which way he is facing, which is the way a tractor row runs (lib/stackacres/tractor.ts). */
+  facing?: Facing;
+  /** A tap on Homestead ground that can't take a bed. He just walks there; the shell only
+   *  says why when the tool held works beds (the hoe, the seed pouch, the fence). */
+  bare?: boolean;
 }
 
 /**
@@ -144,7 +152,7 @@ export type TravelerUnlocks = Readonly<Record<TravelerId, boolean>>;
 export type FarmerAction = "water" | "harvest" | "hoe" | "plant" | "fence";
 
 /** Who an emote bubble pops up over: the farmer, or a person on the map by their rig name. */
-export type EmoteTarget = "farmer" | "ray" | "pilgrim" | TravelerId;
+export type EmoteTarget = "farmer" | "ray" | TravelerId;
 /** Stardew's emote set is the reference; each is a small icon bubble in the common atlas. */
 export type EmoteKind = "heart" | "exclaim" | "question" | "note" | "sleep" | "sweat" | "sparkle";
 
@@ -182,6 +190,11 @@ export interface StackAcresWorldApi {
    * alone -- see `critFlashLabel` in lib/stackacres/juice.ts.
    */
   celebrateCrit: (unitId: string, multiplier: number) => void;
+  /** Walks the farmer to a traveler, or to the door of the building they are in. Null when they
+   *  can't be reached from the map he is on. */
+  walkToPerson: (name: string) => "here" | "inside" | null;
+  /** Earl walks to the beds his last chores pass worked and acts each one out (lib/stackacres/hired-hand.ts). */
+  handChores: (jobs: { unitId: string; kind: "water" | "harvest" }[]) => void;
   /** The farmer acts out a water, harvest, hoe or planting drop where he stands. */
   farmerAction: (action: FarmerAction, impact?: TapPoint) => void;
   /** A small emote bubble over someone's head for a moment: a heart when a gift lands, a note when a
@@ -269,6 +282,8 @@ export interface StackAcresWorldApi {
    * view is back; with no map to fade, it just runs `whileDark`.
    */
   sleep: (whileDark: () => Promise<void> | void) => Promise<void>;
+  /** Climbs down off the tractor, if he is on it. */
+  getOffTractor: () => void;
 }
 
 /** A building being placed: where it would stand, and whether it may. */
@@ -318,6 +333,8 @@ export interface StackAcresWorldProps {
   landObstacles: readonly LandObstacleSnapshot[];
   /** Every fence piece the farm has put up, by Homestead map square (lib/stackacres/fences.ts). */
   fences: readonly FencePiece[];
+  /** The guard dogs standing on the Homestead, by map square (lib/stackacres/guard-dog.ts). */
+  guardDogs: readonly GuardDog[];
   /** The buildings standing on the Far Field (lib/stackacres/empire-buildings.ts). */
   empireBuildings: readonly PlacedEmpireBuilding[];
   /** Placing a building: taps pick a square (`onBuildTap`) instead of walking the farmer there. */
@@ -335,6 +352,12 @@ export interface StackAcresWorldProps {
   onStoreDeskTap: () => void;
   /** A finger landed on someone working at the grocery. */
   onStaffTap: (name: string, at: TapPoint) => void;
+  /** The farm owns a tractor, so one is parked by the barn to climb onto. */
+  tractorOwned: boolean;
+  /** Earl, the hired hand, works this farm, so he is on the Homestead. */
+  handHired: boolean;
+  /** He climbed onto the tractor or off it. */
+  onDrivingChanged: (driving: boolean) => void;
   tool: StackAcresTool;
   /** Fired once, by nonce, to trigger the gold-burst effect on one unit --
    *  the client-side twin of a confirmed collect. */
@@ -342,6 +365,10 @@ export interface StackAcresWorldProps {
   onReady: () => void;
   /** What the belt is holding, so the Use key beside the thumb stick names the job it will do. */
   useKeyLabel: string;
+  /** The belt is holding the rod: the Use key walks him out on the dock and casts. */
+  rodHeld: boolean;
+  /** He walked up to the dock, or away from it. The belt grows a rod and a bait slot while he is there. */
+  onNearWater: (near: boolean) => void;
   /**
    * The farmer is standing on a square with a belt tool in hand: either he
    * walked to a tapped one and arrived, or the Use key fired on the one under
@@ -360,6 +387,10 @@ export interface StackAcresWorldProps {
   onSoilMoveCommitted?: (tx: number, ty: number, toTx: number, toTy: number) => void;
   /** A finger landed on the barn -- Ray's Supply Store's own entryway. */
   onBarnTap: () => void;
+  /** A finger landed on Cora, who sells seed at the city market. */
+  onSeedSellerTap: () => void;
+  /** A finger landed on one of the City's buyers (lib/stackacres/town-buyers.ts). */
+  onTownBuyerTap: (buyer: TownBuyerId) => void;
   /** A finger landed on the signpost, the Town Board's entryway now that
    *  the places list is gone. */
   onSignpostTap: () => void;
@@ -406,10 +437,6 @@ export interface StackAcresWorldProps {
   /** A finger landed on the Greenhouse's own footprint: the shell's cue to
    *  open its panel, which shows either the build screen or the slots. */
   onGreenhouseTap: () => void;
-  /** A finger landed on the Pixel Pilgrim himself. Fires no bow and
-   *  reaches no server by itself -- this is only the cue to open his
-   *  dialogue; see stackacres-farm.tsx's `onWorldMonkTap`. */
-  onMonkTap: (at: TapPoint) => void;
   /** A finger landed on Ray himself, not the barn behind him --
    *  see stackacres-farm.tsx's `onWorldRayTap`. */
   onRayTap: (at: TapPoint) => void;
@@ -446,10 +473,6 @@ export interface StackAcresWorldProps {
   onPlaceEntered: (name: string) => void;
   /** The cutter in hand, which sets the mow swathe and how long it stays cut. */
   cutter: StackAcresCutter;
-  /** The Synergy Tree's `automated_logistics` multiplier on the farmhand's
-   *  walk speed -- `StackAcresView.synergy.farmhandSpeedMultiplier`, 1 with
-   *  no active perk. */
-  farmhandSpeedMultiplier: number;
   /** How much wider than the arrival window the camera frames a district --
    *  `HUD_VIEW_EXPANSION` while the signpost rail is collapsed into the
    *  compass quick-nav, 1 otherwise. */

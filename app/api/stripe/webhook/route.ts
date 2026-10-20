@@ -12,7 +12,7 @@ import {
   type StripeMode,
 } from "@/lib/server/stripe";
 import { fulfillStripePayment, restoreStackAcresPurchase, revokeStackAcresPurchase, syncSubscriptionState } from "@/lib/server/stripe-store";
-import { settleStackAcresSession } from "@/lib/server/stripe-stackacres";
+import { disputeCloseRestoresAccess, settleStackAcresSession } from "@/lib/server/stripe-stackacres";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 
 export const runtime = "nodejs";
@@ -175,7 +175,7 @@ export async function POST(request: NextRequest) {
       }
       case "charge.dispute.closed": {
         const dispute = event.data.object as Stripe.Dispute;
-        if (dispute.status === "won" && typeof dispute.payment_intent === "string") {
+        if (disputeCloseRestoresAccess(dispute.status) && typeof dispute.payment_intent === "string") {
           await restoreStackAcresPurchase(dispute.payment_intent);
         }
         return ack();

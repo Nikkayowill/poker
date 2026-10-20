@@ -13,6 +13,7 @@ import {
   swingAtLandObstacle,
   withLandObstacleState,
   type LandObstacleKind,
+  landOreForSwing,
 } from "./land-clearing";
 
 const NOW = new Date("2026-09-22T12:00:00.000Z");
@@ -180,5 +181,17 @@ describe("a better axe on land being cleared", () => {
     expect(clear("tree", landSwingDamage("tree", 3)).swings).toBeLessThan(clear("tree", 1).swings);
     expect(clear("scrub", landSwingDamage("scrub", 2)).swings).toBe(1);
     expect(landSwingDamage("boulder", 3)).toBe(1);
+  });
+});
+
+describe("landOreForSwing", () => {
+  it("pays ore only for the swing that breaks a boulder", () => {
+    expect(landOreForSwing("boulder", true)).toBeGreaterThan(0);
+    expect(landOreForSwing("boulder", false)).toBe(0);
+  });
+
+  it("pays nothing for trees and scrub", () => {
+    expect(landOreForSwing("tree", true)).toBe(0);
+    expect(landOreForSwing("scrub", true)).toBe(0);
   });
 });

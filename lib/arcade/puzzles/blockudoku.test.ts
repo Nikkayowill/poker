@@ -11,8 +11,6 @@ import {
   blockudokuView,
   placeBlockudokuPiece,
   resignBlockudokuRound,
-  blockudokuShapeById,
-  isBlockudokuPieceSet,
   startBlockudokuRound,
   type BlockudokuPieceSet,
   type BlockudokuRound,
@@ -127,8 +125,10 @@ describe("placeBlockudokuPiece", () => {
     for (let col = 1; col < GRID_SIDE; col += 1) round.board[col] = 1;
     const next = placeBlockudokuPiece(round, 0, 0, 0, NOW);
     for (let col = 0; col < GRID_SIDE; col += 1) expect(next.board[col]).toBe(0);
-    // 1 placement point + 18 for a single-line clear.
-    expect(next.score).toBe(19);
+    // 1 placement point + 18 for the clear + 9 for the first clear streak.
+    expect(next.score).toBe(28);
+    expect(next.streak).toBe(1);
+    expect(next.lastClearGroups?.map((group) => group.kind)).toEqual(["row"]);
   });
 
   it("clears a full 3x3 region", () => {
@@ -137,7 +137,7 @@ describe("placeBlockudokuPiece", () => {
     for (const index of regionCells.slice(1)) round.board[index] = 1;
     const next = placeBlockudokuPiece(round, 0, 0, 0, NOW);
     for (const index of regionCells) expect(next.board[index]).toBe(0);
-    expect(next.score).toBe(19);
+    expect(next.score).toBe(28);
   });
 
   it("scores a double clear with the escalating bonus, not two singles", () => {
@@ -148,7 +148,9 @@ describe("placeBlockudokuPiece", () => {
     for (let row = 1; row < GRID_SIDE; row += 1) round.board[row * GRID_SIDE] = 1;
     const next = placeBlockudokuPiece(round, 0, 0, 0, NOW);
     // 1 placement point + 54 for a two-line clear (18*2*3/2), not 1 + 36.
-    expect(next.score).toBe(55);
+    expect(next.score).toBe(64);
+    expect(next.streak).toBe(1);
+    expect(next.lastClearGroups?.map((group) => group.kind)).toEqual(["row", "column"]);
     expect(next.board.every((cell) => cell === 0)).toBe(true);
   });
 
@@ -187,10 +189,50 @@ describe("placeBlockudokuPiece", () => {
     expect(next.endedAt).toBe(NOW.toISOString());
   });
 
+  it("repairs a refill when the random deal would leave only one playable choice", () => {
+    const round = withInventory([shape("single"), shape("single"), shape("single")]);
+    // Leave isolated empty cells: singles fit, but the board has no room for
+    // the larger pieces that an expert refill can randomly offer.
+    for (let row = 0; row < GRID_SIDE; row += 1) {
+      for (let col = 0; col < GRID_SIDE; col += 1) {
+        if ((row + col) % 2 === 1) round.board[row * GRID_SIDE + col] = 1;
+      }
+    }
+    round.pieceSet = "expert";
+    const afterFirst = placeBlockudokuPiece(round, 0, 0, 0, NOW, 42);
+    const afterSecond = placeBlockudokuPiece(afterFirst, 1, 0, 2, NOW, 42);
+    const next = placeBlockudokuPiece(afterSecond, 2, 0, 4, NOW, 42);
+    const playable = next.inventory.filter((piece) => {
+      if (!piece) return false;
+      for (let row = 0; row < GRID_SIDE; row += 1) {
+        for (let col = 0; col < GRID_SIDE; col += 1) {
+          if (piece.cells.every(([dr, dc]) => {
+            const targetRow = row + dr;
+            const targetCol = col + dc;
+            return targetRow >= 0 && targetRow < GRID_SIDE && targetCol >= 0 && targetCol < GRID_SIDE && next.board[targetRow * GRID_SIDE + targetCol] === 0;
+          })) return true;
+        }
+      }
+      return false;
+    });
+    expect(playable.length).toBe(INVENTORY_SIZE);
+  });
+
   it("does not end the round while a playable piece remains", () => {
     const round = withInventory([shape("single"), shape("single"), null]);
     const next = placeBlockudokuPiece(round, 0, 4, 4, NOW);
     expect(next.status).toBe("active");
+  });
+
+  it("continues a streak across consecutive clears and resets it on a miss", () => {
+    const first = withInventory([shape("single"), shape("single"), null]);
+    for (let col = 1; col < GRID_SIDE; col += 1) first.board[col] = 1;
+    const cleared = placeBlockudokuPiece(first, 0, 0, 0, NOW);
+    const second = { ...cleared, inventory: [shape("single"), null, null] };
+    const missed = placeBlockudokuPiece(second, 0, 4, 4, NOW);
+    expect(cleared.streak).toBe(1);
+    expect(missed.streak).toBe(0);
+    expect(missed.lastClearGroups).toEqual([]);
   });
 });
 
@@ -268,16 +310,7 @@ describe("piece sets", () => {
       expect(Math.min(...entry.cells.map(([row]) => row))).toBe(0);
       expect(Math.min(...entry.cells.map(([, col]) => col))).toBe(0);
       expect(new Set(entry.cells.map(([row, col]) => `${row},${col}`)).size).toBe(entry.cells.length);
-      expect(blockudokuShapeById(entry.id)).toBe(entry);
     }
-    expect(blockudokuShapeById("nope")).toBeNull();
-  });
-
-  it("recognises only the known set names", () => {
-    expect(isBlockudokuPieceSet("classic")).toBe(true);
-    expect(isBlockudokuPieceSet("expert")).toBe(true);
-    expect(isBlockudokuPieceSet("master")).toBe(true);
-    expect(isBlockudokuPieceSet("hardcore")).toBe(false);
   });
 });
 
@@ -323,7 +356,7 @@ describe("dealing by piece set", () => {
 
   it("jams on a board with no room for a 3x3 block", () => {
     // Only the middle cell of each box is filled, so nothing needing a clean 3x3 fits.
-    const round = withInventory([shape("single"), blockudokuShapeById("square-3"), null]);
+    const round = withInventory([shape("single"), BLOCKUDOKU_PIECE_SETS.expert.find((entry) => entry.id === "square-3") ?? null, null]);
     for (const box of [10, 13, 16, 37, 40, 43, 64, 67, 70]) round.board[box] = 1;
     const next = placeBlockudokuPiece(round, 0, 0, 0, NOW);
     expect(next.status).toBe("over");

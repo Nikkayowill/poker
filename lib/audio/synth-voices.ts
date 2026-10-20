@@ -27,7 +27,7 @@
  */
 
 /** Shared, immutable noise beds. Built once per context and reused by every voice. */
-const noiseCache = new WeakMap<BaseAudioContext, { white: AudioBuffer; brown: AudioBuffer }>();
+const noiseCache = new WeakMap<BaseAudioContext, { white: AudioBuffer }>();
 
 /**
  * Ten seconds of noise, long enough that looping it is inaudible.
@@ -44,18 +44,9 @@ function noiseBuffers(ctx: BaseAudioContext) {
 
   const length = Math.floor(ctx.sampleRate * 10);
   const white = ctx.createBuffer(1, length, ctx.sampleRate);
-  const brown = ctx.createBuffer(1, length, ctx.sampleRate);
   const w = white.getChannelData(0);
-  const b = brown.getChannelData(0);
 
-  let last = 0;
-  for (let i = 0; i < length; i++) {
-    const value = Math.random() * 2 - 1;
-    w[i] = value;
-    // A one-pole integrator: brown noise, the low rumble under wind and water.
-    last = (last + 0.02 * value) / 1.02;
-    b[i] = last * 3.5;
-  }
+  for (let i = 0; i < length; i++) w[i] = Math.random() * 2 - 1;
   // Crossfade the last 50ms into the first so the loop point has no step in
   // it. A step in a noise buffer is a click, and a click every ten seconds is
   // the one artefact a listener WILL find.
@@ -63,18 +54,17 @@ function noiseBuffers(ctx: BaseAudioContext) {
   for (let i = 0; i < fade; i++) {
     const t = i / fade;
     w[i] = w[i] * t + w[length - fade + i] * (1 - t);
-    b[i] = b[i] * t + b[length - fade + i] * (1 - t);
   }
 
-  const built = { white, brown };
+  const built = { white };
   noiseCache.set(ctx, built);
   return built;
 }
 
 /** A looping noise source, started immediately. The caller owns stopping it. */
-export function noiseSource(ctx: AudioContext, colour: "white" | "brown"): AudioBufferSourceNode {
+export function noiseSource(ctx: AudioContext): AudioBufferSourceNode {
   const source = ctx.createBufferSource();
-  source.buffer = noiseBuffers(ctx)[colour];
+  source.buffer = noiseBuffers(ctx).white;
   source.loop = true;
   // A random start offset means two beds built in the same tick are not
   // reading the same samples, which would make them correlate and collapse
@@ -235,19 +225,10 @@ export type SynthVoice =
   | "muck-clear"
   | "buy-latch"
   | "coins-pour"
-  | "crate-down"
-  | "scythe-swish"
   | "post-hammer"
   | "travel-steps"
-  | "refuse"
-  | "panel-slide"
   | "tool-tap"
-  | "dirt-pat"
-  // A permanent-progress moment: a Prestige Reset, and nothing else -- see
-  // this voice's own case below for why it is built differently from every
-  // action cue above it.
-  | "leaf-snip"
-  | "prestige-chime";
+  | "leaf-snip";
 
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
 
@@ -258,7 +239,7 @@ const rand = (min: number, max: number) => min + Math.random() * (max - min);
  * and are not: a bandpassed noise burst at Q 1.8 throws away most of its
  * energy, where a bare sine keeps all of its. Rendered through an
  * OfflineAudioContext at a nominal gain of 1, the set spanned about 22dB --
- * `post-hammer` peaked at -11dBFS and `panel-slide` at -32.7 -- which meant a
+ * `post-hammer` peaked at -11dBFS and a quiet sweep at -32.7 -- which meant a
  * call site asking for "gain: 0.9" got wildly different loudness depending
  * only on which recipe it named. That is not a mix, it is a coincidence.
  *
@@ -287,22 +268,13 @@ const VOICE_TRIM: Record<SynthVoice, number> = {
   "muck-clear": 5.9,
   "buy-latch": 1.43,
   "coins-pour": 1.45,
-  "crate-down": 0.85,
-  "scythe-swish": 2.14,
   "post-hammer": 0.71,
   "travel-steps": 2.26,
-  refuse: 1.05,
-  "panel-slide": 8.6,
   "tool-tap": 2.63,
-  // Not run through the render harness the comment above describes -- these
-  // three are estimated by ear against the closest measured shape
-  // (`dirt-pat` and `leaf-snip` against the other noise-burst action cues,
-  // `prestige-chime` against `farm-bell`'s own additive partials) rather
-  // than rendered and read off a meter. Re-measure properly if any turns out
-  // wrong once heard.
-  "dirt-pat": 1.6,
+  // Not run through the render harness the comment above describes: estimated
+  // by ear against the other noise-burst action cues rather than rendered and
+  // read off a meter. Re-measure properly if it turns out wrong once heard.
   "leaf-snip": 3.4,
-  "prestige-chime": 0.4,
 };
 
 /**
@@ -565,32 +537,6 @@ export function playVoice(
       }
       break;
     }
-    case "crate-down": {
-      parts.push(tone(ctx, at, { freq: 168, sweepTo: 132, env: { attack: 0.002, decay: 0.17, peak: 0.24 } }));
-      parts.push(noiseBurst(ctx, at, { freq: 700, q: 0.8, type: "lowpass", env: { attack: 0.001, decay: 0.07, peak: 0.16 } }));
-      break;
-    }
-    case "scythe-swish": {
-      // The signature: a band of noise sweeping up and back down under a
-      // bell-shaped envelope. Sweeping only upward sounds like an arrow.
-      parts.push(
-        noiseBurst(ctx, at, {
-          freq: 800,
-          sweepTo: 4200,
-          q: 1.1,
-          env: { attack: 0.075, decay: 0.05, peak: 0.2 },
-        }),
-      );
-      parts.push(
-        noiseBurst(ctx, at + 0.1, {
-          freq: 4000,
-          sweepTo: 1100,
-          q: 1.3,
-          env: { attack: 0.02, decay: 0.16, peak: 0.15 },
-        }),
-      );
-      break;
-    }
     case "post-hammer": {
       parts.push(tone(ctx, at, { freq: 140, sweepTo: 108, env: { attack: 0.001, decay: 0.22, peak: 0.28 } }));
       parts.push(noiseBurst(ctx, at, { freq: 1600, q: 1, env: { attack: 0.0008, decay: 0.035, peak: 0.18 } }));
@@ -613,54 +559,17 @@ export function playVoice(
       }
       break;
     }
-    case "refuse": {
-      // Deliberately NOT a buzzer. A refusal on this farm is a dull knock on
-      // a plank: it says "that did not move" without scolding, which is the
-      // register the rest of StackAcres is written in.
-      parts.push(tone(ctx, at, { freq: 190, sweepTo: 150, env: { attack: 0.003, decay: 0.13, peak: 0.2 } }));
-      parts.push(noiseBurst(ctx, at, { freq: 420, q: 1.2, type: "lowpass", env: { attack: 0.002, decay: 0.06, peak: 0.09 } }));
-      break;
-    }
-    case "panel-slide": {
-      parts.push(
-        noiseBurst(ctx, at, {
-          freq: 1100,
-          sweepTo: 480,
-          q: 1.8,
-          env: { attack: 0.03, decay: 0.15, peak: 0.1 },
-        }),
-      );
-      break;
-    }
     case "tool-tap": {
       parts.push(noiseBurst(ctx, at, { freq: 1400, q: 2.2, env: { attack: 0.001, decay: 0.028, peak: 0.16 } }));
       parts.push(tone(ctx, at + 0.002, { freq: 520, env: { attack: 0.002, decay: 0.045, peak: 0.08 } }));
-      break;
-    }
-    case "dirt-pat": {
-      // Soft and muted, deliberately: a hand pressing loose soil down over a
-      // seed, not a strike. A low, heavily-damped thump under a very short,
-      // dark (lowpassed, not bandpassed) noise burst -- no bright top end at
-      // all, which is what keeps this from reading as `post-hammer`'s knock.
-      parts.push(
-        tone(ctx, at, { freq: 90, sweepTo: 68, env: { attack: 0.006, decay: 0.09, peak: 0.14 } }),
-      );
-      parts.push(
-        noiseBurst(ctx, at, {
-          freq: 260,
-          q: 0.7,
-          type: "lowpass",
-          env: { attack: 0.004, decay: 0.05, peak: 0.1 },
-        }),
-      );
       break;
     }
     case "leaf-snip": {
       // A crop harvest, as distinct from `harvest-pour`'s grain stream: this
       // is the CUT, not the produce landing after it -- a short, bright
       // scissor transient followed by a softer rustle as the cut stem falls
-      // through the rest of the plant. Two bursts, not one, for the same
-      // reason `scythe-swish` is two: a blade has an attack and a release.
+      // through the rest of the plant. Two bursts, not one: a blade has an
+      // attack and a release.
       parts.push(
         noiseBurst(ctx, at, {
           freq: 3400,
@@ -676,36 +585,6 @@ export function playVoice(
           env: { attack: 0.006, decay: rand(0.06, 0.1), peak: 0.1 },
         }),
       );
-      break;
-    }
-    case "prestige-chime": {
-      // A warm three-note chord, not a single struck bell like `farm-bell`:
-      // a Prestige Reset is a bigger, calmer moment than anything else here,
-      // and the chord is what tells the ear apart the two. Root/third/fifth,
-      // staggered slightly and each with its own gentle vibrato so the three
-      // notes breathe rather than beat against each other.
-      const root = rand(210, 240);
-      [1, 1.25, 1.5].forEach((ratio, i) => {
-        parts.push(
-          tone(ctx, at + i * 0.06, {
-            freq: root * ratio,
-            vibrato: { depth: 2, rate: rand(2.6, 3.6) },
-            env: { attack: 0.06 + i * 0.02, decay: 2.6 - i * 0.25, peak: 0.16 },
-          }),
-        );
-      });
-      // A glassy high shimmer riding the chord, the same inharmonic-partial
-      // trick `farm-bell` uses, just softer and slower to decay -- the
-      // "wind-chime" half of the cue, over the "synth chord" half above.
-      const shimmerBase = root * 4;
-      [1, 2.02, 3.01].forEach((ratio, i) => {
-        parts.push(
-          tone(ctx, at + 0.1 + i * 0.03, {
-            freq: shimmerBase * ratio,
-            env: { attack: 0.01, decay: 1.8 / (1 + i * 0.6), peak: 0.05 / (1 + i * 0.8) },
-          }),
-        );
-      });
       break;
     }
   }

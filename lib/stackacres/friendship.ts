@@ -3,14 +3,6 @@
  * earns points toward a permanent ladder of keepsake rewards, Stardew
  * Valley's own gift-giving loop scaled down to StackAcres' own cadence.
  *
- * A SEPARATE MECHANIC FROM ./devotion.ts. The Pixel Pilgrim already has his
- * own UTC-day prayer streak and relic ladder -- this file does not touch
- * him, and `FRIENDSHIP_NPCS` never includes "pilgrim". The two
- * systems look similar (a day gate, a claimed-rung ladder) because they
- * solve the same shape of problem the same way this codebase already
- * trusts, not because one was copied into the other; keep them separate
- * modules so a future retune of one can never silently touch the other.
- *
  * A SECOND, FREE DAY GATE: alongside a gift, a player can also just say hi
  * (`applyGreet`) -- no item, a smaller flat award, and its own
  * `lastGreetedDay` so greeting and gifting never compete for the same
@@ -38,7 +30,7 @@
  * because unlike showing off a find, a gift is not information the player
  * already has.
  *
- * ONE COUNTED GIFT PER NPC PER UTC DAY, same boundary as devotion.ts's
+ * ONE COUNTED GIFT PER NPC PER UTC DAY, on the farm's own day boundary
  * (`./exchange.ts`'s `stackacresExchangeDay`) -- not to gate the item spend
  * (a player may give as many times as they like) but so the SERVER never
  * consumes an item for a gift that would have scored nothing: an
@@ -64,9 +56,8 @@ export function isNpcId(value: string): value is NpcId {
 export type GiftPreference = "loved" | "liked" | "neutral";
 
 /** Points one gift is worth, by how much the NPC likes it. No "disliked"
- *  tier and no penalty for a wrong guess, on purpose -- same generosity
- *  ./devotion.ts's "declining costs nothing" already commits this feature
- *  set to: the worst a gift can do is score less than it might have. */
+ *  tier and no penalty for a wrong guess, on purpose: the worst a gift can
+ *  do is score less than it might have. */
 const POINTS_BY_PREFERENCE: Readonly<Record<GiftPreference, number>> = {
   loved: 3,
   liked: 2,
@@ -163,19 +154,17 @@ export function giftPoints(npc: NpcId, item: MachineItemId): number {
 }
 
 /**
- * Every NPC's keepsakes: what their own friendship ladder grants, the same
- * posture ./devotion.ts's RELIC_ITEMS already sets and for the identical
- * reason -- NEVER Gold-valued, never sold, never tradeable, never swept by a
+ * Every NPC's keepsakes: what their own friendship ladder grants --
+ * NEVER Gold-valued, never sold, never tradeable, never swept by a
  * harvest. `stackacres-service.ts` enforces a hard, test-pinned rule that
  * Gold is credited from exactly four call sites (a refund helper, Sell, a
  * fulfilled Town Contract and the Fermenting Vat -- see "the currency wall"
  * in that file's own test suite), and a friendship reward is not a fifth: it
- * is a memento, the same category a relic already is.
+ * is a memento.
  *
  * One flat KEEPSAKE_ITEMS id space across all three NPCs (never reused
  * between them, so a KeepsakeId alone always says who gave it) rather than a
- * per-NPC item type -- the same "one id space, ids never collide" choice
- * RELIC_ITEMS already makes for the Pilgrim.
+ * per-NPC item type.
  */
 export const KEEPSAKE_ITEMS = [
   "carved_whistle",
@@ -196,11 +185,10 @@ export type KeepsakeId = (typeof KEEPSAKE_ITEMS)[number];
 
 export interface KeepsakeDef {
   label: string;
-  /** The "???" caption shown before it's ever been earned -- same
-   *  treatment RELIC_CATALOGUE gives an unclaimed relic. */
+  /** The "???" caption shown before it's ever been earned. */
   blurb: string;
-  /** A plain emoji, same reasoning RelicDef.icon gives: never drawn on the
-   *  map, only in a dialogue's own small chrome. */
+  /** A plain emoji: never drawn on the map, only in a dialogue's own small
+   *  chrome. */
   icon: string;
 }
 
@@ -269,8 +257,8 @@ export const KEEPSAKE_CATALOGUE: Readonly<Record<KeepsakeId, KeepsakeDef>> = {
 
 /** One rung on the ladder: the point total it takes, the keepsake it grants
  *  the first time a gift or greet reaches it, and the title the dialogue
- *  shows from then on. Short by design, same reasoning DEVOTION_LADDER
- *  gives -- a handful of real moments, not a grind. Every `points` value in
+ *  shows from then on. Short by design -- a handful of real moments, not a
+ *  grind. Every `points` value in
  *  one NPC's ladder is unique and ascending; friendship.test.ts holds both. */
 export interface FriendshipRung {
   points: number;
@@ -283,9 +271,7 @@ export interface FriendshipRung {
  *  npc), but each NPC's own keepsakes and titles, since a keepsake earned
  *  from Pierre reading "Ray gives you his Carved Whistle" would be a bug,
  *  not a reuse. At one loved gift (3 points) per UTC day, the ladder takes
- *  3/8/15/25 days -- a slightly longer arc than DEVOTION_LADDER's, since a
- *  gift also costs a real processing-track item and the Pilgrim's streak
- *  costs nothing but showing up. A greet alone (1 point/day) takes
+ *  3/8/15/25 days. A greet alone (1 point/day) takes
  *  9/24/45/75 days, the plain-friendship pace for someone never gifted at all. */
 export const FRIENDSHIP_LADDER: Readonly<Record<NpcId, readonly FriendshipRung[]>> = {
   ray: [
@@ -310,14 +296,12 @@ export const FRIENDSHIP_LADDER: Readonly<Record<NpcId, readonly FriendshipRung[]
 
 /** Just the thresholds, in ladder order -- identical across every NPC (see
  *  FRIENDSHIP_LADDER's own header), so this is what the server hands its
- *  RPC regardless of which npc the call is for (the same pattern
- *  DEVOTION_RUNG_THRESHOLDS already sets for the Pilgrim's shrine). */
+ *  RPC regardless of which npc the call is for. */
 export const FRIENDSHIP_RUNG_THRESHOLDS: readonly number[] = FRIENDSHIP_LADDER.ray.map((rung) => rung.points);
 
 /** One player's standing with one NPC, as stored. `claimedRungs` holds
  *  indices into that NPC's own FRIENDSHIP_LADDER entry, never titles
- *  directly -- same convention devotion.ts's `claimedRungs` uses, so a
- *  rung's title/reward can change later without disturbing what was
+ *  directly, so a rung's title/reward can change later without disturbing what was
  *  already claimed. */
 export interface StoredFriendship {
   points: number;
@@ -419,7 +403,7 @@ export function applyGreet(stored: StoredFriendship, npc: NpcId, today: string):
 }
 
 /** The read-only projection the client renders. Points never lapse or
- *  decay -- unlike devotion's streak, a missed day costs nothing at all,
+ *  decay -- a missed day costs nothing at all,
  *  the same "no punishment" posture this file's own header commits to. */
 export interface StackAcresFriendshipView {
   points: number;
@@ -432,12 +416,10 @@ export interface StackAcresFriendshipView {
   keepsakesHeld: readonly KeepsakeId[];
 }
 
-/** `now` rather than a pre-computed day string -- same ergonomics
- *  ./devotion.ts's own `devotionView` gives, and the same UTC-day
- *  derivation `now.toISOString().slice(0, 10)` (identical to
- *  ./exchange.ts's `stackacresExchangeDay`, restated rather than imported
- *  for the same "this file reads no clock but the one it is handed"
- *  reason `devotionView` already gives). */
+/** `now` rather than a pre-computed day string. The UTC-day derivation
+ *  `now.toISOString().slice(0, 10)` is identical to ./exchange.ts's
+ *  `stackacresExchangeDay`, restated rather than imported because this file
+ *  reads no clock but the one it is handed. */
 export function friendshipView(npc: NpcId, stored: StoredFriendship, now: Date): StackAcresFriendshipView {
   const ladder = FRIENDSHIP_LADDER[npc];
   const today = now.toISOString().slice(0, 10);

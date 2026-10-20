@@ -60,7 +60,7 @@ test("a resource guide opens from the inventory and leads to the screen that use
 
   // What it is for: the machines built from it, and selling it.
   const uses = detail.getByRole("list", { name: "Uses" });
-  await expect(uses.getByText("Build the Mill")).toBeVisible();
+  await expect(uses.getByText("Build the Feed Grinder")).toBeVisible();
   await expect(uses.getByText("Build the Loom")).toBeVisible();
 
   // Where to get more: an open source, with no "not open yet" on it.
@@ -69,20 +69,19 @@ test("a resource guide opens from the inventory and leads to the screen that use
   await expect(sources.getByText(/Not open yet/)).toHaveCount(0);
 
   // Follow a use: the guide closes and the Workshop opens.
-  await uses.getByRole("listitem").filter({ hasText: "Build the Mill" }).getByRole("button", { name: "Open the Workshop" }).click();
+  await uses.getByRole("listitem").filter({ hasText: "Build the Feed Grinder" }).getByRole("button", { name: "Open the Workshop" }).click();
   await expect(page.getByRole("dialog", { name: "What you are carrying" })).toHaveCount(0);
   await expect(page.getByRole("dialog", { name: "The Workshop" })).toBeVisible();
 });
 
-test("an item whose source is shut says so instead of pointing at it", async ({ context, page }) => {
+test("Stone names the boulders it comes from, now that they are on the map", async ({ context, page }) => {
   await openStackAcresWithWood(context, page);
 
   const guide = await openGuide(page);
   await guide.getByRole("button", { name: /^Show all \d+ items$/ }).click();
   await guide.getByRole("button", { name: /^Stone, 0 held$/ }).click();
 
-  const detail = page.getByRole("dialog", { name: "Stone" });
-  const sources = detail.getByRole("list", { name: "Sources" });
-  await expect(sources.getByText(/Not open yet/)).toBeVisible();
-  await expect(sources.getByRole("button")).toHaveCount(0);
+  const sources = page.getByRole("dialog", { name: "Stone" }).getByRole("list", { name: "Sources" });
+  await expect(sources.getByText(/boulders/)).toBeVisible();
+  await expect(sources.getByText(/Not open yet/)).toHaveCount(0);
 });

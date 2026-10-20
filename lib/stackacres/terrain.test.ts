@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { worldBoundsRect } from "./bounds";
 import { GREENHOUSE_PLOT } from "./greenhouse";
 import { isoProject, isoUnproject, projectedBounds } from "./iso";
 import { ALL_FARM_PATHS, FARM_PATHS, nearestOnPath } from "./paths";
@@ -17,7 +16,6 @@ import {
   TERRAIN_CELL,
   TERRAIN_CHUNK,
   TERRAIN_CHUNK_CELLS,
-  TERRAIN_OVERHANG,
   TERRAIN_SCAN,
   cellAt,
   cellOrigin,
@@ -26,10 +24,8 @@ import {
   inSea,
   seaExpanseTiles,
   seaShoreX,
-  terrainChunkScreenRect,
   terrainChunks,
   terrainMaterialAt,
-  tileFrameOffset,
 } from "./terrain";
 import { POND, POND_SAND, POND_SHALLOW, POND_ZONE } from "./water";
 import { CROP_FIELD } from "./yard";
@@ -44,7 +40,18 @@ import {
   type WorldPoint,
   type WorldRect,
 } from "./world";
-import { ZONE_LIST } from "./zones";
+import { STACKACRES_ZONES } from "./zones";
+
+/** Every district's bounds, unioned and padded by a chunk: the farm's outer edge. */
+function worldBoundsRect(): WorldRect {
+  const rects = Object.values(STACKACRES_ZONES).map((zone) => zone.bounds);
+  const minX = Math.min(...rects.map((r) => r.x));
+  const minY = Math.min(...rects.map((r) => r.y));
+  const maxX = Math.max(...rects.map((r) => r.x + r.width));
+  const maxY = Math.max(...rects.map((r) => r.y + r.height));
+  const pad = STACKACRES_CHUNK;
+  return { x: minX - pad, y: minY - pad, width: maxX - minX + pad * 2, height: maxY - minY + pad * 2 };
+}
 
 describe("the lattice", () => {
   it("puts every cell's diamond on one of the lawn's own stamps", () => {
@@ -80,18 +87,11 @@ describe("the lattice", () => {
     }
   });
 
-  it("bakes a chunk into a 512x256 canvas at two pixels per unit", () => {
-    const rect = terrainChunkScreenRect(3, -2);
-    expect(rect.width).toBe(TERRAIN_CHUNK * 2);
-    expect(rect.height).toBe(TERRAIN_CHUNK);
-    expect((rect.width) * 2).toBeLessThanOrEqual(512);
-    expect((rect.height + TERRAIN_OVERHANG) * 2).toBeLessThanOrEqual(256);
-  });
 });
 
 describe("the sea", () => {
   it("lies east of every district and west of the camera's wall", () => {
-    const eastmost = Math.max(...ZONE_LIST.map((z) => z.bounds.x + z.bounds.width));
+    const eastmost = Math.max(...Object.values(STACKACRES_ZONES).map((z) => z.bounds.x + z.bounds.width));
     const wall = worldBoundsRect();
     let shoreMin = Infinity;
     let shoreMax = -Infinity;
@@ -502,19 +502,4 @@ describe("the tiles", () => {
     expect(keys.size).toBeLessThan(chunks.length * 0.8);
   });
 
-  it("places a frame so its diamond lands on the cell's own diamond", () => {
-    const chunk = terrainChunks()[0];
-    const tile = chunk.tiles[0];
-    const off = tileFrameOffset(chunk, tile);
-    const rect = terrainChunkScreenRect(chunk.cx, chunk.cy);
-    const o = cellOrigin(chunk.cx * TERRAIN_CHUNK_CELLS + tile.di, chunk.cy * TERRAIN_CHUNK_CELLS + tile.dj);
-    const centre = isoProject(o.x + TERRAIN_CELL / 2, o.y + TERRAIN_CELL / 2);
-    // A frame is 64 px = 32 units wide with its diamond centred 46 px = 23
-    // units down; whole units, so the bake copies pixels without resampling.
-    expect(rect.x + off.x + 16).toBe(centre.x);
-    expect(rect.y + off.y + 23).toBe(centre.y);
-    expect(Number.isInteger(off.x)).toBe(true);
-    expect(Number.isInteger(off.y)).toBe(true);
-    expect(off.y).toBeGreaterThanOrEqual(-TERRAIN_OVERHANG - 15);
-  });
 });

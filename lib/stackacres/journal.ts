@@ -33,23 +33,24 @@
 
 import { CHAPTERS } from "./chapters";
 import type { FarmBoardLine, FarmBoardView } from "./farm-board";
-import { buildCost, buildPlace, costLines, costSummary, type BuildCost, type BuildPlace } from "./build-cost";
-import { STACKACRES_CATALOGUE, isLivestock } from "./catalogue";
+import { buildCost, buildPlace, costLines, costSummary, type BuildCost, type BuildLine, type BuildPlace } from "./build-cost";
+import { STACKACRES_CATALOGUE, isLivestock, isMarketLivestock, type SeedStock } from "./catalogue";
+import { SEED_SELLER_WHERE } from "./seed-seller";
 import { canFulfillContract, type StackAcresContractRow } from "./contracts";
 import { STACKACRES_TOOL_TIERS, STACKACRES_TOOL_TIER_DEFS } from "./equipment";
 import { inventoryQuantity, type StackAcresInventory } from "./inventory";
+import { RECIPE_CATALOGUE } from "./recipes";
 import { machineItemLabel } from "./machine-items";
 import type { MachineKind, StackAcresMachineSnapshot } from "./machines";
 import { buildingCues, finishedRunCount, roomHasMachines } from "./building-cues";
-import { FARM_KITCHEN_BANK, farmKitchenBanked } from "./farm-kitchen";
 import { FEED_SILO_DAILY_FEEDS } from "./feed-silo";
 import { seedsOpenedLine } from "./seed-unlocks";
-import { STACKACRES_SECTORS, type SectorId } from "./sectors";
+import type { AcrePrice } from "./acres";
+import { stackacresStockPrice } from "./market";
 import {
   STACKACRES_QUEST_FLAGS,
   STACKACRES_QUEST_LABELS,
   nextReachableStackAcresMilestone,
-  STACKACRES_UNREACHABLE_FLAGS,
   stackacresMilestone,
   stackacresQuestFlags,
   type StackAcresQuestFlag,
@@ -77,10 +78,16 @@ export type JournalCueKind =
   | "collect"
   /** The open town order can be filled right now. */
   | "contract"
+  /** A hog or steer is ready to sell at Hank's sale barn. */
+  | "ship"
   /** Crops are standing ready in the beds. */
   | "harvest"
   /** Beds have gone dry, so nothing in them is growing. */
   | "water"
+  /** Seed in the barn and nothing planted: Ray's pouch, ready to go in the ground. */
+  | "sow"
+  /** Nothing planted and no seed left: Cora sells it at the city market. */
+  | "seeds"
   /** The next building is affordable. */
   | "build"
   /** The next building is short of something, and we know where it comes from. */
@@ -96,15 +103,19 @@ const CUE_ORDER: readonly JournalCueKind[] = [
   "hungry",
   "collect",
   "contract",
+  "ship",
   "harvest",
   "water",
+  "sow",
+  "seeds",
+  // Above the farm's own next building. Ray, Pierre and Ivy are how the game teaches itself: a person
+  // waiting to be met, or holding a finished quest, is worth more than another line about Wood. Only a
+  // traveler who is waiting or ready lands here; a quest still in progress never outranks the building
+  // it may depend on. Their lines stay optional (./story/quests.ts), and the Journal sheet still lists
+  // every building the farm needs.
+  "caller",
   "build",
   "gather",
-  // Below the farm's own next step on purpose. A traveler's line is optional
-  // from the first tap to the last (see ./story/quests.ts's header) and the
-  // farm is the game, so a player who never talks to anybody must still be
-  // told what their own buildings need.
-  "caller",
   "reach",
   "idle",
 ];
@@ -151,10 +162,12 @@ export interface JournalReachStep {
   /** The imperative label the shop and the traveler bubbles already use. */
   readonly label: string;
   readonly done: boolean;
-  /** "45,000 Gold + 30 Wood" for a flag that is a land clear, else null.
-   *  The expansion track's two big rungs are purchases, and a rung a player
-   *  is told to reach without being told the price is not a goal. */
+  /** "300 Gold + 15 Wood + 5 Stone" for a flag that is bought, else null.
+   *  A rung a player is told to reach without the price is not a goal. */
   readonly cost: string | null;
+  /** What that price asks for, line by line, against what the farm holds.
+   *  Empty when the flag is not bought. */
+  readonly lines: readonly BuildLine[];
   /** Travelers who arrive on this flag by name, rather than on a count. */
   readonly brings: readonly string[];
 }
@@ -235,10 +248,18 @@ export interface JournalInput {
   readonly woodNodes: readonly { readonly ready: boolean }[];
   readonly stoneNodes: readonly { readonly ready: boolean }[];
   readonly forageNodes: readonly { readonly ready: boolean }[];
+  /** Seed held and not yet planted, by crop. */
+  readonly seedStock: SeedStock;
+  /** Water left in the can. Left out, the can counts as full. */
+  readonly water?: number;
   /** The board off the last snapshot, or null before one has landed. Server
    *  truth, passed in rather than derived, the same posture `story` above
    *  takes -- nothing here can work out what today's draw was. */
   readonly farmBoard: FarmBoardView | null;
+  /** The next acre's price off the last snapshot. Breaking ground in the
+   *  Crop Fields needs a bought acre, so this is that milestone's price.
+   *  Null or left out when the farm owns every acre. */
+  readonly acrePrice?: AcrePrice | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -313,27 +334,39 @@ function opensAtMilestone(count: number): string[] {
   return opens;
 }
 
-/** The two flags that are land clears, so their price can be shown. The
- *  other three are acts, not purchases. */
-const FLAG_SECTOR: Partial<Record<StackAcresQuestFlag, SectorId>> = {
-  cleared_wallow: "wallow",
-  cleared_oxfields: "oxfields",
-};
+/** What a flag costs to earn, or no lines when it is an act rather than a
+ *  purchase. The Crop Fields need a bought acre, and the Fold and the Cattle
+ *  Pasture open with the first sheep or cow. */
+function reachLines(flag: StackAcresQuestFlag, input: JournalInput): BuildLine[] {
+  switch (flag) {
+    case "crop_fields_unlocked": {
+      const price = input.acrePrice;
+      if (!price) return [];
+      const materials = [
+        { item: "wood", quantity: price.wood },
+        { item: "stone", quantity: price.stone },
+      ] as const;
+      return costLines(price.gold, materials, input.gold, input.inventory);
+    }
+    case "cleared_wallow":
+      return costLines(stackacresStockPrice("pig"), [], input.gold, input.inventory);
+    case "cleared_oxfields":
+      return costLines(stackacresStockPrice("cattle"), [], input.gold, input.inventory);
+    default:
+      return [];
+  }
+}
 
 function journalReach(input: JournalInput): JournalReachStep[] {
   const earned = stackacresQuestFlags(input.progress);
   return STACKACRES_QUEST_FLAGS.map((flag) => {
-    const sector = FLAG_SECTOR[flag];
-    const def = sector ? STACKACRES_SECTORS[sector] : null;
+    const lines = reachLines(flag, input);
     return {
       flag,
       label: STACKACRES_QUEST_LABELS[flag],
       done: earned.has(flag),
-      cost: STACKACRES_UNREACHABLE_FLAGS.includes(flag)
-        ? "Not open yet"
-        : def
-          ? `${def.clearCost.toLocaleString()} Gold`
-          : null,
+      cost: lines.length > 0 ? costSummary({ lines }) : null,
+      lines,
       brings: travelersOnFlag(flag),
     };
   });
@@ -371,8 +404,10 @@ const readyCount = (nodes: readonly { readonly ready: boolean }[]) =>
 function journalWaiting(input: JournalInput): JournalWaiting[] {
   const rows: JournalWaiting[] = [];
 
-  if (input.cellar) {
-    const jars = input.cellar.manifest?.quantity ?? 0;
+  // The Cellar and the Vat take no new batches, so each shows only while an
+  // old one is still inside to collect.
+  if (input.cellar?.manifest) {
+    const jars = input.cellar.manifest.quantity;
     rows.push({
       key: "cellar",
       label: "The cellar",
@@ -387,7 +422,7 @@ function journalWaiting(input: JournalInput): JournalWaiting[] {
     });
   }
 
-  if (input.vat) {
+  if (input.vat?.manifest) {
     rows.push({
       key: "vat",
       label: "The vat",
@@ -425,20 +460,6 @@ function journalWaiting(input: JournalInput): JournalWaiting[] {
     });
   }
 
-  const kitchen = input.machines.find((machine) => machine.kind === "farm_kitchen");
-  if (kitchen) {
-    const banked = farmKitchenBanked(kitchen.kitchenSince, new Date(input.nowMs));
-    rows.push({
-      key: "farm_kitchen",
-      label: "The Farm Kitchen",
-      detail: kitchen.standingRecipe
-        ? `${banked} of ${FARM_KITCHEN_BANK} batches banked`
-        : "No standing order set",
-      fill: banked / FARM_KITCHEN_BANK,
-      ready: banked > 0,
-    });
-  }
-
   const silo = input.machines.find((machine) => machine.kind === "feed_silo");
   if (silo && silo.autoFeedsLeft !== null) {
     rows.push({
@@ -469,7 +490,8 @@ function journalWaiting(input: JournalInput): JournalWaiting[] {
   const animals = input.units.filter((unit) => isLivestock(unit.stock));
   if (animals.length > 0) {
     const hungry = animals.filter((unit) => unit.state === "hungry").length;
-    const ready = animals.filter((unit) => unit.state === "ready").length;
+    const ready = animals.filter((unit) => unit.state === "ready" && !isMarketLivestock(unit.stock)).length;
+    const toSell = animals.filter((unit) => unit.state === "ready" && isMarketLivestock(unit.stock)).length;
     rows.push({
       key: "animals",
       label: "The pens",
@@ -478,9 +500,11 @@ function journalWaiting(input: JournalInput): JournalWaiting[] {
           ? `${hungry} hungry`
           : ready > 0
             ? `${ready} ready to collect`
-            : `${animals.length} coming along`,
+            : toSell > 0
+              ? `${toSell} ready to sell`
+              : `${animals.length} coming along`,
       fill: null,
-      ready: hungry > 0 || ready > 0,
+      ready: hungry > 0 || ready > 0 || toSell > 0,
     });
   }
 
@@ -512,7 +536,15 @@ function candidateCues(input: JournalInput, chapters: readonly JournalChapter[])
     );
   }
 
-  const ready = input.units.filter((unit) => unit.state === "ready").length;
+  // Hogs and steers are not brought in. They go to the sale barn in town.
+  const toSell = input.units.filter((unit) => unit.state === "ready" && isMarketLivestock(unit.stock));
+  if (toSell.length > 0) {
+    const kinds = [...new Set(toSell.map((unit) => STACKACRES_CATALOGUE[unit.stock].label.toLowerCase()))];
+    const what = toSell.length === 1 ? `Your ${kinds[0]} is` : `Your ${kinds.join("s and ")}s are`;
+    cues.push(cue("ship", `${what} ready to sell. Take ${toSell.length === 1 ? "it" : "them"} to Hank at the sale barn.`, "The City"));
+  }
+
+  const ready = input.units.filter((unit) => unit.state === "ready" && !isMarketLivestock(unit.stock)).length;
   if (ready > 0) {
     cues.push(
       cue("harvest", ready === 1 ? "Something out there is ready to bring in." : `${ready} things are ready to bring in.`),
@@ -522,8 +554,24 @@ function candidateCues(input: JournalInput, chapters: readonly JournalChapter[])
   const dry = input.units.filter((unit) => unit.state === "dry").length;
   if (dry > 0) {
     cues.push(
-      cue("water", dry === 1 ? "A bed has gone dry, and nothing grows dry." : `${dry} beds have gone dry, and nothing grows dry.`),
+      input.water !== undefined && input.water < 1
+        ? cue("water", "Your can is empty and a bed needs water. Fill the can at the well.", "The well")
+        : cue("water", dry === 1 ? "A bed needs water. Nothing grows dry." : `${dry} beds need water. Nothing grows dry.`),
     );
+  }
+
+  // Nothing planted at all: the first thing to do is get a crop in the ground, and Ray's pouch (or Cora's
+  // stall once it is used up) is where the seed comes from.
+  const planted = input.units.some((unit) => !isLivestock(unit.stock));
+  if (!planted) {
+    const seedCount = Object.values(input.seedStock).reduce((sum, held) => sum + (held ?? 0), 0);
+    // Wheat in the barn is work in hand (the Mill), so it is not "out of seed" until that is used up too.
+    const wheatToMill = inventoryQuantity(input.inventory, "wheat") >= RECIPE_CATALOGUE.flour.inputs[0].quantity;
+    if (seedCount > 0) {
+      cues.push(cue("sow", "Hoe a bed on the grass by the house, sow your seed and water it from the well."));
+    } else if (!wheatToMill) {
+      cues.push(cue("seeds", `You're out of seed. Cora sells it at ${SEED_SELLER_WHERE}.`, "The City"));
+    }
   }
 
   const callers = journalCallers(input.story);
@@ -544,13 +592,15 @@ function candidateCues(input: JournalInput, chapters: readonly JournalChapter[])
     if (step.affordable) {
       cues.push(cue("build", `You can put up the ${step.name} now.`, step.place));
     } else {
-      const short = step.lines.find((line) => !line.met && line.source !== null);
+      // A short material leads, since it is gathered by hand. Gold is the first line.
+      const short = step.lines.find((line, index) => index > 0 && !line.met && line.source !== null);
+      const gold = step.lines[0];
       cues.push(
         short
           ? cue("gather", `The ${step.name} still wants ${short.need - short.have} more ${short.label}. ${short.source}.`)
           : cue(
               "gather",
-              `The ${step.name} is ${(step.lines[0].need - step.lines[0].have).toLocaleString()} Gold away.`,
+              `The ${step.name} is ${(gold.need - gold.have).toLocaleString()} Gold away. ${gold.source}.`,
               step.place,
             ),
       );

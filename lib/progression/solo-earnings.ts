@@ -4,11 +4,12 @@ import { STAKE_PRESSURE_LABELS } from "@/lib/arcade/stake-pressure";
  * Solo earnings: what a player has won and lost on PVE and solo wagers, and the
  * rank that follows from it.
  *
- * Rank used to be Gold *staked*, so it climbed just by playing. It is now the
- * difficulty-weighted *net* of every settled solo wager: a win adds the Gold it
- * made over the stake, a loss takes the stake off, and both count for more the
- * harder the stake band. Pure and closed-form, like rank.ts, so the whole rule
- * is reachable from the unit tests.
+ * Rank counts wins, weighted by how hard the stake band was. How much Gold was
+ * staked or paid has no part in it: a 500 Gold win and a 5M Gold win on the
+ * same band are worth the same, and a loss costs nothing. Rank used to be the
+ * weighted Gold net, which let one big losing stake wipe out a whole climb.
+ * Pure and closed-form, like rank.ts, so the whole rule is reachable from the
+ * unit tests.
  *
  * "Solo" here is every arcade wager that pays from the house rather than from
  * another player: Sudoku, Minesweeper, Nonogram, Blockudoku, Word Fill-In,
@@ -16,8 +17,8 @@ import { STAKE_PRESSURE_LABELS } from "@/lib/arcade/stake-pressure";
  * boards and does not move this rank.
  */
 
-/** Gold of weighted net earnings per point of rank. Points place a player on the tier ladder in rank.ts. */
-export const GOLD_PER_RANK_POINT = 20;
+/** Rank points for one win on the bottom band. Harder bands multiply it by bandRankWeight. */
+export const RANK_POINTS_PER_WIN = 50;
 
 /** One stake band's running totals for a player. */
 export interface BandTotals {
@@ -40,11 +41,10 @@ export type EarningsByBand = Readonly<Record<number, BandTotals>>;
 export const TOP_BAND_RANK_WEIGHT = 10;
 
 /**
- * How much a band's Gold counts toward rank: Easy 1x, growing geometrically to
- * 10x at the top band, whatever the number of bands. Steep on purpose, so a
- * player who stays on the hard bands out-ranks one who grinds Easy for more
- * Gold. The same weight applies to a win and to a loss, so a big Expert stake
- * is a big move in both directions.
+ * How much a win on each band counts toward rank: the bottom band 1x, growing
+ * geometrically to 10x at the top band, whatever the number of bands. Steep on
+ * purpose, so a player who wins on the hard bands out-ranks one who grinds the
+ * easy band.
  */
 export function bandRankWeight(band: number): number {
   const top = stakeBandIndexes().length - 1;
@@ -58,23 +58,23 @@ export function bandNet(totals: BandTotals): number {
   return totals.paidOut - totals.staked;
 }
 
-/** The weighted net across every band, in Gold. */
-export function weightedNet(byBand: EarningsByBand): number {
+/** Rank points earned by wins, across every band. */
+export function weightedWins(byBand: EarningsByBand): number {
   let sum = 0;
-  for (const [band, totals] of Object.entries(byBand)) sum += bandNet(totals) * bandRankWeight(Number(band));
+  for (const [band, totals] of Object.entries(byBand)) sum += totals.wins * RANK_POINTS_PER_WIN * bandRankWeight(Number(band));
   return sum;
 }
 
 /**
- * Rank points: the starting base plus the weighted net, never below zero.
+ * Rank points: the starting base plus every win, weighted by band. Losses and
+ * stake size do not enter into it, so rank only climbs.
  *
  * `base` carries a player over from the old wager-volume rank: it is the points
- * at the start of the level they held when this shipped, so they begin where
- * they were and move from there. Everyone else's base is 0.
+ * at the start of the level they held when the solo rank shipped. Everyone
+ * else's base is 0.
  */
 export function rankPointsFrom(base: number, byBand: EarningsByBand): number {
-  const points = Math.floor(base + weightedNet(byBand) / GOLD_PER_RANK_POINT);
-  return Math.max(0, points);
+  return Math.max(0, Math.floor(base + weightedWins(byBand)));
 }
 
 /**

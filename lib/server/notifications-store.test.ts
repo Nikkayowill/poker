@@ -5,7 +5,6 @@ import {
   createNotification,
   listNotifications,
   markAllNotificationsRead,
-  markNotificationRead,
 } from "./notifications-store";
 import { sendPushToProfile } from "./push-service";
 
@@ -34,28 +33,6 @@ describe("notifications (memory mode)", () => {
 
     expect((await listNotifications(b)).notifications).toEqual([]);
     expect((await listNotifications(a)).notifications).toHaveLength(1);
-  });
-
-  it("marks one notification read and drops it from the unread count", async () => {
-    const profileId = randomUUID();
-    await createNotification(profileId, "mission_completed", { code: "daily_puzzle", title: "Solve a puzzle", rewardGold: 100 });
-    const [{ id }] = (await listNotifications(profileId)).notifications;
-
-    const ok = await markNotificationRead(profileId, id);
-    expect(ok).toBe(true);
-
-    const { notifications, unreadCount } = await listNotifications(profileId);
-    expect(notifications[0].readAt).not.toBeNull();
-    expect(unreadCount).toBe(0);
-  });
-
-  it("refuses to mark another profile's notification read", async () => {
-    const [owner, intruder] = [randomUUID(), randomUUID()];
-    await createNotification(owner, "friend_request_accepted", { fromProfileId: randomUUID(), fromDisplayName: "Villain" });
-    const [{ id }] = (await listNotifications(owner)).notifications;
-
-    expect(await markNotificationRead(intruder, id)).toBe(false);
-    expect((await listNotifications(owner)).unreadCount).toBe(1);
   });
 
   it("marks every unread notification read at once", async () => {

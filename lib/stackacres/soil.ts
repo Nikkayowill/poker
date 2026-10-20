@@ -218,28 +218,6 @@ export function soilNeighborMask(soil: SoilMap, tx: number, ty: number): number 
   return mask;
 }
 
-/** Whether a world point is standing on placed soil. */
-export function onSoil(soil: SoilMap, x: number, y: number): boolean {
-  const { tx, ty } = soilTileAt(x, y);
-  return hasSoilTile(soil, tx, ty);
-}
-
-/**
- * Places a tile, returning whether it took. A coordinate already holding a
- * tile is refused rather than overwritten: the caller is a shop purchase,
- * and silently replacing a tile would take the Gold and change nothing.
- */
-export function placeSoilTile(soil: SoilMap, tile: SoilTile): boolean {
-  const key = soilTileKey(tile.tx, tile.ty);
-  if (soil.has(key)) return false;
-  soil.set(key, tile);
-  return true;
-}
-
-export function removeSoilTile(soil: SoilMap, tx: number, ty: number): boolean {
-  return soil.delete(soilTileKey(tx, ty));
-}
-
 /**
  * The next free `order`, which is the next free SLOT (see `soilSlotTile`).
  *
@@ -606,14 +584,6 @@ export function soilSlotPoint(tile: SoilTileCoord): WorldPoint {
   return soilTileCentre(tile.tx, tile.ty);
 }
 
-/** How many plants the placed soil can hold -- one per bed, tier-blind.
- *  USED TO sum each bed's own `soilTileOwnedSlots` (a bed could hold up to
- *  a dozen, bought one square at a time); every bed now holds exactly one,
- *  so this is just the bed count. */
-export function soilCapacity(soil: SoilMap): number {
-  return soil.size;
-}
-
 /**
  * The world point for a crop holding a FIXED slot, or null when no bed
  * carries that slot any more.
@@ -803,28 +773,6 @@ export interface CropInstance {
   needsHarvest: boolean;
 }
 
-/** What a tile currently holds. Derived per call rather than cached on the
- *  tile: a tile owns its position, and nothing else, so there is no second
- *  copy of crop state to fall out of date. */
-export interface SoilTileState {
-  tile: SoilTile;
-  crops: CropInstance[];
-  occupied: boolean;
-  dryCount: number;
-  harvestableCount: number;
-}
-
-export function soilTileState(tile: SoilTile, crops: readonly CropInstance[]): SoilTileState {
-  const mine = crops.filter((c) => c.tile?.tx === tile.tx && c.tile?.ty === tile.ty);
-  return {
-    tile,
-    crops: mine,
-    occupied: mine.length > 0,
-    dryCount: mine.filter((c) => c.isDry).length,
-    harvestableCount: mine.filter((c) => c.needsHarvest).length,
-  };
-}
-
 /**
  * The shape `buildCropInstances` needs off a unit row. Structural rather
  * than an import of the scene's own `StackAcresSceneUnit`, so this module
@@ -868,46 +816,3 @@ export function buildCropInstances(
   });
 }
 
-/**
- * Nearest crop matching `wants`, or null.
- *
- * Distance is measured in WORLD space, which is the right frame here and not
- * an oversight: a worker walks the world, so the crop it should walk to is
- * the one fewest paces away, not the one that looks closest once the iso
- * shear has foreshortened the y axis. (The tap test in the scene measures in
- * SCREEN space for the mirror-image reason -- a thumb is on the picture.)
- *
- * Ties break on `unitId` so two crops the same distance away cannot make a
- * worker oscillate between them frame to frame.
- */
-export function closestCrop(
-  from: WorldPoint,
-  crops: readonly CropInstance[],
-  wants: (crop: CropInstance) => boolean,
-): CropInstance | null {
-  let best: CropInstance | null = null;
-  let bestD = Number.POSITIVE_INFINITY;
-  for (const crop of crops) {
-    if (!wants(crop)) continue;
-    const d = Math.hypot(crop.at.x - from.x, crop.at.y - from.y);
-    if (d < bestD || (d === bestD && best !== null && crop.unitId < best.unitId)) {
-      best = crop;
-      bestD = d;
-    }
-  }
-  return best;
-}
-
-export function getClosestDryCrop(
-  from: WorldPoint,
-  crops: readonly CropInstance[],
-): CropInstance | null {
-  return closestCrop(from, crops, (crop) => crop.isDry);
-}
-
-export function getClosestHarvestableCrop(
-  from: WorldPoint,
-  crops: readonly CropInstance[],
-): CropInstance | null {
-  return closestCrop(from, crops, (crop) => crop.needsHarvest);
-}

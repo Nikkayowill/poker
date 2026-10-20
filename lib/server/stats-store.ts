@@ -1,7 +1,5 @@
 import "server-only";
 import { randomUUID } from "crypto";
-import type { AvatarPreset } from "@/lib/profile/types";
-import { decorateRankedRows } from "./leaderboard-identity";
 import { ensureProfile } from "./profile-store";
 import { adminClient } from "./supabase-admin";
 import type { GameState } from "@/lib/game/types";
@@ -20,17 +18,6 @@ export interface PlayerStats {
    * Not tracked per-season, so this is 0 outside the "lifetime" scope.
    */
   totalChipsWon: number;
-}
-
-export interface LeaderboardEntry extends PlayerStats {
-  rank: number;
-  displayName: string;
-  initials: string;
-  avatarUrl: string | null;
-  avatarPreset: AvatarPreset;
-  /** Equipped 2D seat-art character id, for a top-3 rank's real portrait on the board. */
-  avatarCosmetic: string;
-  accent: string;
 }
 
 export interface SeasonInfo {
@@ -211,66 +198,6 @@ export async function getActiveSeason(): Promise<SeasonInfo | null> {
     .maybeSingle();
   if (error) throw new Error(`Could not load the active season: ${error.message}`);
   return data ? { id: String(data.id), startsAt: String(data.starts_at), endsAt: String(data.ends_at) } : null;
-}
-
-async function decorate(rows: PlayerStats[]): Promise<LeaderboardEntry[]> {
-  return decorateRankedRows(rows, (row) => row);
-}
-
-export async function getLeaderboard(scope: LeaderboardScope, limit = 10): Promise<LeaderboardEntry[]> {
-  const supabase = adminClient();
-  if (!supabase) {
-    if (scope === "lifetime") {
-      // Lifetime is ranked by Gold won (totalChipsWon), not net profit. The
-      // "season by season" board resets every 30 days and rewards a hot
-      // streak, but the all-time leader is whoever has won the most Gold
-      // across every hand they've ever played, win or lose since. Net profit
-      // would drop a lifetime high-roller off the top the moment a rough
-      // week outweighs a historic one; totalChipsWon never goes backwards.
-      const rows = [...memoryPlayerStats.values()].sort((a, b) => b.totalChipsWon - a.totalChipsWon).slice(0, limit);
-      return decorate(rows);
-    }
-    const season = memoryActiveSeason();
-    if (!season) return [];
-    const rows = [...memorySeasonStats.values()]
-      .filter((row) => row.seasonId === season.id)
-      .sort((a, b) => b.netProfit - a.netProfit)
-      .slice(0, limit)
-      .map((row): PlayerStats => ({
-        profileId: row.profileId,
-        handsPlayed: row.handsPlayed,
-        handsWon: row.handsWon,
-        vpipHands: row.vpipHands,
-        netProfit: row.netProfit,
-        biggestPotWon: row.biggestPotWon,
-        // Season stats don't track this; unlock progress is lifetime-only.
-        totalChipsWon: 0,
-      }));
-    return decorate(rows);
-  }
-
-  if (scope === "lifetime") {
-    // See the memory-mode branch above for why this orders on
-    // total_chips_won rather than net_profit.
-    const { data, error } = await supabase
-      .from("player_stats")
-      .select("*")
-      .order("total_chips_won", { ascending: false })
-      .limit(limit);
-    if (error) throw new Error(`Could not load the leaderboard: ${error.message}`);
-    return decorate((data ?? []).map(rowToPlayerStats));
-  }
-
-  const season = await getActiveSeason();
-  if (!season) return [];
-  const { data, error } = await supabase
-    .from("season_stats")
-    .select("*")
-    .eq("season_id", season.id)
-    .order("net_profit", { ascending: false })
-    .limit(limit);
-  if (error) throw new Error(`Could not load the season leaderboard: ${error.message}`);
-  return decorate((data ?? []).map(rowToPlayerStats));
 }
 
 function rowToPlayerStats(row: Record<string, unknown>): PlayerStats {

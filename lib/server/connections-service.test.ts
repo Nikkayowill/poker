@@ -478,12 +478,17 @@ describe("a big stake allows fewer mistakes", () => {
     expect(view.round?.payout).toBe(0);
   });
 
-  it("ends a 1M board on the first mistake", async () => {
+  it("survives one mistake on a 1M board and ends on the second", async () => {
     const { token } = await fundedPlayer(3_000_000);
     await startConnectionsPuzzle(token, 1_000_000);
-    const view = await playAll(token, [scattered()]);
-    expect(view.round?.status).toBe("lost");
-    expect(view.round?.mistakesAllowed).toBe(1);
+    const [first, second] = twoWrong();
+    const afterOne = await playAll(token, [first]);
+    expect(afterOne.round?.status).toBe("active");
+    expect(afterOne.round?.mistakesAllowed).toBe(2);
+
+    const afterTwo = await playAll(token, [second], 2);
+    expect(afterTwo.round?.status).toBe("lost");
+    expect(afterTwo.round?.payout).toBe(0);
   });
 
   it("plays a round stored before the limit existed under the old four", async () => {

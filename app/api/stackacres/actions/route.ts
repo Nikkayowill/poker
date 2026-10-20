@@ -9,26 +9,21 @@ import {
 } from "@/lib/stackacres/catalogue";
 import { PEN_ZONE_IDS, ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import { MACHINE_KINDS } from "@/lib/stackacres/machines";
-import { RECIPE_IDS } from "@/lib/stackacres/recipes";
+import { MAX_RUN_BATCHES, RECIPE_IDS } from "@/lib/stackacres/recipes";
 import { FOOD_ITEMS } from "@/lib/stackacres/energy";
-import { CELLAR_ITEMS } from "@/lib/stackacres/aging";
-import { FARM_KITCHEN_RECIPES } from "@/lib/stackacres/farm-kitchen";
 import { HIDDEN_ZONE_IDS, SECRET_ITEM_IDS } from "@/lib/stackacres/secrets";
 import { WOOD_NODE_IDS } from "@/lib/stackacres/tree-nodes";
 import { STONE_NODE_IDS } from "@/lib/stackacres/stone-nodes";
 import { FORAGE_NODE_IDS } from "@/lib/stackacres/forage";
-import { SYNERGY_ARCHETYPES, SYNERGY_MAX_ACTIVE_SLOTS } from "@/lib/stackacres/synergy-perks";
-import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
-import { ALL_MACHINE_ITEM_IDS, MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
-import { FORGE_ENCHANTMENT_IDS } from "@/lib/stackacres/forge";
+import { ALL_MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
+import { TOWN_BUYER_IDS } from "@/lib/stackacres/town-buyers";
 import { STACKACRES_BUYABLE_CUTTERS } from "@/lib/stackacres/cutters";
-import { CROSSBREED_GRID_COLS, CROSSBREED_GRID_ROWS } from "@/lib/stackacres/crossbreeding";
+import { STACKACRES_BUYABLE_EQUIPMENT, TRACTOR_ROW_MAX, TRACTOR_ROW_MIN } from "@/lib/stackacres/tractor";
 import { FRIENDSHIP_NPCS, GIFTABLE_ITEMS } from "@/lib/stackacres/friendship";
 import { STORY_ITEM_IDS } from "@/lib/stackacres/story/items";
 import { QUEST_PLACE_IDS } from "@/lib/stackacres/story/places";
 import { TRAVELER_IDS } from "@/lib/stackacres/story/travelers";
 import {
-  activateStackAcresSynergyPerk,
   buildStackAcresGreenhouse,
   buyStackAcresFeed,
   buyStackAcresStock,
@@ -50,12 +45,17 @@ import {
   tapStackAcresSecretZone,
   toStackAcresErrorResponse,
   tradeStackAcresSecretItemToRay,
-  unlockStackAcresSynergyPerk,
   upgradeStackAcresTool,
   upgradeStackAcresAxe,
   buyStackAcresCutter,
+  buyStackAcresEquipment,
+  dismissStackAcresHand,
+  hireStackAcresHand,
+  runStackAcresHiredHand,
   waterStackAcres,
   waterStackAcresGroup,
+  claimStackAcresStarterSeeds,
+  payStackAcresUpkeep,
   drawStackAcresWater,
   bagStackAcresQuarry,
   chopStackAcresWoodTree,
@@ -69,22 +69,19 @@ import {
   fulfillStackAcresTownContract,
   claimStackAcresFarmBoard,
   sellStackAcresItem,
+  shipStackAcresLivestock,
   processStackAcresRecipeAction,
-  sealStackAcresCellar,
   collectStackAcresCellar,
-  setStackAcresKitchenOrder,
-  startStackAcresMythicBlueprint,
-  contributeToStackAcresMythicBlueprint,
-  prestigeResetStackAcres,
-  forgeStackAcresToolEnchantment,
-  plantStackAcresCrossbreedBed,
-  harvestStackAcresCrossbreedBed,
   placeStackAcresSoilTile,
+  placeStackAcresSoilRow,
   placeStackAcresAnimal,
   pickUpStackAcresAnimal,
+  buyStackAcresGuardDog,
+  moveStackAcresGuardDog,
   placeStackAcresFencePiece,
   removeStackAcresFencePiece,
   buyEmpireBuilding,
+  buyStackAcresAcre,
   placeOwnedEmpireBuilding,
   pickUpOwnedEmpireBuilding,
   takeOverStackAcresGrocery,
@@ -97,10 +94,8 @@ import {
   removeStackAcresSoilTile,
   moveStackAcresSoilTileGroup,
   buyStackAcresSeed,
-  prayAtStackAcresShrine,
   giveStackAcresGift,
   greetStackAcresNpc,
-  sealStackAcresVat,
   collectStackAcresVat,
   meetStackAcresTraveler,
   reachStackAcresQuestPlace,
@@ -129,15 +124,14 @@ export const runtime = "nodejs";
  * GOLD and exactly THREE PAY IT OUT, and that asymmetry is what keeps this
  * safe. `expand-capacity`, `clear-sector`, `stock`,
  * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `buy-cutter`,
- * `place-machine`, `unlock-synergy-perk` and `place-soil-tile` all spend; `sell`, `fulfill-contract`
+ * `place-machine` and `place-soil-tile` all spend; `sell`, `fulfill-contract`
  * and `collect-vat` pay, all three under the SAME flat per-player daily
  * ceiling -- see `sellStackAcresItem`, `fulfillStackAcresTownContract` and
  * `collectStackAcresVat` in lib/server/stackacres-service.ts. There is no
  * second currency any more, so "which direction does this action move Gold,
  * and if it pays, does it reserve against the ceiling first" is the question
  * a new action has to answer, and a new payer that does not reserve first is
- * the change to stop over. `activate-synergy-perk` moves no Gold at all --
- * see below.
+ * the change to stop over.
  *
  * `collect`, `work`, `process`, `request-contract`, `build-greenhouse` and
  * `remove-soil-tile` move no Gold at all -- inventory only
@@ -153,22 +147,12 @@ export const runtime = "nodejs";
  *
  * THE EQUIPMENT LADDER'S CRITICAL HARVEST PAYS BONUS INVENTORY NOW, NOT GOLD
  * -- it is not a payer at all any more, and is folded into `collect` itself
- * (see `critBonusQuantity`, lib/stackacres/equipment.ts). The Synergy Tree's
- * `sunlight_harvester` (a crit-chance boost) and `high_yield_processing` (a
- * Mill double-output chance) are the same non-payer shape: both only reshape
- * a probability an existing roll already makes, inside `collect` and `work`
- * respectively, and neither moves Gold.
+ * (see `critBonusQuantity`, lib/stackacres/equipment.ts).
  *
  * LAND IS NEVER SOLD. A sector opens when the last thing standing on it has
  * been cut down (`work-land`, which spends energy and pays the barn). Keeping cleared
  * land then costs a daily fee, netted off whichever action next pays the
  * player any Gold (see `netUpkeepFromPayout`, lib/server/stackacres-service.ts).
- *
- * `prestige-reset` moves no Gold either, and is not like `work`/`process`'s
- * "inventory only" either: it is the one action with no undo, trading the
- * whole grid and every stockpile riding on it for a permanent multiplier on
- * every future `sell`. See prestigeResetStackAcres's own header
- * (lib/server/stackacres-service.ts) for exactly what it sweeps.
  *
  * No `version` field in any action: each handler reads the live row itself
  * and the guarded write settles at most once, so a stale client gets a 409
@@ -189,11 +173,6 @@ const soilTileCoordSchema = z.object({
   tx: z.number().int().min(-512).max(512),
   ty: z.number().int().min(-512).max(512),
 });
-const synergyArchetypeSchema = z.enum(SYNERGY_ARCHETYPES as unknown as [string, ...string[]]);
-// [0, SYNERGY_MAX_ACTIVE_SLOTS) -- the service layer re-checks this too (see
-// `activateSynergyPerk`'s own comment), but a clean 400 here is cheaper than
-// a round trip for a value no real client would ever send.
-const synergySlotSchema = z.number().int().min(0).max(SYNERGY_MAX_ACTIVE_SLOTS - 1);
 
 /**
  * The client's own name for one intent, and the only thing that can tell a
@@ -217,6 +196,11 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("upgrade-tool") }),
   z.object({ action: z.literal("upgrade-axe"), pay: z.enum(["materials", "gold"]) }),
   z.object({ action: z.literal("buy-cutter"), cutter: z.enum(STACKACRES_BUYABLE_CUTTERS) }),
+  // A machine from Ray. SPENDS Gold and Metal, priced on the server.
+  z.object({ action: z.literal("buy-equipment"), kind: z.enum(STACKACRES_BUYABLE_EQUIPMENT) }),
+  z.object({ action: z.literal("hire-hand") }),
+  z.object({ action: z.literal("dismiss-hand") }),
+  z.object({ action: z.literal("hand-chores") }),
   // Builds the Greenhouse once, spending processing-track goods, not Gold --
   // see buildStackAcresGreenhouse's own header.
   z.object({ action: z.literal("build-greenhouse") }),
@@ -272,6 +256,9 @@ const bodySchema = z.discriminatedUnion("action", [
   }),
   // Fills the watering can. Moves no Gold.
   z.object({ action: z.literal("draw-water") }),
+  // Ray's starter pouch of wheat seed. Once per farm, moves no Gold.
+  z.object({ action: z.literal("claim-starter-seeds") }),
+  z.object({ action: z.literal("pay-upkeep") }),
   // The dock's cast, completed. Fills the shelf, same as a harvest -- moves
   // no Gold. Which fish is the server's own dice roll.
   // `bait` spends one Radish for better odds.
@@ -312,9 +299,11 @@ const bodySchema = z.discriminatedUnion("action", [
   // Sells any inventory item -- raw harvest or crafted good -- for Gold, at
   // that item's own sell price, any time. See lib/server/
   // stackacres-service.ts's own header for the three actions here that move
-  // Gold -- this, `fulfill-contract`, and `collect-vat`.
+  // Gold -- this, `fulfill-contract`, and `collect-vat`. `buyer` is the
+  // townsperson being sold to; each item has one (lib/stackacres/town-buyers.ts).
   z.object({
     action: z.literal("sell"),
+    buyer: z.enum(TOWN_BUYER_IDS),
     item: z.enum(ALL_MACHINE_ITEM_IDS as unknown as [string, ...string[]]),
     // Generous but not unbounded, the same posture every other body-supplied
     // quantity in this file takes -- an inventory count this high is not
@@ -322,6 +311,9 @@ const bodySchema = z.discriminatedUnion("action", [
     // actually holds, checked server-side under a row lock.
     quantity: z.number().int().min(1).max(9_999),
   }),
+  // Sells every ready hog and steer at Hank's sale barn, by weight, in one
+  // payout. Takes nothing: the server decides which animals are ready.
+  z.object({ action: z.literal("ship-livestock") }),
   // Eats one food (FOOD_ITEMS) for energy. Moves no Gold.
   z.object({
     action: z.literal("eat"),
@@ -345,6 +337,8 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("process"),
     recipe: z.enum(RECIPE_IDS as unknown as [string, ...string[]]),
+    // A run of this many batches in one tap, for a machine that runs on a clock. Absent means one.
+    batches: z.number().int().min(1).max(MAX_RUN_BATCHES).optional(),
   }),
   z.object({ action: z.literal("request-contract") }),
   z.object({ action: z.literal("fulfill-contract") }),
@@ -355,24 +349,12 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("claim-farm-board"), code: z.string().min(1).max(64) }),
   // One a UTC day, and it moves nothing. See passStackAcresContract.
   z.object({ action: z.literal("pass-contract") }),
-  // The Fermenting Vat. `seal-vat` spends Cheese (never Gold) and locks it
-  // inside the vat's own manifest; `collect-vat` is the one action here that
-  // pays -- through the same daily ceiling `fulfill-contract` does. See
-  // lib/server/stackacres-service.ts's sealStackAcresVat/collectStackAcresVat.
-  z.object({ action: z.literal("seal-vat") }),
+  // The Fermenting Vat and the Preserves Cellar take no new batches
+  // (RETIRED_MACHINE_KINDS in lib/stackacres/machines.ts). A batch sealed
+  // before that still collects, and collecting pays. See
+  // lib/server/stackacres-service.ts's collectStackAcresVat.
   z.object({ action: z.literal("collect-vat") }),
-  // The Preserves Cellar: the Vat's two actions for jars of Pickles or
-  // Sauerkraut, on a slower ladder. Only `collect-cellar` pays.
-  z.object({
-    action: z.literal("seal-cellar"),
-    item: z.enum(CELLAR_ITEMS),
-  }),
   z.object({ action: z.literal("collect-cellar") }),
-  // The Farm Kitchen's standing order. Moves no Gold and no items.
-  z.object({
-    action: z.literal("set-kitchen-order"),
-    recipe: z.enum(FARM_KITCHEN_RECIPES as unknown as [string, ...string[]]),
-  }),
   // Hidden secrets: three small discovery spots, one collectible. See
   // lib/server/stackacres-service.ts's own "Hidden secrets" section --
   // `tap-secret-zone` moves no Gold at all, and neither do the other three;
@@ -394,77 +376,20 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("trade-secret-item"),
     itemId: z.enum(SECRET_ITEM_IDS as unknown as [string, ...string[]]),
   }),
-  // The Synergy Tree. `unlock-synergy-perk` spends Gold, once, permanent --
-  // see lib/server/stackacres-synergy-service.ts's own money-ordering note.
-  // `activate-synergy-perk` moves no Gold; it only changes which already-
-  // owned archetypes are slotted for this session.
-  z.object({ action: z.literal("unlock-synergy-perk"), archetype: synergyArchetypeSchema }),
-  z.object({
-    action: z.literal("activate-synergy-perk"),
-    archetype: synergyArchetypeSchema,
-    slot: synergySlotSchema,
-  }),
-  // Ray's Mythic Blueprints: multi-stage structures filled with processing-
-  // track materials. See lib/server/stackacres-blueprint-service.ts's own
-  // header -- neither action moves Gold.
-  z.object({
-    action: z.literal("start-blueprint"),
-    structureId: z.enum(MYTHIC_BLUEPRINT_IDS as unknown as [string, ...string[]]),
-  }),
-  z.object({
-    action: z.literal("contribute-blueprint"),
-    structureId: z.enum(MYTHIC_BLUEPRINT_IDS as unknown as [string, ...string[]]),
-    itemId: z.enum(MACHINE_ITEM_IDS as unknown as [string, ...string[]]),
-    // Bounded well above any single requirement line the shipped ladder
-    // asks for (the largest today is 20), the same "generous but not
-    // unbounded" posture `collect`'s own unitIds cap takes.
-    amount: z.number().int().min(1).max(999),
-  }),
-  // The Prestige Reset Valve. Moves no Gold; wipes the grid and every
-  // resource stockpile riding on it in exchange for a permanent harvest
-  // multiplier -- see prestigeResetStackAcres's own header. `confirm: true`
-  // is required at the wire level, not just in the client's own dual-
-  // confirmation UI: this is the one action here with no undo, so the
-  // request body itself has to say the caller meant it, the same way a
-  // destructive CLI flag is spelled out rather than implied by the verb
-  // alone. The client is also expected to always send `key` for this action
-  // even though the schema leaves it optional for every action -- see
-  // runStackAcresAction's own header for why an intent key is what makes a
-  // duplicated request safe for an action with no row of its own to
-  // version-guard, exactly the category this one is in.
-  z.object({ action: z.literal("prestige-reset"), confirm: z.literal(true) }),
-  // The Sunlight Forge: permanent tool enchantments. Spends Gold AND a
-  // processing-track material in one call -- see forge_stackacres_
-  // enchantment's own migration comment for why both are checked under
-  // lock before either is mutated. `itemId` is the bare catalogue key
-  // (FORGE_ENCHANTMENT_IDS), not the versioned `enchant_..._v1` wrapper --
-  // see lib/stackacres/forge.ts's own comment on forgeEnchantmentItemId.
-  z.object({
-    action: z.literal("forge-enchantment"),
-    itemId: z.enum(FORGE_ENCHANTMENT_IDS as unknown as [string, ...string[]]),
-  }),
-  // The Crossbreeding Bed (lib/stackacres/crossbreeding.ts). `plant-crossbreed`
-  // pays the way `stock` does -- one seed off the shelf for a crop, Gold for
-  // livestock -- and is bounded to the fixed 4x4 grid here so a fabricated
-  // coordinate never reaches the store. `harvest-crossbreed` moves no Gold:
-  // a hybrid is inventory, credited only inside the settlement RPC.
-  z.object({
-    action: z.literal("plant-crossbreed"),
-    row: z.number().int().min(0).max(CROSSBREED_GRID_ROWS - 1),
-    col: z.number().int().min(0).max(CROSSBREED_GRID_COLS - 1),
-    stock: z.enum(STACKACRES_STOCK as unknown as [string, ...string[]]),
-  }),
-  z.object({ action: z.literal("harvest-crossbreed"), plotId: z.string().uuid() }),
   // Placeable soil beds (lib/stackacres/soil.ts): the SOIL_TILE lattice
   // (floor(worldX / 64), floor(worldY / 64)), same bounding posture as
   // place-pipe above -- the coordinate range is generous but not unbounded,
   // and placeStackAcresSoilTile itself is what actually confines a tile to
   // the Crop Fields. Breaking ground is free: `place-soil-tile` and
   // `remove-soil-tile` move no Gold and no stock.
+  // `tiles` is the tractor's row (lib/stackacres/tractor.ts): a straight line
+  // of beds, only from a farm that owns a tractor. `tx`/`ty` still name the
+  // first bed so an older client and the intent key read the same.
   z.object({
     action: z.literal("place-soil-tile"),
     tx: z.number().int().min(-512).max(512),
     ty: z.number().int().min(-512).max(512),
+    tiles: z.array(soilTileCoordSchema).min(TRACTOR_ROW_MIN).max(TRACTOR_ROW_MAX).optional(),
   }),
   z.object({
     action: z.literal("remove-soil-tile"),
@@ -476,6 +401,15 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("remove-fence"), tx: z.number().int().min(0).max(255), ty: z.number().int().min(0).max(255) }),
   z.object({ action: z.literal("place-animal"), unitId: z.string().uuid(), tx: z.number().int().min(0).max(255), ty: z.number().int().min(0).max(255) }),
   z.object({ action: z.literal("pick-up-animal"), unitId: z.string().uuid() }),
+  // The guard dog (lib/stackacres/guard-dog.ts), by Homestead map square. Buying SPENDS Gold, priced on
+  // the server; moving one you own moves nothing.
+  z.object({ action: z.literal("buy-dog"), tx: z.number().int().min(0).max(255), ty: z.number().int().min(0).max(255) }),
+  z.object({
+    action: z.literal("move-dog"),
+    id: z.string().uuid(),
+    tx: z.number().int().min(0).max(255),
+    ty: z.number().int().min(0).max(255),
+  }),
   // Far Field buildings, by the top-left map square of their plan
   // (lib/stackacres/empire-buildings.ts). Buying SPENDS Gold, Wood and Metal,
   // priced on the server; placing an owned one and picking it up move nothing.
@@ -492,6 +426,9 @@ const bodySchema = z.discriminatedUnion("action", [
     ty: z.number().int().min(0).max(255),
   }),
   z.object({ action: z.literal("pick-up-building"), id: z.string().uuid() }),
+  // One acre of the wild land (lib/stackacres/acres.ts). SPENDS Gold, Wood and Stone,
+  // priced on the server from how many acres the farm already owns.
+  z.object({ action: z.literal("buy-acre"), acreId: z.string().min(1).max(8) }),
   // The city grocery (lib/stackacres/grocery.ts). Taking it over is free and development-only; hiring and
   // buying fixtures SPEND Gold, priced on the server; emptying the till CREDITS takings less wages; firing,
   // moving and storing move nothing.
@@ -534,11 +471,6 @@ const bodySchema = z.discriminatedUnion("action", [
     crop: z.enum(STACKACRES_CROPS),
     quantity: z.number().int().min(1).max(STACKACRES_SEED_BAGS_PER_PURCHASE),
   }),
-  // The Pixel Pilgrim's prayer. Moves no Gold and spends no row of the
-  // caller's own -- only ever sent after the dialogue's own "yes" (see
-  // stackacres-monk-dialogue.tsx), never from the tap itself, so a decline
-  // never reaches this route at all.
-  z.object({ action: z.literal("pray") }),
   // NPC friendship: a gift. Moves no Gold either way -- it spends one unit
   // of a processing-track item, never a purse. See
   // lib/stackacres/friendship.ts's own header.
@@ -613,6 +545,14 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return upgradeStackAcresAxe(token, action.pay, now);
     case "buy-cutter":
       return buyStackAcresCutter(token, action.cutter, now);
+    case "buy-equipment":
+      return buyStackAcresEquipment(token, action.kind, now);
+    case "hire-hand":
+      return hireStackAcresHand(token, now);
+    case "dismiss-hand":
+      return dismissStackAcresHand(token, now);
+    case "hand-chores":
+      return runStackAcresHiredHand(token, now);
     case "build-greenhouse":
       return buildStackAcresGreenhouse(token, now);
     case "stock":
@@ -645,6 +585,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
         : waterStackAcres(token, action.unitId, now);
     case "draw-water":
       return drawStackAcresWater(token, now);
+    case "claim-starter-seeds":
+      return claimStackAcresStarterSeeds(token, now);
+    case "pay-upkeep":
+      return payStackAcresUpkeep(token, now);
     case "catch-fish":
       return catchStackAcresFish(token, action.bait, action.cast, now);
     case "eat":
@@ -668,9 +612,11 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "work":
       return workStackAcres(token, now);
     case "sell":
-      return sellStackAcresItem(token, { item: action.item, quantity: action.quantity }, now);
+      return sellStackAcresItem(token, { item: action.item, quantity: action.quantity, buyer: action.buyer }, now);
+    case "ship-livestock":
+      return shipStackAcresLivestock(token, now);
     case "process":
-      return processStackAcresRecipeAction(token, action.recipe, now);
+      return processStackAcresRecipeAction(token, action.recipe, now, action.batches ?? 1);
     case "request-contract":
       return requestStackAcresContract(token, now);
     case "fulfill-contract":
@@ -679,16 +625,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return claimStackAcresFarmBoard(token, action.code, now);
     case "pass-contract":
       return passStackAcresContract(token, now);
-    case "seal-vat":
-      return sealStackAcresVat(token, now);
     case "collect-vat":
       return collectStackAcresVat(token, now);
-    case "seal-cellar":
-      return sealStackAcresCellar(token, action.item, now);
     case "collect-cellar":
       return collectStackAcresCellar(token, now);
-    case "set-kitchen-order":
-      return setStackAcresKitchenOrder(token, action.recipe, now);
     case "tap-secret-zone":
       return tapStackAcresSecretZone(token, action.zoneId, now);
     case "donate-secret-item":
@@ -697,24 +637,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return consumeStackAcresSecretItem(token, action.itemId, now);
     case "trade-secret-item":
       return tradeStackAcresSecretItemToRay(token, action.itemId, now);
-    case "unlock-synergy-perk":
-      return unlockStackAcresSynergyPerk(token, action.archetype, now);
-    case "activate-synergy-perk":
-      return activateStackAcresSynergyPerk(token, action.archetype, action.slot, now);
-    case "start-blueprint":
-      return startStackAcresMythicBlueprint(token, action.structureId, now);
-    case "contribute-blueprint":
-      return contributeToStackAcresMythicBlueprint(token, action.structureId, action.itemId, action.amount, now);
-    case "prestige-reset":
-      return prestigeResetStackAcres(token, now);
-    case "forge-enchantment":
-      return forgeStackAcresToolEnchantment(token, action.itemId, now);
-    case "plant-crossbreed":
-      return plantStackAcresCrossbreedBed(token, { row: action.row, col: action.col, stock: action.stock }, now);
-    case "harvest-crossbreed":
-      return harvestStackAcresCrossbreedBed(token, action.plotId, now);
     case "place-soil-tile":
-      return placeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
+      return action.tiles
+        ? placeStackAcresSoilRow(token, { tiles: action.tiles }, now)
+        : placeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
     case "remove-soil-tile":
       return removeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
     case "place-fence":
@@ -725,10 +651,16 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return placeStackAcresAnimal(token, { unitId: action.unitId, tx: action.tx, ty: action.ty }, now);
     case "pick-up-animal":
       return pickUpStackAcresAnimal(token, { unitId: action.unitId }, now);
+    case "buy-dog":
+      return buyStackAcresGuardDog(token, { tx: action.tx, ty: action.ty }, now);
+    case "move-dog":
+      return moveStackAcresGuardDog(token, { id: action.id, tx: action.tx, ty: action.ty }, now);
     case "buy-building":
       return buyEmpireBuilding(token, { kind: action.kind, tx: action.tx, ty: action.ty }, now);
     case "place-building":
       return placeOwnedEmpireBuilding(token, { id: action.id, tx: action.tx, ty: action.ty }, now);
+    case "buy-acre":
+      return buyStackAcresAcre(token, { acreId: action.acreId }, now);
     case "pick-up-building":
       return pickUpOwnedEmpireBuilding(token, { id: action.id }, now);
     case "grocery-take-over":
@@ -753,8 +685,6 @@ function run(token: string, action: StackAcresAction, now: Date) {
       );
     case "buy-seed":
       return buyStackAcresSeed(token, { crop: action.crop, quantity: action.quantity }, now);
-    case "pray":
-      return prayAtStackAcresShrine(token, now);
     case "give-gift":
       return giveStackAcresGift(token, action.npc, action.item, now);
     case "greet-npc":

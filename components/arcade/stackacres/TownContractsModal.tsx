@@ -1,5 +1,6 @@
 "use client";
 
+import type { StackAcresShipment } from "@/lib/stackacres/sale-barn";
 import { useCallback, useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import clsx from "clsx";
 import { Check, Coins, Lock, ScrollText, Sparkles } from "lucide-react";
@@ -145,6 +146,8 @@ export type ContractActionResult =
       readonly reward?: { readonly gold: number; readonly influence: number };
       /** Only on a settled `grocery-collect`: the Gold it actually paid (lib/stackacres/grocery-economy.ts). */
       readonly groceryPaid?: number;
+      /** Only on a settled `ship-livestock`: what the load sold for (lib/stackacres/sale-barn.ts). */
+      readonly shipped?: StackAcresShipment;
     }
   | { readonly ok: false; readonly message: string };
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ACRE_NOT_YOURS, ACRE_TREELINE, acreById } from "./acres";
 import { beltAnimation, resolveBeltAction, type BeltContext, type BeltTarget } from "./toolbelt";
 import type { StackAcresUnitSnapshot } from "./units";
 
@@ -172,5 +173,40 @@ describe("the fence", () => {
 
   it("keeps the hoe off a fenced square", () => {
     expect(resolveBeltAction("hoe", fencedGround, ctx())).toMatchObject({ kind: "nothing" });
+  });
+});
+
+describe("wild ground the farm has not bought", () => {
+  const unowned: BeltTarget = { ...bareGround, gate: { ok: false, reason: "not_owned", acre: acreById("S01")! } };
+  const treeline: BeltTarget = { ...bareGround, gate: { ok: false, reason: "treeline" } };
+  const owned: BeltTarget = { ...bareGround, gate: { ok: true } };
+
+  it("opens the deed for the acre instead of digging", () => {
+    expect(resolveBeltAction("hoe", unowned, ctx())).toEqual({ kind: "deed", acreId: "S01" });
+  });
+
+  it("opens the deed instead of putting a fence up, even with no Wood in hand", () => {
+    expect(resolveBeltAction("fence", unowned, ctx())).toEqual({ kind: "deed", acreId: "S01" });
+    expect(resolveBeltAction("fence", unowned, ctx({ wood: 0 }))).toEqual({ kind: "deed", acreId: "S01" });
+  });
+
+  it("says the treeline is not for building", () => {
+    expect(resolveBeltAction("hoe", treeline, ctx())).toEqual({ kind: "nothing", reason: ACRE_TREELINE, why: "blocked" });
+    expect(resolveBeltAction("fence", treeline, ctx())).toEqual({ kind: "nothing", reason: ACRE_TREELINE, why: "blocked" });
+  });
+
+  it("digs and fences as usual on an acre that is theirs, or where no gate was worked out", () => {
+    expect(resolveBeltAction("hoe", owned, ctx())).toEqual({ kind: "till", tx: 4, ty: 7 });
+    expect(resolveBeltAction("hoe", bareGround, ctx())).toEqual({ kind: "till", tx: 4, ty: 7 });
+    expect(resolveBeltAction("fence", owned, ctx())).toEqual({ kind: "fence", tx: 4, ty: 7 });
+  });
+
+  it("lets a bed they already have be lifted, whoever owns the ground now", () => {
+    expect(resolveBeltAction("hoe", { ...bareBed, gate: { ok: false, reason: "treeline" } }, ctx())).toMatchObject({ kind: "arm-lift" });
+  });
+
+  it("never swings the farmer for a deed", () => {
+    expect(beltAnimation({ kind: "deed", acreId: "S01" })).toBeNull();
+    expect(ACRE_NOT_YOURS).toContain("isn't yours");
   });
 });

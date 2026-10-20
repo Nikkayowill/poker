@@ -69,8 +69,6 @@ export function lightsOutBandFor(wager: number): LightsOutBand {
   return LIGHTS_OUT_BANDS[stakePressure(wager)];
 }
 
-/** Today's 5x5 board. Runs stored before boards had a size play on this. */
-export const LIGHTS_OUT_SIZE = LIGHTS_OUT_BANDS[0].size;
 const LEGACY_LADDER = lightsOutLadder(LIGHTS_OUT_BANDS[0]);
 /** The biggest board any band deals, so a request can be checked before its run is loaded. */
 export const LIGHTS_OUT_MAX_SIZE = Math.max(...Object.values(LIGHTS_OUT_BANDS).map((band) => band.size));

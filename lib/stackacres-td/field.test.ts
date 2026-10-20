@@ -3,11 +3,7 @@ import { describe, expect, it } from "vitest";
 import { isHoeableMapTile, isWildMapTile, isWildSoilTile, mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
 import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "@/lib/stackacres/homestead-ground";
 import { SOIL_TILE, soilTileAt } from "@/lib/stackacres/soil";
-import { CROP_FIELD_BEDS, soilTileInCropFieldBeds } from "@/lib/stackacres/world";
 import {
-  FIELD_ORIGIN,
-  fieldMapToWorld,
-  fieldWorldToMap,
   isBedSquare,
   mapToSoilWorld,
   soilTileToMap,
@@ -52,27 +48,6 @@ describe("one soil grid for the whole Homestead", () => {
 });
 
 describe("the Crop Fields are the wild land round the yard", () => {
-  it("keep the shared grid where the map is drawn", () => {
-    expect(fieldWorldToMap({ x: CROP_FIELD_BEDS.x, y: CROP_FIELD_BEDS.y })).toEqual(FIELD_ORIGIN);
-    expect(FIELD_ORIGIN).toEqual({ x: 16 * SOIL_TILE, y: 6 * SOIL_TILE });
-  });
-
-  it("round-trips every old field square through the map", () => {
-    for (let ty = -16; ty < 16; ty++) {
-      for (let tx = -16; tx < 16; tx++) {
-        const map = soilTileToMap(tx, ty);
-        const world = fieldMapToWorld({ x: map.x + 8, y: map.y + 8 });
-        expect(world).not.toBeNull();
-        expect(soilTileAt(world!.x, world!.y)).toEqual({ tx, ty });
-        expect(soilTileInCropFieldBeds(tx, ty)).toBe(true);
-      }
-    }
-  });
-
-  it("says a map pixel off the old field is off it", () => {
-    expect(fieldMapToWorld({ x: FIELD_ORIGIN.x - 1, y: FIELD_ORIGIN.y + 8 })).toBeNull();
-    expect(fieldMapToWorld({ x: FIELD_ORIGIN.x + CROP_FIELD_BEDS.width, y: FIELD_ORIGIN.y + 8 })).toBeNull();
-  });
 
   it("is ground the hoe works, every wild square of it", () => {
     let wild = 0;

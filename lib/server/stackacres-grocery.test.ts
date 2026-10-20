@@ -20,6 +20,12 @@ import {
   takeOverStackAcresGrocery,
 } from "./stackacres-service";
 import { __resetStackAcresForTest } from "./stackacres-store";
+import { __setTrowelCritChanceForTest } from "@/lib/stackacres/equipment";
+
+// These tests assert exact harvest payouts, so the Trowel's luck is switched off here.
+// The luck is tested in stackacres-service.test.ts.
+__setTrowelCritChanceForTest(0);
+
 
 const T0 = new Date("2026-09-30T12:00:00Z");
 const HOUR = 3_600_000;

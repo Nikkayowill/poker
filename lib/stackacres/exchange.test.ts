@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { msUntilNextExchangeDay, stackacresExchangeDay } from "./exchange";
+import { stackacresExchangeDay } from "./exchange";
 
 /**
  * The day boundary shared across StackAcres: land maintenance, the daily
@@ -41,46 +41,3 @@ describe("stackacresExchangeDay", () => {
   });
 });
 
-describe("msUntilNextExchangeDay", () => {
-  it("counts down to the next UTC midnight", () => {
-    expect(msUntilNextExchangeDay(new Date("2026-09-01T23:00:00.000Z"))).toBe(60 * 60 * 1000);
-    expect(msUntilNextExchangeDay(new Date("2026-09-01T00:00:00.000Z"))).toBe(24 * 60 * 60 * 1000);
-  });
-
-  it("is a full day exactly at midnight", () => {
-    expect(msUntilNextExchangeDay(new Date("2026-09-01T00:00:00.000Z"))).toBe(24 * 60 * 60 * 1000);
-  });
-
-  it("is 1ms at the last instant of the day", () => {
-    expect(msUntilNextExchangeDay(new Date("2026-09-01T23:59:59.999Z"))).toBe(1);
-  });
-
-  it("is exactly zero once the next day has arrived", () => {
-    // stackacresExchangeDay would already report the new day at this instant;
-    // msUntilNextExchangeDay measures distance to the day AFTER `now`'s day,
-    // so at the boundary itself the distance to that following midnight is a
-    // full day, not zero.
-    expect(msUntilNextExchangeDay(new Date("2026-09-02T00:00:00.000Z"))).toBe(24 * 60 * 60 * 1000);
-  });
-
-  it("scales with time of day, mid-afternoon", () => {
-    expect(msUntilNextExchangeDay(new Date("2026-09-01T12:00:00.000Z"))).toBe(12 * 60 * 60 * 1000);
-  });
-
-  it("carries across a month boundary", () => {
-    expect(msUntilNextExchangeDay(new Date("2026-09-30T22:00:00.000Z"))).toBe(2 * 60 * 60 * 1000);
-  });
-
-  it("carries across a UTC leap day", () => {
-    expect(msUntilNextExchangeDay(new Date("2028-02-29T23:00:00.000Z"))).toBe(60 * 60 * 1000);
-  });
-
-  it("is unaffected by the input Date's local timezone offset", () => {
-    // Two Date instances denoting the same UTC instant, spelled with
-    // different offsets, must produce the same countdown.
-    const utc = new Date("2026-09-01T23:00:00.000Z");
-    const offset = new Date("2026-09-01T18:00:00.000-05:00");
-    expect(utc.getTime()).toBe(offset.getTime());
-    expect(msUntilNextExchangeDay(offset)).toBe(msUntilNextExchangeDay(utc));
-  });
-});

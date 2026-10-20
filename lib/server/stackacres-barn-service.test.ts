@@ -44,6 +44,12 @@ import { __resetStackAcresRevisionsForTest } from "./stackacres-revision-store";
 import { __resetStackAcresSoilTilesForTest } from "./stackacres-soil-store";
 import { __resetStackAcresSeedStockForTest } from "./stackacres-seed-store";
 import { adjustGold, ensureProfile } from "./profile-store";
+import { __setTrowelCritChanceForTest } from "@/lib/stackacres/equipment";
+
+// These tests assert exact harvest payouts, so the Trowel's luck is switched off here.
+// The luck is tested in stackacres-service.test.ts.
+__setTrowelCritChanceForTest(0);
+
 
 /** Noon, so "a day later" never straddles a UTC boundary by accident. */
 const T0 = new Date("2026-09-30T12:00:00.000Z");

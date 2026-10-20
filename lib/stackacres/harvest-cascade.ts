@@ -71,10 +71,10 @@
  * a decade-dead standalone inventory table with no relationship to
  * StackAcres. See lib/server/stackacres-store.ts's own header and
  * lib/stackacres/farmhand-machine.ts's near-identical warning: this exact
- * collision has nearly shipped before, and shipped once already as a wrong
- * brief on the Sunlight Forge feature.)
+ * collision has nearly shipped before.)
  */
 
+import { isMarketLivestock } from "./catalogue";
 import type { StackAcresUnitSnapshot } from "./units";
 import { stockZone } from "./world";
 import type { ZoneId } from "./zones";
@@ -104,6 +104,7 @@ export function findCascadeTargets(
     .filter(
       (unit) =>
         unit.state === "ready" &&
+        !isMarketLivestock(unit.stock) &&
         !excludeIds.has(unit.id) &&
         stockZone(unit.stock) === originZone,
     )

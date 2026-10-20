@@ -83,11 +83,15 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
     forageNodes,
     landObstacles,
     fences,
+    guardDogs,
     empireBuildings,
     buildMode,
     buildGhost,
     grocery,
     groceryGhost,
+    rodHeld,
+    tractorOwned,
+    handHired,
     api,
   } = props;
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -127,6 +131,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
     forageNodes,
     landObstacles,
     fences,
+    guardDogs,
     empireBuildings,
     buildMode,
     buildGhost,
@@ -142,6 +147,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       forageNodes,
       landObstacles,
       fences,
+      guardDogs,
       empireBuildings,
       buildMode,
       buildGhost,
@@ -174,6 +180,8 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onUseSquare: (square) => p().onUseSquare(square),
           onGroundTap: (zone, at, world) => p().onGroundTap(zone, at, world),
           onBarnTap: () => p().onBarnTap(),
+          onSeedSellerTap: () => p().onSeedSellerTap(),
+          onTownBuyerTap: (buyer) => p().onTownBuyerTap(buyer),
           onSignpostTap: () => p().onSignpostTap(),
           onWorkshopTap: () => p().onWorkshopTap(),
           onWellTap: (at) => p().onWellTap(at),
@@ -185,7 +193,6 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onForageTap: (nodeId, at) => p().onForageTap(nodeId, at),
           onLandTap: (obstacleId, at) => p().onLandTap(obstacleId, at),
           onGreenhouseTap: () => p().onGreenhouseTap(),
-          onMonkTap: (at) => p().onMonkTap(at),
           onRayTap: (at) => p().onRayTap(at),
           onHouseTap: (at) => p().onHouseTap(at),
           onBedTap: (at) => p().onBedTap(at),
@@ -195,10 +202,12 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onViewMoved: () => p().onViewMoved(),
           onPlaceEntered: (name) => p().onPlaceEntered(name),
           onInputLocked: setCastLocked,
+          onNearWater: (near) => p().onNearWater(near),
           onBuildTap: (tile) => p().onBuildTap(tile),
           onJobBoardTap: () => p().onJobBoardTap(),
           onStoreDeskTap: () => p().onStoreDeskTap(),
           onStaffTap: (name, at) => p().onStaffTap(name, at),
+          onDrivingChanged: (driving) => p().onDrivingChanged(driving),
         },
         host,
         // Fixed at boot, not read through `p()`: the scene keeps it for its
@@ -243,11 +252,15 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       scene.setForageNodes(now.forageNodes);
       scene.setLandObstacles(now.landObstacles);
       scene.setFences(now.fences);
+      scene.setGuardDogs(now.guardDogs);
       scene.setEmpireBuildings(now.empireBuildings);
       scene.setBuildMode(now.buildMode);
       scene.setBuildGhost(now.buildGhost);
       scene.setGrocery(now.grocery);
       scene.setGroceryGhost(now.groceryGhost);
+      scene.setRodHeld(p().rodHeld);
+      scene.setTractorOwned(p().tractorOwned);
+      scene.setHandHired(p().handHired);
       scene.setClockSource(() => p().clockHour());
       scene.setDaySource(() => p().clockDay());
 
@@ -287,6 +300,8 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       pullCrop: (unitId) => sceneRef.current?.pullCrop(unitId),
       celebrateCascade: (unitIds) => sceneRef.current?.celebrate(unitIds),
       celebrateCrit: (unitId, multiplier) => sceneRef.current?.celebrateCrit(unitId, multiplier),
+      handChores: (jobs) => sceneRef.current?.handChores(jobs),
+      walkToPerson: (name) => sceneRef.current?.walkToPerson(name) ?? null,
       floatAt: (at, text, tone) => sceneRef.current?.floatAt(at, text, tone),
       setTravelerUnlocks: (unlocked) => sceneRef.current?.setTravelerUnlocks(unlocked),
       soilTiles: () => sceneRef.current?.soilTiles() ?? [],
@@ -304,6 +319,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       recenter: () => sceneRef.current?.recenter(),
       farmerAction: (action, impact) => sceneRef.current?.farmerAction(action, impact),
       emote: (who, kind) => sceneRef.current?.emote(who, kind),
+      getOffTractor: () => sceneRef.current?.getOffTractor(),
       sleep: async (whileDark) => {
         const scene = sceneRef.current;
         if (scene) await scene.sleep(whileDark);
@@ -444,12 +460,27 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   }, [fences]);
 
   useEffect(() => {
+    sceneRef.current?.setGuardDogs(guardDogs);
+  }, [guardDogs]);
+
+  useEffect(() => {
     sceneRef.current?.setEmpireBuildings(empireBuildings);
   }, [empireBuildings]);
 
   useLayoutEffect(() => {
     sceneRef.current?.setBuildMode(buildMode);
   }, [buildMode]);
+
+  useLayoutEffect(() => {
+    sceneRef.current?.setRodHeld(rodHeld);
+  }, [rodHeld]);
+
+  useEffect(() => {
+    sceneRef.current?.setTractorOwned(tractorOwned);
+  }, [tractorOwned]);
+  useEffect(() => {
+    sceneRef.current?.setHandHired(handHired);
+  }, [handHired]);
 
   useEffect(() => {
     sceneRef.current?.setBuildGhost(buildGhost);

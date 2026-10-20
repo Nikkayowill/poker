@@ -5,9 +5,8 @@ import { useKeepOnScreen } from "./use-keep-on-screen";
 import type { TapPoint } from "./world-contract";
 
 /**
- * The bed's "Go to sleep?" card. Same pinned speech-bubble card as the Pixel
- * Pilgrim's (stackacres-monk-dialogue.tsx), reusing its styles, with a night
- * blue pin. "Not yet" sends nothing. The shell closes it on the next world tap.
+ * The bed's "Go to sleep?" card. A pinned speech-bubble card on the
+ * `sa-monk-dialogue` styles, with a night blue pin. "Not yet" sends nothing. The shell closes it on the next world tap.
  */
 export interface StackAcresSleepDialogueProps {
   at: TapPoint;

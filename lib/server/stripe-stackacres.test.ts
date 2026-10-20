@@ -14,7 +14,7 @@ vi.mock("./stripe-store", () => ({
   fulfillStackAcresPurchase: (...args: unknown[]) => fulfillStackAcresPurchase(...args),
 }));
 
-import { settleStackAcresSession } from "./stripe-stackacres";
+import { disputeCloseRestoresAccess, settleStackAcresSession } from "./stripe-stackacres";
 
 function verified(paymentStatus: string) {
   return {
@@ -61,5 +61,13 @@ describe("settleStackAcresSession", () => {
     verifiedStackAcresSession.mockRejectedValue(new Error("did not match"));
     await expect(settleStackAcresSession("cs_live_12345", "live")).rejects.toThrow("did not match");
     expect(fulfillStackAcresPurchase).not.toHaveBeenCalled();
+  });
+});
+
+describe("disputeCloseRestoresAccess", () => {
+  it("gives the farm back when the money stayed, and not when it was lost", () => {
+    expect(disputeCloseRestoresAccess("won")).toBe(true);
+    expect(disputeCloseRestoresAccess("warning_closed")).toBe(true);
+    expect(disputeCloseRestoresAccess("lost")).toBe(false);
   });
 });

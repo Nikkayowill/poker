@@ -10,14 +10,13 @@ describe("intentOf: the processing track", () => {
   });
 
   it("keys a sale on its item and quantity, so selling eggs never blocks selling milk", () => {
-    expect(intentOf({ action: "sell", item: "eggs", quantity: 4 })).toBe("sell:eggs:4");
-    expect(intentOf({ action: "sell", item: "milk", quantity: 4 })).toBe("sell:milk:4");
-    expect(intentOf({ action: "sell", item: "cake", quantity: 1 })).toBe("sell:cake:1");
+    expect(intentOf({ action: "sell", buyer: "general-store", item: "eggs", quantity: 4 })).toBe("sell:eggs:4");
+    expect(intentOf({ action: "sell", buyer: "general-store", item: "milk", quantity: 4 })).toBe("sell:milk:4");
+    expect(intentOf({ action: "sell", buyer: "general-store", item: "cake", quantity: 1 })).toBe("sell:cake:1");
   });
 
   it("keys the field-wide passes on the action alone", () => {
     expect(intentOf({ action: "work" })).toBe("work");
-    expect(intentOf({ action: "seal-vat" })).toBe("seal-vat");
     expect(intentOf({ action: "collect-vat" })).toBe("collect-vat");
   });
 
@@ -36,6 +35,13 @@ describe("intentOf: farm taps that must not swallow each other", () => {
     expect(here).not.toBe(there);
     expect(intentOf({ action: "stock", stock: "carrot", inGreenhouse: true })).not.toBe(intentOf({ action: "stock", stock: "carrot" }));
     expect(intentOf({ action: "stock", stock: "carrot", tiles: [{ tx: 1, ty: 2 }, { tx: 2, ty: 2 }] })).not.toBe(here);
+  });
+
+  it("keeps a tractor row apart from a single bed at its first square", () => {
+    const single = intentOf({ action: "place-soil-tile", tx: 1, ty: 2 });
+    const row = intentOf({ action: "place-soil-tile", tx: 1, ty: 2, tiles: [{ tx: 1, ty: 2 }, { tx: 2, ty: 2 }] });
+    expect(row).not.toBe(single);
+    expect(intentOf({ action: "buy-equipment", kind: "tractor" })).toBe("buy-equipment:tractor");
   });
 
   it("keeps two grocery fixtures of different kinds bought on the same square apart", () => {
@@ -82,9 +88,7 @@ describe("purchaseCueText: the instant toast a spend gets", () => {
     expect(purchaseCueText({ action: "buy-seed", crop: "corn", quantity: 1 })).toBeTruthy();
     expect(purchaseCueText({ action: "upgrade-tool" })).toBeTruthy();
     expect(purchaseCueText({ action: "buy-cutter", cutter: "mower" })).toBeTruthy();
-    expect(purchaseCueText({ action: "unlock-synergy-perk", archetype: "sunlight_harvester" })).toBeTruthy();
     expect(purchaseCueText({ action: "build-greenhouse" })).toBeTruthy();
-    expect(purchaseCueText({ action: "forge-enchantment", itemId: "gilded-tine" })).toBeTruthy();
     expect(purchaseCueText({ action: "deploy-drone" })).toBeTruthy();
   });
 

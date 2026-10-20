@@ -16,9 +16,10 @@
  * Silo fed on time never spoiled, so the spoil fast-forward does not apply.
  */
 
-import { STACKACRES_CATALOGUE, type StackAcresStock } from "./catalogue";
+import { STACKACRES_CATALOGUE, isMarketLivestock, type StackAcresStock } from "./catalogue";
 import {
   servingBonusEggs,
+  servingBonusWeight,
   shelfFeedLeft,
   shelfFeedOrder,
   type ServingSource,
@@ -48,10 +49,10 @@ export function siloFeedsLeft(counter: SiloCounter, day: string): number {
 }
 
 /** What the Silo feeds `stock` off the shelf, before the Feed Sack. It skips
- *  anything that earns a bonus (Spinach's extra egg), so that bonus stays a
- *  reward for feeding by hand. */
+ *  anything that earns a bonus (Spinach's extra egg, a hog's corn), so that
+ *  bonus stays a reward for feeding by hand. */
 export function siloFeedOrder(stock: StackAcresStock): readonly ShelfFeedItem[] {
-  return shelfFeedOrder(stock).filter((item) => servingBonusEggs(item) === 0);
+  return shelfFeedOrder(stock).filter((item) => servingBonusEggs(item) === 0 && servingBonusWeight(stock, item) === 0);
 }
 
 export interface SiloUnit {
@@ -134,6 +135,9 @@ export function planSiloFeeding(
 
   const states: PlanState[] = [];
   for (const unit of units) {
+    // Hogs and steers gain weight only from what the player hand-feeds. The Silo has no shelf item
+    // that adds it, so it would fall back to the Feed Sack, reset their hunger and block the corn.
+    if (isMarketLivestock(unit.stock)) continue;
     const catalogueHungerMs = STACKACRES_CATALOGUE[unit.stock].hungerMs;
     const hungerMs = catalogueHungerMs === null ? null : hungerWindowMs(catalogueHungerMs, comfort);
     if (unit.status !== "working" || hungerMs === null || hungerMs <= 0 || !unit.lastFedAt) continue;

@@ -41,6 +41,15 @@ export type BlockudokuMoveProblem =
   | "out-of-bounds"
   | "occupied";
 
+export type BlockudokuClearGroupKind = "row" | "column" | "box";
+
+export interface BlockudokuClearGroup {
+  readonly kind: BlockudokuClearGroupKind;
+  /** Zero-based row, column, or 3x3 box index. */
+  readonly index: number;
+  readonly cells: readonly number[];
+}
+
 export interface BlockudokuShape {
   readonly id: string;
   /** Offsets from an anchor cell, [row, col]. No rotation: a shape is always played as drawn. */
@@ -126,15 +135,6 @@ export const BLOCKUDOKU_PIECE_SETS: Readonly<Record<BlockudokuPieceSet, readonly
   ],
 };
 
-export function isBlockudokuPieceSet(value: unknown): value is BlockudokuPieceSet {
-  return value === "classic" || value === "big" || value === "expert" || value === "master";
-}
-
-/** Every shape any set can deal, by id. */
-export function blockudokuShapeById(id: string): BlockudokuShape | null {
-  return BLOCKUDOKU_PIECE_SETS.expert.find((shape) => shape.id === id) ?? null;
-}
-
 export const GRID_SIDE = 9;
 export const GRID_CELLS = GRID_SIDE * GRID_SIDE;
 export const INVENTORY_SIZE = 3;
@@ -144,6 +144,8 @@ const PLACEMENT_POINT_PER_CELL = 1;
 
 /** Per line/region cleared, before the escalation below. */
 const CLEAR_BONUS_PER_LINE = 18;
+/** Familiar reward for continuing a successful clear streak. */
+const STREAK_BONUS_PER_MOVE = 9;
 
 export interface BlockudokuRound {
   /** GRID_CELLS entries, row-major: index = row * GRID_SIDE + col. 0 empty, 1 occupied. */
@@ -151,6 +153,10 @@ export interface BlockudokuRound {
   /** Always 3 slots. null marks a slot already played, empty until the next refill. */
   inventory: (BlockudokuShape | null)[];
   score: number;
+  /** Consecutive moves that have cleared at least one group. */
+  streak?: number;
+  /** Groups cleared by the latest move, for feedback and animation. */
+  lastClearGroups?: readonly BlockudokuClearGroup[];
   status: BlockudokuRoundStatus;
   /** The PRNG's own accumulator, carried forward so a refill never repeats a past draw. See the file header. */
   rngState: number;
@@ -174,6 +180,7 @@ function drawShape(
 function drawInventory(
   rngState: number,
   pieceSet: BlockudokuPieceSet,
+  board?: readonly number[],
 ): { inventory: BlockudokuShape[]; nextState: number } {
   const shapes = BLOCKUDOKU_PIECE_SETS[pieceSet];
   const inventory: BlockudokuShape[] = [];
@@ -182,6 +189,31 @@ function drawInventory(
     const drawn = drawShape(state, shapes);
     inventory.push(drawn.shape);
     state = drawn.nextState;
+  }
+
+  // Harder sets deliberately contain more awkward pieces, but a refill should
+  // still present meaningful choices. Without this repair a random deal can
+  // contain three dead pieces even while the board has room for other pieces
+  // from that same difficulty set. Keep the original draw when it is fair; only
+  // replace dead slots when the tier has at least one shape that fits.
+  if (board) {
+    const playable = shapes.filter((shape) => canPlaceAnywhere(board, shape));
+    if (playable.length > 0) {
+      const minimumChoices = INVENTORY_SIZE;
+      const playableSlots = inventory.reduce(
+        (count, shape) => count + (canPlaceAnywhere(board, shape) ? 1 : 0),
+        0,
+      );
+      let choices = playableSlots;
+      for (let slot = 0; slot < inventory.length && choices < minimumChoices; slot += 1) {
+        if (canPlaceAnywhere(board, inventory[slot])) continue;
+        const [nextState, value] = mulberry32Step(state);
+        const shape = playable[Math.min(playable.length - 1, Math.floor(value * playable.length))];
+        inventory[slot] = shape;
+        state = nextState;
+        choices += 1;
+      }
+    }
   }
   return { inventory, nextState: state };
 }
@@ -284,21 +316,21 @@ function regionIndices(regionRow: number, regionCol: number): number[] {
  * counts toward `linesCleared` -- the bonus is for how many lines came down
  * together, not how many cells were emptied.
  */
-function clearCompletedLines(board: readonly number[]): { board: number[]; linesCleared: number } {
+function clearCompletedLines(board: readonly number[]): { board: number[]; groups: BlockudokuClearGroup[] } {
   const toClear = new Set<number>();
-  let linesCleared = 0;
+  const groups: BlockudokuClearGroup[] = [];
 
   for (let row = 0; row < GRID_SIDE; row += 1) {
     const indices = rowIndices(row);
     if (indices.every((index) => board[index] === 1)) {
-      linesCleared += 1;
+      groups.push({ kind: "row", index: row, cells: indices });
       for (const index of indices) toClear.add(index);
     }
   }
   for (let col = 0; col < GRID_SIDE; col += 1) {
     const indices = colIndices(col);
     if (indices.every((index) => board[index] === 1)) {
-      linesCleared += 1;
+      groups.push({ kind: "column", index: col, cells: indices });
       for (const index of indices) toClear.add(index);
     }
   }
@@ -306,7 +338,7 @@ function clearCompletedLines(board: readonly number[]): { board: number[]; lines
     for (let regionCol = 0; regionCol < 3; regionCol += 1) {
       const indices = regionIndices(regionRow, regionCol);
       if (indices.every((index) => board[index] === 1)) {
-        linesCleared += 1;
+        groups.push({ kind: "box", index: regionRow * 3 + regionCol, cells: indices });
         for (const index of indices) toClear.add(index);
       }
     }
@@ -314,7 +346,7 @@ function clearCompletedLines(board: readonly number[]): { board: number[]; lines
 
   const next = board.slice() as number[];
   for (const index of toClear) next[index] = 0;
-  return { board: next, linesCleared };
+  return { board: next, groups };
 }
 
 /**
@@ -344,8 +376,11 @@ export function placeBlockudokuPiece(
   const placedBoard = round.board.slice();
   for (const index of indices) placedBoard[index] = 1;
 
-  const { board, linesCleared } = clearCompletedLines(placedBoard);
-  const points = shape.cells.length * PLACEMENT_POINT_PER_CELL + clearBonus(linesCleared);
+  const { board, groups } = clearCompletedLines(placedBoard);
+  const linesCleared = groups.length;
+  const streak = linesCleared > 0 ? (round.streak ?? 0) + 1 : 0;
+  const streakBonus = linesCleared > 0 ? STREAK_BONUS_PER_MOVE * streak : 0;
+  const points = shape.cells.length * PLACEMENT_POINT_PER_CELL + clearBonus(linesCleared) + streakBonus;
 
   const afterPlay = round.inventory.slice();
   afterPlay[slot] = null;
@@ -353,7 +388,7 @@ export function placeBlockudokuPiece(
   let inventory = afterPlay;
   let rngState = round.rngState;
   if (inventory.every((entry) => entry === null)) {
-    const refill = drawInventory((rngState ^ entropy) >>> 0, round.pieceSet ?? "classic");
+    const refill = drawInventory((rngState ^ entropy) >>> 0, round.pieceSet ?? "classic", board);
     inventory = refill.inventory;
     rngState = refill.nextState;
   }
@@ -365,6 +400,8 @@ export function placeBlockudokuPiece(
     board,
     inventory,
     score: round.score + points,
+    streak,
+    lastClearGroups: groups,
     status: jammed ? "over" : "active",
     rngState,
     moves: round.moves + 1,
@@ -391,6 +428,8 @@ export interface BlockudokuView {
   board: readonly number[];
   inventory: readonly (BlockudokuShape | null)[];
   score: number;
+  streak: number;
+  lastClearGroups: readonly BlockudokuClearGroup[];
   status: BlockudokuRoundStatus;
   moves: number;
   startedAt: string | null;
@@ -403,6 +442,8 @@ export function blockudokuView(round: BlockudokuRound): BlockudokuView {
     board: round.board,
     inventory: round.inventory,
     score: round.score,
+    streak: round.streak ?? 0,
+    lastClearGroups: round.lastClearGroups ?? [],
     status: round.status,
     moves: round.moves,
     startedAt: round.startedAt,

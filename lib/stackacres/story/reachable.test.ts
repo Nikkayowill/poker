@@ -31,8 +31,6 @@ const REACHABLE: readonly StoryObjective["kind"][] = [
   "clear-sector",
   "soil",
   "contracts",
-  "forge",
-  "crossbreed",
   "deliver",
   "hold-tool",
   "reach-place",
@@ -47,8 +45,6 @@ const REACHABLE: readonly StoryObjective["kind"][] = [
 const ONCE_ONLY: readonly StoryObjective["kind"][] = [
   "clear-sector",
   "soil",
-  "forge",
-  "crossbreed",
 ];
 
 describe("every quest asks for something reachable", () => {

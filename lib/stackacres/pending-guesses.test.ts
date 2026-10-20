@@ -6,7 +6,6 @@ import {
   layFarmField,
   overlayCounts,
   overlayEntities,
-  takesNext,
   type FarmFields,
   type GuessBase,
   type GuessField,
@@ -139,12 +138,6 @@ describe("overlay helpers", () => {
     const tiles = [bed(0, 0, 1)];
     const same = layFarmField("soilTiles", tiles, [bed(0, 0, 1)], { base: "next", keys: new Set() });
     expect(same).toBe(tiles);
-  });
-
-  it("decides whole fields by the mode", () => {
-    expect(takesNext("water", { base: "next", keys: new Set() })).toBe(true);
-    expect(takesNext("water", { base: "next", keys: new Set(["water"]) })).toBe(false);
-    expect(takesNext("water", { base: "prev", keys: new Set(["water"]) })).toBe(true);
   });
 });
 

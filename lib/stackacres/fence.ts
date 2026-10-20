@@ -12,7 +12,7 @@
  * plane, so it lay in the grass instead of standing up out of it.
  */
 
-import { ISO_K, isoProject } from "./iso";
+import { ISO_K, } from "./iso";
 
 /** One bay's length in world units along its own axis. The scene steps its
  *  runs by this; `bayFitsDistrict` is the check that a district is a whole
@@ -60,11 +60,6 @@ export const FENCE_BOX: FenceBox = (() => {
   const footY = FENCE_CAP_H + FENCE_POST_H;
   return { w, h, footX, footY, ax: footX / w, ay: footY / h };
 })();
-
-/** The screen step from a bay's near post to its far one. */
-export function fenceBayStep(axis: "x" | "y"): { x: number; y: number } {
-  return axis === "x" ? isoProject(FENCE_BAY, 0) : isoProject(0, FENCE_BAY);
-}
 
 /** Whether a district's edge is a whole number of bays. A run is laid from
  *  one corner in fixed steps, and each bay carries a post at both ends, so a

@@ -6,7 +6,6 @@ import {
   submitWordStackGuess,
   toWordStackSnapshot,
   wordStackGuessProblem,
-  wordStackHardModeProblem,
   wordStackKeyboardState,
   type WordStackRound,
 } from "./word-stack";
@@ -190,60 +189,18 @@ describe("startWordStackRound", () => {
   });
 });
 
-describe("hard mode", () => {
-  function hard(answer: string, guesses: string[]): WordStackRound {
-    return guesses.reduce(submitWordStackGuess, { ...startWordStackRound(answer), hardMode: true });
-  }
-
-  it("is off unless the round opened in it, including rows stored before the flag existed", () => {
-    const legacy: WordStackRound = { answer: "crane", guesses: ["crate"], results: [tiles("cccac")], status: "active" };
-    expect(wordStackHardModeProblem(legacy, "blimp")).toBeNull();
-    expect(wordStackGuessProblem(legacy, "blimp")).toBeNull();
-    expect(submitWordStackGuess(legacy, "blimp").guesses).toEqual(["crate", "blimp"]);
-    expect(toWordStackSnapshot(legacy, { day: "2026-09-25", puzzleNumber: 1, version: 1 }).hardMode).toBe(false);
+describe("guess rules", () => {
+  it("accept any word, even one that drops a revealed hint, including on rows stored with the old hard-mode flag", () => {
+    // SLATE vs CRANE: A and E green. BRINE drops the A.
+    const opened = submitWordStackGuess(startWordStackRound("crane"), "slate");
+    const legacy = { ...opened, hardMode: true } as WordStackRound;
+    expect(wordStackGuessProblem(legacy, "brine")).toBeNull();
+    expect(submitWordStackGuess(legacy, "brine").guesses).toEqual(["slate", "brine"]);
   });
 
-  it("keeps a green letter in its spot", () => {
-    // SLATE vs CRANE: A and E green.
-    const round = hard("crane", ["slate"]);
-    expect(wordStackHardModeProblem(round, "brine")).toBe("3rd letter must be A.");
-    expect(wordStackHardModeProblem(round, "grace")).toBeNull();
-  });
-
-  it("makes a gold letter appear again, in any spot", () => {
-    // ROUTE vs CRANE: R gold, E green.
-    const round = hard("crane", ["route"]);
-    expect(wordStackHardModeProblem(round, "blame")).toBe("Guess must contain R.");
-    expect(wordStackHardModeProblem(round, "rinse")).toBeNull();
-    expect(wordStackHardModeProblem(round, "crane")).toBeNull();
-  });
-
-  it("counts repeated letters", () => {
-    // EERIE vs EMBER: E green, E gold, R gold, so two Es and an R.
-    const round = hard("ember", ["eerie"]);
-    expect(round.results[0]).toEqual(tiles("cppaa"));
-    expect(wordStackHardModeProblem(round, "eager")).toBeNull();
-    expect(wordStackHardModeProblem(round, "error")).toBe("Guess must contain E twice.");
-  });
-
-  it("asks for only as many copies as were revealed", () => {
-    // SPEED vs ABIDE: one E is gold and the other grey, so one E is enough.
-    const round = hard("abide", ["speed"]);
-    expect(round.results[0]).toEqual(tiles("aapap"));
-    expect(wordStackHardModeProblem(round, "dance")).toBeNull();
-    expect(wordStackHardModeProblem(round, "dingo")).toBe("Guess must contain E.");
-  });
-
-  it("carries hints from every earlier guess", () => {
-    const round = hard("crane", ["slate", "grace"]);
-    expect(wordStackHardModeProblem(round, "brine")).toBe("3rd letter must be A.");
-    expect(wordStackHardModeProblem(round, "trace")).toBeNull();
-  });
-
-  it("refuses a breaking guess without spending one", () => {
-    const round = hard("crane", ["slate"]);
-    expect(wordStackGuessProblem(round, "brine")).toBe("hard-mode");
-    expect(submitWordStackGuess(round, "brine")).toBe(round);
-    expect(toWordStackSnapshot(round, { day: "2026-09-25", puzzleNumber: 1, version: 1 }).hardMode).toBe(true);
+  it("carry the harder-word tier into the snapshot, and none for the daily word", () => {
+    const meta = { day: "2026-09-25", puzzleNumber: 1, version: 1 };
+    expect(toWordStackSnapshot(startWordStackRound("crane"), meta).wordTier).toBeNull();
+    expect(toWordStackSnapshot({ ...startWordStackRound("crane"), wordTier: 3 }, meta).wordTier).toBe(3);
   });
 });

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  CONTRACT_PASSES_PER_DAY,
   CONTRACT_RUNGS,
   canFulfillContract,
   contractPassSpent,
@@ -30,7 +29,7 @@ describe("drawContract", () => {
     // one. Rolled across the table rather than at one point, since a filtered
     // draw that ignored `producible` would still pass a single-point check.
     for (let roll = 0; roll < 1; roll += 0.05) {
-      expect(drawContract(["cheese"], () => roll)?.item).toBe("cheese");
+      expect(drawContract(["sauce"], () => roll)?.item).toBe("sauce");
     }
   });
 
@@ -76,6 +75,20 @@ describe("contractableItems", () => {
     const farm = { ownedStocks: ["hen", "cattle"] as const, inventory: {} };
     expect(contractableItems({ ...farm, ownedStocks: [...farm.ownedStocks], machineKinds: ["dairy"] })).not.toContain("cake");
     expect(contractableItems({ ...farm, ownedStocks: [...farm.ownedStocks], machineKinds: ["dairy", "mill"] })).toContain("cake");
+  });
+
+  it("holds back a good whose crop seed is still locked", () => {
+    // Celery seed needs the Stew Pot and the Counter, so a Counter alone cannot grow it.
+    const counterOnly = contractableItems({ machineKinds: ["counter"], ownedStocks: [], inventory: {} });
+    expect(counterOnly).toContain("sauerkraut");
+    expect(counterOnly).not.toContain("pickles");
+    const both = contractableItems({ machineKinds: ["counter", "stew_pot"], ownedStocks: [], inventory: {} });
+    expect(both).toContain("pickles");
+  });
+
+  it("still offers a good made from a locked crop the farm already holds", () => {
+    const items = contractableItems({ machineKinds: ["counter"], ownedStocks: [], inventory: { celery: 2 } });
+    expect(items).toContain("pickles");
   });
 
   it("never lists a good twice", () => {
@@ -152,12 +165,6 @@ describe("passing on an order", () => {
     expect(contractPassSpent(null, "2026-09-21")).toBe(false);
     expect(contractPassSpent("2026-09-21", "2026-09-21")).toBe(true);
     expect(contractPassSpent("2026-09-20", "2026-09-21")).toBe(false);
-  });
-
-  // One a day, and named rather than inlined so the sheet, the service and
-  // this test cannot drift on the number.
-  it("allows exactly one a day", () => {
-    expect(CONTRACT_PASSES_PER_DAY).toBe(1);
   });
 
   it("recognises the three terminal states and nothing else", () => {

@@ -612,7 +612,6 @@ export function dealerButtonAnchor(slot: number, count: number = SEAT_COUNT): Ve
  * the felt for anything reasoning about the geometry itself.
  */
 export const CHIP_RADIUS_M = 0.0195;
-export const CHIP_THICKNESS_M = 0.0033;
 
 /* ---------------------------------------------------------------------- *
  * Outlines

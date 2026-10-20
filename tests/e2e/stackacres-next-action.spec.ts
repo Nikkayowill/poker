@@ -17,6 +17,20 @@ const ADMIN_SECRET = "playwright-admin-secret";
  *  "why it matters" line rather than dropping it for a short phone. */
 test.use({ viewport: { width: 1280, height: 720 } });
 
+/** Gets one crop into the ground so the farm is past the seed cues and on to its first building. A truly
+ *  empty farm is told to sow or to see Cora instead (stackacres-seed-seller.spec.ts). */
+async function plantOneCrop(context: BrowserContext) {
+  const act = (data: Record<string, unknown>) => context.request.post("/api/stackacres/actions", { data });
+  expect((await act({ action: "buy-seed", crop: "wheat", quantity: 1 })).ok()).toBe(true);
+  expect((await act({ action: "place-soil-tile", tx: -6, ty: 2 })).ok()).toBe(true);
+  expect((await act({ action: "stock", stock: "wheat", tx: -6, ty: 2 })).ok()).toBe(true);
+  // Ray is how a new player is first pointed at things, so meet him; a person waiting to be met would lead the panel.
+  expect((await act({ action: "story-meet", traveler: "ray" })).ok()).toBe(true);
+  // A seed starts dry, and a dry bed is its own cue, so water it.
+  const farm = (await (await context.request.get("/api/stackacres")).json()) as { units: { id: string }[] };
+  expect((await act({ action: "water", unitId: farm.units[0].id })).ok()).toBe(true);
+}
+
 async function openStackAcres(context: BrowserContext, page: Page) {
   const created = await context.request.post("/api/profile");
   expect(created.ok()).toBe(true);
@@ -34,6 +48,7 @@ async function openStackAcres(context: BrowserContext, page: Page) {
     })).ok(),
   ).toBe(true);
 
+  await plantOneCrop(context);
   await page.addInitScript(() => window.localStorage.setItem("sa-ray-welcomed", "1"));
   await enterFarm(page);
   return profile.id;
@@ -59,12 +74,15 @@ test("the planner names the Mill, then advances to the Oven once the Mill is up"
   const panel = page.locator(".sa-next");
   await expect(panel).toBeVisible();
 
-  // One objective, why it matters, what is missing, and where the missing
-  // thing comes from. Every one of those numbers is the machine catalogue's.
-  await expect(panel.getByRole("heading", { name: "Build the Mill" })).toBeVisible();
-  await expect(panel).toContainText("Grow wheat");
+  // One objective and what is missing. The reason and where the missing thing
+  // comes from wait behind a tap on the objective, so the panel stays small
+  // over the map. Every one of those numbers is the machine catalogue's.
+  await expect(panel.getByRole("heading", { name: "Build the Feed Grinder" })).toBeVisible();
   await expect(panel).toContainText("Missing:");
   await expect(panel).toContainText("15 Wood");
+  await expect(panel).not.toContainText("Chop the trees");
+  await panel.getByRole("button", { name: "Build the Feed Grinder" }).click();
+  await expect(panel).toContainText("Grow wheat");
   await expect(panel).toContainText("Chop the trees");
   // The Gold is already in hand, so it is not on the missing list.
   await expect(panel.locator(".sa-next-missing")).not.toContainText("Gold");
@@ -73,8 +91,8 @@ test("the planner names the Mill, then advances to the Oven once the Mill is up"
   // stays on it and only stops asking for anything.
   await grantWood(context, profileId, 15);
   await enterFarm(page);
-  await expect(panel.getByRole("heading", { name: "Build the Mill" })).toBeVisible();
-  await expect(panel).toContainText("Everything it needs is in hand");
+  await expect(panel.getByRole("heading", { name: "Build the Feed Grinder" })).toBeVisible();
+  await expect(panel).toContainText("You have everything.");
 
   // The button goes to the room the Mill actually goes up in.
   await panel.getByRole("button", { name: "Open Workshop" }).click();
@@ -82,11 +100,11 @@ test("the planner names the Mill, then advances to the Oven once the Mill is up"
   await expect(workshop).toBeVisible();
 
   await workshop
-    .locator(".sa-workshop-machine", { hasText: "Mill" })
+    .locator(".sa-workshop-machine", { hasText: "Feed Grinder" })
     .getByRole("button", { name: /Build/ })
     .first()
     .click();
-  await expect(workshop.locator(".sa-workshop-machine", { hasText: "Mill" }).getByRole("button", { name: /Build/ })).toHaveCount(
+  await expect(workshop.locator(".sa-workshop-machine", { hasText: "Feed Grinder" }).getByRole("button", { name: /Build/ })).toHaveCount(
     0,
     { timeout: 10_000 },
   );
@@ -96,7 +114,7 @@ test("the planner names the Mill, then advances to the Oven once the Mill is up"
   // Nobody asked the panel to refresh: the objective was derived from the
   // snapshot, the snapshot changed, so the panel is already on the next one.
   await expect(panel.getByRole("heading", { name: "Build the Oven" })).toBeVisible({ timeout: 10_000 });
-  await expect(panel.getByRole("heading", { name: "Build the Mill" })).toHaveCount(0);
+  await expect(panel.getByRole("heading", { name: "Build the Feed Grinder" })).toHaveCount(0);
   await expect(panel.getByRole("button", { name: "Open your kitchen" })).toBeVisible();
 });
 

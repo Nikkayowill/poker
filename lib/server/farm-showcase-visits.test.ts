@@ -8,8 +8,6 @@ import {
   sendFriendRequest,
 } from "./friends-store";
 import { __resetStackAcresForTest } from "./stackacres-store";
-import { __resetStackAcresBlueprintsForTest } from "./stackacres-blueprint-store";
-import { __resetStackAcresCrossbreedForTest } from "./stackacres-crossbreeding-store";
 import { __resetStackAcresRevisionsForTest } from "./stackacres-revision-store";
 import { __resetStackAcresSeedStockForTest } from "./stackacres-seed-store";
 import { __resetStackAcresSoilTilesForTest } from "./stackacres-soil-store";
@@ -60,10 +58,8 @@ async function expectClosed(promise: Promise<unknown>) {
 
 beforeEach(() => {
   __resetStackAcresForTest();
-  __resetStackAcresBlueprintsForTest();
   __resetStackAcresSeedStockForTest();
   __resetStackAcresSoilTilesForTest();
-  __resetStackAcresCrossbreedForTest();
   __resetStackAcresRevisionsForTest();
   __resetStackAcresShowcaseForTest();
   __resetFriendsMemory();
@@ -178,7 +174,7 @@ describe("what a visitor is shown", () => {
     expect(Object.keys(showcase).sort()).toEqual(
       ["owner", "own", "reactions", "sent", "stats", "world"].sort(),
     );
-    for (const key of ["profile", "inventory", "seedStock", "secrets", "story", "contract", "upkeep", "energy", "devotion", "friendship", "blueprints", "empire", "influence", "feed", "water"]) {
+    for (const key of ["profile", "inventory", "seedStock", "secrets", "story", "contract", "upkeep", "energy", "friendship", "empire", "influence", "feed", "water"]) {
       expect(showcase).not.toHaveProperty(key);
       expect(showcase.world).not.toHaveProperty(key);
       expect(showcase.stats).not.toHaveProperty(key);

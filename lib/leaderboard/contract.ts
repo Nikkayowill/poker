@@ -140,14 +140,8 @@ export const LEADERBOARD_GAMES: Readonly<Record<string, LeaderboardGameContract>
   "heads-up": winLossRecordContract("heads-up", "Heads-Up"),
 };
 
-export type LeaderboardGameId = keyof typeof LEADERBOARD_GAMES;
-
 export function leaderboardGame(id: string): LeaderboardGameContract | null {
   return LEADERBOARD_GAMES[id] ?? null;
-}
-
-export function isLeaderboardGameId(value: unknown): value is LeaderboardGameId {
-  return typeof value === "string" && value in LEADERBOARD_GAMES;
 }
 
 /**

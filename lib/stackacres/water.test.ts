@@ -2,18 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   DOCK,
   DOCK_LENGTH,
-  DUCK_ORBIT,
-  LILY_DOCK_CLEARANCE,
-  LILY_PADS,
   POND,
   POND_CLEARANCE,
   POND_SAND,
   POND_SHALLOW,
   POND_ZONE,
-  REEDS,
-  RIPPLE_SPOTS,
-  dockRect,
-  inPond,
   inPondZone,
   pondRadial,
 } from "./water";
@@ -21,13 +14,6 @@ import { FARM_PATHS, nearPath } from "./paths";
 import { STACKACRES_CHUNK, chunkScenery, growAreaBounds } from "./world";
 import { YARD_DELTA } from "./yard";
 import { ZONE_IDS } from "./zones";
-
-/** Distance from a point to the nearest point of a rectangle. */
-function rectDistance(x: number, y: number, r: { x: number; y: number; width: number; height: number }): number {
-  const dx = Math.max(r.x - x, 0, x - (r.x + r.width));
-  const dy = Math.max(r.y - y, 0, y - (r.y + r.height));
-  return Math.hypot(dx, dy);
-}
 
 describe("the pond", () => {
   it("sits on the west verge, inside the home frame and clear of the lane", () => {
@@ -73,14 +59,6 @@ describe("the pond", () => {
       ];
       for (const p of points) expect(inPondZone(p.x, p.y), `${zone} at ${p.x},${p.y}`).toBe(false);
     }
-  });
-
-  it("measures water by the ellipse, not its box", () => {
-    expect(inPond(POND.x, POND.y)).toBe(true);
-    expect(pondRadial(POND.x + POND.rx, POND.y)).toBeCloseTo(1);
-    expect(pondRadial(POND.x, POND.y - POND.ry)).toBeCloseTo(1);
-    // The box's corner is outside the water.
-    expect(inPond(POND.x + POND.rx, POND.y + POND.ry)).toBe(false);
   });
 
   it("keeps wild scenery out of the water in every chunk the pond touches", () => {
@@ -161,52 +139,3 @@ describe("the dock", () => {
   });
 });
 
-describe("pond decor", () => {
-  it("floats four to six lily pads on the water, clear of the dock and each other", () => {
-    expect(LILY_PADS.length).toBeGreaterThanOrEqual(4);
-    expect(LILY_PADS.length).toBeLessThanOrEqual(6);
-    const dock = dockRect();
-    for (const pad of LILY_PADS) {
-      expect(pondRadial(pad.x, pad.y), `pad at ${pad.x},${pad.y}`).toBeLessThan(0.9);
-      expect(rectDistance(pad.x, pad.y, dock), `pad at ${pad.x},${pad.y} vs dock`).toBeGreaterThanOrEqual(
-        LILY_DOCK_CLEARANCE,
-      );
-    }
-    for (let i = 0; i < LILY_PADS.length; i += 1) {
-      for (let j = i + 1; j < LILY_PADS.length; j += 1) {
-        const a = LILY_PADS[i];
-        const b = LILY_PADS[j];
-        expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(12);
-      }
-    }
-    expect(LILY_PADS.filter((p) => p.flower).length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("stands five to eight reeds on the sand at the water's edge", () => {
-    expect(REEDS.length).toBeGreaterThanOrEqual(5);
-    expect(REEDS.length).toBeLessThanOrEqual(8);
-    const dock = dockRect();
-    for (const reed of REEDS) {
-      const r = pondRadial(reed.x, reed.y);
-      expect(r, `reed at ${reed.x},${reed.y}`).toBeGreaterThanOrEqual(0.96);
-      expect(r, `reed at ${reed.x},${reed.y}`).toBeLessThanOrEqual(1 + POND_SAND / POND.ry);
-      expect(rectDistance(reed.x, reed.y, dock)).toBeGreaterThanOrEqual(8);
-    }
-    // A stand on the north shore and one at the south-west.
-    expect(REEDS.some((r) => r.y < POND.y - POND.ry + 6)).toBe(true);
-    expect(REEDS.some((r) => r.x < POND.x - 30 && r.y > POND.y)).toBe(true);
-  });
-
-  it("spreads ripples and paddles the duck on open water", () => {
-    for (const spot of RIPPLE_SPOTS) expect(pondRadial(spot.x, spot.y)).toBeLessThan(0.9);
-    for (let k = 0; k < 24; k += 1) {
-      const a = (k / 24) * Math.PI * 2;
-      const x = DUCK_ORBIT.x + Math.cos(a) * DUCK_ORBIT.rx;
-      const y = DUCK_ORBIT.y + Math.sin(a) * DUCK_ORBIT.ry;
-      expect(pondRadial(x, y), `duck at ${x},${y}`).toBeLessThan(0.85);
-      // The duck is 14 wide; it never paddles into a lily pad or the dock.
-      for (const pad of LILY_PADS) expect(Math.hypot(pad.x - x, pad.y - y)).toBeGreaterThanOrEqual(11);
-      expect(rectDistance(x, y, dockRect())).toBeGreaterThanOrEqual(6);
-    }
-  });
-});

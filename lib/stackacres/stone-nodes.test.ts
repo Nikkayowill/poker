@@ -12,7 +12,6 @@ import {
   isNodeMineable,
   isStoneNodeId,
   oreForSwing,
-  regrowLabel,
 } from "./stone-nodes";
 
 const NOW = new Date("2026-09-18T12:00:00.000Z");
@@ -100,14 +99,3 @@ describe("hasRegrown / effectiveNodeState / isNodeMineable", () => {
   });
 });
 
-describe("regrowLabel", () => {
-  it("reads any moment once the window has elapsed", () => {
-    const broken = { nodeId: "stone:mine-1" as const, hitsRemaining: 0, brokenAt: NOW.toISOString(), version: 1 };
-    expect(regrowLabel(broken, NOW.getTime() + REGROW_MS + 1)).toBe("any moment");
-  });
-
-  it("counts minutes while the node is still down", () => {
-    const broken = { nodeId: "stone:mine-1" as const, hitsRemaining: 0, brokenAt: NOW.toISOString(), version: 1 };
-    expect(regrowLabel(broken, NOW.getTime() + 60_000)).toBe("17m");
-  });
-});

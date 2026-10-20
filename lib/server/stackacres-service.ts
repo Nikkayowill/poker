@@ -1,6 +1,6 @@
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { adminClient } from "./supabase-admin";
 import {
@@ -8,6 +8,7 @@ import {
   STACKACRES_CROPS,
   STACKACRES_FEED,
   STACKACRES_FEED_SHIPMENTS_PER_PURCHASE,
+  STACKACRES_MARKET_ANIMALS,
   STACKACRES_MAX_EXTRA_CAP,
   STACKACRES_MUCK_CHANCE,
   STACKACRES_SEED_BAGS_PER_PURCHASE,
@@ -15,6 +16,7 @@ import {
   stackacresCapacityMaterials,
   stackacresCapacityPrice,
   isLivestock,
+  isMarketLivestock,
   isStackAcresCrop,
   isStackAcresStock,
   type SeedStock,
@@ -34,7 +36,14 @@ import {
   toStackAcresUnitSnapshots,
   type StackAcresUnitSnapshot,
 } from "@/lib/stackacres/units";
-import { STACKACRES_YIELDS, type StackAcresItem } from "@/lib/stackacres/items";
+import { STACKACRES_YIELDS, baseYieldQuantity, type StackAcresItem } from "@/lib/stackacres/items";
+import {
+  MARKET_ANIMAL_NOT_COLLECTED,
+  shipmentGold,
+  shippedLine,
+  type ShippedAnimal,
+  type StackAcresShipment,
+} from "@/lib/stackacres/sale-barn";
 import { stackacresExchangeDay } from "@/lib/stackacres/exchange";
 import {
   animalNameFor,
@@ -56,6 +65,7 @@ import {
 import {
   stackacresUpkeepDay,
   stackacresUpkeepDue,
+  stackacresUpkeepFee,
   upkeepState,
   type StackAcresUpkeepState,
 } from "@/lib/stackacres/upkeep";
@@ -126,6 +136,38 @@ import {
 } from "@/lib/stackacres/fences";
 import { HERD_AWAY_MESSAGES, herdAway, type HerdAway } from "@/lib/stackacres/herd-risk";
 import {
+  DOG_PLACEMENT_MESSAGES,
+  GUARD_DOG_CAP,
+  GUARD_DOG_COSTS,
+  GUARD_DOG_GOLD,
+  dogPlacementProblem,
+  dogSquares,
+  type GuardDog,
+} from "@/lib/stackacres/guard-dog";
+import {
+  addStackAcresGuardDog as addGuardDogRow,
+  listStackAcresGuardDogs,
+  moveStackAcresGuardDog as moveGuardDogRow,
+  stackAcresGuardDogFromBatchRow,
+} from "./stackacres-guard-dog-store";
+import {
+  STACKACRES_EQUIPMENT_DEFS,
+  TRACTOR_NEEDED,
+  TRACTOR_ROW_NOT_STRAIGHT,
+  isStackAcresBuyableEquipment,
+  isStraightRow,
+  type StackAcresBuyableEquipment,
+  type StackAcresEquipment,
+} from "@/lib/stackacres/tractor";
+import { readStackAcresEquipment, recordStackAcresEquipment } from "./stackacres-equipment-store";
+import {
+  deleteStackAcresHiredHand,
+  insertStackAcresHiredHand,
+  readStackAcresHiredHand,
+  updateStackAcresHiredHand,
+  type StoredHiredHand,
+} from "./stackacres-hired-hand-store";
+import {
   HERD_PLACEMENT_MESSAGES,
   herdKey,
   herdPlacementProblem,
@@ -133,6 +175,23 @@ import {
   isHerdStock,
   isPlaced as isHerdPlaced,
 } from "@/lib/stackacres/herd";
+import {
+  acreById,
+  acreGate,
+  acreGateMessage,
+  acrePrice,
+  acresView,
+  boughtAcreCount,
+  isAcreId,
+  type OwnedAcre,
+  type StackAcresAcresView,
+} from "@/lib/stackacres/acres";
+import {
+  insertStackAcresAcre,
+  listStackAcresAcres,
+  stackAcresAcresFromBatchRows,
+  type AcreAddition,
+} from "./stackacres-acre-store";
 import {
   listStackAcresFences,
   placeStackAcresFence as placeFenceRow,
@@ -208,14 +267,6 @@ import {
   type SecretItemId,
 } from "@/lib/stackacres/secrets";
 import {
-  DEVOTION_LADDER,
-  DEVOTION_RUNG_THRESHOLDS,
-  devotionView,
-  previousUtcDay,
-  type RelicId,
-  type StackAcresDevotionView,
-} from "@/lib/stackacres/devotion";
-import {
   FRIENDSHIP_LADDER,
   FRIENDSHIP_NPCS,
   FRIENDSHIP_RUNG_THRESHOLDS,
@@ -285,6 +336,7 @@ import {
   fillStackAcresWater,
   readStackAcresMuseum,
   raiseStackAcresUpkeep,
+  takeStackAcresUpkeep,
   readStackAcresSectors,
   readStackAcresUpkeep,
   recordStackAcresHarvest,
@@ -294,10 +346,8 @@ import {
   createStackAcresContract,
   createStackAcresMachine,
   createStackAcresWheatPlot,
-  createStackAcresVatManifest,
   collectStackAcresMachine,
   writeStackAcresSiloFeeds,
-  writeStackAcresFarmKitchen,
   collectStackAcresVatManifest,
   collectStackAcresWheatPlot,
   listStackAcresAgingManifests,
@@ -320,11 +370,6 @@ import {
   readStackAcresCropFieldsUnlocked,
   recordStackAcresCropFieldsUnlocked,
   countGreenhouseStackAcresUnits,
-  readStackAcresPrestige,
-  readStackAcresLifetimeGross,
-  resetStackAcresPrestige,
-  readStackAcresDevotion,
-  prayAtStackAcresShrine as prayAtStackAcresShrine_store,
   readStackAcresFriendship,
   giveStackAcresGift as giveStackAcresGift_store,
   greetStackAcresNpc as greetStackAcresNpc_store,
@@ -345,10 +390,8 @@ import {
   stackAcresSecretLedgerQtyFromBatchRows,
   stackAcresGreenhouseFromBatchRow,
   stackAcresCropFieldsUnlockedFromBatchRow,
-  stackAcresPrestigeFromBatchRow,
   stackAcresCuttersFromBatchRows,
   stackAcresStoryFromBatchRow,
-  stackAcresDevotionFromBatchRow,
   stackAcresFriendshipFromBatchRows,
   wheatPlotFromRow,
   machineFromRow,
@@ -380,18 +423,10 @@ import {
   type LandObstacleDbRow,
   type ForageNodeDbRow,
   type StoredMachine,
-  type StoredDevotionRow,
   type StoredFriendshipRow,
   type StoredVatManifest,
   type StoredStoryRow,
 } from "./stackacres-store";
-import {
-  prestigeGoldRemaining,
-  type StackAcresPrestigeState,
-  type StackAcresPrestigeView,
-  type StackAcresPrestigeResetResult,
-} from "@/lib/stackacres/prestige";
-export type { StackAcresPrestigeView, StackAcresPrestigeResetResult } from "@/lib/stackacres/prestige";
 import {
   claimStackAcresIntent,
   completeStackAcresIntent,
@@ -399,6 +434,7 @@ import {
 } from "./stackacres-intent-store";
 import { bumpStackAcresRevision, readStackAcresRevision } from "./stackacres-revision-store";
 import {
+  confirmGoldDebitLedgered,
   creditGoldByProfile,
   creditGoldByProfileLedgered,
   debitGoldByProfile,
@@ -442,13 +478,28 @@ import {
   type FoodItem,
   type StackAcresEnergyAnchor,
 } from "@/lib/stackacres/energy";
-import { NOT_SLEEPY, canSleepAt, gameHourAt, offsetAfterSleep } from "@/lib/stackacres/clock";
+import { NOT_SLEEPY, canSleepAt, gameDayAt, gameHourAt, offsetAfterSleep } from "@/lib/stackacres/clock";
+import {
+  HIRED_HAND_ALREADY,
+  HIRED_HAND_BEDS_TO_HIRE,
+  HIRED_HAND_CANT_PAY,
+  HIRED_HAND_DAILY_WAGE,
+  HIRED_HAND_NAME,
+  HIRED_HAND_NOT_ENOUGH_BEDS,
+  NO_HAND_CHORES,
+  hiredHandChoresDue,
+  hiredHandWageDue,
+  pickHiredHandChores,
+  type HiredHandChores,
+  type HiredHandView,
+} from "@/lib/stackacres/hired-hand";
 import { isActiveStock } from "@/lib/stackacres/scope";
-import { isUnbuiltCutter, isUnbuiltEnchantment, isUnbuiltPerk } from "@/lib/stackacres/unbuilt";
-import { feedingToast, servingBonusEggs, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
+import { isUnbuiltCutter } from "@/lib/stackacres/unbuilt";
+import { feedingToast, servingBonus, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
 import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/feed-silo";
-import { isFarmKitchenRecipe, planFarmKitchen } from "@/lib/stackacres/farm-kitchen";
 import { isSeedUnlocked, seedLockedMessage } from "@/lib/stackacres/seed-unlocks";
+import { TOWN_BUYERS, buyerTakes, isTownBuyer, townBuyerFor } from "@/lib/stackacres/town-buyers";
+import { STARTER_SEED_COUNT, STARTER_SEED_CROP, STARTER_SEEDS_LEDGER_KEY } from "@/lib/stackacres/starter-seeds";
 import { QUARRY_CATALOGUE, pickQuarry, type QuarrySpecies } from "@/lib/stackacres/hunting";
 import { WOOD_NODE_IDS, isWoodNodeId, type WoodNodeId } from "@/lib/stackacres/tree-nodes";
 import {
@@ -462,6 +513,7 @@ import {
   isClearableSector,
   landObstacleSnapshot,
   swingAtLandObstacle,
+  landOreForSwing,
   landSwingDamage,
   type ClearingGround,
   type LandObstacleSnapshot,
@@ -517,7 +569,7 @@ import {
   canStartMachine,
   isMachineDone,
   isMachineKind,
-  rollMillDoubleOutput,
+  isRetiredMachine,
   toMachineSnapshot,
   type MachineKind,
   type StackAcresMachineSnapshot,
@@ -525,62 +577,12 @@ import {
 import {
   AGING_TIERS,
   CELLAR_AGING_TIERS,
-  VAT_INPUT_ITEM,
-  VAT_INPUT_QUANTITY,
-  baseGoldValueForSeal,
-  cellarBaseGoldValue,
-  cellarSealQuantity,
-  firstAgingTier,
   toVatContainer,
   vatTierForElapsed,
   agedGoldValue,
   type AgingTier,
-  type CellarItem,
   type VatContainer,
 } from "@/lib/stackacres/aging";
-import {
-  SYNERGY_PERKS,
-  applySynergyEffects,
-  isSynergyArchetype,
-  type SynergyArchetype,
-} from "@/lib/stackacres/synergy-perks";
-import {
-  activateSynergyPerk,
-  applySynergyBuffs,
-  listActiveSynergyArchetypes,
-  listUnlockedSynergyArchetypes,
-  synergyArchetypesFromOwned,
-  unlockSynergyPerk,
-} from "./stackacres-synergy-service";
-import { stackAcresOwnedPerksFromBatchRows } from "./stackacres-synergy-store";
-import {
-  forgeEnchantment,
-  forgeEnchantmentIdsFromOwned,
-  forgedToolStatsFor,
-  listOwnedForgeEnchantmentIds,
-} from "./stackacres-forge-service";
-import { stackAcresOwnedEnchantmentsFromBatchRows } from "./stackacres-forge-store";
-import { FORGE_ENCHANTMENTS, isForgeEnchantmentId } from "@/lib/stackacres/forge";
-import {
-  harvestCrossbreedBed,
-  plantCrossbreedBed,
-  type CrossbreedHarvestSettlement,
-  type StoredCrossbreedPlot,
-} from "./stackacres-crossbreeding-service";
-import {
-  listStackAcresCrossbreedPlots,
-  readStackAcresCrossbreedInventory,
-  stackAcresCrossbreedInventoryFromBatchRows,
-  stackAcresCrossbreedPlotFromBatchRow,
-  type CrossbreedPlotDbRow,
-} from "./stackacres-crossbreeding-store";
-import {
-  isInCrossbreedGrid,
-  toCrossbreedPlotView,
-  type CrossbreedBedView,
-  type CrossbreedPlotView,
-} from "@/lib/stackacres/crossbreeding";
-import type { CrossbreedItem } from "@/lib/stackacres/crossbreed-items";
 import {
   canFulfillContract,
   contractPassSpent,
@@ -591,6 +593,7 @@ import {
 import {
   RECIPE_CATALOGUE,
   isInstantRecipe,
+  MAX_RUN_BATCHES,
   isRecipeId,
   recipesForMachine,
   type RecipeId,
@@ -601,15 +604,6 @@ import {
   type MachineItemId,
   type MachineProcessedItem,
 } from "@/lib/stackacres/machine-items";
-import type { BlueprintId } from "@/lib/stackacres/blueprints";
-import {
-  blueprintsView,
-  blueprintsViewFromStates,
-  contributeToBlueprint,
-  startBlueprintForProfile,
-  type BlueprintView,
-} from "./stackacres-blueprint-service";
-import { stackAcresAllBlueprintsFromBatchRows } from "./stackacres-blueprint-store";
 import {
   evaluateStackAcresShopLock,
   stackacresShopLockRefusal,
@@ -659,17 +653,11 @@ import { applyInfluenceDiscount } from "@/lib/stackacres/influence-tiers";
  *     `collectStackAcresVat`, the Fermenting Vat's own aged-Cheese payout
  *     (lib/stackacres/aging.ts). Nothing else here may credit Gold.
  *
- * THE CRITICAL HARVEST and THE PRESTIGE RESET VALVE both used to ride inside
- * the harvest's own Gold payout. Neither pays Gold any more, for the same
- * reason harvest itself does not:
- *
- *   * A crit (`critBonusQuantity`, lib/stackacres/equipment.ts) now adds bonus
- *     UNITS to a settled line, credited into the same inventory line as the
- *     rest of that line's produce -- extra Eggs, not extra Gold.
- *   * The Prestige Reset Valve's permanent multiplier moved to
- *     `sellStackAcresItem`, applied to the Gold a sale yields, before that
- *     Gold is reserved against the ceiling -- see lib/stackacres/prestige.ts's
- *     own header for why that ordering is load-bearing rather than cosmetic.
+ * THE CRITICAL HARVEST used to ride inside the harvest's own Gold payout. It
+ * does not pay Gold any more, for the same reason harvest itself does not: a
+ * crit (`critBonusQuantity`, lib/stackacres/equipment.ts) adds bonus UNITS to
+ * a settled line, credited into the same inventory line as the rest of that
+ * line's produce -- extra Eggs, not extra Gold.
  *
  * Every refund goes through `refundGold` rather than calling
  * `creditGoldByProfile` directly, so that the credit function has exactly
@@ -741,25 +729,6 @@ export class StackAcresRequestError extends ArcadeRequestError<StackAcresRoundSn
   readonly name = "StackAcresRequestError";
 }
 
-/**
- * The Synergy Tree, as the client renders it. See
- * lib/server/stackacres-synergy-service.ts's own header for the ownership
- * vs. loadout split -- `unlocked` is "ever bought", `active` is "slotted for
- * this session", and an id can be in the first without being in the second.
- */
-export interface StackAcresSynergyView {
-  unlocked: SynergyArchetype[];
-  active: SynergyArchetype[];
-  /**
-   * The multiplier the client applies to its own FARMHAND_SPEED constant.
-   * Computed here against a base of 1 rather than sent as an absolute speed
-   * -- the farmhand's walk is presentation-only and lives entirely
-   * client-side (lib/stackacres/farmhand-path.ts), so this is the one number
-   * that seam actually needs. 1 when `automated_logistics` is not active.
-   */
-  farmhandSpeedMultiplier: number;
-}
-
 export interface StackAcresView {
   units: StackAcresUnitSnapshot[];
   profile: PlayerProfile;
@@ -809,9 +778,6 @@ export interface StackAcresView {
    *  lib/stackacres/secrets.ts's own header for why a secret item is its own
    *  small registry rather than a member of `StackAcresItem`. */
   secretDonations: Record<SecretItemId, boolean>;
-  /** The Synergy Tree: which archetypes are unlocked/active, and what that
-   *  currently does to the farmhand's presentation-only walk speed. */
-  synergy: StackAcresSynergyView;
   /** Whether this player has built the Greenhouse (lib/stackacres/greenhouse.ts).
    *  Permanent once true; gates the `inGreenhouse` option on `stock`. */
   greenhouseBuilt: boolean;
@@ -821,29 +787,6 @@ export interface StackAcresView {
    *  `sectors` above -- see that module's own header on the 2026-09-08
    *  district merge that made this a standalone flag instead. */
   cropFieldsUnlocked: boolean;
-  /** Ray's Mythic Blueprints: one entry per structure in the catalogue,
-   *  present whether or not the player has started it (see
-   *  lib/server/stackacres-blueprint-service.ts's `blueprintsView`) --
-   *  the same "every key present, missing means never started" posture
-   *  `secretDonations` above already takes for a never-donated item. */
-  blueprints: Record<BlueprintId, BlueprintView>;
-  /** The Prestige Reset Valve's permanent state: how many times it has been
-   *  pulled, the live harvest multiplier it bought, and how much further
-   *  gross production is needed before it can be pulled again. See
-   *  lib/stackacres/prestige.ts's own header for what "gross" means here and
-   *  why it is immune to the daily Gold ceiling. */
-  prestige: StackAcresPrestigeView;
-  /** The Sunlight Forge: catalogue ids (FORGE_ENCHANTMENTS keys, not the
-   *  versioned `enchant_..._v1` wrapper) this player has permanently
-   *  forged. Applies to whichever equipment tier `tool` above currently
-   *  holds -- there is no per-tool-instance row, see lib/stackacres/
-   *  forge.ts's own header for why that is deliberate. */
-  forge: readonly string[];
-  /** The Crossbreeding Bed: every planted cell on its own fixed 4x4 grid,
-   *  readiness already derived by this server's clock, and the hybrids bred
-   *  so far. See lib/stackacres/crossbreeding.ts's own header for why this
-   *  is its own grid and not a revival of the dead plot grid. */
-  crossbreed: CrossbreedBedView;
   /** The irrigation pipe network: every placed tile with its recomputed
    *  connector frame and hydration (lib/stackacres/irrigation.ts). The scene
    *  renders straight off this; a crop a hydrated pipe waters is already
@@ -857,12 +800,8 @@ export interface StackAcresView {
    *  (`homestead_seed_stock`). A missing crop and 0 mean the same thing.
    *  Livestock is never a key here -- see SeedStock's own doc comment. */
   seedStock: SeedStock;
-  /** The Pixel Pilgrim's devotion: this player's UTC-day prayer streak and
-   *  progress up his relic ladder. See lib/stackacres/devotion.ts. */
-  devotion: StackAcresDevotionView;
   /** NPC friendship: this player's gift points and claimed keepsake ladder
-   *  with every NPC that has one (FRIENDSHIP_NPCS -- Ray, for
-   *  now). A SEPARATE mechanic from `devotion` above -- see
+   *  with every NPC that has one (FRIENDSHIP_NPCS). See
    *  lib/stackacres/friendship.ts's own header. */
   friendship: Record<NpcId, StackAcresFriendshipView>;
   /** The Fermenting Vat: null until the player has placed one (see
@@ -886,8 +825,7 @@ export interface StackAcresView {
    *  lib/stackacres/tree-nodes.ts): whether it can be chopped right now, how
    *  many swings are left in this cycle, and (while regrowing) how far along
    *  its respawn clock is. One entry per `WOOD_NODE_IDS`, always present --
-   *  the same "every key present" posture `blueprints` above takes for a
-   *  structure nobody has started. */
+   *  the same "every key present" posture `secretDonations` above takes. */
   woodNodes: WoodNodeSnapshot[];
   /** Every Stone boulder's current mine state (lib/stackacres/stone-nodes.ts):
    *  whether it can be mined right now, how many swings are left before it
@@ -910,6 +848,14 @@ export interface StackAcresView {
   landObstacles: LandObstacleSnapshot[];
   /** Every fence piece this farm has put up (lib/stackacres/fences.ts), by Homestead map square. */
   fences: FencePiece[];
+  /** The wild land's acres this farm owns, and what the next one costs (lib/stackacres/acres.ts). */
+  acres: StackAcresAcresView;
+  /** The guard dogs standing on this farm (lib/stackacres/guard-dog.ts), by Homestead map square. */
+  guardDogs: GuardDog[];
+  /** Machines this farm owns outright, like the tractor (lib/stackacres/tractor.ts). */
+  equipment: StackAcresEquipment[];
+  /** The hired hand (lib/stackacres/hired-hand.ts), or null when nobody works here. */
+  hand: HiredHandView | null;
   /** The farm clock (lib/stackacres/clock.ts): this farm's offset, and the
    *  server's `now` for this read, so the client can correct for its own
    *  clock being off. */
@@ -1091,10 +1037,14 @@ async function herdAwayFor(
   rows: readonly StoredStackAcresUnit[],
   now: Date,
   fences?: readonly FencePiece[],
+  dogs?: readonly GuardDog[],
 ): Promise<Map<string, HerdAway>> {
   if (!rows.some(isHerdPlaced)) return new Map();
-  const pieces = fences ?? (await listStackAcresFences(profileId));
-  return herdAway(rows, new Set(pieces.map((piece) => herdKey(piece.tx, piece.ty))), now.getTime());
+  const [pieces, guards] = await Promise.all([
+    fences ?? listStackAcresFences(profileId),
+    dogs ?? listStackAcresGuardDogs(profileId),
+  ]);
+  return herdAway(rows, new Set(pieces.map((piece) => herdKey(piece.tx, piece.ty))), now.getTime(), guards);
 }
 
 async function snapshots(profileId: string, now: Date): Promise<StackAcresRoundSnapshot> {
@@ -1180,8 +1130,8 @@ function bumpRevisionOnce(scope: RevisionScope): Promise<number | null> {
  * trip when Supabase is configured (`stackacres_read_batch`, migration
  * 20260914011736, widened by 20260928232207) instead of ~37 separate
  * PostgREST round trips -- see that migration's own header for exactly which
- * reads this covers and which two it deliberately leaves as their own RPC
- * calls (plus Stone's global read, which isn't per-profile at all). Memory
+ * reads this covers. Stone's global read stays outside it, since it isn't
+ * per-profile at all. Memory
  * mode has no batch to speak of (there is no network round trip to save
  * there in the first place) and keeps running every one of the original
  * individual reads, unchanged -- this function's whole job is choosing
@@ -1196,13 +1146,11 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   const day = stackacresExchangeDay(now);
   const supabase = adminClient();
 
-  // Two reads never come from the batch (they're already their own
-  // aggregate/idle-sweep RPCs, not a plain per-table select), so they're
+  // Stone's three GLOBAL boulders (not per-profile; see
+  // lib/server/stone-node-store.ts's own header) never come from the batch --
+  // a global table has no profile id to key a batch RPC on -- so they are
   // kicked off up front alongside the batch fetch, and nothing here waits on
-  // anything else. Stone's three GLOBAL boulders (not per-profile; see
-  // lib/server/stone-node-store.ts's own header) read the same way, for the
-  // same reason -- a global table has no profile id to key a batch RPC on.
-  // Everything else that used to ride alongside these (wood/forage/land-
+  // anything else. Everything else that used to ride alongside them (wood/forage/land-
   // obstacle/fences/axe/empire buildings/grocery) was folded into the batch
   // RPC by the Far Field migration (20260928232207); see that migration for
   // why. Drones ARE in the batch (its own `drones` key) -- the fallback slot
@@ -1211,10 +1159,9 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   // batch is available this slot does nothing; `listDrones` must never be
   // called a second time here, or every live-Supabase view() pays for a
   // real, wasted extra round trip whose result nothing reads.
-  const [batch, activeSynergies, lifetimeGross, stoneNodeRows, fallback] = await Promise.all([
+  // Equipment is read on its own too: its table is newer than the batch RPC.
+  const [batch, stoneNodeRows, fallback, equipment, storedHand] = await Promise.all([
     supabase ? readStackAcresBatch(profile.id, day) : Promise.resolve(null),
-    listActiveSynergyArchetypes(profile.id),
-    readStackAcresLifetimeGross(profile.id),
     readAllStoneNodes(now),
     supabase
       ? Promise.resolve(null)
@@ -1239,18 +1186,11 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
           // tuple overload needs a fixed-length literal to keep each position's own
           // type. Nesting keeps this array a fixed-length literal.
           Promise.all(SECRET_ITEM_IDS.map((itemId) => readStackAcresSecretLedgerQty(profile.id, itemId))),
-          listUnlockedSynergyArchetypes(profile.id),
           readStackAcresGreenhouse(profile.id),
           readStackAcresCropFieldsUnlocked(profile.id),
-          blueprintsView(profile.id),
-          readStackAcresPrestige(profile.id),
-          listOwnedForgeEnchantmentIds(profile.id),
-          listStackAcresCrossbreedPlots(profile.id),
-          readStackAcresCrossbreedInventory(profile.id),
           listStackAcresPipes(profile.id),
           listStackAcresSoilTiles(profile.id),
           readStackAcresSeedStock(profile.id),
-          readStackAcresDevotion(profile.id),
           // Nested Promise.all for the same reason SECRET_ITEM_IDS's own read
           // above is: FRIENDSHIP_NPCS is variable-length, and spreading it into
           // this array literal would widen every sibling element's inferred type.
@@ -1266,10 +1206,14 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
           listStackAcresForageNodeStates(profile.id),
           listStackAcresLandObstacleStates(profile.id),
           listStackAcresFences(profile.id),
+          listStackAcresGuardDogs(profile.id),
           readStackAcresAxeLevel(profile.id),
           listEmpireBuildings(profile.id),
           groceryOwnershipEnabled() ? readGrocery(profile.id) : Promise.resolve(null),
+          listStackAcresAcres(profile.id),
         ] as const),
+    readStackAcresEquipment(profile.id),
+    readStackAcresHiredHand(profile.id),
   ]);
 
   let rows: StoredStackAcresUnit[];
@@ -1287,18 +1231,11 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   let influence: number;
   let boostArmedQty: number;
   let heldQtys: number[];
-  let unlockedSynergies: SynergyArchetype[];
   let greenhouseBuilt: boolean;
   let cropFieldsUnlocked: boolean;
-  let blueprints: Record<BlueprintId, BlueprintView>;
-  let prestige: StackAcresPrestigeState;
-  let forgedEnchantments: string[];
-  let crossbreedPlots: StoredCrossbreedPlot[];
-  let crossbreedInventory: Partial<Record<CrossbreedItem, number>>;
   let pipeRows: StoredPipe[];
   let soilTiles: StoredSoilTile[];
   let seedStock: SeedStock;
-  let storedDevotion: StoredDevotionRow;
   let storedFriendships: StoredFriendshipRow[];
   let agingManifests: StoredVatManifest[];
   let cutters: StackAcresCutter[];
@@ -1309,9 +1246,11 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   let forageNodeStates: Partial<Record<ForageNodeId, ForageNodeState>>;
   let landObstacleStates: Record<string, LandObstacleState>;
   let fences: FencePiece[];
+  let guardDogs: GuardDog[];
   let axe: AxeLevel;
   let empireBuildings: EmpireBuilding[];
   let groceryState: GroceryState | null;
+  let ownedAcres: OwnedAcre[];
 
   if (batch) {
     rows = (batch.units as unknown as UnitDbRow[]).map(stackAcresUnitFromBatchRow);
@@ -1330,33 +1269,11 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     const secretLedgerRows = batch.secret_ledger as { item_id: string; quantity: number | string }[];
     boostArmedQty = stackAcresSecretLedgerQtyFromBatchRows(secretLedgerRows, STACKACRES_DICE_BOOST_ARMED_KEY);
     heldQtys = SECRET_ITEM_IDS.map((itemId) => stackAcresSecretLedgerQtyFromBatchRows(secretLedgerRows, itemId));
-    unlockedSynergies = synergyArchetypesFromOwned(
-      stackAcresOwnedPerksFromBatchRows(batch.perk_unlocks as { item_id: string; quantity: number | string }[]),
-    );
     greenhouseBuilt = stackAcresGreenhouseFromBatchRow(batch.greenhouse);
     cropFieldsUnlocked = stackAcresCropFieldsUnlockedFromBatchRow(batch.crop_fields);
-    blueprints = blueprintsViewFromStates(
-      stackAcresAllBlueprintsFromBatchRows(
-        batch.blueprints as { structure_id: string; current_stage: number | string; status: string; completed_at: string | null }[],
-        batch.blueprint_progress as { structure_id: string; stage_index: number | string; item: string; contributed: number | string }[],
-      ),
-    );
-    prestige = stackAcresPrestigeFromBatchRow(
-      batch.prestige as { prestige_count: number | string; multiplier: number | string; lifetime_gross_at_reset: number | string } | null,
-    );
-    forgedEnchantments = forgeEnchantmentIdsFromOwned(
-      stackAcresOwnedEnchantmentsFromBatchRows(batch.tool_enchantments as { item_id: string; quantity: number | string }[]),
-    );
-    crossbreedPlots = (batch.crossbreed_plots as unknown as CrossbreedPlotDbRow[]).map(stackAcresCrossbreedPlotFromBatchRow);
-    crossbreedInventory = stackAcresCrossbreedInventoryFromBatchRows(
-      batch.crossbreed_inventory as { item: string; quantity: number | string }[],
-    );
     pipeRows = (batch.pipes as unknown as PipeDbRow[]).map(stackAcresPipeFromBatchRow);
     soilTiles = (batch.soil_tiles as unknown as SoilTileDbRow[]).map(stackAcresSoilTileFromBatchRow);
     seedStock = stackAcresSeedStockFromBatchRows(batch.seed_stock as { crop: string; quantity: number | string }[]);
-    storedDevotion = stackAcresDevotionFromBatchRow(
-      batch.devotion as { streak: number | string; last_prayed_day: string | null; claimed_rungs: number[] | null } | null,
-    );
     const friendshipRows = batch.friendship as {
       npc: string;
       points: number | string;
@@ -1378,6 +1295,9 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       (batch.land_obstacles ?? []) as unknown as LandObstacleDbRow[],
     );
     fences = ((batch.fences ?? []) as { tx: number | string; ty: number | string }[]).map(stackAcresFenceFromBatchRow);
+    guardDogs = ((batch.guard_dogs ?? []) as { id: unknown; tx: number | string; ty: number | string }[]).map(
+      stackAcresGuardDogFromBatchRow,
+    );
     axe = stackAcresAxeLevelFromBatchRow((batch.axe ?? null) as { level?: unknown } | null);
     empireBuildings = (
       (batch.empire_buildings ?? []) as { id: unknown; kind: unknown; tx: number | string | null; ty: number | string | null }[]
@@ -1388,6 +1308,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     groceryState = groceryOwnershipEnabled()
       ? stackAcresGroceryFromBatchRow(batch.grocery as Parameters<typeof stackAcresGroceryFromBatchRow>[0])
       : null;
+    ownedAcres = stackAcresAcresFromBatchRows((batch.acres ?? []) as { acre_id: string; source: string }[]);
   } else {
     [
       rows,
@@ -1405,18 +1326,11 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       influence,
       boostArmedQty,
       heldQtys,
-      unlockedSynergies,
       greenhouseBuilt,
       cropFieldsUnlocked,
-      blueprints,
-      prestige,
-      forgedEnchantments,
-      crossbreedPlots,
-      crossbreedInventory,
       pipeRows,
       soilTiles,
       seedStock,
-      storedDevotion,
       storedFriendships,
       agingManifests,
       cutters,
@@ -1427,15 +1341,16 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       forageNodeStates,
       landObstacleStates,
       fences,
+      guardDogs,
       axe,
       empireBuildings,
       groceryState,
+      ownedAcres,
     ] = fallback as [
       StoredStackAcresUnit[], number, number, Partial<Record<StackAcresStock, number>>, SectorId[], number,
       string[], StackAcresToolTier, StoredWheatPlot[], StoredMachine[], StackAcresInventory, StoredContract | null,
-      number, number, number[], SynergyArchetype[], boolean, boolean, Record<BlueprintId, BlueprintView>,
-      StackAcresPrestigeState, string[], StoredCrossbreedPlot[], Partial<Record<CrossbreedItem, number>>,
-      StoredPipe[], StoredSoilTile[], SeedStock, StoredDevotionRow, StoredFriendshipRow[],
+      number, number, number[], boolean, boolean,
+      StoredPipe[], StoredSoilTile[], SeedStock, StoredFriendshipRow[],
       StoredVatManifest[], StackAcresCutter[], StoredStoryRow,
       StoredStackAcresEnergy | null,
       number,
@@ -1443,9 +1358,11 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       Partial<Record<ForageNodeId, ForageNodeState>>,
       Record<string, LandObstacleState>,
       FencePiece[],
+      GuardDog[],
       AxeLevel,
       EmpireBuilding[],
       GroceryState | null,
+      OwnedAcre[],
     ];
   }
 
@@ -1466,7 +1383,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     now,
     irrigationGrid.irrigatedUnitIds,
     comfort,
-    await herdAwayFor(profile.id, rows, now, fences),
+    await herdAwayFor(profile.id, rows, now, fences, guardDogs),
   );
   const sectors = unlockedSectors(cleared, units);
   const agingContainer = (kind: "vat" | "cellar", tiers: readonly AgingTier[]): VatContainer | null => {
@@ -1509,7 +1426,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     sectors,
     // Reported, never charged, from here: a read must not move a purse. The
     // charge happens inside a harvest, netted out of what it pays.
-    upkeep: upkeepState(unlockedPlotCount(sectors, capacity, cropFieldsUnlocked), upkeepPaid),
+    upkeep: upkeepState(unlockedPlotCount(sectors, capacity, cropFieldsUnlocked), upkeepPaid, boughtAcreCount(ownedAcres)),
     tool,
     axe,
     cutters,
@@ -1523,34 +1440,11 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     influence,
     secrets: { held, boostArmed: boostArmedQty >= 1 },
     secretDonations,
-    synergy: {
-      unlocked: unlockedSynergies,
-      active: activeSynergies,
-      // Base 1, not the real FARMHAND_SPEED constant: farmhand.ts owns that
-      // number and lives client-side, so the multiplier is what actually
-      // crosses the wire -- see StackAcresSynergyView's own comment.
-      farmhandSpeedMultiplier: applySynergyEffects(
-        { harvestCritChance: 0, farmhandSpeed: 1, millDoubleOutputChance: 0 },
-        activeSynergies,
-      ).farmhandSpeed,
-    },
     greenhouseBuilt,
     cropFieldsUnlocked,
-    blueprints,
-    prestige: {
-      prestigeCount: prestige.prestigeCount,
-      multiplier: prestige.multiplier,
-      goldToNextPrestige: prestigeGoldRemaining(prestige, lifetimeGross),
-    },
-    forge: forgedEnchantments,
-    crossbreed: {
-      plots: crossbreedPlots.map((row) => toCrossbreedPlotView(row, now.getTime())),
-      inventory: crossbreedInventory,
-    },
     irrigation: [...irrigationGrid.nodes],
     soilTiles: mergedSoilTiles(soilTiles),
     seedStock,
-    devotion: devotionView(storedDevotion, now),
     friendship,
     vat,
     cellar,
@@ -1566,8 +1460,6 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
         tool,
         sectorsCleared: cleared.length,
         soilBeds: soilTiles.length,
-        enchantments: forgedEnchantments.length,
-        crossbreeds: Object.values(crossbreedInventory).reduce((sum, n) => sum + (n ?? 0), 0),
       },
       friendshipPointsByNpc(friendship),
     ),
@@ -1582,6 +1474,10 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       ),
     ),
     fences,
+    acres: acresView(ownedAcres),
+    guardDogs,
+    equipment,
+    hand: storedHand ? handView(storedHand) : null,
     clock: { offsetMs: clockOffset, serverNowMs: now.getTime() },
     revision,
     // Wood and Metal are the shared inventory's, since that is what the Far
@@ -1596,28 +1492,6 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     },
     grocery: groceryOwnershipEnabled() ? groceryView(groceryState, profile.id, now) : null,
   };
-}
-
-/**
- * The Prestige Reset Valve's calculation hook: loads a profile's stored
- * permanent multiplier and hands back the bare number `settleHarvest` needs.
- *
- * Nothing here reaches into harvest logic itself -- see harvest.ts's own
- * header for why the multiplier is a PARAMETER to that pure function rather
- * than something it fetches for itself. This is the one function that closes
- * the loop: it is the only place `readStackAcresPrestige` is called with the
- * express purpose of pricing a harvest, as opposed to rendering the farm view
- * (`view()`, above) or reporting a reset's own result
- * (`prestigeResetStackAcres`, below).
- *
- * Defaults to STACKACRES_PRESTIGE_BASE_MULTIPLIER (1) for a profile that has
- * never reset, which is exactly what `readStackAcresPrestige` already
- * returns for a missing row -- this function adds no second fallback on top
- * of that one.
- */
-export async function getPrestigeMultiplier(profileId: string): Promise<number> {
-  const state = await readStackAcresPrestige(profileId);
-  return state.multiplier;
 }
 
 /**
@@ -1658,15 +1532,32 @@ async function payOutGold(profileId: string, gold: number, correlationId: string
       lastError = error;
     }
   }
+  // 500, not 503: the goods are already gone, and the client resends a 503 under the same key, selling again.
   console.error("stackacres.payout_failed", { profileId, gold, correlationId, reason, error: lastError });
-  throw new StackAcresRequestError("We couldn't pay that out just now. Please contact support so it can be made good.", 503);
+  throw new StackAcresRequestError("We couldn't pay that out just now. Please contact support so it can be made good.", 500);
 }
 
-/** The same for a spend made through the Gold ledger: the refund is keyed off the spend, so it lands once. */
+/**
+ * The same for a spend made through the Gold ledger. The refund is credited
+ * under the spend's own correlation id, so it lands once and the nightly
+ * orphan sweep (reconcileOrphanedGoldDebits) sees the debit as settled
+ * instead of refunding it a second time.
+ */
 async function refundGoldLedgered(profileId: string, gold: number, spent: string): Promise<void> {
   if (gold <= 0) return;
-  await creditGoldByProfileLedgered(profileId, gold, `${spent}:refund`, "stackacres_refund").catch((error) =>
+  await creditGoldByProfileLedgered(profileId, gold, spent, "stackacres_refund").catch((error) =>
     console.error("stackacres.refund_failed", { profileId, gold, spent, error }),
+  );
+}
+
+/**
+ * Marks a ledgered spend as having bought what it paid for. Without this the
+ * nightly orphan sweep treats the debit as stranded and hands the Gold back.
+ * Best effort, like the other games' confirms.
+ */
+async function confirmGoldSpent(spent: string): Promise<void> {
+  await confirmGoldDebitLedgered(spent).catch((error) =>
+    console.error("stackacres.confirm_failed", { spent, error }),
   );
 }
 
@@ -1699,6 +1590,8 @@ async function assignSoilSlot(
   stock: StackAcresStock,
   inGreenhouse: boolean,
   tile: SoilTileCoord | null = null,
+  /** Only the named bed: never fall back to another free one. */
+  exact = false,
 ): Promise<{ slot: number | null; growthMultiplier: number; enriched: boolean }> {
   const plain = { slot: null, growthMultiplier: 1, enriched: false };
   if (inGreenhouse) return plain;
@@ -1718,7 +1611,7 @@ async function assignSoilSlot(
     const tapped = soilSlotForTile(soil, tile.tx, tile.ty);
     if (tapped !== null && !taken.includes(tapped)) slot = tapped;
   }
-  if (slot === null) slot = nextFreeSoilSlot(soil, taken);
+  if (slot === null && !exact) slot = nextFreeSoilSlot(soil, taken);
   if (slot === null) return plain;
   const tileRow = soilSlotTile(soil, slot);
   if (!tileRow) return plain;
@@ -1756,46 +1649,19 @@ async function markSoilEnriched(profileId: string, slot: number): Promise<void> 
 }
 
 /**
- * Everything any action can add to the view. Two actions return anything
- * beyond the farm itself now -- a harvest, which has to say what it brought
- * in and what it paid, and a prestige reset, which has to say what it just
- * bought -- which is why a replayed intent only has to remember this much
- * (see `replayDelta`).
+ * Everything any action can add to the view, beyond the farm itself -- a
+ * harvest, for one, has to say what it brought in and what it paid. A
+ * replayed intent only has to remember this much (see `replayDelta`).
  */
 export type StackAcresActionResult = StackAcresView & {
   harvest?: unknown;
   /** Set by `collectStackAcresGroceryTill` to the Gold THIS emptying paid out. */
   groceryPaid?: number;
+  /** Set by `shipStackAcresLivestock` to what THIS load sold for. */
+  shipped?: StackAcresShipment;
   /** Set (to an item id or null) by `tapStackAcresSecretZone`; every other
    *  action leaves this undefined. */
   discovery?: unknown;
-  /** Set by `unlockStackAcresSynergyPerk`/`activateStackAcresSynergyPerk`;
-   *  every other action leaves these undefined. `synergy` on the view itself
-   *  already carries the resulting state, so these are only the "what did
-   *  this specific call just do" confirmation a toast reads off of. */
-  synergyUnlock?: unknown;
-  synergyActivate?: unknown;
-  /** Set by `prestigeResetStackAcres` to what THIS reset just bought -- never
-   *  named `prestige`, which is StackAcresView's own always-present current
-   *  standing and would collide with it in this intersection. */
-  prestigeReset?: unknown;
-  /** Set by `forgeStackAcresToolEnchantment` to what THIS forge just bought
-   *  -- never named `forge`, which is StackAcresView's own always-present
-   *  owned-list and would collide with it in this intersection. */
-  forgeResult?: unknown;
-  /** Set by `plantStackAcresCrossbreedBed`/`harvestStackAcresCrossbreedBed`
-   *  to what THIS call just did -- never named `crossbreed`, which is
-   *  StackAcresView's own always-present bed and would collide with it in
-   *  this intersection. */
-  crossbreedResult?: unknown;
-  /** Set by `prayAtStackAcresShrine` to what THIS prayer just did -- never
-   *  named `devotion`, which is StackAcresView's own always-present current
-   *  standing and would collide with it in this intersection. */
-  prayer?: {
-    streak: number;
-    alreadyPrayedToday: boolean;
-    grantedRelic: RelicId | null;
-  };
   /** Set by `giveStackAcresGift` to what THIS gift just did -- never named
    *  `friendship`, which is StackAcresView's own always-present current
    *  standing and would collide with it in this intersection. */
@@ -1833,6 +1699,8 @@ export type StackAcresActionResult = StackAcresView & {
     ground: ClearingGround;
     item: MachineRawItem | null;
     quantity: number;
+    /** Iron Ore the blow also paid: only the one that breaks a boulder. */
+    ore: number;
     cleared: boolean;
     sectorOpened: boolean;
   } | null;
@@ -1881,6 +1749,8 @@ export type StackAcresActionResult = StackAcresView & {
     traveler: TravelerId;
     outcome: "met" | "already-met" | "advanced" | "completed" | "reward-required" | "quest-locked";
     granted: readonly StoryItemId[];
+    /** Seed the quest handed over, if it hands any. */
+    seeds?: { crop: StackAcresCrop; quantity: number };
   };
 };
 
@@ -1896,18 +1766,13 @@ function replayDelta(result: StackAcresActionResult): Record<string, unknown> | 
   const delta: Record<string, unknown> = {};
   if (result.harvest !== undefined) delta.harvest = result.harvest;
   if (result.discovery !== undefined) delta.discovery = result.discovery;
-  if (result.synergyUnlock !== undefined) delta.synergyUnlock = result.synergyUnlock;
-  if (result.synergyActivate !== undefined) delta.synergyActivate = result.synergyActivate;
-  if (result.prestigeReset !== undefined) delta.prestigeReset = result.prestigeReset;
-  if (result.forgeResult !== undefined) delta.forgeResult = result.forgeResult;
-  if (result.crossbreedResult !== undefined) delta.crossbreedResult = result.crossbreedResult;
-  if (result.prayer !== undefined) delta.prayer = result.prayer;
   if (result.gift !== undefined) delta.gift = result.gift;
   if (result.vatCollected !== undefined) delta.vatCollected = result.vatCollected;
   if (result.fishCaught !== undefined) delta.fishCaught = result.fishCaught;
   if (result.fed !== undefined) delta.fed = result.fed;
   if (result.cared !== undefined) delta.cared = result.cared;
   if (result.storyResult !== undefined) delta.storyResult = result.storyResult;
+  if (result.shipped !== undefined) delta.shipped = result.shipped;
   return Object.keys(delta).length > 0 ? delta : null;
 }
 
@@ -2122,22 +1987,74 @@ async function netUpkeepFromPayout(profileId: string, now: Date, grossGold: numb
   if (grossGold <= 0) return grossGold;
   try {
     const day = stackacresUpkeepDay(now);
-    const [upkeepPaid, { sectors }, capacity, cropFieldsUnlocked] = await Promise.all([
+    const [upkeepPaid, { sectors }, capacity, cropFieldsUnlocked, acres] = await Promise.all([
       readStackAcresUpkeep(profileId, day),
       readLand(profileId),
       readStackAcresCapacity(profileId),
       readStackAcresCropFieldsUnlocked(profileId),
+      listStackAcresAcres(profileId),
     ]);
-    const due = stackacresUpkeepDue(unlockedPlotCount(sectors, capacity, cropFieldsUnlocked), upkeepPaid);
-    if (due <= 0) return grossGold;
+    const fee = stackacresUpkeepFee(unlockedPlotCount(sectors, capacity, cropFieldsUnlocked), boughtAcreCount(acres));
+    if (fee - upkeepPaid <= 0) return grossGold;
 
-    const skimmed = Math.min(due, grossGold);
-    const raised = await raiseStackAcresUpkeep(profileId, day, upkeepPaid + skimmed);
-    return raised ? grossGold - skimmed : grossGold;
+    // Atomic, so two sales landing together cannot both take the same part of the fee.
+    const taken = await takeStackAcresUpkeep(profileId, day, fee, grossGold);
+    return grossGold - taken;
   } catch (error) {
     console.error("stackacres.upkeep_net_failed", { profileId, error });
     return grossGold;
   }
+}
+
+/**
+ * Today's land upkeep, taken from Gold when the farm opens (Kayo, 2026-10-02).
+ * The fee itself is unchanged: cleared plots past the free three, plus each
+ * bought acre. A sale's own cut (`netUpkeepFromPayout`) still covers whatever
+ * this could not, so a player short on Gold is never put into debt.
+ *
+ * Takes at most what the player holds. Keyed by day and target, so a second tab
+ * or a retry finds its debit already made and does not take it again. The debit
+ * goes first; if raising the paid total then loses or fails, the Gold goes back.
+ */
+export async function payStackAcresUpkeep(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresView & { upkeepCharged: number }> {
+  const profile = await ensureProfile(token);
+  const day = stackacresUpkeepDay(now);
+  const [upkeepPaid, { sectors }, capacity, cropFieldsUnlocked, acres] = await Promise.all([
+    readStackAcresUpkeep(profile.id, day),
+    readLand(profile.id),
+    readStackAcresCapacity(profile.id),
+    readStackAcresCropFieldsUnlocked(profile.id),
+    listStackAcresAcres(profile.id),
+  ]);
+  const due = stackacresUpkeepDue(
+    unlockedPlotCount(sectors, capacity, cropFieldsUnlocked),
+    upkeepPaid,
+    boughtAcreCount(acres),
+  );
+  const charge = profile.unlimitedGold ? due : Math.min(due, Math.max(0, profile.goldBalance));
+  if (charge <= 0) return { ...(await view(profile, now)), upkeepCharged: 0 };
+
+  const target = upkeepPaid + charge;
+  const correlation = `upkeep:${profile.id}:${day}:${target}`;
+  const paid = await spendGoldByProfileLedgered(profile.id, charge, correlation, "stackacres_upkeep");
+  // Not enough Gold after all (spent in another tab), or this exact charge was already made.
+  if (!paid.success || paid.alreadyApplied) return { ...(await view(await ensureProfile(token), now)), upkeepCharged: 0 };
+
+  const fee = upkeepPaid + due;
+  let taken: number;
+  try {
+    taken = await takeStackAcresUpkeep(profile.id, day, fee, charge);
+  } catch (error) {
+    await refundGoldLedgered(profile.id, charge, correlation);
+    throw error;
+  }
+  // A sale or another tab paid part of the day meanwhile: hand back what the fee no longer needed.
+  if (taken < charge) await refundGoldLedgered(profile.id, charge - taken, correlation);
+  if (taken > 0) await confirmGoldSpent(correlation);
+  return { ...(await view(await ensureProfile(token), now)), upkeepCharged: taken };
 }
 
 /**
@@ -2171,8 +2088,8 @@ async function readShopProgress(profileId: string): Promise<StackAcresShopProgre
  * moves.
  *
  * THIS IS THE SECURITY BOUNDARY, not the greyed-out card. The shelf disables
- * a locked row, but the shelf is a browser: a hand-rolled POST, a tab left
- * open across a prestige reset, or a replayed request all arrive here with a
+ * a locked row, but the shelf is a browser: a hand-rolled POST, a stale tab
+ * or a replayed request all arrive here with a
  * perfectly well-formed body naming a real item. So the check sits on the
  * near side of `spendGoldByProfile` in every gated path -- refusing after the
  * debit would mean a refund, and a refund is a second money path where a
@@ -2529,214 +2446,270 @@ export async function buyStackAcresCutter(
 }
 
 /**
- * Permanently unlocks a Synergy Tree archetype, with Gold. The debit and the
- * grant are one atomic step server-side -- `unlockSynergyPerk` (which this
- * wraps) delegates whole to `unlock_stackacres_perk`, so there is no second
- * "rule 1: debit first" to restate here the way every other Gold sink in
- * this file has to: that ordering is the RPC's job, not this function's.
- */
-export async function unlockStackAcresSynergyPerk(
-  token: string,
-  archetypeInput: string,
-  now = new Date(),
-): Promise<StackAcresView & { synergyUnlock: { archetype: SynergyArchetype; success: boolean } }> {
-  if (!isSynergyArchetype(archetypeInput) || isUnbuiltPerk(archetypeInput)) {
-    throw new StackAcresRequestError("Not a real archetype.", 400);
-  }
-  const archetype = archetypeInput;
-  const profile = await ensureProfile(token);
-  const { outcome } = await unlockSynergyPerk(profile.id, archetype);
-  if (!outcome.success) {
-    const label = SYNERGY_PERKS[archetype].label;
-    const message =
-      outcome.reason === "already_owned"
-        ? `You already own ${label}.`
-        : `${label} costs ${SYNERGY_PERKS[archetype].unlockCostGold.toLocaleString()} Gold.`;
-    throw new StackAcresRequestError(message, outcome.reason === "already_owned" ? 409 : 400, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  return { ...(await view(profile, now)), synergyUnlock: { archetype, success: true } };
-}
-
-/**
- * Slots an already-unlocked archetype into the current session's loadout.
- * Moves no Gold -- ownership was already paid for by `unlockStackAcresSynergyPerk`,
- * this only changes which owned perks are actively contributing.
- */
-export async function activateStackAcresSynergyPerk(
-  token: string,
-  archetypeInput: string,
-  slot: number,
-  now = new Date(),
-): Promise<StackAcresView & { synergyActivate: { archetype: SynergyArchetype; success: boolean } }> {
-  if (!isSynergyArchetype(archetypeInput)) {
-    throw new StackAcresRequestError("Not a real archetype.", 400);
-  }
-  const archetype = archetypeInput;
-  const profile = await ensureProfile(token);
-  const outcome = await activateSynergyPerk(profile.id, archetype, slot);
-  if (!outcome.success) {
-    const message =
-      outcome.reason === "invalid_slot" ? "That is not a real loadout slot." : "You have not unlocked that yet.";
-    throw new StackAcresRequestError(message, 400, { round: await snapshots(profile.id, now) });
-  }
-  return { ...(await view(profile, now)), synergyActivate: { archetype, success: true } };
-}
-
-/**
- * Permanently forges one Sunlight Forge enchantment, spending Gold and a
- * processing-track material in one call -- see `forgeEnchantment`'s own
- * header for why this needs a single atomic RPC rather than two ordered
- * spends. `enchantmentId` is the bare catalogue key (FORGE_ENCHANTMENTS'
- * own keys), matching every other client-facing id in this file (a Synergy
- * archetype, a secret item id) rather than the versioned wrapper the store
- * persists.
- */
-export async function forgeStackAcresToolEnchantment(
-  token: string,
-  enchantmentId: string,
-  now = new Date(),
-): Promise<StackAcresView & { forgeResult: { enchantmentId: string; success: true } }> {
-  if (!isForgeEnchantmentId(enchantmentId) || isUnbuiltEnchantment(enchantmentId)) {
-    throw new StackAcresRequestError("Not a real enchantment.", 400);
-  }
-  const profile = await ensureProfile(token);
-  const outcome = await forgeEnchantment(profile.id, enchantmentId);
-  if (!outcome.success) {
-    const def = FORGE_ENCHANTMENTS[enchantmentId];
-    const message =
-      outcome.reason === "already_owned"
-        ? `You already forged ${def.label}.`
-        : outcome.reason === "insufficient_material"
-          ? `Needs ${def.materialQuantity.toLocaleString()} ${machineItemLabel(def.materialItem, def.materialQuantity)}.`
-          : `${def.label} costs ${def.goldCost.toLocaleString()} Gold.`;
-    throw new StackAcresRequestError(message, outcome.reason === "already_owned" ? 409 : 400, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  await recordStoryEvents(profile.id, [{ kind: "enchantment-forged" }], now);
-  return {
-    ...(await view(profile, now)),
-    forgeResult: { enchantmentId: outcome.enchantmentId, success: true },
-  };
-}
-
-/** Puts back whatever `plantStackAcresCrossbreedBed` took for `stock` (the
- *  seed for a crop, the Gold for livestock) when the cell it paid for never
- *  came to exist. Same split, same two calls, as stockStackAcres's own
- *  refund branch. */
-async function refundCrossbreedStake(profileId: string, stock: StackAcresStock): Promise<void> {
-  if (isLivestock(stock)) {
-    await refundGold(profileId, STACKACRES_CATALOGUE[stock].seedCost);
-  } else {
-    await adjustStackAcresSeedStock(profileId, stock, 1).catch(() => null);
-  }
-}
-
-/**
- * Plants one cell of the Crossbreeding Bed (lib/stackacres/crossbreeding.ts).
+ * Buys a machine from Ray, like the tractor (lib/stackacres/tractor.ts).
  *
- * Pays exactly the way `stockStackAcres` does, for the same reason: a crop
- * spends one seed off Ray's shelf (its Gold already left at the shop), and
- * livestock spends its seed cost in Gold since there is no "hen seed". Rule 1
- * either way -- paid before the row exists, refunded if the cell turns out
- * taken or the insert refuses. The bed has no capacity row of its own: the
- * (profile, row, col) unique index IS the cap, so "already planted" is the
- * store's own null here, never a count read ahead of the insert.
+ * Rule 1: the Metal and then the Gold leave first, and only then is the row
+ * written, guarded by its primary key. A write that lands nothing (another tab
+ * bought it first) or fails outright gives both back, once. A write whose
+ * answer was lost but which did land is kept and stays paid for.
  */
-export async function plantStackAcresCrossbreedBed(
+export async function buyStackAcresEquipment(
   token: string,
-  input: { row: number; col: number; stock: string },
+  kindInput: string,
   now = new Date(),
-): Promise<StackAcresView & { crossbreedResult: { planted: CrossbreedPlotView } }> {
-  if (!isStackAcresStock(input.stock)) throw new StackAcresRequestError("Not a real stock.", 400);
-  if (!isInCrossbreedGrid(input.row, input.col)) {
-    throw new StackAcresRequestError("That cell is not on the bed.", 400);
-  }
-  const stock: StackAcresStock = input.stock;
-  const def = STACKACRES_CATALOGUE[stock];
+): Promise<StackAcresView & { boughtEquipment: StackAcresBuyableEquipment }> {
+  if (!isStackAcresBuyableEquipment(kindInput)) throw new StackAcresRequestError("Ray doesn't sell that.", 400);
+  const kind = kindInput;
+  const def = STACKACRES_EQUIPMENT_DEFS[kind];
   const profile = await ensureProfile(token);
-
-  // The zone livestock lives in has to be cleared, and a crop cell still
-  // wants the Crop Fields milestone -- which is now "this farm has broken
-  // ground out there", not "this farm bought the land".
-  const land = await readLand(profile.id);
-  requireOpenSector(land.sectors, stockZone(stock), `${def.label}s`);
-  if (!isLivestock(stock) && !(await readStackAcresCropFieldsUnlocked(profile.id))) {
-    throw new StackAcresRequestError(
-      "Break some ground in the Crop Fields before the bed will take a crop.",
-      409,
-      { round: await snapshots(profile.id, now) },
-    );
+  if ((await readStackAcresEquipment(profile.id)).includes(kind)) {
+    throw new StackAcresRequestError(`You already own the ${def.label}.`, 409, { round: await snapshots(profile.id, now) });
   }
 
-  let debited: PlayerProfile;
-  if (isLivestock(stock)) {
-    const paid = await spendGoldByProfile(profile.id, def.seedCost);
-    if (!paid) {
-      throw new StackAcresRequestError(
-        `${def.label} seed costs ${def.seedCost.toLocaleString()} Gold.`,
-        400,
-        { round: await snapshots(profile.id, now) },
-      );
-    }
-    debited = paid;
-  } else {
-    const heldSeeds = await adjustStackAcresSeedStock(profile.id, stock, -1);
-    if (heldSeeds === null) {
-      throw new StackAcresRequestError(
-        `You have no ${def.label} seeds. Buy some from Ray's shop first.`,
-        400,
-        { round: await snapshots(profile.id, now) },
-      );
-    }
-    debited = profile;
-  }
-
-  let planted: StoredCrossbreedPlot | null;
+  const { refund: refundMaterials } = await spendStackAcresMaterials(
+    profile.id,
+    [{ item: "metal", quantity: def.metal }],
+    now,
+    (material) => `The ${def.label} needs ${material.quantity.toLocaleString()} ${machineItemNoun(material.item, material.quantity)}.`,
+  );
+  let paid: boolean;
   try {
-    planted = await plantCrossbreedBed(profile.id, input.row, input.col, stock, now);
+    paid = await debitGoldByProfile(profile.id, def.gold);
   } catch (error) {
-    await refundCrossbreedStake(profile.id, stock);
+    await refundMaterials();
     throw error;
   }
-  if (!planted) {
-    await refundCrossbreedStake(profile.id, stock);
-    throw new StackAcresRequestError("That cell is already planted.", 409, {
+  if (!paid) {
+    await refundMaterials();
+    throw new StackAcresRequestError(`The ${def.label} costs ${def.gold.toLocaleString()} Gold.`, 400, {
       round: await snapshots(profile.id, now),
     });
   }
-  return {
-    ...(await view(debited, now)),
-    crossbreedResult: { planted: toCrossbreedPlotView(planted, now.getTime()) },
+  const giveBack = async () => {
+    if (!profile.unlimitedGold) await refundGold(profile.id, def.gold);
+    await refundMaterials();
   };
+
+  let recorded: boolean;
+  try {
+    recorded = await recordStackAcresEquipment(profile.id, kind);
+  } catch (error) {
+    const landed = await readStackAcresEquipment(profile.id)
+      .then((owned) => owned.includes(kind))
+      .catch(() => false);
+    if (!landed) {
+      await giveBack();
+      throw error;
+    }
+    recorded = true;
+  }
+  if (!recorded) {
+    await giveBack();
+    throw new StackAcresRequestError("That was already bought.", 409, { round: await snapshots(profile.id, now) });
+  }
+  return { ...(await view(await ensureProfile(token), now)), boughtEquipment: kind };
+}
+
+function handView(hand: StoredHiredHand): HiredHandView {
+  return { name: hand.name, wage: HIRED_HAND_DAILY_WAGE, paidThroughDay: hand.paidThroughDay };
+}
+
+async function farmGameDay(profileId: string, now: Date): Promise<number> {
+  return gameDayAt(now.getTime(), await readStackAcresClockOffset(profileId));
 }
 
 /**
- * Brings in one ripe cell of the Crossbreeding Bed. Moves no Gold: a plain
- * harvest clears the row and yields nothing, a cross clears both rows and
- * credits the one hybrid -- see harvestCrossbreedBed for the evaluate, roll,
- * commit sequence and the RPC's own migration comment for the race it
- * guards. A null settlement is a lost race or a not-yet-ripe tap, never
- * "produced nothing".
+ * Hires Earl at Ray's (lib/stackacres/hired-hand.ts). Rule 1: today's wage
+ * leaves first, then the row is written, guarded by its primary key. A write
+ * that lands nothing (another tab hired him first) or fails without landing
+ * gives the Gold back.
  */
-export async function harvestStackAcresCrossbreedBed(
+export async function hireStackAcresHand(
   token: string,
-  plotId: string,
   now = new Date(),
-): Promise<StackAcresView & { crossbreedResult: CrossbreedHarvestSettlement }> {
+): Promise<StackAcresView & { hiredHand: true }> {
   const profile = await ensureProfile(token);
-  const settled = await harvestCrossbreedBed(profile.id, plotId, now);
-  if (!settled) {
-    throw new StackAcresRequestError("That row is not ripe yet, or was already brought in.", 409, {
-      round: await snapshots(profile.id, now),
-    });
+  if (await readStackAcresHiredHand(profile.id)) {
+    throw new StackAcresRequestError(HIRED_HAND_ALREADY, 409, { round: await snapshots(profile.id, now) });
   }
-  if (settled.hybridItem !== null) {
-    await recordStoryEvents(profile.id, [{ kind: "crossbreed-harvested", item: settled.hybridItem }], now);
+  if ((await listStackAcresSoilTiles(profile.id)).length < HIRED_HAND_BEDS_TO_HIRE) {
+    throw new StackAcresRequestError(HIRED_HAND_NOT_ENOUGH_BEDS, 409, { round: await snapshots(profile.id, now) });
   }
-  return { ...(await view(profile, now)), crossbreedResult: settled };
+  const today = await farmGameDay(profile.id, now);
+  const correlation = `hired-hand:${profile.id}:hire:${randomUUID()}`;
+  const paid = await spendGoldByProfileLedgered(profile.id, HIRED_HAND_DAILY_WAGE, correlation, "stackacres_hired_hand");
+  if (!paid.success) {
+    throw new StackAcresRequestError(HIRED_HAND_CANT_PAY, 400, { round: await snapshots(profile.id, now) });
+  }
+
+  let hired: StoredHiredHand | null;
+  try {
+    hired = await insertStackAcresHiredHand(profile.id, HIRED_HAND_NAME, today, now);
+  } catch (error) {
+    hired = await readStackAcresHiredHand(profile.id).catch(() => null);
+    if (!hired) {
+      await refundGoldLedgered(profile.id, HIRED_HAND_DAILY_WAGE, correlation);
+      throw error;
+    }
+  }
+  if (!hired) {
+    await refundGoldLedgered(profile.id, HIRED_HAND_DAILY_WAGE, correlation);
+    throw new StackAcresRequestError(HIRED_HAND_ALREADY, 409, { round: await snapshots(profile.id, now) });
+  }
+  await confirmGoldSpent(correlation);
+  return { ...(await view(await ensureProfile(token), now)), hiredHand: true };
+}
+
+/**
+ * Sows each bed the hand just picked with the crop that came off it, from the
+ * player's own seed, and waters it from his well so it starts growing straight
+ * away. A crop owned outright regrows by itself and is skipped. Stops at the
+ * first bed that can't be sown (out of seed); a bed the player sowed in the
+ * meantime is refused by the sow itself and skipped.
+ */
+async function resowHarvestedBeds(
+  token: string,
+  profileId: string,
+  rows: readonly StoredStackAcresUnit[],
+  harvested: readonly string[],
+  now: Date,
+): Promise<number> {
+  const soil = soilMapFor(await listStackAcresSoilTiles(profileId));
+  const sownSlots = new Set<number>();
+  let sown = 0;
+  for (const id of harvested) {
+    const row = rows.find((candidate) => candidate.id === id);
+    if (!row || row.permanent || row.soilSlot === null || !isStackAcresCrop(row.stock)) continue;
+    const bed = soilSlotTile(soil, row.soilSlot);
+    if (!bed) continue;
+    if (((await readStackAcresSeedStock(profileId))[row.stock] ?? 0) < 1) break;
+    try {
+      // Exact: if the player sowed this bed first, Earl leaves it rather than spend a seed on another one.
+      await stockStackAcres(token, { stock: row.stock, tile: { tx: bed.tx, ty: bed.ty }, exactTile: true }, now);
+      sownSlots.add(row.soilSlot);
+      sown += 1;
+    } catch (error) {
+      if (!(error instanceof StackAcresRequestError)) throw error;
+    }
+  }
+  if (sownSlots.size > 0) {
+    for (const seed of await listStackAcresUnits(profileId)) {
+      if (seed.status !== "working" || seed.soilSlot === null || !sownSlots.has(seed.soilSlot) || !isUnwateredSeedRow(seed)) continue;
+      const { pushed, restartedAt } = waterPushFor(seed, now);
+      // A miss means something else stamped it first. The next pass waters it.
+      await waterStackAcresUnit(seed, now, pushed, restartedAt);
+    }
+  }
+  return sown;
+}
+
+/** Lets the hand go. Whatever was paid for today stays paid; nothing is owed after. */
+export async function dismissStackAcresHand(token: string, now = new Date()): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  await deleteStackAcresHiredHand(profile.id);
+  return view(profile, now);
+}
+
+/**
+ * Pays today's wage if it is owed, then lets the hand take one pass at the
+ * beds. The browser asks for this every so often while the farm is open; it
+ * names nothing, so the server picks the beds.
+ *
+ * THE WAGE. Charged at most once per game day and only from here, so days the
+ * farm sat closed are never billed. The debit is keyed by the day, so a second
+ * tab finds it already made. It goes first; then `paid_through_day` moves on
+ * under the version guard. If that loses to another tab, a fresh read decides:
+ * a row already paid through today keeps the Gold (it was this same day's one
+ * debit), anything else gets it back. A wage that can't be paid ends the job.
+ *
+ * THE PASS. Claimed by moving `chores_at` under the version guard, so two tabs
+ * can't both take one. Watering is the hand's own, from the well: it never
+ * touches the player's can. Harvesting goes through `harvestStackAcres`, so
+ * produce lands in inventory exactly as if the player had picked it. Each bed
+ * he picks he sows again with the same crop through `stockStackAcres`, so the
+ * seed comes off the player's shelf and no Gold moves. He stops when it runs out.
+ */
+export async function runStackAcresHiredHand(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresView & { handChores: HiredHandChores }> {
+  const profile = await ensureProfile(token);
+  let hand = await readStackAcresHiredHand(profile.id);
+  if (!hand) return { ...(await view(profile, now)), handChores: NO_HAND_CHORES };
+
+  let wagePaid = 0;
+  const today = await farmGameDay(profile.id, now);
+  if (hiredHandWageDue(hand.paidThroughDay, today)) {
+    const correlation = `hired-hand:${profile.id}:${hand.hiredAt}:${today}`;
+    const paid = await spendGoldByProfileLedgered(profile.id, HIRED_HAND_DAILY_WAGE, correlation, "stackacres_hired_hand");
+    if (!paid.success) {
+      const left = await deleteStackAcresHiredHand(profile.id, hand.version);
+      return { ...(await view(await ensureProfile(token), now)), handChores: { ...NO_HAND_CHORES, quit: left } };
+    }
+    const giveBack = async () => {
+      if (!paid.alreadyApplied) await refundGoldLedgered(profile.id, HIRED_HAND_DAILY_WAGE, correlation);
+    };
+    let moved: StoredHiredHand | null;
+    try {
+      moved = await updateStackAcresHiredHand(hand, { paidThroughDay: today });
+      if (!moved) {
+        const fresh = await readStackAcresHiredHand(profile.id);
+        if (fresh && fresh.hiredAt === hand.hiredAt) {
+          moved = fresh.paidThroughDay >= today ? fresh : await updateStackAcresHiredHand(fresh, { paidThroughDay: today });
+        }
+      }
+    } catch (error) {
+      await giveBack();
+      throw error;
+    }
+    if (!moved) {
+      await giveBack();
+      return { ...(await view(await ensureProfile(token), now)), handChores: NO_HAND_CHORES };
+    }
+    hand = moved;
+    await confirmGoldSpent(correlation);
+    if (!paid.alreadyApplied) wagePaid = HIRED_HAND_DAILY_WAGE;
+  }
+
+  const idle = async () => ({
+    ...(await view(await ensureProfile(token), now)),
+    handChores: { ...NO_HAND_CHORES, wagePaid },
+  });
+  if (!hiredHandChoresDue(Date.parse(hand.choresAt), now.getTime())) return idle();
+  if (!(await updateStackAcresHiredHand(hand, { choresAt: now }))) return idle();
+
+  const rows = await listStackAcresUnits(profile.id);
+  const irrigated = await irrigatedUnitIdsFor(profile.id, rows);
+  const picked = pickHiredHandChores(rows, now, irrigated);
+
+  const watered: string[] = [];
+  for (const id of picked.water) {
+    const unit = rows.find((row) => row.id === id);
+    if (!unit) continue;
+    const { pushed, restartedAt } = waterPushFor(unit, now);
+    // A miss means the player or a pipe got there first. Nothing was spent, so it is just skipped.
+    if (await waterStackAcresUnit(unit, now, pushed, restartedAt)) watered.push(id);
+  }
+  if (watered.length > 0) await recordStoryEvents(profile.id, [{ kind: "watered", count: watered.length }], now);
+
+  if (picked.harvest.length > 0) {
+    let done: Awaited<ReturnType<typeof harvestStackAcres>> | null = null;
+    try {
+      done = await harvestStackAcres(token, { unitIds: picked.harvest }, now);
+    } catch (error) {
+      // The player picked them first, or they moved on. The pass still counts.
+      if (!(error instanceof StackAcresRequestError)) throw error;
+    }
+    if (done) {
+      const sown = await resowHarvestedBeds(token, profile.id, rows, picked.harvest, now);
+      const final = sown > 0 ? { ...done, ...(await view(await ensureProfile(token), now)) } : done;
+      return { ...final, handChores: { watered, harvested: picked.harvest, wagePaid, quit: false } };
+    }
+  }
+  return {
+    ...(await view(await ensureProfile(token), now)),
+    handChores: { watered, harvested: [], wagePaid, quit: false },
+  };
 }
 
 /**
@@ -2746,7 +2719,7 @@ export async function harvestStackAcresCrossbreedBed(
  * buys ONE CYCLE and is consumed by its own harvest, so it is gone once
  * collected and you buy another. Bought stock is permanent and re-sows itself
  * forever -- you own the cow, you do not own one cow-cycle. That is what makes
- * 60,000 Gold and 1,200 Gold honest prices for the same animal: they are not
+ * 33,500 Gold and 670 Gold honest prices for the same animal: they are not
  * the same thing. With one currency the gap between them is finally legible on
  * the shelf, which it never was while one price was in Bushels.
  *
@@ -2811,13 +2784,13 @@ export async function buyStackAcresStock(
   if (isStackAcresCrop(stock) && soilAssignment.slot === null) {
     await refundGold(profile.id, price);
     throw new StackAcresRequestError(
-      `${def.label} needs a bed to go into. Till some soil in the Crop Fields first.`,
+      `${def.label} needs a bed to go into. Hoe a bed on the grass by the house first.`,
       409,
       { round: await snapshots(profile.id, now) },
     );
   }
 
-  const produce = STACKACRES_YIELDS[stock];
+  const baseYield = baseYieldQuantity(stock);
   try {
     // Same race the sow path runs: the slot was only read, so a concurrent
     // sow can take it before this insert lands and the partial unique index
@@ -2835,7 +2808,7 @@ export async function buyStackAcresStock(
           // deliberately NOT stored: it is spent, gone, and re-derivable from the
           // stock whenever it is needed.
           stake: def.seedCost,
-          yieldQuantity: produce.quantity,
+          yieldQuantity: baseYield,
           startedAt: now,
           // Snapshotted here for good, the same as the sow path: the bed's
           // growth multiplier is baked into `ready_at` once and never
@@ -2865,6 +2838,12 @@ export async function buyStackAcresStock(
           );
         }
         soilAssignment = await assignSoilSlot(profile.id, stock, false, null);
+        // The race took the last free bed: refuse (the catch below refunds) rather than plant in the grass.
+        if (isStackAcresCrop(stock) && soilAssignment.slot === null) {
+          throw new StackAcresRequestError(`${def.label}'s bed was just taken by another purchase. Try again.`, 409, {
+            round: await snapshots(profile.id, now),
+          });
+        }
       }
     }
   } catch (error) {
@@ -2893,7 +2872,13 @@ export async function buyStackAcresStock(
  */
 export async function stockStackAcres(
   token: string,
-  input: { stock: string; inGreenhouse?: boolean; tile?: SoilTileCoord | null },
+  input: {
+    stock: string;
+    inGreenhouse?: boolean;
+    tile?: SoilTileCoord | null;
+    /** Sow the named bed or nothing, never the next free one. Earl's re-sow uses it. */
+    exactTile?: boolean;
+  },
   now = new Date(),
 ): Promise<StackAcresView> {
   if (!isStackAcresStock(input.stock)) throw new StackAcresRequestError("Not a real stock.", 400);
@@ -2902,6 +2887,7 @@ export async function stockStackAcres(
   const profile = await ensureProfile(token);
   const inGreenhouse = input.inGreenhouse === true;
   const tile = input.tile ?? null;
+  const exactTile = input.exactTile === true && tile !== null;
 
   const land = await readLand(profile.id);
   const zone = stockZone(stock);
@@ -2932,7 +2918,9 @@ export async function stockStackAcres(
   ]);
   if (occupied >= cap) {
     throw new StackAcresRequestError(
-      `You already have ${cap} ${def.label}${cap === 1 ? "" : "s"} going. Collect from or clear one first, or expand capacity.`,
+      isMarketLivestock(stock)
+        ? `You already have ${cap} ${def.label.toLowerCase()}s. Sell one at the sale barn first.`
+        : `You already have ${cap} ${def.label}${cap === 1 ? "" : "s"} going. Collect from or clear one first, or expand capacity.`,
       409,
       { round: await snapshots(profile.id, now) },
     );
@@ -2957,13 +2945,15 @@ export async function stockStackAcres(
   // Ray's shop (buyStackAcresSeed), so charging Gold again here would be a
   // second debit for the same seed. Either way a null/refusal here means
   // nothing was sown.
-  const produce = STACKACRES_YIELDS[stock];
+  const baseYield = baseYieldQuantity(stock);
   let debited: PlayerProfile | null;
   if (isLivestock(stock)) {
     debited = await spendGoldByProfile(profile.id, def.seedCost);
     if (!debited) {
       throw new StackAcresRequestError(
-        `${def.label} seed costs ${def.seedCost.toLocaleString()} Gold.`,
+        isMarketLivestock(stock)
+          ? `A ${STACKACRES_MARKET_ANIMALS[stock].feederLabel.toLowerCase()} costs ${def.seedCost.toLocaleString()} Gold.`
+          : `${def.label} seed costs ${def.seedCost.toLocaleString()} Gold.`,
         400,
         { round: await snapshots(profile.id, now) },
       );
@@ -2987,7 +2977,7 @@ export async function stockStackAcres(
   // sub-grid instead, so both keep a null slot and the plain multiplier. The
   // two effects do not stack for the additional reason that they would
   // otherwise multiply into a cycle far shorter than either was tuned for.
-  let soilAssignment = await assignSoilSlot(profile.id, stock, inGreenhouse, tile);
+  let soilAssignment = await assignSoilSlot(profile.id, stock, inGreenhouse, tile, exactTile);
 
   // A crop needs a bed under it (2026-09-09). `assignSoilSlot` answers
   // `slot: null` for "this farm has no free bed anywhere" -- it used to sow
@@ -3001,7 +2991,7 @@ export async function stockStackAcres(
   if (!inGreenhouse && isStackAcresCrop(stock) && soilAssignment.slot === null) {
     await adjustStackAcresSeedStock(profile.id, stock, 1).catch(() => null);
     throw new StackAcresRequestError(
-      `${def.label} needs a bed to go into. Till some soil in the Crop Fields first.`,
+      `${def.label} needs a bed to go into. Hoe a bed on the grass by the house first.`,
       409,
       { round: await snapshots(profile.id, now) },
     );
@@ -3036,7 +3026,7 @@ export async function stockStackAcres(
         await createStackAcresUnit(profile.id, {
           stock,
           stake: def.seedCost,
-          yieldQuantity: produce.quantity,
+          yieldQuantity: baseYield,
           startedAt: now,
           readyAt: new Date(now.getTime() + durationMs),
           // An animal counts as fed the moment it arrives; a crop never eats.
@@ -3050,7 +3040,7 @@ export async function stockStackAcres(
         break;
       } catch (error) {
         if (!(error instanceof SoilSlotConflictError)) throw error;
-        if (attempt >= 2) {
+        if (exactTile || attempt >= 2) {
           // Same refusal `buyStackAcresStock` makes on the identical race:
           // three losses in a row means another sow keeps taking the free
           // bed out from under this one, not that there was never a bed.
@@ -3062,7 +3052,13 @@ export async function stockStackAcres(
             { round: await snapshots(profile.id, now) },
           );
         }
-        soilAssignment = await assignSoilSlot(profile.id, stock, inGreenhouse, tile);
+        soilAssignment = await assignSoilSlot(profile.id, stock, inGreenhouse, tile, exactTile);
+        // The race took the last free bed: refuse (the catch below refunds the seed) rather than plant in the grass.
+        if (!inGreenhouse && isStackAcresCrop(stock) && soilAssignment.slot === null) {
+          throw new StackAcresRequestError(`${def.label}'s bed was just taken by another sow. Try again.`, 409, {
+            round: await snapshots(profile.id, now),
+          });
+        }
       }
     }
   } catch (error) {
@@ -3490,10 +3486,12 @@ export async function feedStackAcres(
     });
   }
 
-  const bonus = servingBonusEggs(source);
+  // Extra eggs for a hen, extra weight for a hog or steer (capped). Worked
+  // out against the row it is written to, so a retry on a fresher row
+  // re-checks the cap.
   let fed: StoredStackAcresUnit | null;
   try {
-    fed = await feedStackAcresUnit(unit, now, pushed, newStartedAt, bonus);
+    fed = await feedStackAcresUnit(unit, now, pushed, newStartedAt, servingBonus(unit.stock, source, unit.feedBonus));
     // Same version-guard retry as feedStackAcresPen below, and for the same
     // reason: a miss here almost always means this function's own read at
     // the top went stale for this one unit (irrigation/auto-feed tick, or an
@@ -3505,7 +3503,13 @@ export async function feedStackAcres(
       const freshUnit = await getStackAcresUnit(profile.id, unit.id);
       if (freshUnit && freshUnit.status === "working" && isStackAcresUnitHungry(freshUnit, now, comfort)) {
         const retryPush = feedPushFor(freshUnit, now, comfort);
-        fed = await feedStackAcresUnit(freshUnit, now, retryPush.pushed, retryPush.newStartedAt, bonus);
+        fed = await feedStackAcresUnit(
+          freshUnit,
+          now,
+          retryPush.pushed,
+          retryPush.newStartedAt,
+          servingBonus(freshUnit.stock, source, freshUnit.feedBonus),
+        );
       }
     }
   } catch (error) {
@@ -3568,11 +3572,10 @@ export async function feedStackAcresPen(
     if (source === null) break;
 
     const { pushed, newStartedAt } = feedPushFor(unit, now, comfort);
-    const bonus = servingBonusEggs(source);
 
     let fed: StoredStackAcresUnit | null;
     try {
-      fed = await feedStackAcresUnit(unit, now, pushed, newStartedAt, bonus);
+      fed = await feedStackAcresUnit(unit, now, pushed, newStartedAt, servingBonus(unit.stock, source, unit.feedBonus));
       // See waterStackAcresGroup's matching retry for why: a version-guard
       // miss here is almost always this same drop's own top-of-function read
       // going stale for one animal in the pen, not a real refusal, and
@@ -3582,7 +3585,13 @@ export async function feedStackAcresPen(
         const freshUnit = await getStackAcresUnit(profile.id, unit.id);
         if (freshUnit && isStackAcresUnitHungry(freshUnit, now, comfort)) {
           const retryPush = feedPushFor(freshUnit, now, comfort);
-          fed = await feedStackAcresUnit(freshUnit, now, retryPush.pushed, retryPush.newStartedAt, bonus);
+          fed = await feedStackAcresUnit(
+            freshUnit,
+            now,
+            retryPush.pushed,
+            retryPush.newStartedAt,
+            servingBonus(freshUnit.stock, source, freshUnit.feedBonus),
+          );
         }
       }
     } catch (error) {
@@ -3606,6 +3615,28 @@ export async function feedStackAcresPen(
   }
   await recordStoryEvents(profile.id, [{ kind: "fed", count: fedCount }], now);
   return { ...(await view(profile, now)), ...fedResult(sources) };
+}
+
+/**
+ * Ray's starter pouch of wheat seed (lib/stackacres/starter-seeds.ts). No Gold moves.
+ *
+ * The claim comes first and is the whole guard: `adjustStackAcresSecretLedger` hands back 1 to exactly one
+ * of two simultaneous requests, so a second tap never gets a second pouch. If the seed then fails to land the
+ * claim is handed back so Ray can try again, the same order a purchase keeps.
+ */
+export async function claimStackAcresStarterSeeds(token: string, now = new Date()): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const claimed = await adjustStackAcresSecretLedger(profile.id, STARTER_SEEDS_LEDGER_KEY, 1);
+  if (claimed === 1) {
+    try {
+      const held = await adjustStackAcresSeedStock(profile.id, STARTER_SEED_CROP, STARTER_SEED_COUNT);
+      if (held === null) throw new Error("Could not shelve the starter seed.");
+    } catch (error) {
+      await adjustStackAcresSecretLedger(profile.id, STARTER_SEEDS_LEDGER_KEY, -1).catch(() => null);
+      throw error;
+    }
+  }
+  return view(profile, now);
 }
 
 /** The secret-ledger key one of Ray's care-gift rungs is claimed under. The
@@ -4135,6 +4166,7 @@ export async function placeStackAcresFencePiece(
   const tx = Math.trunc(input.tx);
   const ty = Math.trunc(input.ty);
   if (!isFenceableMapTile(tx, ty)) throw new StackAcresRequestError(FENCE_NOT_HERE, 400);
+  await requireOwnedGround(profile.id, [{ mx: tx, my: ty }], now);
   const { tx: sx, ty: sy } = mapToSoilTile(tx, ty);
   const beds = await listStackAcresSoilTiles(profile.id);
   if (beds.some((bed) => bed.tx === sx && bed.ty === sy)) {
@@ -4173,14 +4205,16 @@ export async function placeStackAcresAnimal(
   now = new Date(),
 ): Promise<StackAcresView> {
   const profile = await ensureProfile(token);
-  const [units, beds, fences] = await Promise.all([
+  const [units, beds, fences, dogs] = await Promise.all([
     listStackAcresUnits(profile.id),
     listStackAcresSoilTiles(profile.id),
     listStackAcresFences(profile.id),
+    listStackAcresGuardDogs(profile.id),
   ]);
   const unit = units.find((candidate) => candidate.id === input.unitId);
   if (!unit || !isHerdStock(unit.stock)) throw new StackAcresRequestError("That isn't one of your animals.", 404);
 
+  // A dog's square counts as an animal's: nothing stands on the dog.
   const problem = herdPlacementProblem(input.tx, input.ty, {
     beds: new Set(
       beds.map((bed) => {
@@ -4189,7 +4223,7 @@ export async function placeStackAcresAnimal(
       }),
     ),
     fences: new Set(fences.map((piece) => herdKey(piece.tx, piece.ty))),
-    animals: herdSquares(units, unit.id),
+    animals: new Set([...herdSquares(units, unit.id), ...dogSquares(dogs)]),
   });
   if (problem) {
     throw new StackAcresRequestError(HERD_PLACEMENT_MESSAGES[problem], problem === "off_yard" ? 400 : 409, {
@@ -4217,6 +4251,120 @@ export async function pickUpStackAcresAnimal(
   if (!unit || !isHerdStock(unit.stock)) throw new StackAcresRequestError("That isn't one of your animals.", 404);
   const outcome = await setStackAcresUnitPosition(profile.id, unit.id, null);
   if (outcome === "missing") throw new StackAcresRequestError("That isn't one of your animals.", 404);
+  return view(profile, now);
+}
+
+const ACRE_ALREADY_OWNED = "You already own that acre.";
+const ACRE_PRICE_MOVED = "Another acre was just bought, so this one's price went up. Try again.";
+
+/**
+ * The beds, fences, animals and other dogs a dog's square is checked against
+ * (lib/stackacres/guard-dog.ts). `exceptDogId` is the dog being moved, whose
+ * own square is not in its own way.
+ */
+async function dogSquareProblem(
+  profileId: string,
+  tx: number,
+  ty: number,
+  exceptDogId: string | null,
+): Promise<{ problem: ReturnType<typeof dogPlacementProblem>; dogs: GuardDog[] }> {
+  const [units, beds, fences, dogs] = await Promise.all([
+    listStackAcresUnits(profileId),
+    listStackAcresSoilTiles(profileId),
+    listStackAcresFences(profileId),
+    listStackAcresGuardDogs(profileId),
+  ]);
+  const problem = dogPlacementProblem(tx, ty, {
+    beds: new Set(
+      beds.map((bed) => {
+        const { mx, my } = soilToMapTile(bed.tx, bed.ty);
+        return herdKey(mx, my);
+      }),
+    ),
+    fences: new Set(fences.map((piece) => herdKey(piece.tx, piece.ty))),
+    animals: new Set([...herdSquares(units), ...dogSquares(dogs, exceptDogId)]),
+  });
+  return { problem, dogs };
+}
+
+function dogRefusal(problem: NonNullable<ReturnType<typeof dogPlacementProblem>>): { status: 400 | 409; message: string } {
+  return { status: problem === "off_yard" ? 400 : 409, message: DOG_PLACEMENT_MESSAGES[problem] };
+}
+
+/**
+ * Buys a guard dog and sets it down at (tx, ty) (lib/stackacres/guard-dog.ts).
+ *
+ * Rule 1: the Gold leaves first, then the dog is written; a refused or failed
+ * write gives the Gold back, once. The square and the cap are checked before
+ * anything is spent, so a plainly wrong tap costs nothing, and checked again by
+ * the write under its lock, so two taps at once cannot both land.
+ */
+export async function buyStackAcresGuardDog(
+  token: string,
+  input: { tx: number; ty: number },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const tx = Math.trunc(input.tx);
+  const ty = Math.trunc(input.ty);
+  const { problem, dogs: before } = await dogSquareProblem(profile.id, tx, ty, null);
+  if (before.length >= GUARD_DOG_CAP) {
+    throw new StackAcresRequestError(DOG_PLACEMENT_MESSAGES.full, 409, { round: await snapshots(profile.id, now) });
+  }
+  if (problem) {
+    const refusal = dogRefusal(problem);
+    throw new StackAcresRequestError(refusal.message, refusal.status, { round: await snapshots(profile.id, now) });
+  }
+
+  const paid = await debitGoldByProfile(profile.id, GUARD_DOG_GOLD);
+  if (!paid) throw new StackAcresRequestError(GUARD_DOG_COSTS, 400, { round: await snapshots(profile.id, now) });
+  const giveBack = async () => {
+    if (!profile.unlimitedGold) await refundGold(profile.id, GUARD_DOG_GOLD);
+  };
+
+  let outcome: Awaited<ReturnType<typeof addGuardDogRow>>;
+  try {
+    outcome = await addGuardDogRow(profile.id, tx, ty);
+  } catch (error) {
+    // The write may have landed with only its answer lost; then the dog is theirs and stays paid for.
+    const landed = await listStackAcresGuardDogs(profile.id)
+      .then((dogs) => dogs.some((dog) => dog.tx === tx && dog.ty === ty && !before.some((old) => old.id === dog.id)))
+      .catch(() => false);
+    if (!landed) {
+      await giveBack();
+      throw error;
+    }
+    return view(await ensureProfile(token), now);
+  }
+  if (outcome === "full" || outcome === "taken") {
+    await giveBack();
+    throw new StackAcresRequestError(DOG_PLACEMENT_MESSAGES[outcome === "full" ? "full" : "occupied"], 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  return view(await ensureProfile(token), now);
+}
+
+/** Moves a dog the player owns to another square. No Gold moves. */
+export async function moveStackAcresGuardDog(
+  token: string,
+  input: { id: string; tx: number; ty: number },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const tx = Math.trunc(input.tx);
+  const ty = Math.trunc(input.ty);
+  const { problem, dogs } = await dogSquareProblem(profile.id, tx, ty, input.id);
+  if (!dogs.some((dog) => dog.id === input.id)) throw new StackAcresRequestError("That isn't your dog.", 404);
+  if (problem) {
+    const refusal = dogRefusal(problem);
+    throw new StackAcresRequestError(refusal.message, refusal.status, { round: await snapshots(profile.id, now) });
+  }
+  const outcome = await moveGuardDogRow(profile.id, input.id, tx, ty);
+  if (outcome === "missing") throw new StackAcresRequestError("That isn't your dog.", 404);
+  if (outcome === "taken") {
+    throw new StackAcresRequestError(DOG_PLACEMENT_MESSAGES.occupied, 409, { round: await snapshots(profile.id, now) });
+  }
   return view(profile, now);
 }
 
@@ -4313,6 +4461,99 @@ export async function buyEmpireBuilding(
   if (outcome !== undefined && !("placed" in outcome)) {
     await giveBack();
     throw new StackAcresRequestError(outcome.message, outcome.status, { round: await snapshots(profile.id, now) });
+  }
+  return view(await ensureProfile(token), now);
+}
+
+/**
+ * Refuses a bed or a fence piece on wild ground the farm does not own
+ * (lib/stackacres/acres.ts). The yard is never refused.
+ */
+async function requireOwnedGround(
+  profileId: string,
+  tiles: readonly { mx: number; my: number }[],
+  now: Date,
+): Promise<void> {
+  const owned = new Set((await listStackAcresAcres(profileId)).map((entry) => entry.id));
+  for (const { mx, my } of tiles) {
+    const gate = acreGate(mx, my, owned);
+    if (gate.ok) continue;
+    throw new StackAcresRequestError(acreGateMessage(gate), gate.reason === "treeline" ? 400 : 409, {
+      round: await snapshots(profileId, now),
+    });
+  }
+}
+
+/**
+ * Buys one acre of the wild land (lib/stackacres/acres.ts), so beds and fences
+ * may go on it.
+ *
+ * Money order: Wood and Stone leave, then the Gold, and only then is the row
+ * written. If the Gold will not leave, or the write fails or finds the acre
+ * already owned, everything taken goes back once. Only what actually moved goes
+ * back: an account with unlimited Gold was never charged. The price comes from
+ * how many acres the farm already owns, never from the request.
+ */
+export async function buyStackAcresAcre(
+  token: string,
+  input: { acreId: string },
+  now = new Date(),
+): Promise<StackAcresView> {
+  if (!isAcreId(input.acreId) || !acreById(input.acreId)) throw new StackAcresRequestError("Not a real acre.", 400);
+  const acreId = input.acreId;
+  const profile = await ensureProfile(token);
+  const owned = await listStackAcresAcres(profile.id);
+  if (owned.some((entry) => entry.id === acreId)) {
+    throw new StackAcresRequestError(ACRE_ALREADY_OWNED, 409, { round: await snapshots(profile.id, now) });
+  }
+  const price = acrePrice(owned.length);
+
+  const { refund: refundMaterials } = await spendStackAcresMaterials(
+    profile.id,
+    [
+      { item: "wood", quantity: price.wood },
+      { item: "stone", quantity: price.stone },
+    ],
+    now,
+    (material) => `This acre needs ${material.quantity.toLocaleString()} ${machineItemNoun(material.item, material.quantity)}.`,
+  );
+  let paid: boolean;
+  try {
+    paid = await debitGoldByProfile(profile.id, price.gold);
+  } catch (error) {
+    await refundMaterials();
+    throw error;
+  }
+  if (!paid) {
+    await refundMaterials();
+    throw new StackAcresRequestError(`This acre costs ${price.gold.toLocaleString()} Gold.`, 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  const giveBack = async () => {
+    if (!profile.unlimitedGold) await refundGold(profile.id, price.gold);
+    await refundMaterials();
+  };
+
+  let wrote: AcreAddition;
+  try {
+    wrote = await insertStackAcresAcre(profile.id, acreId, owned.length);
+  } catch (error) {
+    // The write may have landed with only its answer lost; then the acre is theirs and stays paid for.
+    const landed = await listStackAcresAcres(profile.id)
+      .then((held) => held.some((entry) => entry.id === acreId))
+      .catch(() => false);
+    if (!landed) {
+      await giveBack();
+      throw error;
+    }
+    wrote = "added";
+  }
+  if (wrote !== "added") {
+    await giveBack();
+    throw new StackAcresRequestError(wrote === "owned" ? ACRE_ALREADY_OWNED : ACRE_PRICE_MOVED, 409, {
+      round: await snapshots(profile.id, now),
+    });
   }
   return view(await ensureProfile(token), now);
 }
@@ -4456,6 +4697,7 @@ export async function hireStackAcresGroceryWorker(token: string, input: { name: 
     await refundGoldLedgered(profile.id, fee, correlation);
     throw error;
   }
+  await confirmGoldSpent(correlation);
   return view(await ensureProfile(token), now);
 }
 
@@ -4534,6 +4776,7 @@ export async function buyStackAcresGroceryItem(
     await refundGoldLedgered(profile.id, def.gold, correlation);
     throw error;
   }
+  await confirmGoldSpent(correlation);
   return view(await ensureProfile(token), now);
 }
 
@@ -4618,7 +4861,12 @@ export async function workStackAcresLand(
 
   if (swing.item && swing.quantity > 0) {
     await adjustStackAcresInventory(profile.id, swing.item, swing.quantity);
+    // Clearing land counts as chopping and mining for the farm board and the travellers.
+    if (swing.item === "wood") await recordStoryEvents(profile.id, [{ kind: "wood-chopped", count: swing.quantity }], now);
+    if (swing.item === "stone") await recordStoryEvents(profile.id, [{ kind: "stone-mined", count: swing.quantity }], now);
   }
+  const ore = landOreForSwing(obstacle.kind, swing.cleared);
+  if (ore > 0) await adjustStackAcresInventory(profile.id, "iron_ore", ore);
   const opened = swing.cleared ? await openIfCleared(profile.id, obstacle.ground, now) : false;
   return {
     ...(await view(profile, now)),
@@ -4627,6 +4875,7 @@ export async function workStackAcresLand(
       ground: obstacle.ground,
       item: swing.item,
       quantity: swing.quantity,
+      ore,
       cleared: swing.cleared,
       sectorOpened: opened,
     },
@@ -4912,9 +5161,9 @@ export async function tapStackAcresSecretZone(
 
   // Marks the attempt BEFORE rolling -- see the header above.
   const marked = await adjustStackAcresSecretLedger(profile.id, attemptKey, 1);
-  if (marked === null) {
-    // Could not even record the attempt; refuse the roll rather than risk one
-    // that never gets marked and so could be replayed.
+  if (marked !== 1) {
+    // Could not record the attempt, or another tap marked it first (the count
+    // is past 1). Either way this request does not roll.
     return { ...(await view(profile, now)), discovery: null };
   }
 
@@ -5106,13 +5355,18 @@ export async function tradeStackAcresSecretItemToRay(
   }
 
   const day = stackacresExchangeDay(now);
-  const [land, capacity, upkeepPaid, cropFieldsUnlocked] = await Promise.all([
+  const [land, capacity, upkeepPaid, cropFieldsUnlocked, acres] = await Promise.all([
     readLand(profile.id),
     readStackAcresCapacity(profile.id),
     readStackAcresUpkeep(profile.id, day),
     readStackAcresCropFieldsUnlocked(profile.id),
+    listStackAcresAcres(profile.id),
   ]);
-  const fee = upkeepState(unlockedPlotCount(land.sectors, capacity, cropFieldsUnlocked), upkeepPaid).fee;
+  const fee = upkeepState(
+    unlockedPlotCount(land.sectors, capacity, cropFieldsUnlocked),
+    upkeepPaid,
+    boughtAcreCount(acres),
+  ).fee;
   const target = nextUpkeepPaidAfterDiceTrade(upkeepPaid, fee);
   if (target <= upkeepPaid) {
     throw new StackAcresRequestError("There is no Land Maintenance owed today to wipe.", 409, {
@@ -5167,8 +5421,7 @@ export interface StackAcresHarvestResult {
    *  contributed. */
   tally: { item: StackAcresItem; quantity: number }[];
   /** Every settled unit's yield valued at today's sell price, before any
-   *  bonus -- a production figure for the ledger and Prestige eligibility,
-   *  not Gold paid (a harvest pays none) and not what landed in inventory
+   *  bonus -- a production figure for the ledger, not Gold paid (a harvest pays none) and not what landed in inventory
    *  (see `tally` for that). */
   gross: number;
   /** How many of the settled units came up weather-worn. */
@@ -5245,6 +5498,10 @@ export async function harvestStackAcres(
       if (!row || row.status !== "working") {
         throw new StackAcresRequestError("Nothing to collect here.", 404, { round: await roundNow() });
       }
+      // A hog or steer makes nothing to collect. It is sold whole at the sale barn.
+      if (isMarketLivestock(row.stock)) {
+        throw new StackAcresRequestError(MARKET_ANIMAL_NOT_COLLECTED, 409, { round: await roundNow() });
+      }
       const wandered = away.get(row.id);
       if (wandered) throw new StackAcresRequestError(HERD_AWAY_MESSAGES[wandered], 409, { round: await roundNow() });
       if (isStackAcresUnitHungry(row, now, comfort)) {
@@ -5260,7 +5517,10 @@ export async function harvestStackAcres(
 
   const ready = rows.filter(
     (row) =>
-      (!named || named.has(row.id)) && !away.has(row.id) && isStackAcresUnitReady(row, now, irrigated.has(row.id), comfort),
+      (!named || named.has(row.id)) &&
+      !isMarketLivestock(row.stock) &&
+      !away.has(row.id) &&
+      isStackAcresUnitReady(row, now, irrigated.has(row.id), comfort),
   );
   if (ready.length === 0) {
     throw new StackAcresRequestError("Nothing is ready yet.", 409, { round: await roundNow() });
@@ -5283,12 +5543,6 @@ export async function harvestStackAcres(
   // Gold, so there is no reservation to size ahead of it any more -- see
   // lib/stackacres/equipment.ts's own header.
   const tool = await readStackAcresToolTier(profile.id);
-  // The Sunlight Forge's own permanent enchantments (lib/stackacres/forge.ts)
-  // -- computed BEFORE the Synergy Tree's session buffs below, per that
-  // file's own header: forged stats are what "the tool's own odds" means
-  // from here on, and the Synergy layer composes on top of them, not
-  // instead of them.
-  const forgedStats = await forgedToolStatsFor(profile.id, stackacresToolTierDef(tool));
 
   // Step 2. Bought stock never mucks and never leaves: the animal stays and
   // starts its next cycle the moment you take what it made. Muck is the cost
@@ -5350,20 +5604,7 @@ export async function harvestStackAcres(
     diceBoostArmed &&
     (await adjustStackAcresSecretLedger(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY, -1).catch(() => null)) !==
       null;
-  // The Synergy Tree's `sunlight_harvester` perk (lib/stackacres/synergy-perks.ts)
-  // is the same shape of boost as the dice: it widens the odds, never the
-  // bonus, so it layers on top here, additive with the dice for the same
-  // reason two flat bonuses always are.
-  const critChance = (
-    await applySynergyBuffs(
-      {
-        harvestCritChance: effectiveCritChance(forgedStats.critChance, diceBoost),
-        farmhandSpeed: 1,
-        millDoubleOutputChance: 0,
-      },
-      profile.id,
-    )
-  ).harvestCritChance;
+  const critChance = effectiveCritChance(stackacresToolTierDef(tool).critChance, diceBoost);
 
   // Step 3. The crit, rolled ONCE for the sweep and only now -- after the
   // guarded writes, beside the muck roll, for the identical reason: anything
@@ -5383,7 +5624,7 @@ export async function harvestStackAcres(
   const critBonusTally = new Map<StackAcresItem, number>();
   if (critical) {
     for (const line of actual.lines) {
-      const bonus = critBonusQuantity(line.quantity, tool, forgedStats.critBonus);
+      const bonus = critBonusQuantity(line.quantity, tool);
       if (bonus > 0) critBonusTally.set(line.item, (critBonusTally.get(line.item) ?? 0) + bonus);
     }
   }
@@ -5451,6 +5692,85 @@ export async function harvestStackAcres(
       crit: critical,
       critBonus: [...critBonusTally].map(([item, quantity]) => ({ item, quantity })),
     },
+  };
+}
+
+/**
+ * Sends every ready hog and steer to Hank's sale barn and pays for the load.
+ *
+ * Only animals that are home and fed go: one that wandered off in the night
+ * or is hungry stays on the farm, the same rule `collect` keeps. Each one is
+ * taken off the farm by its own version-guarded delete, which lands at most
+ * once, so two shipments racing for the same hog can only ever pay for it
+ * once between them. The Gold is added up over the rows that actually came
+ * off, the day's upkeep is taken out of it the way a sale does, and it is
+ * paid in ONE ledgered credit keyed by those rows.
+ */
+export async function shipStackAcresLivestock(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresView & { shipped: StackAcresShipment }> {
+  const profile = await ensureProfile(token);
+  // The Feed Silo settles first, so an animal it would have fed on time ships on time.
+  await runFeedSilo(profile.id, now);
+  const rows = await listStackAcresUnits(profile.id);
+  const comfort = await barnComfortFor(profile.id);
+  const away = await herdAwayFor(profile.id, rows, now);
+
+  const market = rows.filter((row) => isMarketLivestock(row.stock));
+  const ready = market.filter((row) => !away.has(row.id) && isStackAcresUnitReady(row, now, false, comfort));
+  if (ready.length === 0) {
+    throw new StackAcresRequestError(
+      market.length === 0 ? "You have no hogs or steers to sell." : "Nothing is ready to sell yet.",
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  // Settle first. A null is a row something else already took, and it is
+  // simply not in this load.
+  const lines: ShippedAnimal[] = [];
+  const settled: StoredStackAcresUnit[] = [];
+  for (const row of ready) {
+    const gone = await collectStackAcresUnit(row, now, null, null);
+    if (!gone) continue;
+    const line = shippedLine(gone);
+    if (!line) continue;
+    settled.push(gone);
+    lines.push(line);
+  }
+  if (lines.length === 0) {
+    throw new StackAcresRequestError("That moved on.", 409, { round: await snapshots(profile.id, now) });
+  }
+
+  // Then pay, once, for exactly what came off. The key is the set of rows,
+  // which can only ever settle once, so a retried credit cannot pay twice.
+  const gold = shipmentGold(lines);
+  const paid = await netUpkeepFromPayout(profile.id, now, gold);
+  const loadKey = createHash("sha256")
+    .update(lines.map((line) => line.unitId).sort().join(","))
+    .digest("hex")
+    .slice(0, 32);
+  await payOutGold(profile.id, paid, `stackacres-ship:${profile.id}:${loadKey}`, "stackacres_ship");
+
+  for (const row of settled) {
+    const line = lines.find((candidate) => candidate.unitId === row.id);
+    if (!line) continue;
+    await recordStackAcresHarvest({
+      profileId: profile.id,
+      unitId: row.id,
+      stock: row.stock,
+      stake: row.stake,
+      payout: line.gold,
+      startedAt: row.startedAt,
+      collectedAt: now.toISOString(),
+      permanent: row.permanent,
+    });
+  }
+
+  return {
+    ...(await view(await ensureProfile(token), now)),
+    shipped: { animals: lines, gold, paid },
   };
 }
 
@@ -5548,6 +5868,14 @@ export async function placeStackAcresMachine(
   const def = MACHINE_CATALOGUE[kind];
   const profile = await ensureProfile(token);
 
+  // The Vat, the Cellar and the Farm Kitchen are no longer built (see
+  // RETIRED_MACHINE_KINDS). Refused before anything is spent.
+  if (isRetiredMachine(kind)) {
+    throw new StackAcresRequestError(`The ${def.label} isn't built any more.`, 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
   const machines = await listStackAcresMachines(profile.id);
   // One of each kind, checked here for a clean 409; the database's own
   // `homestead_machines_one_per_kind` index is the guard a race cannot get
@@ -5596,7 +5924,8 @@ export async function placeStackAcresMachine(
 }
 
 /** The player's own aging machine (the Vat or the Preserves Cellar), or a
- *  404 -- every seal/collect action needs this first. */
+ *  404. Neither takes a new batch any more; a batch sealed before that can
+ *  still be collected. */
 async function requireAgingMachine(profileId: string, kind: "vat" | "cellar", now: Date) {
   const machines = await listStackAcresMachines(profileId);
   const machine = machines.find((candidate) => candidate.kind === kind);
@@ -5608,121 +5937,6 @@ async function requireAgingMachine(profileId: string, kind: "vat" | "cellar", no
     );
   }
   return machine;
-}
-
-/**
- * Seals a fresh batch inside the player's vat: `VAT_INPUT_QUANTITY` Cheese
- * leaves inventory and is locked inside a new `AgingManifest`, both in one
- * database transaction (`seal_homestead_vat`) -- see that migration's own
- * header for why this cannot be a debit followed by a separate insert.
- *
- * ONE SEAL AT A TIME, same posture as Town Contracts' one-open-contract rule:
- * the database's own `homestead_vat_manifests_one_per_machine` unique index
- * is the real guard against two racing calls both sealing the same vat, and
- * this function checks ahead of the debit only for a clean 409 -- the same
- * "check first for a nice error, guarded write is the real gate" shape
- * `placeStackAcresMachine` takes above.
- *
- * `baseGoldValueForSeal` prices the batch OFF THE LIVE RECIPE TABLE, but only
- * ONCE, right here -- the value it returns is written straight into the
- * manifest and never re-read at collection. See aging.ts's header for why
- * that snapshot is load-bearing.
- */
-export async function sealStackAcresVat(token: string, now = new Date()): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
-  const vat = await requireAgingMachine(profile.id, "vat", now);
-
-  const existing = await readStackAcresAgingManifest(profile.id, vat.id);
-  if (existing) {
-    throw new StackAcresRequestError("The vat is already sealed.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-
-  const baseGoldValue = baseGoldValueForSeal();
-  if (baseGoldValue === null) {
-    // Cannot happen for cheese today (milk always prices on the Gold track),
-    // but the vat must refuse to seal a batch it cannot value rather than
-    // seal one worth nothing -- see aging.ts's own comment on this return.
-    throw new StackAcresRequestError("The vat cannot price that right now.", 500, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-
-  const sealedAt = now;
-  const readyAt = new Date(now.getTime() + firstAgingTier().durationMs);
-
-  const sealed = await createStackAcresVatManifest(
-    profile.id,
-    vat.id,
-    VAT_INPUT_ITEM,
-    VAT_INPUT_QUANTITY,
-    baseGoldValue,
-    sealedAt,
-    readyAt,
-  );
-  if (!sealed.ok) {
-    throw new StackAcresRequestError(
-      sealed.reason === "occupied"
-        ? "The vat is already sealed."
-        : `Sealing the vat takes ${machineItemLabel(VAT_INPUT_ITEM, VAT_INPUT_QUANTITY)}.`,
-      409,
-      { round: await snapshots(profile.id, now) },
-    );
-  }
-
-  return view(profile, now);
-}
-
-/**
- * Seals jars of Pickles or Sauerkraut in the Preserves Cellar: every jar of
- * that kind on the shelf, up to CELLAR_CAPACITY, priced once at seal time off
- * what the jars sell for today. Same one-transaction seal as the Vat
- * (`seal_homestead_vat`), keyed on the Cellar's own machine row.
- */
-export async function sealStackAcresCellar(
-  token: string,
-  item: CellarItem,
-  now = new Date(),
-): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
-  const cellar = await requireAgingMachine(profile.id, "cellar", now);
-
-  const existing = await readStackAcresAgingManifest(profile.id, cellar.id);
-  if (existing) {
-    throw new StackAcresRequestError("The cellar already has jars aging.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-
-  const inventory = await readStackAcresInventory(profile.id);
-  const quantity = cellarSealQuantity(inventoryQuantity(inventory, item));
-  if (quantity < 1) {
-    throw new StackAcresRequestError(`You have no ${machineItemNoun(item, 2)} to store.`, 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-
-  const sealed = await createStackAcresVatManifest(
-    profile.id,
-    cellar.id,
-    item,
-    quantity,
-    cellarBaseGoldValue(item, quantity),
-    now,
-    new Date(now.getTime() + firstAgingTier(CELLAR_AGING_TIERS).durationMs),
-  );
-  if (!sealed.ok) {
-    throw new StackAcresRequestError(
-      sealed.reason === "occupied"
-        ? "The cellar already has jars aging."
-        : `Some of those ${machineItemNoun(item, 2)} just went elsewhere. Try again.`,
-      409,
-      { round: await snapshots(profile.id, now) },
-    );
-  }
-
-  return view(profile, now);
 }
 
 /**
@@ -5841,8 +6055,6 @@ export interface StackAcresWorkResult {
   machinesCollected: number;
   /** Servings the Feed Silo handed out on this pass. */
   siloServings: number;
-  /** What the Farm Kitchen cooked on this pass, or null. */
-  kitchenCooked: { item: MachineProcessedItem; quantity: number } | null;
 }
 
 export async function workStackAcres(
@@ -5851,7 +6063,6 @@ export async function workStackAcres(
 ): Promise<StackAcresView & { work: StackAcresWorkResult }> {
   const profile = await ensureProfile(token);
   const siloServings = await runFeedSilo(profile.id, now);
-  const kitchenCooked = await runFarmKitchen(profile.id, now);
 
   let wheatCollected = 0;
   const wheatPlots = await listStackAcresWheatPlots(profile.id);
@@ -5872,13 +6083,6 @@ export async function workStackAcres(
   // What each collected run made, for the travelers' story (see the end).
   const processedEvents: StoryEvent[] = [];
   const machines = await listStackAcresMachines(profile.id);
-  // Read once for the whole pass rather than per machine -- a loadout does
-  // not change mid-request, and this moves no Gold either way (see the
-  // header above), so there is no reservation this needs to line up with.
-  const { millDoubleOutputChance } = await applySynergyBuffs(
-    { harvestCritChance: 0, farmhandSpeed: 1, millDoubleOutputChance: 0 },
-    profile.id,
-  );
   for (const machine of machines) {
     if (machine.status === "idle") {
       // INSTANT recipes are never auto-started here. They have no run to
@@ -5947,13 +6151,7 @@ export async function workStackAcres(
         continue;
       }
       const output = RECIPE_CATALOGUE[machine.recipeId].output.item;
-      // Rolled AFTER the guarded collect above has already landed, the same
-      // discipline `rollHarvestCrit` is held to and for the same reason:
-      // anything reachable from a read can be re-rolled by pulling to
-      // refresh. `high_yield_processing` (lib/stackacres/synergy-perks.ts).
-      const doubled =
-        millDoubleOutputChance > 0 && rollMillDoubleOutput(millDoubleOutputChance, Math.random);
-      const credited = doubled ? machine.unitsProcessing * 2 : machine.unitsProcessing;
+      const credited = machine.unitsProcessing;
       try {
         await adjustStackAcresInventory(profile.id, output, credited);
         machinesCollected += 1;
@@ -5968,9 +6166,6 @@ export async function workStackAcres(
     }
   }
 
-  if (kitchenCooked) {
-    processedEvents.push({ kind: "processed", recipe: kitchenCooked.recipe, count: kitchenCooked.quantity });
-  }
   await recordStoryEvents(profile.id, processedEvents, now);
   return {
     ...(await view(profile, now)),
@@ -5979,79 +6174,8 @@ export async function workStackAcres(
       machinesStarted,
       machinesCollected,
       siloServings,
-      kitchenCooked: kitchenCooked ? { item: kitchenCooked.item, quantity: kitchenCooked.quantity } : null,
     },
   };
-}
-
-/**
- * The Farm Kitchen's lazy settlement: cooks every banked batch of its
- * standing order the shelf can pay for (lib/stackacres/farm-kitchen.ts).
- * Runs only inside `workStackAcres`, never in a read.
- *
- * The batches are claimed on the machine row first, under its version guard,
- * so two requests cannot both cook them. Then every input and the doubled
- * output move in one transaction. A shelf that changed in between hands the
- * claimed batches back.
- */
-async function runFarmKitchen(
-  profileId: string,
-  now: Date,
-): Promise<{ recipe: RecipeId; item: MachineProcessedItem; quantity: number } | null> {
-  const machines = await listStackAcresMachines(profileId);
-  const kitchen = machines.find((machine) => machine.kind === "farm_kitchen");
-  if (!kitchen) return null;
-  const plan = planFarmKitchen(kitchen, await readStackAcresInventory(profileId), now);
-  if (!plan) return null;
-
-  const claimed = await writeStackAcresFarmKitchen(kitchen, plan.recipe, plan.nextSince);
-  if (!claimed) return null;
-
-  // The RPC is all-or-nothing, so a shortfall or an error spent nothing:
-  // hand the claimed batches back and let the rest of the work pass run.
-  let cooked: number | null = null;
-  try {
-    cooked = await processStackAcresRecipeMulti(profileId, plan.inputs, plan.output);
-  } catch (error) {
-    console.error("stackacres.farm_kitchen_cook_failed", { profileId, recipe: plan.recipe, error });
-  }
-  if (cooked === null) {
-    await writeStackAcresFarmKitchen(claimed, kitchen.standingRecipe, kitchen.kitchenSince).catch(() => null);
-    return null;
-  }
-  return { recipe: plan.recipe, ...plan.output };
-}
-
-/**
- * Sets what the Farm Kitchen cooks. Batches start banking from the first
- * order; changing the order later keeps what is already banked. Moves no
- * Gold and no items.
- */
-export async function setStackAcresKitchenOrder(
-  token: string,
-  recipe: string,
-  now = new Date(),
-): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
-  if (!isFarmKitchenRecipe(recipe)) {
-    throw new StackAcresRequestError("The Farm Kitchen can't cook that.", 400, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  const machines = await listStackAcresMachines(profile.id);
-  const kitchen = machines.find((machine) => machine.kind === "farm_kitchen");
-  if (!kitchen) {
-    throw new StackAcresRequestError("Build the Farm Kitchen first.", 404, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  const written = await writeStackAcresFarmKitchen(kitchen, recipe, kitchen.kitchenSince ?? now.toISOString());
-  if (!written) {
-    throw new StackAcresRequestError("The Farm Kitchen was busy. Try again.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  return view(profile, now);
 }
 
 /** ./wheat-plot.ts's own `isWheatPlotReady`, restated under a name that does
@@ -6101,8 +6225,16 @@ export async function processRecipe(
   profileId: string,
   recipeId: RecipeId,
   now = new Date(),
+  batches = 1,
 ): Promise<ProcessRecipeResult> {
   const def = RECIPE_CATALOGUE[recipeId];
+  if (!Number.isInteger(batches) || batches < 1 || batches > MAX_RUN_BATCHES) {
+    throw new StackAcresRequestError(`Run between 1 and ${MAX_RUN_BATCHES} batches at a time.`, 400);
+  }
+  // An instant recipe settles in one transaction, so it is always one batch.
+  if (isInstantRecipe(recipeId) && batches > 1) {
+    throw new StackAcresRequestError("That makes one batch at a time.", 400);
+  }
 
   const machines = await listStackAcresMachines(profileId);
   const machine = machines.find(
@@ -6120,8 +6252,8 @@ export async function processRecipe(
 
   const shortfall = () =>
     new StackAcresRequestError(
-      `Not enough. One batch takes ${def.inputs
-        .map((input) => machineItemLabel(input.item, input.quantity))
+      `Not enough. ${batches > 1 ? `${batches} batches take` : "One batch takes"} ${def.inputs
+        .map((input) => machineItemLabel(input.item, input.quantity * batches))
         .join(" + ")}.`,
       409,
     );
@@ -6146,7 +6278,7 @@ export async function processRecipe(
   const debited: { item: MachineItemId; quantity: number }[] = [];
   let short = false;
   for (const input of def.inputs) {
-    const afterDebit = await adjustStackAcresInventory(profileId, input.item, -input.quantity);
+    const afterDebit = await adjustStackAcresInventory(profileId, input.item, -input.quantity * batches);
     if (afterDebit === null) {
       short = true;
       break;
@@ -6155,23 +6287,25 @@ export async function processRecipe(
   }
   if (short) {
     for (const input of debited) {
-      await adjustStackAcresInventory(profileId, input.item, input.quantity).catch(() => null);
+      await adjustStackAcresInventory(profileId, input.item, input.quantity * batches).catch(() => null);
     }
     throw shortfall();
   }
 
-  const readyAt = new Date(now.getTime() + def.processingMs);
+  // A run of N batches takes N times as long and pays N times the output when collected: the same wait as N
+  // single taps, started with one.
+  const readyAt = new Date(now.getTime() + def.processingMs * batches);
   const started = await startStackAcresMachine(
     machine,
     now,
     readyAt,
     recipeId,
-    def.output.quantity,
+    def.output.quantity * batches,
   );
   if (!started) {
     // Lost the race to start this exact machine; give every input back.
     for (const input of def.inputs) {
-      await adjustStackAcresInventory(profileId, input.item, input.quantity).catch(() => null);
+      await adjustStackAcresInventory(profileId, input.item, input.quantity * batches).catch(() => null);
     }
     throw new StackAcresRequestError("That machine just started something else.", 409);
   }
@@ -6185,10 +6319,11 @@ export async function processStackAcresRecipeAction(
   token: string,
   recipeInput: string,
   now = new Date(),
+  batches = 1,
 ): Promise<StackAcresView & { processed: ProcessRecipeResult }> {
   if (!isRecipeId(recipeInput)) throw new StackAcresRequestError("Not a real recipe.", 400);
   const profile = await ensureProfile(token);
-  const processed = await processRecipe(profile.id, recipeInput, now);
+  const processed = await processRecipe(profile.id, recipeInput, now, batches);
   // An instant recipe is made right here; a queued one is counted when
   // `workStackAcres` collects it, so it is never counted twice.
   if (processed.produced !== null) {
@@ -6440,14 +6575,12 @@ const FARM_BOARD_REFUSALS: Record<"unknown" | "unfinished" | "already-claimed" |
  *   1. The goods leave inventory first, under `adjustStackAcresInventory`'s
  *      own row lock -- a sale can never leave the player owing more than they
  *      held.
- *   2. Gold, multiplied by the Prestige Reset Valve's permanent multiplier
- *      (see lib/stackacres/prestige.ts's own header for why the multiplier
- *      moved here from harvest), has today's Land Maintenance netted off the
- *      top (`netUpkeepFromPayout`) and is credited.
+ *   2. Gold has today's Land Maintenance netted off the top
+ *      (`netUpkeepFromPayout`) and is credited.
  */
 export async function sellStackAcresItem(
   token: string,
-  input: { item: string; quantity: number },
+  input: { item: string; quantity: number; buyer: string },
   now = new Date(),
 ): Promise<StackAcresView & { sold: { item: MachineItemId; quantity: number; gold: number } }> {
   const profile = await ensureProfile(token);
@@ -6464,6 +6597,18 @@ export async function sellStackAcresItem(
     });
   }
 
+  // Each item has one buyer in town (lib/stackacres/town-buyers.ts). The
+  // wrong one turns it away before anything moves.
+  if (!isTownBuyer(input.buyer) || !buyerTakes(input.buyer, item)) {
+    const right = TOWN_BUYERS[townBuyerFor(item)];
+    const asked = isTownBuyer(input.buyer) ? TOWN_BUYERS[input.buyer].name : "They";
+    throw new StackAcresRequestError(
+      `${asked} doesn't buy ${machineItemNoun(item, 2)}. ${right.name} does, at ${right.place}.`,
+      400,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
   // Step 1: the goods leave first.
   const afterDebit = await adjustStackAcresInventory(profile.id, item, -input.quantity);
   if (afterDebit === null) {
@@ -6472,115 +6617,16 @@ export async function sellStackAcresItem(
     });
   }
 
-  // Step 2: net Land Maintenance off the top, then credit the Gold,
-  // prestige-multiplied. `sold.gold` below stays the sale's sticker price;
-  // netUpkeepFromPayout only changes what actually lands in the wallet.
-  const basePrice = machineItemSellPrice(item) * input.quantity;
-  const prestigeMultiplier = await getPrestigeMultiplier(profile.id);
-  // FLOORED, same posture settleHarvest's own prestige step used to take: a
-  // multiplier may not invent a Gold piece out of a rounding rule.
-  const gold = Math.floor(basePrice * Math.max(1, prestigeMultiplier));
+  // Step 2: net Land Maintenance off the top, then credit the Gold.
+  // `sold.gold` below stays the sale's sticker price; netUpkeepFromPayout
+  // only changes what actually lands in the wallet.
+  const gold = machineItemSellPrice(item) * input.quantity;
   const netGold = await netUpkeepFromPayout(profile.id, now, gold);
   await payOutGold(profile.id, netGold, `stackacres-sell:${profile.id}:${randomUUID()}`, "stackacres_sell");
 
   return {
     ...(await view(await ensureProfile(token), now)),
     sold: { item, quantity: input.quantity, gold },
-  };
-}
-
-/**
- * Ray's Mythic Blueprints. MOVES NO GOLD -- see
- * lib/server/stackacres-blueprint-service.ts's own header for why this
- * feature carries none of the daily Gold ceiling's risk and needs no
- * reservation step the way `fulfillStackAcresTownContract` above does.
- *
- * Both resolve the profile exactly once and hand the profileId straight to
- * the profileId-taking core (`startBlueprintForProfile`,
- * `contributeToBlueprint`) rather than through their own token-resolving
- * wrappers, so composing the full farm view below never pays a second
- * profile lookup for one action -- see `startBlueprintForProfile`'s own
- * comment on why that redundant-resolve shape is worth avoiding on purpose.
- */
-export async function startStackAcresMythicBlueprint(
-  token: string,
-  structureId: string,
-  now = new Date(),
-): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
-  await startBlueprintForProfile(profile.id, structureId);
-  return view(profile, now);
-}
-
-export async function contributeToStackAcresMythicBlueprint(
-  token: string,
-  structureId: string,
-  itemId: string,
-  amount: number,
-  now = new Date(),
-): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
-  await contributeToBlueprint(profile.id, structureId, itemId, amount);
-  return view(profile, now);
-}
-
-/* -------------------------------------------------------------------- */
-/* Prestige Reset Valve                                                  */
-/* -------------------------------------------------------------------- */
-
-/**
- * Pulls the Prestige Reset Valve for the caller's own farm.
- *
- * MOVES NO GOLD AT ALL -- this action joins neither list in the module
- * header's payer/spender inventory. What it moves is irreversible instead:
- * on success, every unit, wheat plot, inventory line, feed serving, today's
- * Land Maintenance total and any open Town Contract are gone. See
- * `reset_stackacres_prestige`'s own migration comment
- * (20260905120642_stackacres_prestige_reset.sql) for the exact table list
- * and, as importantly, for what survives it -- land cleared, purchased
- * capacity, placed machines, Synergy Tree perks, the donation register and
- * Town Influence are all untouched.
- *
- * A refusal (not enough gross production since the last reset) is an
- * ordinary outcome, not a database failure -- same posture every other
- * Gold-gated refusal in this file takes -- so it surfaces as a
- * StackAcresRequestError (409) with the current farm still intact, never as
- * a thrown database error.
- *
- * Takes no argument beyond the token, on purpose, the same reason
- * `upgradeStackAcresTool` does: there is nothing for the client to name. The
- * server alone decides whether the valve turns, from what it already knows
- * about this profile's own history.
- */
-export async function prestigeResetStackAcres(
-  token: string,
-  now = new Date(),
-): Promise<StackAcresView & { prestigeReset: StackAcresPrestigeResetResult }> {
-  const profile = await ensureProfile(token);
-  const gain = await resetStackAcresPrestige(profile.id);
-
-  if (!gain.eligible) {
-    throw new StackAcresRequestError(
-      `This farm needs to gross ${gain.eligibleGross.toLocaleString()} more Gold since your last reset before the valve will turn -- ${(
-        gain.nextMultiplier - gain.gainedMultiplier
-      ).toFixed(4)}x stays where it is.`,
-      409,
-      { round: await snapshots(profile.id, now) },
-    );
-  }
-
-  // Read AFTER the reset commits, same pattern harvestStackAcres and
-  // fulfillStackAcresTownContract already use for their own post-write view:
-  // a fresh read is guaranteed to reflect the write that just happened,
-  // where reusing a value computed before it would not be.
-  const freshView = await view(profile, now);
-  return {
-    ...freshView,
-    prestigeReset: {
-      prestigeCount: freshView.prestige.prestigeCount,
-      multiplier: freshView.prestige.multiplier,
-      gainedMultiplier: gain.gainedMultiplier,
-    },
   };
 }
 
@@ -6644,50 +6690,100 @@ export async function placeStackAcresSoilTile(
   now = new Date(),
 ): Promise<StackAcresView> {
   const profile = await ensureProfile(token);
-  const tx = Math.trunc(input.tx);
-  const ty = Math.trunc(input.ty);
+  const inMeadow = await breakGround(profile.id, Math.trunc(input.tx), Math.trunc(input.ty), now);
+  // Breaking ground out in the wild land IS clearing the Crop Fields -- there is no
+  // gate, no price and no modal any more, so the milestone the rest of the
+  // game hangs off (travellers arriving, the tool tiers, the crossbreeding
+  // shelf) is recorded off the first bed rather than off a purchase. Once
+  // set it never unsets, the same as every other permanent row, so lifting
+  // that bed again does not take the Crop Fields back. A bed on the
+  // Homestead's grass is not Crop Fields ground and records nothing.
+  //
+  // Run without a read first: the writer is an ignore-duplicates upsert
+  // (one round trip, idempotent), where "is it set already?" would cost a
+  // read and still race the other tab.
+  if (inMeadow) await recordStackAcresCropFieldsUnlocked(profile.id, now);
+  await recordStoryEvents(profile.id, [{ kind: "soil-placed", count: 1 }], now);
+  return view(profile, now);
+}
 
+/**
+ * The tractor's hoe: a straight row of 2 to 12 new beds in one request
+ * (lib/stackacres/tractor.ts). Only a farm that owns a tractor may send one.
+ * Each bed goes through exactly what a single bed does, so the rules and the
+ * cost per bed (nothing) are the same. A bed refused on its own (a road, a bed
+ * already there) is skipped and the rest are still dug; the row is refused
+ * only when none of it could be.
+ */
+export async function placeStackAcresSoilRow(
+  token: string,
+  input: { tiles: readonly { tx: number; ty: number }[] },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const tiles = input.tiles.map((tile) => ({ tx: Math.trunc(tile.tx), ty: Math.trunc(tile.ty) }));
+  if (!isStraightRow(tiles)) throw new StackAcresRequestError(TRACTOR_ROW_NOT_STRAIGHT, 400);
+  const profile = await ensureProfile(token);
+  if (!(await readStackAcresEquipment(profile.id)).includes("tractor")) {
+    throw new StackAcresRequestError(TRACTOR_NEEDED, 403);
+  }
+
+  let dug = 0;
+  let inMeadow = false;
+  let firstRefusal: StackAcresRequestError | null = null;
+  for (const { tx, ty } of tiles) {
+    try {
+      if (await breakGround(profile.id, tx, ty, now)) inMeadow = true;
+      dug += 1;
+    } catch (error) {
+      if (error instanceof StackAcresRequestError) {
+        firstRefusal ??= error;
+        continue;
+      }
+      // Something went wrong underneath, not a refusal: keep what already landed.
+      if (dug === 0) throw error;
+      break;
+    }
+  }
+  if (dug === 0) throw firstRefusal ?? new StackAcresRequestError("There is already a bed there.", 409);
+
+  if (inMeadow) await recordStackAcresCropFieldsUnlocked(profile.id, now);
+  await recordStoryEvents(profile.id, [{ kind: "soil-placed", count: dug }], now);
+  return view(profile, now);
+}
+
+/**
+ * One new bed on bare ground, checked and written: the whole of what the hoe
+ * does to one square. Free -- nothing is spent and nothing is refunded. True
+ * when the bed is out in the wild land, which is the Crop Fields milestone.
+ * Throws a `StackAcresRequestError` for a square the hoe may not break.
+ */
+async function breakGround(profileId: string, tx: number, ty: number, now: Date): Promise<boolean> {
   if (!isHoeableSoilTile(tx, ty)) {
     throw new StackAcresRequestError("The hoe only breaks grass.", 400);
   }
-  if (await fencedSoilTile(profile.id, tx, ty)) {
-    throw new StackAcresRequestError(FENCE_IN_THE_WAY, 409, { round: await snapshots(profile.id, now) });
+  if (await fencedSoilTile(profileId, tx, ty)) {
+    throw new StackAcresRequestError(FENCE_IN_THE_WAY, 409, { round: await snapshots(profileId, now) });
   }
-  if (overgrownSoilTile(tx, ty, clearedObstacleIds(await listStackAcresLandObstacleStates(profile.id)))) {
-    throw new StackAcresRequestError(OVERGROWN_SQUARE, 409, { round: await snapshots(profile.id, now) });
+  await requireOwnedGround(profileId, [soilToMapTile(tx, ty)], now);
+  if (overgrownSoilTile(tx, ty, clearedObstacleIds(await listStackAcresLandObstacleStates(profileId)))) {
+    throw new StackAcresRequestError(OVERGROWN_SQUARE, 409, { round: await snapshots(profileId, now) });
   }
-  const inMeadow = isWildSoilTile(tx, ty);
 
   // The slots the crops are holding, so the new bed's order clears them --
   // see `nextSoilOrder` in lib/stackacres/soil.ts. Passed unevaluated: the
   // memory store is the only one that needs the read, and the RPC does the
   // same arithmetic in SQL.
-  const outcome = await placeSoilTileRow(profile.id, tx, ty, SOIL_DEFAULT_TIER, async () =>
-    (await listStackAcresUnits(profile.id))
+  const outcome = await placeSoilTileRow(profileId, tx, ty, SOIL_DEFAULT_TIER, async () =>
+    (await listStackAcresUnits(profileId))
       .map((unit) => unit.soilSlot)
       .filter((slot): slot is number => slot !== null),
   );
-  if (outcome.kind === "created") {
-    // Breaking ground out in the wild land IS clearing the Crop Fields -- there is no
-    // gate, no price and no modal any more, so the milestone the rest of the
-    // game hangs off (travellers arriving, the tool tiers, the crossbreeding
-    // shelf) is recorded off the first bed rather than off a purchase. Once
-    // set it never unsets, the same as every other permanent row, so lifting
-    // that bed again does not take the Crop Fields back. A bed on the
-    // Homestead's grass is not Crop Fields ground and records nothing.
-    //
-    // Run without a read first: the writer is an ignore-duplicates upsert
-    // (one round trip, idempotent), where "is it set already?" would cost a
-    // read and still race the other tab.
-    if (inMeadow) await recordStackAcresCropFieldsUnlocked(profile.id, now);
-    await recordStoryEvents(profile.id, [{ kind: "soil-placed", count: 1 }], now);
-    return view(profile, now);
-  }
+  if (outcome.kind === "created") return isWildSoilTile(tx, ty);
 
   // Both remaining outcomes ("occupied" and a lost race for the same bare
   // cell) read as the same thing to the player -- there is already a bed there.
   throw new StackAcresRequestError("There is already a bed there.", 409, {
-    round: await snapshots(profile.id, now),
+    round: await snapshots(profileId, now),
   });
 }
 
@@ -6748,6 +6844,12 @@ export async function moveStackAcresSoilTileGroup(
   if (plan.moves.some(({ to }) => !holding.has(soilTileKey(to.tx, to.ty)) && overgrownSoilTile(to.tx, to.ty, cleared))) {
     throw new StackAcresRequestError(OVERGROWN_SQUARE, 409, { round: await snapshots(profile.id, now) });
   }
+
+  await requireOwnedGround(
+    profile.id,
+    plan.moves.filter(({ to }) => !holding.has(soilTileKey(to.tx, to.ty))).map(({ to }) => soilToMapTile(to.tx, to.ty)),
+    now,
+  );
 
   const fenced = new Set((await listStackAcresFences(profile.id)).map((piece) => fenceKey(piece.tx, piece.ty)));
   if (plan.moves.some(({ to }) => { const { mx, my } = soilToMapTile(to.tx, to.ty); return fenced.has(fenceKey(mx, my)); })) {
@@ -6890,42 +6992,6 @@ export async function removeStackAcresSoilTile(
   }
 
   return view(profile, now);
-}
-
-/**
- * Prays with the Pixel Pilgrim -- the only write his shrine makes. No spend,
- * no version guard on a row: the RPC's own row-locking upsert
- * (`pray_at_homestead_shrine`) is the whole idempotency story for a UTC day,
- * and `runStackAcresAction`'s intent-key wrapper (see the route) covers a
- * duplicated request the same way every other action here is covered.
- *
- * Called only from the dialogue's own "yes" -- stackacres-farm.tsx never
- * sends this action from the tap itself, so a decline costs the player
- * nothing and touches no state at all.
- *
- * A null back from the store means the write could not be recorded (a lost
- * race): reported as no advance and no relic, never as a successful prayer,
- * same rule every other ledger write in this file follows.
- */
-export async function prayAtStackAcresShrine(token: string, now = new Date()): Promise<StackAcresActionResult> {
-  const profile = await ensureProfile(token);
-  const today = stackacresExchangeDay(now);
-  const yesterday = previousUtcDay(today);
-
-  const result = await prayAtStackAcresShrine_store(profile.id, today, yesterday, DEVOTION_RUNG_THRESHOLDS);
-  if (result === null) {
-    const current = await readStackAcresDevotion(profile.id);
-    return {
-      ...(await view(profile, now)),
-      prayer: { streak: current.streak, alreadyPrayedToday: false, grantedRelic: null },
-    };
-  }
-
-  const grantedRelic = result.grantedRung === null ? null : DEVOTION_LADDER[result.grantedRung].relic;
-  return {
-    ...(await view(profile, now)),
-    prayer: { streak: result.streak, alreadyPrayedToday: result.alreadyPrayedToday, grantedRelic },
-  };
 }
 
 /**
@@ -7115,14 +7181,12 @@ export async function turnInStackAcresTravelerQuest(
     // The durable half of `StoryFacts`: work a player can only do once is
     // read off the farm here rather than counted, so doing it before the
     // quest was accepted still counts. See StoryFacts' own header.
-    const [current, inventory, tool, cleared, soilTiles, enchantments, crossbreeds, friendshipRows] = await Promise.all([
+    const [current, inventory, tool, cleared, soilTiles, friendshipRows] = await Promise.all([
       readStackAcresStory(profile.id),
       readStackAcresInventory(profile.id),
       readStackAcresToolTier(profile.id),
       readStackAcresSectors(profile.id),
       listStackAcresSoilTiles(profile.id),
-      listOwnedForgeEnchantmentIds(profile.id),
-      readStackAcresCrossbreedInventory(profile.id),
       Promise.all(FRIENDSHIP_NPCS.map((npc) => readStackAcresFriendship(profile.id, npc))),
     ]);
     const friendshipPoints = {} as Record<NpcId, number>;
@@ -7137,8 +7201,6 @@ export async function turnInStackAcresTravelerQuest(
         tool,
         sectorsCleared: cleared.length,
         soilBeds: soilTiles.length,
-        enchantments: forgeEnchantmentIdsFromOwned(enchantments).length,
-        crossbreeds: Object.values(crossbreeds).reduce((sum, n) => sum + (n ?? 0), 0),
       },
       chosenReward,
       friendshipPoints,
@@ -7185,9 +7247,19 @@ export async function turnInStackAcresTravelerQuest(
       });
     }
     if (written === "ok") {
+      // After the version-guarded write, so it lands once per turn-in. Seed is not
+      // money: a failed grant is logged rather than unwinding a quest already handed in.
+      let seeds: { crop: StackAcresCrop; quantity: number } | undefined;
+      if (quest.seeds) {
+        const given = await adjustStackAcresSeedStock(profile.id, quest.seeds.crop, quest.seeds.quantity).catch((error: unknown) => {
+          console.error("stackacres.quest_seeds_failed", { profileId: profile.id, quest: quest.id, error });
+          return null;
+        });
+        if (given !== null) seeds = { ...quest.seeds };
+      }
       return {
         ...(await view(profile, now)),
-        storyResult: { traveler, outcome: result.outcome, granted: result.granted },
+        storyResult: { traveler, outcome: result.outcome, granted: result.granted, ...(seeds ? { seeds } : {}) },
       };
     }
   }

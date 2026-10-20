@@ -84,6 +84,9 @@ export function tapActionFor(
       return action.disabled
         ? { kind: "refused", reason: action.reason ?? "Not now.", why: "blocked" }
         : { kind: "clear", unitId: unit.id };
+    // A hog or steer is shipped from Hank's sale barn in town, never collected on the farm.
+    case "ship":
+      return { kind: "refused", reason: "Ready to sell. Take it to Hank at the sale barn.", why: "waiting" };
     // Retiring is deliberately not a tap. It refunds nothing, so it stays two
     // deliberate presses behind the sidebar's own confirmation rather than
     // riding on a finger that landed on an animal.

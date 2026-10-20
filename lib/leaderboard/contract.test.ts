@@ -5,7 +5,6 @@ import {
   formatRecord,
   formatStreak,
   isHeadToHeadGame,
-  isLeaderboardGameId,
   leaderboardGame,
 } from "./contract";
 
@@ -64,14 +63,11 @@ describe("formatRecord / formatStreak", () => {
   });
 });
 
-describe("leaderboardGame / isLeaderboardGameId", () => {
+describe("leaderboardGame", () => {
   it("resolves a known id and rejects an unknown one", () => {
     expect(leaderboardGame("chess")).not.toBeNull();
     expect(leaderboardGame("checkers")).not.toBeNull();
     expect(leaderboardGame("solitaire")).toBeNull();
-    expect(isLeaderboardGameId("cribbage")).toBe(true);
-    expect(isLeaderboardGameId("poker")).toBe(false);
-    expect(isLeaderboardGameId(42)).toBe(false);
   });
 });
 

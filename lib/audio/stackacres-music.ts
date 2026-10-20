@@ -156,13 +156,6 @@ export function setGlobalMute(muted: boolean): void {
   }
 }
 
-/**
- * Check if music is currently enabled (app-mute AND music-mute both off).
- */
-export function isStackAcresMusicPlaying(): boolean {
-  return musicEnabled && !globalMuteEnabled && currentTrack !== null;
-}
-
 // Internal helpers for crossfading
 
 function fadeOut(

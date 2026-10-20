@@ -14,7 +14,7 @@
  */
 
 import { ladderMultiplier, type WagerLadder } from "./ante-up-ladder";
-import type { WordStackRound } from "./puzzles/word-stack";
+import type { WordStackRound, WordStackWordTier } from "./puzzles/word-stack";
 import { stakePressure, type StakePressure } from "./stake-pressure";
 
 /**
@@ -42,21 +42,25 @@ export const WAGER_MULTIPLIER_BY_GUESSES: WagerLadder = {
 };
 
 /**
- * Each stake band's ladder. Bands 1-3 play hard mode and only profit on a
- * 3-guess solve or better; the multiples shrink so the expected return
- * crosses 1x at that band's skill target.
+ * Each stake band's ladder. Bands 1-3 play a harder word than the daily one
+ * (lib/arcade/puzzles/word-stack-hard-answers.ts) and only profit on a 3-guess
+ * solve or better; the multiples shrink so the expected return crosses 1x at
+ * that band's skill target.
  *
- * Calibration. Guess shares by skill, from the NYT/WordleBot aggregate for the
- * median (mean 4.06) and sharpened for stronger players; hard mode slides
- * 20/12/8/5% of each bucket one guess later.
+ * Calibration. These bands used to play hard mode instead, and the table
+ * below is that model, kept as the starting point: harder words are assumed
+ * to cost about what hard mode did. Retune once real results come in. Guess
+ * shares by skill, from the NYT/WordleBot aggregate for the median (mean
+ * 4.06) and sharpened for stronger players; hard mode slid 20/12/8/5% of each
+ * bucket one guess later.
  *
- *   player (hard mode)  solve<=3  band1 EV  band2 EV  band3 EV
+ *   player              solve<=3  band1 EV  band2 EV  band3 EV
  *   median (mean 4.06)    25.7%    0.93x     0.67x     0.55x
  *   +1SD   (mean 3.73)    37.5%    1.24x     0.94x     0.77x
  *   +2SD   (mean 3.54)    47.2%    1.44x     1.13x     0.94x
  *   +3SD   (mean 3.38)    57.0%    1.63x     1.30x     1.10x
  *
- * Band 0 is normal mode: the median profits 86.5% of the time.
+ * Band 0 is the daily word: the median profits 86.5% of the time.
  * One word can't separate +1SD from +2SD by win rate, since solving in 3 or
  * fewer only rises about 10 points per SD, so the bands differ by payout
  * rather than by who can profit.
@@ -70,24 +74,40 @@ export const WORD_STACK_LADDER_BY_PRESSURE: Readonly<Record<StakePressure, Wager
 
 /** What a wager's stake band sets for its round. Copied onto the round at open. */
 export interface WordStackStakeRules {
-  hardMode: boolean;
+  /** Which harder word the round plays, or null for the shared daily word. */
+  wordTier: WordStackWordTier | null;
   ladder: WagerLadder;
 }
 
 export function wordStackStakeRules(wager: number): WordStackStakeRules {
   const pressure: StakePressure = stakePressure(wager);
   return {
-    hardMode: pressure >= 1,
+    wordTier: pressure === 0 ? null : pressure,
     ladder: WORD_STACK_LADDER_BY_PRESSURE[pressure],
   };
 }
 
+/** The badge a harder-word board wears, by tier. */
+export const WORD_STACK_TIER_LABELS: Readonly<Record<WordStackWordTier, string>> = {
+  1: "Hard word",
+  2: "Harder word",
+  3: "Hardest word",
+};
+
 /** Lobby lines for each stake band; see components/arcade/stake-pressure-note.tsx. */
-const HARD_MODE_LINE = "Hard mode: green letters stay put and gold letters must be used in every later guess.";
 export const WORD_STACK_PRESSURE_RULES = {
-  1: [HARD_MODE_LINE, "Profit needs 3 guesses or fewer: 1-2 pay 3x, 3 pays 2.2x, 4 pays back 0.8x, 5 pays 0.3x."],
-  2: [HARD_MODE_LINE, "Profit needs 3 guesses or fewer: 1-2 pay 2.4x, 3 pays 1.9x, 4 pays back 0.5x."],
-  3: [HARD_MODE_LINE, "Profit needs 3 guesses or fewer: 1-2 pay 2x, 3 pays 1.7x, 4 pays back 0.3x."],
+  1: [
+    "A harder word than the daily one, picked for look-alikes like _IGHT and _OUND. Guess any word you like.",
+    "Profit needs 3 guesses or fewer: 1-2 pay 3x, 3 pays 2.2x, 4 pays back 0.8x, 5 pays 0.3x.",
+  ],
+  2: [
+    "A much harder word, from the trickiest quarter of the list. Guess any word you like.",
+    "Profit needs 3 guesses or fewer: 1-2 pay 2.4x, 3 pays 1.9x, 4 pays back 0.5x.",
+  ],
+  3: [
+    "One of the hardest words in the list. Guess any word you like.",
+    "Profit needs 3 guesses or fewer: 1-2 pay 2x, 3 pays 1.7x, 4 pays back 0.3x.",
+  ],
 } as const;
 
 /** The lowest rung, and so the payout for a guess count the ladder does not name. */

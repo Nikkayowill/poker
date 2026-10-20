@@ -20,8 +20,3 @@ export function stackacresExchangeDay(now: Date): string {
   return now.toISOString().slice(0, 10);
 }
 
-/** Milliseconds until the next UTC day starts. */
-export function msUntilNextExchangeDay(now: Date): number {
-  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
-  return next - now.getTime();
-}

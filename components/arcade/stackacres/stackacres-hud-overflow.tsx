@@ -13,17 +13,15 @@ import { StackAcresPixelIcon } from "./stackacres-pixel-icon";
  * window here.
  *
  * Gold and land-upkeep-owed stay in `.sa-hud` itself -- what a player needs
- * every glance -- while Feed, the Synergy badge, the Prestige badge, the
- * Sunlight Forge badge and the music toggle move in here behind one "More"
- * button. Six-plus pills in one row was the whole complaint; this is the fix,
+ * every glance -- while Feed, Water, the Journal, the guide and the music
+ * toggle move in here behind one "More" button. Six-plus pills in one row was the whole complaint; this is the fix,
  * not a resize of the same six pills.
  *
  * Built like `components/nav/menu.tsx`'s dropdown (pointerdown-outside,
  * Escape, close-on-rotate) rather than reusing that component directly: its
  * `MenuItem` model is a flat label+icon+onSelect list, and what needs to live
- * in here are whole existing controls -- SynergyOverlay owns its own sheet
- * and internal state, the music toggle is a real on/off, neither of which is
- * "pick a row and go".
+ * in here are whole existing controls -- the Journal opens its own sheet,
+ * the music toggle is a real on/off, neither of which is "pick a row and go".
  */
 export function StackAcresHudOverflow({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);

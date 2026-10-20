@@ -18,12 +18,10 @@
  * caught, hunted or chopped rather than grown or crafted, with nothing
  * consuming them either.
  *
- * The only door from a crafted good back to Gold used to be a fulfilled
- * Contract (./contracts.ts). That is still true for Flour/Cheese/Cloth, and
- * Contracts still pay a premium over the flat Sell price below for exactly
- * that reason -- but every item here, crafted or raw, can now also be sold
- * directly at any time through `sellStackAcresItem`, reserved against the
- * same daily ceiling a harvest used to be.
+ * Every item here, crafted or raw, sells at any time through
+ * `sellStackAcresItem`, to the one townsperson who buys it
+ * (./town-buyers.ts). A Town Board order (./contracts.ts) pays a little more
+ * per unit for the goods it asks for.
  */
 
 import {
@@ -41,7 +39,7 @@ import { FISH_SPECIES } from "./fishing";
  *  either -- see this file's header. Meat and pelts join the fish for exactly
  *  the same reason they did, and like them nothing consumes either yet. Wood
  *  and Stone join the bucket the same way again: chopped/mined, not grown or
- *  crafted, and each is a required material on its own blueprints
+ *  crafted, and each is a required building material
  *  (./machines.ts's `woodCost`/`stoneCost`) rather than something a recipe
  *  consumes. */
 export const MACHINE_RAW_ITEMS = [...FISH_SPECIES, "meat", "pelt", "wood", "stone", "iron_ore"] as const;
@@ -94,8 +92,7 @@ export const MACHINE_ITEM_IDS: readonly MachineItemId[] = [
 
 /** Every `MachineItemId` there is: every `StackAcresItem` plus `MACHINE_ITEM_IDS`.
  *  For schema validation that has to accept the WHOLE inventory space (the
- *  Sell action) -- existing narrower call sites (gifts, blueprint
- *  contributions) keep using `MACHINE_ITEM_IDS` itself, since raw crops and
+ *  Sell action) -- existing narrower call sites (gifts) keep using `MACHINE_ITEM_IDS` itself, since raw crops and
  *  eggs were never valid there. */
 export const ALL_MACHINE_ITEM_IDS: readonly MachineItemId[] = [
   ...STACKACRES_ITEMS,
@@ -126,22 +123,12 @@ export interface MachineItemDef {
   /**
    * What one sells for, in Gold, through the Sell action.
    *
-   * PRICED BELOW WHAT A CONTRACT PAYS, DELIBERATELY, for every crafted good a
-   * contract can also ask for (Flour/Cheese/Cloth) -- see ./contracts.ts's
-   * `CONTRACT_RUNGS`, still the better outlet. Wheat is priced low enough
-   * that milling it into Flour and selling THAT stays strictly better per
-   * unit of wheat than selling it raw, so Sell never undercuts the Mill loop:
-   *
-   *   Wheat alone:        4 Gold/unit.
-   *   Flour (3 Wheat -> 1 Flour, sells 40): ~13.3 Gold-equivalent/wheat.
-   *
-   * Cheese and Cloth sit above what selling their raw milk/wool would fetch
-   * (recipeRawGoldValue in ./recipes.ts), so crafting is never a strict loss
-   * against just selling the raw material, and below their contract rate, so
-   * a contract is still the better trade when one is open. Cake has no
-   * contract at all -- Sell is its only door to Gold -- so it is priced at
-   * roughly 1.3x its own forgone raw value (2 Eggs + 1 Milk + 1 Flour), the
-   * same premium a contract rung pays.
+   * A MADE GOOD SELLS FOR AT MOST 1.15x WHAT ITS INPUTS SELL FOR RAW
+   * (recipeRawGoldValue in ./recipes.ts, pinned by a test), and never for
+   * less. The farm's money is raw goods sold in bulk in town: grain, eggs,
+   * cream and wool. Processing is a small convenience, not the income
+   * (2026-10-02 economy rebase). A Town Board order still pays a little more
+   * per unit than selling does (./contracts.ts).
    */
   sellPrice: number;
 }
@@ -149,14 +136,15 @@ export interface MachineItemDef {
 export const MACHINE_ITEM_CATALOGUE: Readonly<
   Record<MachineRawItem | MachineProcessedItem, MachineItemDef>
 > = {
-  // Common/uncommon/rare, same feel as the Vat's aging tiers -- see
-  // ./fishing.ts's FISH_WEIGHTS for the odds these prices are tuned against.
-  bluegill: { label: "Bluegill", plural: "Bluegill", icon: "ico-fish-bluegill", sellPrice: 15 },
-  trout: { label: "Trout", plural: "Trout", icon: "ico-fish-trout", sellPrice: 45 },
-  catfish: { label: "Catfish", plural: "Catfish", icon: "ico-fish-catfish", sellPrice: 130 },
+  // Common/uncommon/rare -- see ./fishing.ts's FISH_WEIGHTS for the odds.
+  // Cut 5x on 2026-10-05: one instant Stew is ten casts, and at the old
+  // prices that turned about 10 Gold of crops into about 720 Gold of fish.
+  bluegill: { label: "Bluegill", plural: "Bluegill", icon: "ico-fish-bluegill", sellPrice: 3 },
+  trout: { label: "Trout", plural: "Trout", icon: "ico-fish-trout", sellPrice: 9 },
+  catfish: { label: "Catfish", plural: "Catfish", icon: "ico-fish-catfish", sellPrice: 26 },
   // A logged sighting yields both at once (see ./hunting.ts's
   // QUARRY_CATALOGUE), so these are priced as a PAIR, not one at a time: a
-  // Rabbit is 29 Gold, a Deer 67, a Boar 105. Against the fishing ladder's
+  // Rabbit is 6 Gold, a Deer 14, a Boar 22 (cut 5x with fish on 2026-10-05). Against the fishing ladder's
   // own weights that makes an average stalk worth about half again an
   // average cast -- it takes several times longer, and unlike a cast it can
   // be lost outright. Trail Photos carry the higher price of the two: Field
@@ -166,8 +154,8 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   // reskin from the earlier hunting frame only ever changed the label a
   // player reads, never the key already written into production
   // `homestead_inventory` rows.
-  meat: { label: "Field Notes", plural: "Field Notes", icon: "ico-fieldnotes", sellPrice: 9 },
-  pelt: { label: "Trail Photo", plural: "Trail Photos", icon: "ico-trailphoto", sellPrice: 20 },
+  meat: { label: "Field Notes", plural: "Field Notes", icon: "ico-fieldnotes", sellPrice: 2 },
+  pelt: { label: "Trail Photo", plural: "Trail Photos", icon: "ico-trailphoto", sellPrice: 4 },
   // Chopped off the Homestead's own treeline (./wood.ts). Priced low and
   // deliberately: Wood's real job is being spent on machine placement
   // (./machines.ts's `MachineDef.woodCost`), not being sold -- a Sell price
@@ -185,41 +173,36 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   // selling the ore.
   iron_ore: { label: "Iron Ore", plural: "Iron Ore", icon: "ico-iron-ore", sellPrice: 5 },
   // Smelted from Iron Ore. Its job is paying for the Far Field's buildings
-  // (./empire-buildings.ts), so like Wood and Stone it sells for little.
-  metal: { label: "Metal", plural: "Metal", icon: "ico-metal", sellPrice: 20 },
-  // Set to 16 on 2026-09-30. At 40 a Flour sold for about 18x its seed and the
-  // biggest order paid 35x, which made a wheat field a money printer. 16 still
-  // beats the 12 Gold its three Wheat sell for, so milling is worth doing.
-  flour: { label: "Flour", plural: "Flour", icon: "ico-flour", sellPrice: 16 },
-  cheese: { label: "Cheese", plural: "Cheese", icon: "ico-cheese", sellPrice: 700 },
-  cloth: { label: "Cloth", plural: "Cloth", icon: "ico-cloth", sellPrice: 320 },
-  cake: { label: "Cake", plural: "Cakes", icon: "ico-cake", sellPrice: 365 },
-  // Above Flour's 16, so baking a Flour always beats selling it. There is no
-  // bread art yet, so it borrows the wheat icon.
-  bread: { label: "Bread", plural: "Bread", icon: "ico-wheat", sellPrice: 22 },
-  // Above the 10 Gold its five crops sell for raw. No stew art yet, so it
-  // borrows the potato icon.
-  stew: { label: "Hearty Stew", plural: "Hearty Stew", icon: "ico-potato", sellPrice: 30 },
-  // Above the 8 Gold its four greens sell for raw. Borrows the lettuce icon.
-  salad: { label: "Garden Salad", plural: "Garden Salads", icon: "ico-lettuce", sellPrice: 12 },
-  // Milled from corn for cattle (./feeding.ts). Priced as feed, not as a way
-  // to sell corn: two corn sell for more raw. Borrows the corn icon.
-  cattle_feed: { label: "Cattle Feed", plural: "Cattle Feed", icon: "ico-corn", sellPrice: 12 },
-  // Chapter 5's town kitchen. Sauce, Salsa and Pickles have town orders, so
-  // they sell for a little over their raw crops and under what an order pays
-  // per jar (./contracts.ts). Sauerkraut and Stuffed Peppers have no order,
-  // so like Stew they carry a bigger markup. None has its own art yet, so
-  // each borrows its main crop's icon.
-  sauce: { label: "Tomato Sauce", plural: "Tomato Sauce", icon: "ico-tomato", sellPrice: 90 },
-  salsa: { label: "Hot Salsa", plural: "Hot Salsa", icon: "ico-pepper", sellPrice: 90 },
-  stuffed_peppers: { label: "Stuffed Peppers", plural: "Stuffed Peppers", icon: "ico-bell_pepper", sellPrice: 180 },
-  pickles: { label: "Pickles", plural: "Pickles", icon: "ico-celery", sellPrice: 60 },
-  sauerkraut: { label: "Sauerkraut", plural: "Sauerkraut", icon: "ico-cabbage", sellPrice: 15 },
-  // Chapter 6's feasts. Casserole has a town order, so it sells just under
-  // what the order pays per dish. The Feast has none; it is the meal to eat
-  // or give, priced like the other order-free meals.
-  bean_casserole: { label: "Bean Casserole", plural: "Bean Casseroles", icon: "ico-green_bean", sellPrice: 135 },
-  harvest_feast: { label: "Harvest Feast", plural: "Harvest Feasts", icon: "ico-eggplant", sellPrice: 215 },
+  // (./empire-buildings.ts), so like Wood and Stone it sells for little: just
+  // over the two ore it takes.
+  metal: { label: "Metal", plural: "Metal", icon: "ico-metal", sellPrice: 11 },
+  // Every price below is at most 1.15x what its inputs sell for raw (see the
+  // `sellPrice` doc above). Ground from three Wheat at 7.
+  flour: { label: "Flour", plural: "Flour", icon: "ico-flour", sellPrice: 24 },
+  // Three Milk at 120.
+  cheese: { label: "Cheese", plural: "Cheese", icon: "ico-cheese", sellPrice: 400 },
+  // Four Fleeces at 40.
+  cloth: { label: "Cloth", plural: "Cloth", icon: "ico-cloth", sellPrice: 170 },
+  // Two Eggs, a Milk and a Flour: 168 raw.
+  cake: { label: "Cake", plural: "Cakes", icon: "ico-cake", sellPrice: 190 },
+  // The house kitchen's food is mainly for energy (./energy.ts), so it sells
+  // for little more than what went in. No bread art yet: it borrows the wheat icon.
+  bread: { label: "Bread", plural: "Bread", icon: "ico-wheat", sellPrice: 26 },
+  // Borrows the potato icon.
+  stew: { label: "Hearty Stew", plural: "Hearty Stew", icon: "ico-potato", sellPrice: 11 },
+  // Borrows the lettuce icon.
+  salad: { label: "Garden Salad", plural: "Garden Salads", icon: "ico-lettuce", sellPrice: 9 },
+  // Ground from corn for cattle (./feeding.ts), four to a corn. Priced as
+  // feed, not as a way to sell corn. Borrows the corn icon.
+  cattle_feed: { label: "Cattle Feed", plural: "Cattle Feed", icon: "ico-corn", sellPrice: 8 },
+  // None of these has its own art yet, so each borrows its main crop's icon.
+  sauce: { label: "Tomato Sauce", plural: "Tomato Sauce", icon: "ico-tomato", sellPrice: 88 },
+  salsa: { label: "Hot Salsa", plural: "Hot Salsa", icon: "ico-pepper", sellPrice: 88 },
+  stuffed_peppers: { label: "Stuffed Peppers", plural: "Stuffed Peppers", icon: "ico-bell_pepper", sellPrice: 160 },
+  pickles: { label: "Pickles", plural: "Pickles", icon: "ico-celery", sellPrice: 57 },
+  sauerkraut: { label: "Sauerkraut", plural: "Sauerkraut", icon: "ico-cabbage", sellPrice: 6 },
+  bean_casserole: { label: "Bean Casserole", plural: "Bean Casseroles", icon: "ico-green_bean", sellPrice: 113 },
+  harvest_feast: { label: "Harvest Feast", plural: "Harvest Feasts", icon: "ico-eggplant", sellPrice: 193 },
 };
 
 /** What one of `item` sells for, whatever space it started in. */
@@ -255,7 +238,7 @@ export function machineItemLabel(item: MachineItemId, quantity: number): string 
 export function machineItemPurpose(item: MachineItemId): string {
   if (item === "wood" || item === "stone") return "Building material — keep some for farm upgrades.";
   if (item === "bluegill" || item === "trout" || item === "catfish") return "Catch from the pond, then sell for Gold.";
-  if (item === "meat" || item === "pelt") return "Exploration find — sell it from the Workshop shelf.";
-  if (isMachineProcessedItem(item)) return "Use in recipes or town orders, or sell it from the Workshop shelf.";
+  if (item === "meat" || item === "pelt") return "Exploration find. Sell it in town.";
+  if (isMachineProcessedItem(item)) return "Use in recipes or town orders, or sell it in town.";
   return "Use in recipes, animal care, gifts, or town orders.";
 }

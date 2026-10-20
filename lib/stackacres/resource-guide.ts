@@ -3,29 +3,21 @@
  * uses it and where to get more.
  *
  * Every use and every source is read off the catalogues that already run the
- * farm (recipes, machines, axe, contracts, blueprints, gifts, quests, the
- * crossbreed matrix), so the guide cannot disagree with the game. Only the
+ * farm (recipes, machines, axe, contracts, gifts, quests), so the guide
+ * cannot disagree with the game. Only the
  * one-line descriptions and the "is this source open" facts are written here.
  */
 
 import { STACKACRES_LIVESTOCK, isLivestock, type StackAcresStock } from "./catalogue";
 import { AXE_LEVELS, AXE_LEVEL_DEFS } from "./axe";
-import { CELLAR_ITEMS, VAT_INPUT_ITEM } from "./aging";
-import { MYTHIC_BLUEPRINTS, MYTHIC_BLUEPRINT_IDS } from "./blueprints";
 import { CONTRACT_RUNGS } from "./contracts";
-import { CROSSBREED_MATRIX } from "./crossbreeding";
-import {
-  CROSSBREED_ITEMS,
-  CROSSBREED_ITEM_CATALOGUE,
-  type CrossbreedItem,
-} from "./crossbreed-items";
 import { FOOD_ENERGY, isFoodItem } from "./energy";
 import { EMPIRE_BUILDINGS, EMPIRE_BUILDING_KINDS } from "./empire-buildings";
 import { SHELF_FEED_ORDERS } from "./feeding";
 import { FISHING_BAIT_ITEM, FISH_SPECIES } from "./fishing";
 import { GIFTABLE_ITEMS, NPC_GIFT_CATALOGUE, FRIENDSHIP_NPCS } from "./friendship";
 import { STACKACRES_YIELDS, STACKACRES_ITEMS } from "./items";
-import { MACHINE_CATALOGUE, MACHINE_KINDS, type MachineKind } from "./machines";
+import { MACHINE_CATALOGUE, MACHINE_KINDS, isRetiredMachine, type MachineKind } from "./machines";
 import {
   ALL_MACHINE_ITEM_IDS,
   MACHINE_ITEM_CATALOGUE,
@@ -34,32 +26,28 @@ import {
   machineItemSellPrice,
   type MachineItemId,
 } from "./machine-items";
+import { TOWN_BUYERS, townBuyerFor } from "./town-buyers";
 import { RECIPE_CATALOGUE, RECIPE_IDS, type RecipeId } from "./recipes";
 import { SOIL_ENRICH_USE_LABEL, isSoilEnrichingItem } from "./soil-enrich";
 import { TRAVELER_QUESTS, questFlatObjectives } from "./story/quests";
 import { TRAVELER_IDS } from "./story/travelers";
+import { isHerdStock } from "./herd";
 import { HOME_SECTORS } from "./sectors";
 import { stockZone } from "./world";
 
-/** Anything the guide can describe: the shared inventory plus the six hybrids. */
-export type GuideItemId = MachineItemId | CrossbreedItem;
+/** Anything the guide can describe: the shared inventory. */
+export type GuideItemId = MachineItemId;
 
 // ALL_MACHINE_ITEM_IDS lists wheat twice (it is both a crop and a machine input).
-export const GUIDE_ITEM_IDS: readonly GuideItemId[] = [...new Set<GuideItemId>([...ALL_MACHINE_ITEM_IDS, ...CROSSBREED_ITEMS])];
-
-export function isCrossbreedGuideItem(item: GuideItemId): item is CrossbreedItem {
-  return (CROSSBREED_ITEMS as readonly string[]).includes(item);
-}
+export const GUIDE_ITEM_IDS: readonly GuideItemId[] = [...new Set<GuideItemId>(ALL_MACHINE_ITEM_IDS)];
 
 /** A screen the guide can send the player to. The farm maps each to its own opener. */
-export type GuideDestinationId = "workshop" | "house" | "contracts" | "store-sell" | "crossbreed";
+export type GuideDestinationId = "workshop" | "house" | "contracts";
 
 export const GUIDE_DESTINATION_LABELS: Readonly<Record<GuideDestinationId, string>> = {
   workshop: "Open the Workshop",
   house: "Open the kitchen",
   contracts: "Open the Town Board",
-  "store-sell": "Open the barn shelf",
-  crossbreed: "Open the Crossbreeding Bed",
 };
 
 export type ResourceUseKind =
@@ -67,7 +55,6 @@ export type ResourceUseKind =
   | "build"
   | "axe"
   | "empire"
-  | "blueprint"
   | "contract"
   | "vat"
   | "cellar"
@@ -77,11 +64,7 @@ export type ResourceUseKind =
   | "feed"
   | "bait"
   | "soil"
-  | "collection"
   | "sell";
-
-/** Kinds that spend the item as a cost someone has to pay before something else happens. */
-const GATING_KINDS: readonly ResourceUseKind[] = ["recipe", "build", "axe", "empire", "blueprint", "contract", "vat", "quest"];
 
 export interface ResourceUse {
   kind: ResourceUseKind;
@@ -93,10 +76,6 @@ export interface ResourceUse {
   machine?: MachineKind;
   /** The recipe behind a recipe use, for the unlock check. */
   recipe?: RecipeId;
-}
-
-export function isGatingUse(use: ResourceUse): boolean {
-  return GATING_KINDS.includes(use.kind);
 }
 
 export interface ResourceSource {
@@ -116,8 +95,8 @@ export interface ResourceGuideEntry {
   plural: string;
   icon: string;
   description: string;
-  /** Gold one sells for, or null for a hybrid, which cannot be sold. */
-  sellPrice: number | null;
+  /** Gold one sells for. */
+  sellPrice: number;
   uses: ResourceUse[];
   sources: ResourceSource[];
 }
@@ -154,8 +133,8 @@ const DESCRIPTIONS: Readonly<Record<GuideItemId, string>> = {
   wood: "Chopped from the trees on the Homestead.",
   stone: "Broken out of boulders.",
   iron_ore: "Broken out of boulders alongside the stone.",
-  flour: "Ground from wheat at the Mill.",
-  cheese: "Made from milk at the Dairy.",
+  flour: "Ground from wheat at the Feed Grinder.",
+  cheese: "Made from milk at the Cream Separator.",
   cloth: "Woven from wool at the Loom.",
   cake: "Baked from eggs, milk and flour.",
   bread: "Baked from flour in the kitchen oven.",
@@ -170,12 +149,6 @@ const DESCRIPTIONS: Readonly<Record<GuideItemId, string>> = {
   bean_casserole: "A baked dish from the town kitchen.",
   harvest_feast: "The biggest dish in the kitchen.",
   metal: "Smelted from iron ore.",
-  golden_maize: "A rare hybrid bred from corn and wheat.",
-  sunroot_egg: "A rare hybrid bred from a hen and wheat.",
-  candied_husk: "A rare hybrid bred from carrot and potato.",
-  marbled_down: "A rare hybrid bred from a hen and a pig.",
-  tallow_wool: "A rare hybrid bred from a pig and cattle.",
-  custard_curd: "A rare hybrid bred from cattle and a hen.",
 };
 
 /* ------------------------------------------------------------------ */
@@ -196,19 +169,15 @@ export const GATHER_SOURCES: Readonly<Record<"fishing" | "hunting" | "wood" | "s
     note: "The brush is not on any map yet.",
   },
   wood: { label: "Chop the trees on the Homestead", open: true },
-  stone: {
-    label: "Mine the boulders",
-    open: false,
-    note: "There are no boulders on any map yet.",
-  },
+  stone: { label: "Break the boulders in the wild land round the yard", open: true },
 };
 
 function isMachineBuildable(kind: MachineKind): boolean {
-  return MACHINE_KINDS.includes(kind);
+  return MACHINE_KINDS.includes(kind) && !isRetiredMachine(kind);
 }
 
 function stockIsOpen(stock: StackAcresStock): boolean {
-  if (!isLivestock(stock)) return true;
+  if (!isLivestock(stock) || isHerdStock(stock)) return true;
   return (HOME_SECTORS as readonly string[]).includes(stockZone(stock));
 }
 
@@ -244,20 +213,6 @@ export function isObtainable(item: GuideItemId, seen: ReadonlySet<string> = new 
 export function resourceSources(item: GuideItemId): ResourceSource[] {
   const sources: ResourceSource[] = [];
 
-  if (isCrossbreedGuideItem(item)) {
-    for (const entry of CROSSBREED_MATRIX) {
-      if (entry.hybrid !== item) continue;
-      const open = [entry.a, entry.b].every((stock) => stockIsOpen(stock));
-      sources.push({
-        label: `Breed ${stockName(entry.a)} beside ${stockName(entry.b)} in the Crossbreeding Bed`,
-        open,
-        note: open ? undefined : "Needs an animal you cannot keep yet.",
-        destination: "crossbreed",
-      });
-    }
-    return sources;
-  }
-
   for (const [stock, produce] of Object.entries(STACKACRES_YIELDS)) {
     if (produce.item !== item) continue;
     const open = stockIsOpen(stock as StackAcresStock);
@@ -288,27 +243,12 @@ export function resourceSources(item: GuideItemId): ResourceSource[] {
   return sources;
 }
 
-function stockName(stock: StackAcresStock): string {
-  return STOCK_LABELS[stock] ?? stock.replace("_", " ");
-}
-
 /* ------------------------------------------------------------------ */
 /* Uses                                                                */
 /* ------------------------------------------------------------------ */
 
 export function resourceUses(item: GuideItemId): ResourceUse[] {
   const uses: ResourceUse[] = [];
-
-  if (isCrossbreedGuideItem(item)) {
-    const total = CROSSBREED_ITEMS.length;
-    uses.push({
-      kind: "collection",
-      label: `Part of your hybrid collection (${total} to find)`,
-      detail: "Each kind you breed is logged in the Crossbreeding Bed.",
-      destination: "crossbreed",
-    });
-    return uses;
-  }
 
   for (const id of RECIPE_IDS) {
     const recipe = RECIPE_CATALOGUE[id];
@@ -325,6 +265,7 @@ export function resourceUses(item: GuideItemId): ResourceUse[] {
   }
 
   for (const kind of MACHINE_KINDS) {
+    if (isRetiredMachine(kind)) continue;
     const cost = MACHINE_CATALOGUE[kind].materials?.find((entry) => entry.item === item);
     if (!cost) continue;
     uses.push({
@@ -348,29 +289,9 @@ export function resourceUses(item: GuideItemId): ResourceUse[] {
     uses.push({ kind: "empire", label: `Raise the ${EMPIRE_BUILDINGS[kind].label} in the Far Field`, detail: `Takes ${cost.quantity}` });
   }
 
-  for (const blueprint of MYTHIC_BLUEPRINT_IDS.map((id) => MYTHIC_BLUEPRINTS[id])) {
-    for (const stage of blueprint.stages) {
-      const need = stage.requirements.find((entry) => entry.item === item);
-      if (!need) continue;
-      uses.push({
-        kind: "blueprint",
-        label: `${blueprint.label}: ${stage.label}`,
-        detail: `Takes ${need.quantity}`,
-      });
-    }
-  }
-
   const rungs = CONTRACT_RUNGS.filter((rung) => rung.item === item);
   if (rungs.length > 0) {
     uses.push({ kind: "contract", label: "Town orders", detail: "The town posts orders for it", destination: "contracts" });
-  }
-
-  if (item === VAT_INPUT_ITEM) {
-    uses.push({ kind: "vat", label: "Age it in the Fermenting Vat", destination: "workshop", machine: "vat" });
-  }
-
-  if ((CELLAR_ITEMS as readonly string[]).includes(item)) {
-    uses.push({ kind: "cellar", label: "Age it in the Preserves Cellar", destination: "house", machine: "cellar" });
   }
 
   if (isFoodItem(item)) {
@@ -405,7 +326,12 @@ export function resourceUses(item: GuideItemId): ResourceUse[] {
 
   if ((STACKACRES_ITEMS as readonly string[]).includes(item) || item in MACHINE_ITEM_CATALOGUE) {
     const price = machineItemSellPrice(item as MachineItemId);
-    uses.push({ kind: "sell", label: `Sell for ${price.toLocaleString()} Gold each`, destination: "store-sell" });
+    const buyer = TOWN_BUYERS[townBuyerFor(item as MachineItemId)];
+    uses.push({
+      kind: "sell",
+      label: `Sell for ${price.toLocaleString()} Gold each`,
+      detail: `${buyer.name} buys it at ${buyer.place} in town.`,
+    });
   }
 
   return uses;
@@ -416,19 +342,6 @@ export function resourceUses(item: GuideItemId): ResourceUse[] {
 /* ------------------------------------------------------------------ */
 
 export function resourceGuideEntry(item: GuideItemId): ResourceGuideEntry {
-  if (isCrossbreedGuideItem(item)) {
-    const def = CROSSBREED_ITEM_CATALOGUE[item];
-    return {
-      item,
-      label: def.label,
-      plural: def.plural,
-      icon: def.icon,
-      description: DESCRIPTIONS[item],
-      sellPrice: null,
-      uses: resourceUses(item),
-      sources: resourceSources(item),
-    };
-  }
   return {
     item,
     label: machineItemNoun(item, 1),
@@ -441,7 +354,3 @@ export function resourceGuideEntry(item: GuideItemId): ResourceGuideEntry {
   };
 }
 
-/** The uses that are not just "sell it", in the order the guide lists them. */
-export function nonSellUses(item: GuideItemId): ResourceUse[] {
-  return resourceUses(item).filter((use) => use.kind !== "sell");
-}

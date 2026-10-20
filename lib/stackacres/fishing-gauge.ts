@@ -25,7 +25,7 @@
  * does): a test hands it a fixed sequence instead of patching Math.random.
  */
 
-import { FISH_SPECIES, pickCaughtFish, type CastTier, type FishSpecies } from "./fishing";
+import { pickCaughtFish, type CastTier, type FishSpecies } from "./fishing";
 import { clampFrameMs } from "./world";
 
 /** Length of the fish marker as a fraction of the track. Shared by all
@@ -308,11 +308,6 @@ export function stepFishingGauge(
  */
 export function gaugeTension(state: FishingGaugeState): number {
   return clamp(1 - state.progress / START_PROGRESS, 0, 1);
-}
-
-/** Every species this module has a profile for, in ./fishing.ts's order. */
-export function gaugeSpeciesLadder(): readonly FishSpecies[] {
-  return FISH_SPECIES;
 }
 
 /**

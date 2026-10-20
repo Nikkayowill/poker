@@ -4,7 +4,6 @@ import {
   canStartMachine,
   isMachineDone,
   machineProgress,
-  rollMillDoubleOutput,
 } from "./machines";
 import { RECIPE_CATALOGUE, canStartRecipe } from "./recipes";
 
@@ -98,13 +97,3 @@ describe("machineProgress", () => {
   });
 });
 
-describe("rollMillDoubleOutput", () => {
-  it("never hits at chance 0, whatever the roll", () => {
-    expect(rollMillDoubleOutput(0, () => 0)).toBe(false);
-  });
-
-  it("hits below the chance and misses at or above it", () => {
-    expect(rollMillDoubleOutput(0.1, () => 0.099)).toBe(true);
-    expect(rollMillDoubleOutput(0.1, () => 0.1)).toBe(false);
-  });
-});

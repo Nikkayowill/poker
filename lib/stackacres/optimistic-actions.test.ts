@@ -1,5 +1,7 @@
 import { cropFieldObstaclePlacements } from "./crop-field-obstacles";
 import { isWildMapTile, mapToSoilTile } from "./hoeable";
+import { ORE_PER_BREAK } from "./stone-nodes";
+import { acreAtMapTile } from "./acres";
 import { isFenceableMapTile } from "./fences";
 import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "./homestead-ground";
 import { describe, expect, it } from "vitest";
@@ -9,7 +11,6 @@ import { stackacresStockPrice } from "./market";
 import { HOME_SECTOR } from "./sectors";
 import type { StackAcresUnitSnapshot } from "./units";
 import { WATER_CAPACITY } from "./water-can";
-import { SYNERGY_PERKS } from "./synergy-perks";
 import { MACHINE_CATALOGUE } from "./machines";
 import { RECIPE_CATALOGUE } from "./recipes";
 import { STACKACRES_FEED } from "./catalogue";
@@ -78,9 +79,6 @@ function ctx(overrides: Partial<FarmPredictContext> = {}): FarmPredictContext {
     upkeep: { plots: 0, fee: 0, paidToday: 0, due: 0 },
     influence: 0,
     contract: null,
-    synergyUnlocked: [],
-    synergyActive: [],
-    farmhandSpeedMultiplier: 1,
     secrets: { held: {}, boostArmed: false },
     secretDonations: {} as FarmPredictContext["secretDonations"],
     greenhouseBuilt: false,
@@ -180,7 +178,7 @@ describe("predictStackAcresAction: the processing track", () => {
   it("sells: the goods leave the shelf at once, the Gold waits for the server", () => {
     const contract = { id: "c1", status: "open" } as FarmPredictContext["contract"];
     const patch = predictStackAcresAction(
-      { action: "sell", item: "eggs", quantity: 3 },
+      { action: "sell", buyer: "general-store", item: "eggs", quantity: 3 },
       ctx({ inventory: { eggs: 5, milk: 2 }, contract }),
     );
     expect(patch?.inventory).toEqual({ eggs: 2, milk: 2 });
@@ -191,9 +189,9 @@ describe("predictStackAcresAction: the processing track", () => {
 
   it("refuses to sell more than the shelf holds", () => {
     expect(
-      predictStackAcresAction({ action: "sell", item: "cake", quantity: 2 }, ctx({ inventory: { cake: 1 } })),
+      predictStackAcresAction({ action: "sell", buyer: "general-store", item: "cake", quantity: 2 }, ctx({ inventory: { cake: 1 } })),
     ).toBeNull();
-    expect(predictStackAcresAction({ action: "sell", item: "milk", quantity: 1 }, ctx())).toBeNull();
+    expect(predictStackAcresAction({ action: "sell", buyer: "general-store", item: "milk", quantity: 1 }, ctx())).toBeNull();
   });
 
   it("bakes a Cake on an idle Dairy, spending every input at once", () => {
@@ -207,7 +205,6 @@ describe("predictStackAcresAction: the processing track", () => {
   it("leaves work and the vat to the server", () => {
     const vatCtx = ctx({ machines: [machine({ id: "v1", kind: "vat" })], inventory: { cheese: 4 } });
     expect(predictStackAcresAction({ action: "work" }, vatCtx)).toBeNull();
-    expect(predictStackAcresAction({ action: "seal-vat" }, vatCtx)).toBeNull();
     expect(predictStackAcresAction({ action: "collect-vat" }, vatCtx)).toBeNull();
   });
 });
@@ -605,6 +602,29 @@ describe("predictStackAcresAction: laying a soil tile", () => {
     expect(patch?.cropFieldsUnlocked).toBe(false);
   });
 
+  it("lays each bed of a tractor row the way a single press would, skipping one already dug", () => {
+    const yardRow = (() => {
+      const yard = (mx: number, my: number) => isFenceableMapTile(mx, my) && !isWildMapTile(mx, my);
+      for (let my = 0; my < HOMESTEAD_MAP_HEIGHT; my++) {
+        for (let mx = 0; mx + 3 <= HOMESTEAD_MAP_WIDTH; mx++) {
+          if (yard(mx, my) && yard(mx + 1, my) && yard(mx + 2, my)) {
+            const first = mapToSoilTile(mx, my);
+            return [0, 1, 2].map((i) => ({ tx: first.tx + i, ty: first.ty }));
+          }
+        }
+      }
+      throw new Error("no three yard squares in a row on the Homestead");
+    })();
+    const dug = { ...yardRow[1], order: 0, origin: "purchased" as const };
+    const patch = predictStackAcresAction(
+      { action: "place-soil-tile", tx: yardRow[0].tx, ty: yardRow[0].ty, tiles: yardRow },
+      ctx({ soilTiles: [dug] }),
+    );
+    expect(patch?.soilTiles?.map((tile) => `${tile.tx},${tile.ty}`).sort()).toEqual(
+      yardRow.map((tile) => `${tile.tx},${tile.ty}`).sort(),
+    );
+  });
+
   it("refuses a coordinate that already has a bed", () => {
     const bed = { tx: inFields.tx, ty: inFields.ty, order: 0, origin: "purchased" as const };
     expect(
@@ -812,37 +832,6 @@ describe("predictStackAcresAction: the rest of the shop", () => {
     expect(again).toBeNull();
   });
 
-  it("unlocks a synergy perk once, never twice", () => {
-    const archetype = Object.keys(SYNERGY_PERKS)[0] as keyof typeof SYNERGY_PERKS;
-    const patch = predictStackAcresAction(
-      { action: "unlock-synergy-perk", archetype },
-      ctx({ profile: profile({ goldBalance: 1_000_000 }) }),
-    );
-    expect(patch?.synergy?.unlocked).toEqual([archetype]);
-
-    const already = predictStackAcresAction(
-      { action: "unlock-synergy-perk", archetype },
-      ctx({ profile: profile({ goldBalance: 1_000_000 }), synergyUnlocked: [archetype] }),
-    );
-    expect(already).toBeNull();
-  });
-
-  it("activates a perk into the next open slot only", () => {
-    const archetype = Object.keys(SYNERGY_PERKS)[0] as keyof typeof SYNERGY_PERKS;
-    const patch = predictStackAcresAction(
-      { action: "activate-synergy-perk", archetype, slot: 0 },
-      ctx({ synergyUnlocked: [archetype] }),
-    );
-    expect(patch?.synergy?.active).toEqual([archetype]);
-
-    // Skipping ahead to slot 1 with nothing in slot 0 is refused.
-    const skip = predictStackAcresAction(
-      { action: "activate-synergy-perk", archetype, slot: 1 },
-      ctx({ synergyUnlocked: [archetype] }),
-    );
-    expect(skip).toBeNull();
-  });
-
   it("donates a held secret item exactly once", () => {
     const patch = predictStackAcresAction(
       { action: "donate-secret-item", itemId: "lucky_poker_dice" },
@@ -998,6 +987,15 @@ describe("clearing land", () => {
     expect(patch?.profile).toBeUndefined();
   });
 
+  it("pays ore for the swing that breaks a boulder and not before", () => {
+    const boulder = LAND_OBSTACLES.cropfields.find((o) => o.kind === "boulder")!;
+    const energy = { level: 50, updatedAt: NOW.toISOString() };
+    const standing = ctx({ energy, landObstacles: [landObstacleSnapshot(boulder, { hitsRemaining: 2, clearedAt: null })] });
+    expect(predictStackAcresAction({ action: "work-land", obstacleId: boulder.id }, standing)?.inventory?.iron_ore).toBeUndefined();
+    const last = ctx({ energy, landObstacles: [landObstacleSnapshot(boulder, { hitsRemaining: 1, clearedAt: null })] });
+    expect(predictStackAcresAction({ action: "work-land", obstacleId: boulder.id }, last)?.inventory?.iron_ore).toBe(ORE_PER_BREAK);
+  });
+
   it("refuses a swing nobody has the energy for", () => {
     const flat = ctx({ energy: { level: 1, updatedAt: NOW.toISOString() } });
     expect(predictStackAcresAction({ action: "work-land", obstacleId: tree.id }, flat)).toBeNull();
@@ -1055,5 +1053,59 @@ describe("predictStackAcresAction: fences", () => {
     const patch = predictStackAcresAction({ action: "remove-fence", ...grass }, ctx({ fences: [grass], inventory: { wood: 0 } }));
     expect(patch?.fences).toEqual([]);
     expect(patch?.inventory?.wood).toBe(2);
+  });
+});
+
+describe("predictStackAcresAction: ground the farm does not own", () => {
+  const wild = (() => {
+    for (let ty = 0; ty < HOMESTEAD_MAP_HEIGHT; ty++) {
+      for (let tx = 0; tx < HOMESTEAD_MAP_WIDTH; tx++) {
+        if (isFenceableMapTile(tx, ty) && isWildMapTile(tx, ty) && acreAtMapTile(tx, ty)) return { tx, ty, acre: acreAtMapTile(tx, ty)!.id };
+      }
+    }
+    throw new Error("no wild ground on the Homestead");
+  })();
+
+  it("puts no fence up on an acre it does not own", () => {
+    const patch = predictStackAcresAction({ action: "place-fence", tx: wild.tx, ty: wild.ty }, ctx({ inventory: { wood: 5 }, ownedAcres: [] }));
+    expect(patch).toBeNull();
+  });
+
+  it("puts the fence up once the acre is owned", () => {
+    const patch = predictStackAcresAction({ action: "place-fence", tx: wild.tx, ty: wild.ty }, ctx({ inventory: { wood: 5 }, ownedAcres: [wild.acre] }));
+    expect(patch?.fences).toEqual([{ tx: wild.tx, ty: wild.ty }]);
+  });
+
+  it("guesses nothing about ownership it was never told", () => {
+    const patch = predictStackAcresAction({ action: "place-fence", tx: wild.tx, ty: wild.ty }, ctx({ inventory: { wood: 5 } }));
+    expect(patch?.fences).toEqual([{ tx: wild.tx, ty: wild.ty }]);
+  });
+});
+
+describe("predictStackAcresAction: hogs and steers", () => {
+  const hog = (overrides: Partial<StackAcresUnitSnapshot> = {}) =>
+    unit({ id: "hog-1", stock: "hog", state: "ready", stake: 250, yieldQuantity: 6, hungryAt: null, ...overrides });
+
+  it("never guesses a hog away on a harvest", () => {
+    const ready = hog();
+    const hen = unit({ id: "hen-1", state: "ready" });
+    const patch = predictStackAcresAction({ action: "collect" }, ctx({ units: [ready, hen] }));
+    expect(patch?.units).toEqual([ready]);
+  });
+
+  it("ships the ready hogs that are home, and leaves the rest", () => {
+    const ready = hog();
+    const away = hog({ id: "hog-2", away: "wandered" });
+    const growing = hog({ id: "hog-3", state: "working", readyAt: new Date(NOW.getTime() + 60_000).toISOString() });
+    const patch = predictStackAcresAction({ action: "ship-livestock" }, ctx({ units: [ready, away, growing] }));
+    expect(patch?.units).toEqual([away, growing]);
+    expect(patch?.profile).toBeUndefined();
+  });
+
+  it("shows the weight a serving of corn puts on", () => {
+    const hungry = hog({ state: "hungry", feedBonus: 1, hungryAt: new Date(NOW.getTime() - 60_000).toISOString() });
+    const patch = predictStackAcresAction({ action: "feed", unitId: hungry.id }, ctx({ units: [hungry], inventory: { corn: 2 } }));
+    expect(patch?.units?.[0].feedBonus).toBe(2);
+    expect(patch?.inventory?.corn).toBe(1);
   });
 });

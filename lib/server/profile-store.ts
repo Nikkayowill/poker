@@ -282,29 +282,6 @@ export async function ensureProfile(token: string, preferredName?: string): Prom
  * supplied, so security-sensitive routes must not turn an unknown token into
  * a new server-side identity while trying to authenticate it.
  */
-/**
- * The auth account this session belongs to, or null while it is still a guest.
- *
- * publicProfile() deliberately drops `userId` (isRegistered is derived from
- * it), so anything that has to name one specific account -- an allowlist, not
- * a "is this player registered" check -- cannot go through the profile shape.
- * Narrow on purpose: it returns the id and nothing else.
- */
-export async function findUserIdBySessionToken(token: string | null): Promise<string | null> {
-  if (!token) return null;
-
-  const supabase = adminClient();
-  if (!supabase) return memoryProfiles.get(token)?.userId ?? null;
-
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("user_id")
-    .eq("session_token", token)
-    .maybeSingle();
-  if (error || !data) return null;
-  return data.user_id ? String(data.user_id) : null;
-}
-
 export async function findProfileBySessionToken(token: string): Promise<PlayerProfile | null> {
   if (!token) return null;
 
@@ -1262,14 +1239,6 @@ export async function confirmGoldDebitLedgered(correlationId: string): Promise<v
   const { error } = await supabase.rpc("confirm_gold_debit_ledgered", { p_correlation_id: correlationId });
   if (error) throw new Error(`Could not confirm Gold debit: ${error.message}`);
 }
-
-export type OrphanedGoldDebit = {
-  correlationId: string;
-  profileId: string;
-  amount: number;
-  reason: string;
-  createdAt: string;
-};
 
 /**
  * Finds ledgered debits with no matching settlement/refund credit after

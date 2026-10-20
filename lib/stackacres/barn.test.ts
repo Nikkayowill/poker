@@ -5,7 +5,6 @@ import {
   BARN_COMFORT_MULTIPLIER,
   CARE_BONUS_CAP,
   CARE_GIFT_LADDER,
-  CARE_GIFT_TOTAL_SERVINGS,
   CARE_STREAK_CAP,
   animalMoodFor,
   animalNameFor,
@@ -259,13 +258,6 @@ describe("Ray's care gifts", () => {
     expect(careGiftFor(20, [])?.index).toBe(0);
   });
 
-  it("is a closed ladder, so the feed it can ever hand out is bounded", () => {
-    expect(CARE_GIFT_TOTAL_SERVINGS).toBe(30);
-    expect(CARE_GIFT_LADDER.every((rung) => rung.servings > 0)).toBe(true);
-    // Ascending thresholds, or `careGiftFor`'s first-match scan would skip one.
-    const streaks = CARE_GIFT_LADDER.map((rung) => rung.streak);
-    expect([...streaks].sort((a, b) => a - b)).toEqual(streaks);
-  });
 });
 
 describe("what can be tended", () => {

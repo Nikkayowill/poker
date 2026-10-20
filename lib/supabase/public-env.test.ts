@@ -3,7 +3,6 @@ import {
   hasSupabasePublicConfig,
   readSupabasePublicKey,
   readSupabaseUrl,
-  supabasePublicKeyVariableName,
 } from "./public-env";
 
 /**
@@ -39,13 +38,11 @@ describe("readSupabasePublicKey", () => {
   it("accepts the legacy anon key on its own", () => {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "legacy-anon-jwt";
     expect(readSupabasePublicKey()).toBe("legacy-anon-jwt");
-    expect(supabasePublicKeyVariableName()).toBe("NEXT_PUBLIC_SUPABASE_ANON_KEY");
   });
 
   it("accepts the publishable key on its own", () => {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_abc";
     expect(readSupabasePublicKey()).toBe("sb_publishable_abc");
-    expect(supabasePublicKeyVariableName()).toBe("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
   });
 
   it("prefers the publishable key when a deployment still has both set", () => {

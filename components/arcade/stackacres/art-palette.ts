@@ -100,8 +100,6 @@ export const RAMPS = {
   iron: { top: "#5c5851", side: "#454138", rim: "#2b2822" },
 } as const satisfies Record<string, Ramp>;
 
-export type RampName = keyof typeof RAMPS;
-
 /**
  * The same colour as a Phaser Graphics fill.
  *
@@ -112,12 +110,6 @@ export type RampName = keyof typeof RAMPS;
  */
 export function hex(colour: string): number {
   return Number.parseInt(colour.slice(1), 16);
-}
-
-/** A ramp's three tones as Phaser numbers, in one call. */
-export function rampHex(name: RampName): { top: number; side: number; rim: number } {
-  const ramp = RAMPS[name];
-  return { top: hex(ramp.top), side: hex(ramp.side), rim: hex(ramp.rim) };
 }
 
 /**

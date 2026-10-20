@@ -115,13 +115,13 @@ function project(
       ),
       chapter: current ? { number: current.chapter.number, title: current.chapter.title } : null,
       chaptersDone: chapters.filter((chapter) => chapter.done).length,
-      prestigeCount: view.prestige.prestigeCount,
       favoriteProduction: favoriteProduction(view.units),
     },
     world: {
       units: view.units,
       soilTiles: view.soilTiles,
       fences: [...view.fences],
+      guardDogs: [...view.guardDogs],
       // Placed only. A building in storage stands nowhere, so there is
       // nothing for the map to draw and nothing to tell a visitor about.
       empireBuildings: view.empire.buildings.filter(isPlaced),

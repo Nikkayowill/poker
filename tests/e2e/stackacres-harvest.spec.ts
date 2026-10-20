@@ -99,7 +99,7 @@ test("StackAcres runs on Gold alone: seeding debits it, and the sell/exchange ac
     // lib/stackacres/exchange.ts's header), and Bushels before it.
     expect(view.exchange).toBeUndefined();
     expect(view.bushels).toBeUndefined();
-    // The processing inventory IS carried: it is what the Sell tab, the
+    // The processing inventory IS carried: it is what the town buyers, the
     // Workshop and the build buttons all read.
     expect(view.inventory).toEqual({});
 
@@ -118,32 +118,33 @@ test("StackAcres runs on Gold alone: seeding debits it, and the sell/exchange ac
     };
     expect(after.units).toHaveLength(1);
     expect(after.units[0]).toMatchObject({ stock: "hen", state: "working" });
-    expect(after.profile.goldBalance).toBe(before.profile.goldBalance - 50);
+    expect(after.profile.goldBalance).toBe(before.profile.goldBalance - 35);
     // Still inside the free base: a Hen Coop at the Farmstead is one of the
     // three slots a new farm never pays for. The fee arrives with cleared land,
     // which is its own describe block in the service tests.
     expect(after.upkeep.plots).toBe(3);
     expect(after.upkeep.fee).toBe(0);
 
-    // Three of the four districts start under wild growth, so the only kind a
-    // new farm can keep is the Hen Coop at the Farmstead -- which is why every
-    // stocking in this file is a hen.
-    const walled = await api.post("/api/stackacres/actions", {
+    // Cattle no longer wait on cleared land: a cow can be bought on a new
+    // farm and stands unplaced until the player sets it down.
+    const cow = await api.post("/api/stackacres/actions", {
       data: { action: "stock", stock: "cattle" },
     });
-    expect(walled.status()).toBe(409);
+    expect(cow.status()).toBe(200);
+    const cowFarm = (await cow.json()) as { units: { stock: string; mapTx: number | null }[] };
+    expect(cowFarm.units.find((unit) => unit.stock === "cattle")?.mapTx).toBeNull();
 
     // `exchange` was removed with the second currency and is rejected by the
     // schema, not quietly accepted and ignored.
     const exchanged = await api.post("/api/stackacres/actions", { data: { action: "exchange", bushels: 10 } });
     expect(exchanged.status()).toBe(400);
 
-    // `sell` came BACK (the Sell tab), so it is a real action again -- and
+    // `sell` came BACK (now to the town's buyers), so it is a real action again -- and
     // selling something never held is refused rather than paid for. That
     // refusal is the hole the wood/stone migration closed: the RPC used to
     // write a zero row and return 0, which every caller read as success.
     const nothing = await api.post("/api/stackacres/actions", {
-      data: { action: "sell", item: "eggs", quantity: 1 },
+      data: { action: "sell", buyer: "general-store", item: "eggs", quantity: 1 },
     });
     expect(nothing.status()).toBe(409);
     expect((await nothing.json()) as { error?: string }).toMatchObject({ error: "Not enough on hand." });

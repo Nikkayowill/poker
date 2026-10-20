@@ -16,7 +16,14 @@
  * sprite file prefix, all identical on purpose, same as before.
  */
 
-import { STACKACRES_STOCK, type StackAcresStock } from "./catalogue";
+import {
+  STACKACRES_STOCK,
+  STACKACRES_MARKET_ANIMALS,
+  isMarketLivestock,
+  marketAnimalPrice,
+  type StackAcresMarketLivestock,
+  type StackAcresStock,
+} from "./catalogue";
 
 export const STACKACRES_ITEMS = [
   "eggs",
@@ -53,9 +60,8 @@ export interface StackAcresItemDef {
   plural: string;
   /**
    * Name of a vector painter in components/arcade/stackacres/stackacres-art.ts
-   * (its `PainterName` union). Kept as a plain string, same reason as
-   * StackAcresToolDef.icon in ./tools.ts: this file stays free of a
-   * components/ import, and the caller casts the name back for
+   * (its `PainterName` union). Kept as a plain string so this file stays free
+   * of a components/ import, and the caller casts the name back for
    * `<StackAcresIcon>`.
    */
   icon: string;
@@ -65,18 +71,20 @@ export interface StackAcresItemDef {
 }
 
 export const STACKACRES_ITEM_CATALOGUE: Readonly<Record<StackAcresItem, StackAcresItemDef>> = {
-  eggs: { label: "Egg", plural: "Eggs", icon: "ico-egg", sellPrice: 18 },
-  wool: { label: "Fleece", plural: "Fleeces", icon: "ico-fleece", sellPrice: 76 },
-  milk: { label: "Milk", plural: "Milk", icon: "ico-milk", sellPrice: 220 },
+  // Egg and cream money (2026-10-02 economy rebase). The farm earns from raw
+  // goods sold in bulk in town, not from processing them.
+  eggs: { label: "Egg", plural: "Eggs", icon: "ico-egg", sellPrice: 12 },
+  wool: { label: "Fleece", plural: "Fleeces", icon: "ico-fleece", sellPrice: 40 },
+  milk: { label: "Milk", plural: "Milk", icon: "ico-milk", sellPrice: 120 },
 
-  /* ---- Early crop roles: carrot is the cash crop, potato is bulk utility,
-   * and radish is a utility crop used by fishing. ---- */
+  /* ---- Tier 1 (fast/cheap): sellPrice 2, yield quantity 1. Unchanged by the
+   * 2026-09-12 crop-roster swap -- see catalogue.ts's TIER1 comment. ---- */
   lettuce: { label: "Lettuce", plural: "Lettuce", icon: "ico-lettuce", sellPrice: 2 },
   spinach: { label: "Spinach", plural: "Spinach", icon: "ico-spinach", sellPrice: 2 },
   radish: { label: "Radish", plural: "Radishes", icon: "ico-radish", sellPrice: 2 },
   onion: { label: "Onion", plural: "Onions", icon: "ico-onion", sellPrice: 2 },
-  carrot: { label: "Carrot", plural: "Carrots", icon: "ico-carrot", sellPrice: 5 },
-  potato: { label: "Potato", plural: "Potatoes", icon: "ico-potato", sellPrice: 1 },
+  carrot: { label: "Carrot", plural: "Carrots", icon: "ico-carrot", sellPrice: 2 },
+  potato: { label: "Potato", plural: "Potatoes", icon: "ico-potato", sellPrice: 2 },
   cabbage: { label: "Cabbage", plural: "Cabbages", icon: "ico-cabbage", sellPrice: 2 },
 
   /* ---- Tier 2 (medium): sellPrice 25, yield quantity 4. ---- */
@@ -89,13 +97,14 @@ export const STACKACRES_ITEM_CATALOGUE: Readonly<Record<StackAcresItem, StackAcr
   green_bean: { label: "Green Bean", plural: "Green Beans", icon: "ico-green_bean", sellPrice: 25 },
   tomato: { label: "Tomato", plural: "Tomatoes", icon: "ico-tomato", sellPrice: 25 },
 
-  /* ---- Tier 3 (slow/valuable): sellPrice 44, yield quantity 5. Wheat is the
-   * utility exception below: quantity 4 for processing and farm upkeep. ---- */
-  corn: { label: "Corn", plural: "Corn", icon: "ico-corn", sellPrice: 44 },
+  /* ---- Tier 3 (slow/valuable): sellPrice 44, yield quantity 5. Corn is
+   * grain sold at the elevator (30), and Wheat is quick grain: sellPrice 7,
+   * quantity 4. ---- */
+  corn: { label: "Corn", plural: "Corn", icon: "ico-corn", sellPrice: 30 },
   eggplant: { label: "Eggplant", plural: "Eggplants", icon: "ico-eggplant", sellPrice: 44 },
-  // Flour (3 Wheat -> 40) and other farm uses are the reason to grow wheat;
-  // its longer utility cycle keeps raw wheat from being the best cash crop.
-  wheat: { label: "Wheat", plural: "Wheat", icon: "ico-wheat", sellPrice: 4 },
+  // The one Wheat: what the Wheat crop pays and what the Feed Grinder grinds.
+  // Sold by the load at the grain elevator. Sprite-backed icon.
+  wheat: { label: "Wheat", plural: "Wheat", icon: "ico-wheat", sellPrice: 7 },
 };
 
 /** What one finished unit brings in. */
@@ -104,7 +113,11 @@ export interface StackAcresYield {
   quantity: number;
 }
 
-export const STACKACRES_YIELDS: Readonly<Record<StackAcresStock, StackAcresYield>> = {
+/** Every stock that makes something to collect. Hogs and steers make
+ *  nothing: they are the thing sold (see STACKACRES_MARKET_ANIMALS). */
+export type StackAcresProduceStock = Exclude<StackAcresStock, StackAcresMarketLivestock>;
+
+export const STACKACRES_YIELDS: Readonly<Record<StackAcresProduceStock, StackAcresYield>> = {
   hen: { item: "eggs", quantity: 4 },
   pig: { item: "wool", quantity: 6 },
   cattle: { item: "milk", quantity: 8 },
@@ -117,7 +130,7 @@ export const STACKACRES_YIELDS: Readonly<Record<StackAcresStock, StackAcresYield
   radish: { item: "radish", quantity: 1 },
   onion: { item: "onion", quantity: 1 },
   carrot: { item: "carrot", quantity: 1 },
-  potato: { item: "potato", quantity: 3 },
+  potato: { item: "potato", quantity: 1 },
   cabbage: { item: "cabbage", quantity: 1 },
   broccoli: { item: "broccoli", quantity: 4 },
   pepper: { item: "pepper", quantity: 4 },
@@ -135,8 +148,22 @@ export function itemSellPrice(item: StackAcresItem): number {
   return STACKACRES_ITEM_CATALOGUE[item].sellPrice;
 }
 
-/** What a finished unit of `stock` would sell for, before any synergy. */
+/** What gets snapshotted onto a new unit as its yield: the produce count,
+ *  or a market animal's starting weight. */
+export function baseYieldQuantity(stock: StackAcresStock): number {
+  return isMarketLivestock(stock) ? STACKACRES_MARKET_ANIMALS[stock].baseWeight : STACKACRES_YIELDS[stock].quantity;
+}
+
+/** The item a unit of `stock` brings in when collected, or null for a hog or
+ *  steer, which is shipped instead. */
+export function yieldItemOf(stock: StackAcresStock): StackAcresItem | null {
+  return isMarketLivestock(stock) ? null : STACKACRES_YIELDS[stock].item;
+}
+
+/** What a finished unit of `stock` would sell for. A market animal is
+ *  valued at its unfed weight. */
 export function yieldValue(stock: StackAcresStock): number {
+  if (isMarketLivestock(stock)) return marketAnimalPrice(stock, STACKACRES_MARKET_ANIMALS[stock].baseWeight);
   const produce = STACKACRES_YIELDS[stock];
   return itemSellPrice(produce.item) * produce.quantity;
 }
@@ -145,18 +172,6 @@ export function yieldValue(stock: StackAcresStock): number {
 export function itemLabel(item: StackAcresItem, quantity: number): string {
   const def = STACKACRES_ITEM_CATALOGUE[item];
   return `${quantity.toLocaleString()} ${quantity === 1 ? def.label : def.plural}`;
-}
-
-/**
- * Sanity net: every stock must sell for more than its seed, or the farm is a
- * sink.
- *
- * Note this is the net BEFORE Land Maintenance, which is now a standalone
- * daily wallet charge rather than something netted out of a per-unit sale --
- * see ./upkeep.ts.
- */
-export function netPerCycle(stock: StackAcresStock, seedCost: number): number {
-  return yieldValue(stock) - seedCost;
 }
 
 export { STACKACRES_STOCK };

@@ -4,7 +4,6 @@ import {
   RECIPE_IDS,
   canStartRecipe,
   isInstantRecipe,
-  recipeForOutput,
   recipeRawGoldValue,
   recipesForMachine,
 } from "./recipes";
@@ -50,12 +49,6 @@ describe("RECIPE_CATALOGUE", () => {
     expect(recipesForMachine("dairy")).toEqual(["cheese", "cake"]);
   });
 
-  it("has exactly one producer per processed good", () => {
-    for (const id of RECIPE_IDS) {
-      expect(recipeForOutput(RECIPE_CATALOGUE[id].output.item)).toBe(id);
-    }
-  });
-
   it("makes the Mill queued and the Dairy and Loom instant, Cake included", () => {
     expect(isInstantRecipe("flour")).toBe(false);
     expect(isInstantRecipe("cheese")).toBe(true);
@@ -90,42 +83,35 @@ describe("canStartRecipe", () => {
 
 describe("recipeRawGoldValue", () => {
   it("sums every input's sell price per unit of output", () => {
-    // 3 Wheat at 4.
-    expect(recipeRawGoldValue("flour")).toBe(12);
-    // 3 Milk at 220.
-    expect(recipeRawGoldValue("cheese")).toBe(660);
-    // 4 Fleeces at 76.
-    expect(recipeRawGoldValue("cloth")).toBe(304);
-    // 2 Eggs at 18, 1 Milk at 220, 1 Flour at 16.
-    expect(recipeRawGoldValue("cake")).toBe(2 * 18 + 220 + 16);
+    // 3 Wheat at 7.
+    expect(recipeRawGoldValue("flour")).toBe(21);
+    // 3 Milk at 120.
+    expect(recipeRawGoldValue("cheese")).toBe(360);
+    // 4 Fleeces at 40.
+    expect(recipeRawGoldValue("cloth")).toBe(160);
+    // 2 Eggs at 12, 1 Milk at 120, 1 Flour at 24.
+    expect(recipeRawGoldValue("cake")).toBe(2 * 12 + 120 + 24);
   });
 
-  it("sits under every processed good's own sell price, so crafting never loses to selling raw", () => {
+  it("never sells a made good for less than its inputs, so crafting never loses to selling raw", () => {
     for (const id of RECIPE_IDS) {
       const def = RECIPE_CATALOGUE[id];
-      expect(machineItemSellPrice(def.output.item)).toBeGreaterThan(recipeRawGoldValue(id));
+      expect(machineItemSellPrice(def.output.item), id).toBeGreaterThanOrEqual(recipeRawGoldValue(id));
+    }
+  });
+
+  it("sells every made good for at most 1.15x its raw inputs, so raw goods stay the income", () => {
+    for (const id of RECIPE_IDS) {
+      const def = RECIPE_CATALOGUE[id];
+      expect(machineItemSellPrice(def.output.item), id).toBeLessThanOrEqual(recipeRawGoldValue(id) * 1.15);
     }
   });
 });
 
 describe("contract pricing", () => {
-  it("pays a uniform premium over the raw inputs, on every rung", () => {
-    // A rung under 1.0x makes the machine a sink; one far above the others
-    // turns the single open contract into a reroll puzzle. Narrow band.
-    const priced = CONTRACT_RUNGS.map((rung) => {
-      const recipe = recipeForOutput(rung.item);
-      if (!recipe) return null;
-      return rung.goldReward / (recipeRawGoldValue(recipe) * rung.quantity);
-    }).filter((ratio): ratio is number => ratio !== null);
 
-    expect(priced.length).toBeGreaterThan(0);
-    for (const rung of CONTRACT_RUNGS) {
-      if (rung.item === "flour") continue; // priced off seed, see contracts.ts
-      const recipe = recipeForOutput(rung.item)!;
-      const ratio = rung.goldReward / (recipeRawGoldValue(recipe) * rung.quantity);
-      expect(ratio).toBeGreaterThan(1.25);
-      expect(ratio).toBeLessThan(1.35);
-    }
+  it("asks for no Cheese or Cloth", () => {
+    expect(CONTRACT_RUNGS.filter((rung) => rung.item === "cheese" || rung.item === "cloth")).toEqual([]);
   });
 
   it("still pays more per unit than Sell does, for every good a contract asks for", () => {

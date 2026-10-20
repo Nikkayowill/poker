@@ -7,7 +7,6 @@ import {
   anteUpNonogramMarkProblem,
   anteUpNonogramPayout,
   anteUpNonogramHintProblem,
-  anteUpNonogramSize,
   anteUpNonogramUndoProblem,
   hintAnteUpNonogram,
   markAnteUpNonogramCell,
@@ -95,11 +94,6 @@ describe("the tier ladder", () => {
     // win paying well over 1x is the money printer lib/arcade/ante-up-stakes.ts
     // was written to close. See its header.
     expect(ANTE_UP_NONOGRAM_TIERS.easy.multiplier).toBeLessThanOrEqual(1.1);
-  });
-
-  it("names the board width behind a difficulty, for copy that quotes it", () => {
-    expect(anteUpNonogramSize("easy")).toBe(5);
-    expect(anteUpNonogramSize("master")).toBe(25);
   });
 });
 

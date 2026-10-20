@@ -32,9 +32,10 @@ export const STONE_PER_SWING = 2;
 
 /** Iron Ore paid to whoever lands the swing that breaks a node. The nodes are
  *  shared by every player and regrow every REGROW_MS, so this is the whole
- *  world's ore supply: at most 3 breaks per 18 minutes. The Smelter turns 2
- *  ore into 1 Metal and the Far Field Barn asks for 10 Metal. Nothing else
- *  pays ore. */
+ *  mines' ore supply: at most 3 breaks per 18 minutes. The Smelter turns 2
+ *  ore into 1 Metal and the Far Field Barn asks for 10 Metal. Breaking a boulder
+ *  in the wild land pays the same (./land-clearing.ts), which is each farm's own
+ *  supply. */
 export const ORE_PER_BREAK = 2;
 
 /** Ore a swing pays: only the one that breaks the node. */
@@ -124,20 +125,6 @@ export function applyMiningSwing(
     broke,
     yield: STONE_PER_SWING,
   };
-}
-
-/** "any moment", "12m" -- how long until a broken node regrows, sharing
- *  ./tap-action.ts's own `timeLeftLabel` wording so the two never read
- *  differently for the same kind of wait. */
-export function regrowLabel(node: StoneNodeRow, nowMs: number): string {
-  if (!node.brokenAt) return "any moment";
-  const ms = Date.parse(node.brokenAt) + REGROW_MS - nowMs;
-  if (!Number.isFinite(ms) || ms <= 0) return "any moment";
-  const minutes = Math.ceil(ms / 60_000);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest > 0 ? `${hours}h ${rest}m` : `${hours}h`;
 }
 
 /** What the client needs to render one boulder: whether it can be mined right

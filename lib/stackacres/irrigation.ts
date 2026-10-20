@@ -48,8 +48,7 @@ export const PIPE_TILE = STACKACRES_TILE;
  * sink (place) and no new payer -- see the actions route's own header for
  * the count that has to stay true.
  *
- * Lives here, not in lib/server/stackacres-service.ts, for the same reason
- * lib/stackacres/prestige.ts's client-safe shapes live outside that
+ * Lives here, not in lib/server/stackacres-service.ts, because that is an
  * `import "server-only"` file: a client component (the placement ring) has
  * to show this price without pulling a server-only module into the browser
  * bundle. `placeStackAcresPipeTile` imports it back from here so there is
@@ -65,12 +64,6 @@ export const PIPE_PLACE_COST: Readonly<Record<PipeKind, number>> = {
  * A pipe at BFS distance <= this is hydrated; nothing past it is.
  */
 export const PIPE_MAX_REACH = 8;
-
-/** Flow-animation frames baked per connector mask (art-irrigation.ts). */
-export const PIPE_FLOW_FRAMES = 8;
-
-/** Milliseconds for one full flow cycle. */
-export const PIPE_FLOW_CYCLE_MS = 900;
 
 export type PipeKind = "well" | "pipe";
 
@@ -88,9 +81,6 @@ export type PipeMask = number;
  * that is not there. See `pipeBodyTextureKey`.
  */
 export type PipeFacing = 1 | 2 | 4 | 8;
-
-/** The four aims, in the same N/E/S/W bit order as `PIPE_NEIGHBORS`. */
-export const PIPE_FACINGS: readonly PipeFacing[] = [1, 2, 4, 8];
 
 export function isPipeFacing(value: unknown): value is PipeFacing {
   return value === 1 || value === 2 || value === 4 || value === 8;
@@ -339,21 +329,6 @@ function hydratedPipeAt(
 ): boolean {
   const node = byKey.get(pipeKey(tx, ty));
   return node !== undefined && node.hydrated && node.kind === "pipe";
-}
-
-/**
- * Which flow frame a hydrated tile shows at time `tMs`. The wavefront is
- * offset by the tile's BFS distance so water reads as travelling outward
- * from the well one tile at a time rather than every pipe pulsing in
- * lockstep. Returns null for a tile with no flow (dry, or a well).
- */
-export function pipeFlowFrame(node: PipeNode, tMs: number): number | null {
-  if (!node.hydrated || node.distance === null || node.kind !== "pipe") {
-    return null;
-  }
-  const phase = tMs / PIPE_FLOW_CYCLE_MS + node.distance / PIPE_FLOW_FRAMES;
-  const frame = Math.floor(phase * PIPE_FLOW_FRAMES) % PIPE_FLOW_FRAMES;
-  return frame < 0 ? frame + PIPE_FLOW_FRAMES : frame;
 }
 
 export interface PipeGridDiff {

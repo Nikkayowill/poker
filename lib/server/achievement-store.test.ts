@@ -171,17 +171,18 @@ describe("checkAchievements against the live-sourced rank metric", () => {
   it("unlocks a tier achievement the moment a solo result reaches it", async () => {
     const { profileId } = await newPlayer("Climber");
 
-    // Silver starts at 2,500 points, and a point is 20 Gold of weighted net
-    // earnings at band 0, so a 9,000 stake that pays 240,000 (231,000 net,
-    // 11,550 points) reaches Silver outright. solo-earnings-store.ts's
-    // recordSoloResult wires checkAchievements on any tier-up, so this
-    // exercises the real call site, not a mock of it.
-    await recordSoloResult(profileId, null, {
-      game: "sudoku",
-      correlationId: `test:${profileId}:big-win`,
-      wager: 9_000,
-      payout: 240_000,
-    });
+    // Silver starts at 2,500 points and a top-band win is worth 500, so the
+    // fifth win reaches it. solo-earnings-store.ts's recordSoloResult wires
+    // checkAchievements on any tier-up, so this exercises the real call site,
+    // not a mock of it.
+    for (let win = 0; win < 5; win += 1) {
+      await recordSoloResult(profileId, null, {
+        game: "sudoku",
+        correlationId: `test:${profileId}:win-${win}`,
+        wager: 1_000_000,
+        payout: 1_600_000,
+      });
+    }
 
     const achievement = findAchievement(await getAchievementsView(profileId), "level_10");
     expect(achievement.unlocked).toBe(true);

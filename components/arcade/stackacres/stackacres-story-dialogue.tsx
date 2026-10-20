@@ -9,12 +9,12 @@ import { useKeepOnScreen } from "./use-keep-on-screen";
 /**
  * One traveler's speech bubble: their portrait, name, line, and whatever
  * buttons the current node carries. Same screen-anchored, real-DOM posture
- * every other character dialogue on this map takes (StackAcresMonkDialogue,
- * StackAcresFriendshipDialogue) -- pinned at the point the scene handed
+ * every other character dialogue on this map takes (StackAcresFriendshipDialogue,
+ * StackAcresSleepDialogue) -- pinned at the point the scene handed
  * back (here, just over the traveler's head, not the finger), closed by the
  * next world tap or its own close button, Escape included.
  *
- * Unlike the monk's two-shape dialogue, there is only one node shape here
+ * Unlike the gift dialogue's two phases, there is only one node shape here
  * (`StoryDialogueNode`, lib/stackacres/story/dialogue.ts): a line, a
  * vibrate pattern already played by the hook, and a row of choices where at
  * most one commits. This component never decides what the line says or

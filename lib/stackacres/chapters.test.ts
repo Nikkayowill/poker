@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { CHAPTERS, chapterFinishedBy, chapterViews, currentChapter, limitingNeed, nextStep, stepReadiness } from "./chapters";
-import { MACHINE_CATALOGUE, type MachineKind } from "./machines";
+import { CHAPTERS, chapterFinishedBy, chapterViews, currentChapter, nextStep, } from "./chapters";
+import { MACHINE_CATALOGUE, isRetiredMachine, type MachineKind } from "./machines";
 
 const built = (...kinds: MachineKind[]) => new Set(kinds);
 const stock = (gold: number, inventory: Record<string, number> = {}) => ({ gold, inventory });
@@ -10,8 +10,9 @@ describe("the chapters", () => {
     for (const chapter of CHAPTERS) for (const kind of chapter.steps) expect(MACHINE_CATALOGUE[kind]).toBeDefined();
   });
 
-  it("are numbered 1 to 6 with no building in two of them", () => {
-    expect(CHAPTERS.map((c) => c.number)).toEqual([1, 2, 3, 4, 5, 6]);
+  it("are numbered 1 to 4 with no building in two of them, and no retired building", () => {
+    expect(CHAPTERS.map((c) => c.number)).toEqual([1, 2, 3, 4]);
+    for (const chapter of CHAPTERS) for (const kind of chapter.steps) expect(isRetiredMachine(kind)).toBe(false);
     const all = CHAPTERS.flatMap((c) => c.steps);
     expect(new Set(all).size).toBe(all.length);
   });
@@ -62,22 +63,6 @@ describe("what a building still needs", () => {
     ]);
   });
 
-  it("names the need furthest from done", () => {
-    const [mill] = chapterViews(built(), stock(5000, { wood: 4 }))[0].steps;
-    expect(limitingNeed(mill).label).toBe("Wood");
-    const [poor] = chapterViews(built(), stock(50, { wood: 15 }))[0].steps;
-    expect(limitingNeed(poor).label).toBe("Gold");
-  });
-
-  it("reads 1 when the player can afford it", () => {
-    const [mill] = chapterViews(built(), stock(200, { wood: 15 }))[0].steps;
-    expect(stepReadiness(mill)).toBe(1);
-  });
-
-  it("reads a fraction while they are short", () => {
-    const [oven] = chapterViews(built("mill"), stock(250))[0].steps.slice(1);
-    expect(stepReadiness(oven)).toBeCloseTo(0.5);
-  });
 });
 
 describe("chapterFinishedBy", () => {

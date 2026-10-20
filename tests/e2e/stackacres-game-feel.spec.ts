@@ -276,7 +276,7 @@ test("the barn and the workshop are walked into, and their menus open inside", a
     expect(veil.some((a) => a > 0.05 && a < 0.95)).toBe(true);
     expect(veil[veil.length - 1]).toBeLessThan(0.3);
     await page.screenshot({ path: test.info().outputPath("inside-barn.png") });
-    await tapMap(296, 88);
+    await tapMap(296, 94);
     await expect(page.getByRole("dialog", { name: "Supply store" })).toBeVisible({ timeout: 15_000 });
     await page.getByRole("dialog", { name: "Supply store" }).getByRole("button", { name: "Close" }).click();
 

@@ -30,7 +30,7 @@ import type { WorldPoint, WorldRect } from "./world";
 // A strict leaf (./yard.ts imports nothing), so this is a plain value import
 // with no cycle to work around. Carries the Farmstead yard's offset: the
 // literals below are in the frame the yard was originally laid out in.
-import { yardPoint, yardPoints } from "./yard";
+import { yardPoint, } from "./yard";
 
 export interface Ellipse {
   x: number;
@@ -83,10 +83,6 @@ export function pondRadial(x: number, y: number, pond: Ellipse = POND): number {
   return Math.hypot(dx, dy);
 }
 
-export function inPond(x: number, y: number, pond: Ellipse = POND): boolean {
-  return pondRadial(x, y, pond) < 1;
-}
-
 /**
  * The dock, anchored at its EAST end (the end on the sand) and reaching
  * WEST out over the water. 34 units of deck: at y 118 the waterline is at
@@ -96,28 +92,6 @@ export function inPond(x: number, y: number, pond: Ellipse = POND): boolean {
  */
 export const DOCK: WorldPoint = yardPoint(12, 118);
 export const DOCK_LENGTH = 34;
-export const DOCK_DEPTH = 18;
-
-/** The deck's box in world units, for keeping decor off it. */
-export function dockRect(): WorldRect {
-  return { x: DOCK.x - DOCK_LENGTH, y: DOCK.y - DOCK_DEPTH, width: DOCK_LENGTH, height: DOCK_DEPTH };
-}
-
-/** Whether a tapped ground point lands on the dock -- padded a few units
- *  past the bare deck box so a finger near its edge still catches it, the
- *  same forgiving margin the yard's well hit-test does not need (it is
- *  drawn wider to begin with). */
-const DOCK_HIT_PAD = 6;
-
-export function dockHitAt(x: number, y: number): boolean {
-  const rect = dockRect();
-  return (
-    x >= rect.x - DOCK_HIT_PAD &&
-    x <= rect.x + rect.width + DOCK_HIT_PAD &&
-    y >= rect.y - DOCK_HIT_PAD &&
-    y <= rect.y + rect.height + DOCK_HIT_PAD
-  );
-}
 
 /** Where a cast lands: open water off the dock's end, past the shallows so
  *  the ripple reads as a real cast rather than a splash at your own feet.
@@ -125,38 +99,3 @@ export function dockHitAt(x: number, y: number): boolean {
  *  the waterline at 1. */
 export const FISHING_SPOT: WorldPoint = yardPoint(-28, 118);
 
-/** How close to the dock a lily pad may float. */
-export const LILY_DOCK_CLEARANCE = 14;
-
-/** Lily pads, on the water, well away from the dock and from each other.
- *  Two of them carry a flower. */
-export const LILY_PADS: readonly (WorldPoint & { flower: boolean })[] = yardPoints([
-  { x: -72, y: 116, flower: true },
-  { x: -62, y: 132, flower: false },
-  { x: -42, y: 144, flower: true },
-  { x: -81, y: 128, flower: false },
-  { x: -68, y: 100, flower: false },
-]);
-
-/** Reeds, feet on the sand at the water's edge: a stand along the north
- *  shore and another at the south-west. */
-export const REEDS: readonly WorldPoint[] = yardPoints([
-  { x: -57, y: 80 },
-  { x: -36, y: 79 },
-  { x: -19, y: 84 },
-  { x: -82, y: 147 },
-  { x: -91, y: 134 },
-  { x: -69, y: 156 },
-  { x: -19, y: 156 },
-]);
-
-/** Where the ripples spread from: one by the dock's posts, two out on the
- *  water. */
-export const RIPPLE_SPOTS: readonly WorldPoint[] = yardPoints([
-  { x: -27, y: 116 },
-  { x: -48, y: 120 },
-  { x: -74, y: 140 },
-]);
-
-/** The loop the duck paddles, on the open water north of the lilies. */
-export const DUCK_ORBIT: Ellipse = { ...yardPoint(-42, 100), rx: 13, ry: 5 };

@@ -6,9 +6,20 @@ import { expect, test, type APIRequestContext, type BrowserContext } from "./fix
  * The pass is the release valve on a board that is one slot wide and cannot
  * be cancelled. It moves no Gold, so what matters here is the wiring and the
  * day limit rather than any money ordering.
+ *
+ * The town only asks for goods the farm can really make, so each test builds
+ * a Mill (15 Wood, granted by the admin) and gets asked for Flour.
  */
 
 const ADMIN_SECRET = "playwright-admin-secret";
+
+/** Wood for a Mill, and the Mill itself: the one machine that is cheap to stand up over HTTP. */
+async function buildMill(admin: APIRequestContext, farmer: BrowserContext, profileId: string) {
+  const wood = await admin.post("/api/admin/stackacres-items", { data: { profileId, item: "wood", delta: 15 } });
+  expect(wood.ok()).toBe(true);
+  const placed = await farmer.request.post("/api/stackacres/actions", { data: { action: "place-machine", kind: "mill" } });
+  expect(placed.ok()).toBe(true);
+}
 
 async function admitFarmer(context: BrowserContext, admin: APIRequestContext, gold: number) {
   const created = await context.request.post("/api/profile");
@@ -32,12 +43,9 @@ test("an order can be passed on once a day, and the town posts another", async (
   const farmerContext = await browser.newContext();
   try {
     expect((await adminContext.request.post("/api/admin/session", { data: { secret: ADMIN_SECRET } })).ok()).toBe(true);
-    await admitFarmer(farmerContext, adminContext.request, 100_000);
+    const farmerId = await admitFarmer(farmerContext, adminContext.request, 100_000);
     const api = farmerContext.request;
-
-    // The Oven asks for Gold alone -- no Wood to chop over HTTP -- and it
-    // makes a good the town has rungs for, so the board has something to draw.
-    expect((await api.post("/api/stackacres/actions", { data: { action: "place-machine", kind: "oven" } })).ok()).toBe(true);
+    await buildMill(adminContext.request, farmerContext, farmerId);
 
     const opened = await api.post("/api/stackacres/actions", { data: { action: "request-contract" } });
     expect(opened.ok()).toBe(true);
@@ -78,9 +86,9 @@ test("passing with an empty board is refused and spends nothing", async ({ brows
   const farmerContext = await browser.newContext();
   try {
     expect((await adminContext.request.post("/api/admin/session", { data: { secret: ADMIN_SECRET } })).ok()).toBe(true);
-    await admitFarmer(farmerContext, adminContext.request, 100_000);
+    const farmerId = await admitFarmer(farmerContext, adminContext.request, 100_000);
     const api = farmerContext.request;
-    expect((await api.post("/api/stackacres/actions", { data: { action: "place-machine", kind: "oven" } })).ok()).toBe(true);
+    await buildMill(adminContext.request, farmerContext, farmerId);
 
     const empty = await api.post("/api/stackacres/actions", { data: { action: "pass-contract" } });
     expect(empty.status()).toBe(409);

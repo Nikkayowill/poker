@@ -213,8 +213,6 @@ export function describeSharedRoutineChecks(): void {
           expect(poseAt(plan, 10.5).area, `day ${day}`).toBe("barn");
           // Ray's own home station is on the Homestead now -- see NPC_STATIONS' own header on why.
           expect(poseAt(plan, 23).area, `day ${day}`).toBe("homestead");
-          const pilgrim = planDay(NPC_ROUTINES.pilgrim, NPC_STATIONS, areas, 3_600_000, daySeed("pilgrim", day));
-          expect(poseAt(pilgrim, 10).area, `day ${day}`).toBe("homestead");
         }
       });
     });

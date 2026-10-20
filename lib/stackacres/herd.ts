@@ -25,7 +25,7 @@ import type { StackAcresStock } from "./catalogue";
 import { isHoeableMapTile, isWildMapTile } from "./hoeable";
 
 /** The kinds that stand where the player puts them. Hens keep their Hen Haven spots. */
-export const HERD_STOCK = ["pig", "cattle"] as const;
+export const HERD_STOCK = ["pig", "cattle", "hog", "steer"] as const;
 
 export type HerdStock = (typeof HERD_STOCK)[number];
 

@@ -1,13 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  PIPE_FLOW_FRAMES,
   PIPE_MAX_REACH,
   PIPE_TILE,
   WELL_TEXTURE_KEY,
   diffPipeGrid,
   pipeBodyTextureKey,
-  pipeFlowFrame,
   pipeFrameKey,
   pipeKey,
   pipeStubKey,
@@ -171,28 +169,6 @@ describe("recalculatePipeConnections — irrigated crops", () => {
       crops: [cropOn(PIPE_MAX_REACH + 1, 0, "beside-dry")],
     });
     expect(grid.irrigatedUnitIds.has("beside-dry")).toBe(false);
-  });
-});
-
-describe("pipeFlowFrame", () => {
-  it("is null for dry tiles and wells, in range for hydrated pipe", () => {
-    const grid = recalculatePipeConnections({ tiles: line(12), crops: [] });
-    expect(pipeFlowFrame(grid.byKey.get(pipeKey(-1, 0))!, 0)).toBeNull(); // well
-    expect(pipeFlowFrame(grid.byKey.get(pipeKey(PIPE_MAX_REACH, 0))!, 0)).toBeNull(); // dry
-    const wet = grid.byKey.get(pipeKey(2, 0))!;
-    for (const t of [0, 137, 900, 5000]) {
-      const frame = pipeFlowFrame(wet, t);
-      expect(frame).not.toBeNull();
-      expect(frame).toBeGreaterThanOrEqual(0);
-      expect(frame).toBeLessThan(PIPE_FLOW_FRAMES);
-    }
-  });
-
-  it("offsets successive tiles so the wavefront marches outward", () => {
-    const grid = recalculatePipeConnections({ tiles: line(6), crops: [] });
-    const a = pipeFlowFrame(grid.byKey.get(pipeKey(0, 0))!, 0);
-    const b = pipeFlowFrame(grid.byKey.get(pipeKey(1, 0))!, 0);
-    expect(a).not.toBe(b);
   });
 });
 

@@ -44,7 +44,7 @@
  *
  * THE FARMSTEAD MOVED AS A RIGID BODY, by exactly (-760, +416). Its rect is
  * still 420x470, and every hand-placed literal inside it -- the barn, the
- * windmill, the well, Ray, the monk's shrine, the greenhouse plot, the wheat
+ * windmill, the well, Ray, the greenhouse plot, the wheat
  * field, the three secret zones, the props, the whole pond -- is its old value
  * plus that delta. That is why every relative assertion about the yard still
  * holds: nothing inside it moved with respect to anything else inside it.
@@ -176,7 +176,7 @@ export const ZONE_FEATHER = 88;
  * the road is what carries you across. */
 export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
   // Riverside Village on the proposal. The house, the barn, the pond, Ray,
-  // the monk's shrine, the greenhouse and the windmill -- the densest place
+  // the greenhouse and the windmill -- the densest place
   // on the map, and the one the proposal does not actually draw, since it
   // shows barns inside the pens instead. Sited where the village is so the
   // pond stays on its west verge exactly as it always has.
@@ -251,8 +251,6 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     approach: { x: 292, y: -192 },
   },
 };
-
-export const ZONE_LIST: readonly ZoneDef[] = ZONE_IDS.map((id) => STACKACRES_ZONES[id]);
 
 /** Districts other than the farmstead: the three this pass adds, the ones
  *  that grow their own scenery and fence their own grow area. */
@@ -335,27 +333,6 @@ export const zoneToolPolicy: Readonly<Record<StackAcresTool, readonly ZoneId[]>>
   feed: ["farmstead", ...PEN_ZONE_IDS],
   harvest: ["farmstead", ...PEN_ZONE_IDS],
 };
-
-export type ZoneActionCheck =
-  | { ok: true; zone: ZoneId }
-  | { ok: false; zone: ZoneId | null; reason: string };
-
-/**
- * Whether the held tool may act at this world point, and if not, why.
- *
- * The user-facing half of `zoneToolPolicy`. `reason` is written to be shown
- * verbatim -- it names the place the tool DOES work, because a refusal that
- * only says no leaves the player to go and find out where by trial.
- */
-export function isActionValidInZone(x: number, y: number, tool: StackAcresTool): ZoneActionCheck {
-  const zone = zoneAt(x, y);
-  const allowed = zoneToolPolicy[tool];
-  if (zone !== null && allowed.includes(zone)) return { ok: true, zone };
-  const homes = allowed.map((id) => STACKACRES_ZONES[id].label);
-  const where =
-    homes.length === 1 ? homes[0] : `${homes.slice(0, -1).join(", ")} and ${homes[homes.length - 1]}`;
-  return { ok: false, zone, reason: `That only works in ${where}.` };
-}
 
 /**
  * A deterministic random source. Mulberry32, the same one ./world.ts uses,

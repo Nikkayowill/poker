@@ -38,7 +38,7 @@ const RUNNING_FARM: StackAcresShopProgress = {
 };
 
 /** A farm that has done none of the once-only work yet. */
-const BARE = { sectorsCleared: 0, soilBeds: 0, enchantments: 0, crossbreeds: 0 } as const;
+const BARE = { sectorsCleared: 0, soilBeds: 0 } as const;
 const TROWEL: StoryFacts = { tool: "trowel", ...BARE };
 
 /** Generous enough to clear any `requires` a real quest declares today
@@ -104,12 +104,6 @@ function finish(story: StoredStory, id: TravelerId, inventory: StackAcresInvento
         case "contracts":
           for (let i = 0; i < objective.target; i++) feed.push({ kind: "contract-fulfilled" });
           break;
-        case "forge":
-          facts.enchantments = objective.target;
-          break;
-        case "crossbreed":
-          facts.crossbreeds = objective.target;
-          break;
         case "deliver":
           stock[objective.item] = objective.target;
           break;
@@ -161,9 +155,17 @@ describe("meetTraveler", () => {
 });
 
 describe("applyStoryEvent", () => {
-  it("ignores everything before a traveler is met", () => {
-    const story = freshStory();
-    expect(applyStoryEvent(story, { kind: "watered", count: 3 })).toBe(story);
+  it("counts toward Ray's first quest before he is met, and keeps it when he is", () => {
+    // His welcome sends a new player to water before they ever talk to him.
+    const watered = applyStoryEvent(freshStory(), { kind: "watered", count: 2 });
+    expect(watered.travelers.ray).toMatchObject({ met: false, counts: [2] });
+    expect(met(watered, "ray", FRESH_FARM).travelers.ray).toMatchObject({ met: true, questIndex: 0, counts: [2] });
+  });
+
+  it("ignores everything for a traveler who is not open yet", () => {
+    const story = applyStoryEvent(freshStory(), { kind: "watered", count: 3 });
+    expect(story.travelers.pierre).toEqual(freshStory().travelers.pierre);
+    expect(story.travelers.ivy).toEqual(freshStory().travelers.ivy);
   });
 
   it("ticks only the objectives an event matches, capped at target", () => {
@@ -228,13 +230,6 @@ describe("applyTurnIn", () => {
     const result = applyTurnIn(story, "pierre", inventory, TROWEL);
     expect(result.outcome).toBe("not-ready");
     expect(result.inventory).toBe(inventory);
-  });
-
-  it("reads a live fact (crossbreeds) rather than waiting for an event", () => {
-    const story = met(freshStory(), "ivy");
-    expect(applyTurnIn(story, "ivy", {}, TROWEL).outcome).toBe("not-ready");
-    const crossed: StoryFacts = { ...TROWEL, crossbreeds: 1 };
-    expect(applyTurnIn(story, "ivy", {}, crossed).outcome).toBe("advanced");
   });
 
   it("grants the reward once, on the last quest", () => {

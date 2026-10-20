@@ -16,8 +16,7 @@ import { adminClient } from "./supabase-admin";
  * the world, so two players racing the same node's last swing must not both
  * be able to break it.
  *
- * Same two-branch shape as every other StackAcres store (see
- * lib/server/stackacres-blueprint-store.ts's own header for the convention):
+ * Same two-branch shape as every other StackAcres store:
  * a real Supabase project reaches `mine_stackacres_stone_node`, the
  * version-guarded compare-and-swap in the `stackacres_stone_nodes` migration;
  * an absent one falls back to an in-process Map, guarded the same way memory
@@ -58,26 +57,6 @@ function stoneNodeFromRow(row: {
     brokenAt: row.broken_at,
     version: row.version,
   };
-}
-
-/** The node as it stands right now, with a regrow already applied for
- *  reading purposes -- never mutates the stored row (see
- *  `effectiveNodeState`'s own header on why that write only ever happens
- *  inside the guarded swing itself). */
-export async function readStoneNode(nodeId: StoneNodeId, now: Date): Promise<StoneNodeRow> {
-  const supabase = adminClient();
-  if (!supabase) {
-    const row = memoryNodes.get(nodeId) ?? freshStoneNode(nodeId);
-    return effectiveNodeState(row, now);
-  }
-
-  const { data, error } = await supabase
-    .from("homestead_stone_nodes")
-    .select("node_id, hits_remaining, broken_at, version")
-    .eq("node_id", nodeId)
-    .single();
-  if (error) throw new Error(`Could not read that boulder: ${error.message}`);
-  return effectiveNodeState(stoneNodeFromRow(data), now);
 }
 
 /** Every Stone node's current state, in one round trip rather than one per

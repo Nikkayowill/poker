@@ -6,5 +6,4 @@ RIG_CHARACTERS = ["ray", "farmer"]
 # Eight travelers left with the six districts they stood in (2026-09-28, lib/stackacres/story/travelers.ts's
 # own header): Pierre and Ivy are what remain, both on the Homestead.
 TRAVELERS = ["pierre", "ivy"]
-OTHERS = ["pilgrim"]
-CAST = RIG_CHARACTERS + TRAVELERS + OTHERS
+CAST = RIG_CHARACTERS + TRAVELERS

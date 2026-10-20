@@ -28,11 +28,11 @@ describe("StackAcres early crop loop", () => {
 
   it("makes the early crop yields reinforce their roles", () => {
     expect(STACKACRES_YIELDS.carrot).toEqual({ item: "carrot", quantity: 1 });
-    expect(STACKACRES_YIELDS.potato).toEqual({ item: "potato", quantity: 3 });
-    expect(yieldValue("carrot")).toBe(5);
-    expect(yieldValue("potato")).toBe(3);
-    expect(yieldValue("wheat")).toBe(16);
-    expect(yieldValue("carrot")).toBeGreaterThan(yieldValue("potato"));
+    expect(STACKACRES_YIELDS.potato).toEqual({ item: "potato", quantity: 1 });
+    expect(yieldValue("carrot")).toBe(2);
+    expect(yieldValue("potato")).toBe(2);
+    expect(yieldValue("wheat")).toBe(28);
+    expect(yieldValue("wheat")).toBeGreaterThan(yieldValue("carrot"));
     expect(yieldValue("carrot") / STACKACRES_CATALOGUE.carrot.durationMs).toBeGreaterThan(
       yieldValue("wheat") / STACKACRES_CATALOGUE.wheat.durationMs,
     );

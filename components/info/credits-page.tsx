@@ -12,9 +12,7 @@ import Link from "next/link";
  *
  * Two assets are marked unattributed on purpose rather than guessed: the
  * "isometric plant pack" (44 flora sprites) and the day/dusk/night music
- * have no vendor recorded anywhere in the repo. (The Pixel Pilgrim's own
- * "Houses Pack 3" shrine sprite, monk-house.png, used to be a third --
- * removed along with the shrine itself rather than ever credited.)
+ * have no vendor recorded anywhere in the repo.
  */
 export function CreditsPage() {
   return (
@@ -55,12 +53,6 @@ export function CreditsPage() {
         <section className="info-page-section">
           <h2>Licensed &amp; sourced art</h2>
           <ul>
-            <li>
-              <strong>Farmhand &amp; the Pixel Pilgrim</strong> — the walking
-              sprite sheet shared by StackAcres&rsquo; farmhand and its monk
-              NPC is Throneless&rsquo;s <em>Ranger</em>, from Kayo&rsquo;s own
-              2021 Ludum Dare 48 entry.
-            </li>
             <li>
               <strong>The land of StackAcres</strong> — the ground, water,
               rocks, bushes, the Homestead&rsquo;s hill and the City&rsquo;s

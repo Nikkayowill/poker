@@ -44,8 +44,9 @@ async function admitFarmer(context: BrowserContext, admin: APIRequestContext) {
 
 /** Anything that only exists to serve the farm. */
 function isFarmAsset(url: string): boolean {
+  // The lobby tile's own wordmark lives in /brand/stackacres/ and is meant to load.
   return (
-    url.includes("/stackacres/")
+    (url.includes("/stackacres/") && !url.includes("/brand/stackacres/"))
     // The top-down rewrite's own art tree. It is a sibling of /stackacres/,
     // not a child, so the line above never matched a single tile of it.
     || url.includes("/stackacres-td/")
@@ -109,7 +110,9 @@ test("the lobby does not fetch the farm until the tile is clicked", async ({ bro
     // so the emptiness above is laziness rather than a broken tile.
     await tile.click();
     await page.waitForURL("**/games/stackacres");
-    await expect(page.locator("canvas")).toBeVisible({ timeout: 60_000 });
+    // The farm opens on its own Play screen and only draws once that is pressed.
+    await page.getByRole("button", { name: "Play", exact: true }).click({ timeout: 15_000 });
+    await page.waitForFunction(() => "__stackacres" in window, null, { timeout: 60_000 });
 
     // Art from either tree counts: the farm draws from /stackacres-td/ now,
     // and /stackacres/sprites/ still holds the shop and HUD icons.

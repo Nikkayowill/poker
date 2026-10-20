@@ -18,7 +18,7 @@ import mockup
 # with work that has not been committed yet.
 TODAY = os.environ.get("STACKACRES_TODAY_DIR")
 CHARACTERS = os.path.join("public", "stackacres-td", "characters")
-PEOPLE = ["farmer", "ray", "bea", "pilgrim"]
+PEOPLE = ["farmer", "ray", "bea"]
 BOX = (80, 80, 320, 200)
 
 

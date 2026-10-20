@@ -42,10 +42,6 @@ const KEYS: readonly Key[] = [
 /** The dimmest the view may get, as perceived brightness. Tap targets have to stay readable. */
 export const NIGHT_FLOOR = 0.55;
 
-export function hourOf(date: Date): number {
-  return date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
-}
-
 const ease = (t: number) => t * t * (3 - 2 * t);
 
 export function daylightAt(hour: number): Daylight {

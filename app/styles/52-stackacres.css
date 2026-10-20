@@ -403,8 +403,7 @@
   height: 20px;
 }
 
-/* The Prestige Reset Valve's HUD badge: the same tag as .sa-feed, but a
-   button that opens the valve's sheet. */
+/* A HUD badge: the same tag as .sa-feed, but a button that opens a sheet. */
 .sa-prestige-badge {
   display: inline-flex;
   align-items: center;
@@ -467,12 +466,38 @@
   flex-direction: column;
   gap: 6px;
   min-width: 200px;
+  /* Ten pills are taller than a phone on its side. The drawer scrolls rather
+     than running off the bottom of the screen with half its pills unreachable. */
+  max-height: calc(100dvh - 72px);
+  overflow-y: auto;
   padding: 8px;
   border: 2px solid var(--sa-paint-line);
   border-radius: var(--sa-r-block);
   background: var(--sa-paint-fill-open);
   box-shadow: var(--sa-paint-rim), var(--sa-drop-lg);
 }
+
+/* In the drawer the pills stand in a column with room to spare, so each one
+   says what it is. Inline on a wide screen they stay icon-and-count, where a
+   hover title does the naming; on a phone there is no hover, and a column of
+   bare numbers told a new player nothing. */
+.sa-hud-more-popover [data-label]::after {
+  content: attr(data-label);
+  margin-left: auto;
+  padding-left: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--sa-ink-soft);
+}
+.sa-hud-more-popover .sa-music-toggle {
+  width: auto;
+  padding: 0 11px;
+  justify-content: flex-start;
+}
+/* The header bar is a stacking context under the joystick (z-index 2 against
+   3), which is right while the drawer is closed and wrong the moment it opens:
+   the bottom of the list went under the stick. An open drawer lifts the bar. */
+.sa-theme .floor-bar:has(.sa-hud-more-popover) { z-index: 6; }
 
 /* Screen-reader-only. There is no shared utility for this in the codebase --
    every component inlines the pattern -- so it is inlined here too. */
@@ -1121,15 +1146,6 @@
  * exactly why a drag was worth building here rather than sizing another
  * fixed arc.
  */
-.sa-gel {
-  position: absolute;
-  inset: 0;
-  z-index: 4;
-  pointer-events: none;
-}
-
-.sa-gel.is-dragging .sa-gel-arrow { opacity: .35; }
-.sa-gel.is-settling .sa-gel-arrow { opacity: 0; }
 
 /* The scrollable strip inside the row above -- split out from `.sa-gel-row`
    so the outer padding/edge stay put while only this part scrolls. Capped to
@@ -1197,15 +1213,18 @@
   gap: 10px;
   padding: 4px 2px;
   font-size: 13px;
-  color: var(--sa-ink);
+  font-weight: 700;
+  color: var(--sa-cream);
   /* Only text left floating with no shell behind it now that `.sa-gel-row`
      carries no fill -- a soft dark halo keeps cream lettering legible over
      whatever the map is showing underneath, same trick `.sa-gel-close`
-     already uses. */
+     already uses. Cream, not ink: dark letters under a dark halo vanished
+     into the grass. */
   text-shadow: 0 1px 3px rgba(20, 15, 10, .75), 0 1px 1px rgba(20, 15, 10, .6);
 }
 
-.sa-gel-empty p { margin: 0; }
+/* Two short lines on the left, not one long one under the planner. */
+.sa-gel-empty p { margin: 0; max-width: 44ch; }
 
 /* One token: a small whitewash capsule with its own border, so tokens packed
    edge to edge in the scroll strip still read as separate pieces. */
@@ -1298,7 +1317,7 @@
   color: var(--sa-ink-soft);
 }
 
-/* ---- the Pixel Pilgrim's dialogue -------------------------------------
+/* ---- the pinned dialogue card (the bed's "Go to sleep?") --------------
  * A screen-anchored speech bubble, same posture as .sa-radial above: pinned
  * at the tap point, real DOM (not a canvas overlay), closed by the next
  * world tap or its own close button rather than a scrim of its own. */
@@ -1352,36 +1371,16 @@
 
 .sa-monk-dialogue-close:hover { opacity: 1; }
 
-.sa-monk-dialogue-line {
-  margin: 0 18px 8px 0;
-  font-size: 13px;
-  font-style: italic;
-  line-height: 1.35;
-}
-
 .sa-monk-dialogue-prompt {
   margin: 0 0 10px;
   font-size: 13.5px;
   font-weight: 800;
 }
 
-.sa-monk-dialogue-relic {
-  margin: 0 0 8px;
-  font-size: 12.5px;
-  line-height: 1.35;
-}
-
 .sa-monk-dialogue-progress {
   margin: 0 0 8px;
   font-size: 12px;
   color: var(--sa-ink-soft);
-}
-
-.sa-monk-dialogue-relics-held {
-  margin: 0 0 10px;
-  font-size: 18px;
-  display: flex;
-  gap: 4px;
 }
 
 .sa-monk-dialogue-actions {
@@ -1420,116 +1419,11 @@
 
 .sa-monk-dialogue-yes:disabled { opacity: .6; cursor: default; }
 
-/* ---- the fence-upgrade popup ------------------------------------------
- * Same screen-pinned real-DOM shape as .sa-monk-dialogue above (see
- * stackacres-fence-upgrade-popup.tsx's own header) -- structure and
- * interaction copied one for one, only the palette differs (wood tones,
- * to read as "this is about the fence line" rather than the shrine). */
-
-.sa-fence-upgrade {
-  position: absolute;
-  z-index: 5;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-}
-
-.sa-fence-upgrade-pin {
-  position: absolute;
-  left: -6px;
-  top: -6px;
-  width: 12px;
-  height: 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-wood, #a9784f);
-  box-shadow: var(--sa-drop);
-}
-
-.sa-fence-upgrade-card {
-  position: absolute;
-  left: 16px;
-  top: -18px;
-  width: 220px;
-  padding: 12px 14px 14px;
-  border: 2px solid var(--sa-paint-line);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-paint-fill-open);
-  box-shadow: var(--sa-paint-rim), var(--sa-drop-lg);
-  color: var(--sa-ink);
-  pointer-events: auto;
-  animation: sa-radial-in 160ms var(--sa-bounce) backwards;
-}
-
-.sa-fence-upgrade-close {
-  position: absolute;
-  right: 8px;
-  top: 6px;
-  border: 0;
-  background: none;
-  font-size: 16px;
-  line-height: 1;
-  color: var(--sa-ink);
-  cursor: pointer;
-  opacity: .6;
-}
-
-.sa-fence-upgrade-close:hover { opacity: 1; }
-
-.sa-fence-upgrade-line {
-  margin: 0 18px 6px 0;
-  font-size: 13px;
-  font-weight: 800;
-  line-height: 1.35;
-}
-
-.sa-fence-upgrade-durability {
-  margin: 0 0 10px;
-  font-size: 12px;
-  color: var(--sa-ink-soft);
-}
-
-.sa-fence-upgrade-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.sa-fence-upgrade-yes,
-.sa-fence-upgrade-no {
-  flex: 1;
-  min-height: var(--sa-tap);
-  border: 2px solid var(--sa-paint-line);
-  border-radius: var(--sa-r-chip);
-  font-size: 12.5px;
-  font-weight: 800;
-  cursor: pointer;
-  transition:
-    transform var(--duration-fast) var(--sa-ease-out),
-    box-shadow var(--duration-fast) var(--sa-ease-out);
-}
-
-.sa-fence-upgrade-yes {
-  background: var(--sa-tint-corn);
-  box-shadow: var(--sa-paint-rim-lit);
-  color: var(--sa-ink);
-}
-
-.sa-fence-upgrade-no {
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: var(--sa-paint-rim-sm);
-  color: var(--sa-ink);
-}
-
-.sa-fence-upgrade-yes:hover:not(:disabled),
-.sa-fence-upgrade-no:hover { filter: brightness(1.05); }
-
-.sa-fence-upgrade-yes:disabled { opacity: .6; cursor: default; }
-
 /* ---- the NPC friendship gift dialogue ---------------------------------
  * Same screen-anchored speech-bubble posture as .sa-monk-dialogue above --
  * a separate block rather than a shared class because the "greeting" phase
  * here draws an item picker (a variable-length list of buttons) that the
- * Pilgrim's own dialogue never needs. */
+ * plain yes/no card never needs. */
 .sa-gift-dialogue {
   position: absolute;
   z-index: 5;
@@ -1708,7 +1602,7 @@
  * Same screen-anchored speech-bubble posture as .sa-monk-dialogue above,
  * anchored over the traveler's head rather than the finger (see
  * stackacres-scene.ts's `travelerHeadPoint`). A portrait + name header the
- * monk/gift dialogues don't carry (they draw their own character in the
+ * gift dialogue doesn't carry (they draw their own character in the
  * canvas; a traveler's true pixel art next to the flat-vector world is the
  * whole point of showing it again here), then the line and however many
  * choices the current node has -- one for a locked/home beat that only
@@ -1954,9 +1848,8 @@
 
 /* Ray's counter, slid up from the bottom edge with the same overshoot the
    drawer opens on -- and the shell most of the farm's panels are actually
-   made of: Town Contracts, the Workshop, the Fermenting Vat, Blueprints, the
-   Sunlight Forge, the Crossbreeding Bed, the Prestige valve, both clearing
-   sheets and the Synergy tree all render into it. One
+   made of: Town Contracts, the Workshop, the Fermenting Vat and both
+   clearing sheets all render into it. One
    rule here is what keeps them one material. */
 .sa-sheet {
   width: min(100%, 560px);
@@ -2024,8 +1917,7 @@
 /* ---- the Supply Store: a centered popup, one shelf at a time ---------- */
 
 /* Replaces .sa-sheet-scrim/.sa-sheet for the barn's own popup only -- every
-   other sheet in here (the Vat, the Forge, the Prestige reset, Blueprints,
-   Town Contracts) still slides up from the bottom edge and is unaffected.
+   other sheet in here (the Vat, Town Contracts) still slides up from the bottom edge and is unaffected.
    The barn used to be the same bottom sheet with eight shelves stacked in
    one long scroll; centered + tabbed replaces that with one shelf on
    screen at a time, `sa-store-panel` below the only part that scrolls. */
@@ -2716,6 +2608,28 @@
     height: 64px;
   }
 }
+/* A phone on its side is 390px tall or less, and even the small portrait
+   pushed the button off the bottom. His face is in the byline from then on. */
+@media (max-height: 430px) {
+  .sa-ray-welcome-portrait { display: none; }
+  .sa-theme .htp-modal .htp-body { gap: 10px; padding-bottom: 16px; }
+}
+/* The shared modals scroll when a short screen cannot hold their copy, and
+   nothing says so. The one button stays pinned at the bottom of the scroll,
+   so it is always there to press. */
+.sa-theme .htp-modal .htp-body > .sa-cta {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  /* The sheet's own paper behind and around it, so whatever scrolls under the
+     pinned button doesn't show through the painted edge (the Greenhouse's
+     material cards did). */
+  background-color: var(--sa-paint-fill-open);
+  box-shadow: 0 0 0 6px var(--sa-paint-fill-open);
+}
+/* Disabled keys fade elsewhere; a pinned one fading lets the copy under it show
+   through, so it keeps full opacity and says "not yet" with the washed-out colour. */
+.sa-theme .htp-modal .htp-body > .sa-cta:disabled { opacity: 1; }
 
 /* The "While you were away" list (stackacres-away-report.tsx). */
 .sa-away-lines {
@@ -3275,27 +3189,6 @@
    it read as broken art, which is exactly the impression the whole approach
    exists to avoid. */
 
-/* Bushels owed on land already held. Only rendered when something is actually
-   owed, so the roof red here is genuinely "deal with this" rather than a
-   permanent alarm colour in the HUD. */
-.sa-upkeep {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 38px;
-  padding: 0 11px;
-  border: 2px solid var(--sa-paint-line);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-tint-roof);
-  box-shadow: var(--sa-paint-rim-sm), var(--sa-drop);
-  color: var(--sa-lit-roof);
-  font-family: var(--sa-font);
-  font-size: 15px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
-.sa-upkeep .sa-ico { width: 20px; height: 20px; }
 /* The clearing offer. Ray's counter re-used wholesale -- it is the same
    surface, and a second sheet shape for the one purchase that is not made at
    the store would be a new thing to learn for no reason. */
@@ -3410,54 +3303,6 @@
   box-shadow: inset 0 0 0 1px var(--sa-leaf);
   color: var(--sa-lit-leaf);
 }
-
-.sa-clear-cta { margin-top: 16px; }
-
-/* The map, folded into the town board now that the places list is gone. A
- * plain wrapped list of small tags, since it is a reference for anyone who
- * wants it and not chrome that sits over the map. */
-.sa-board-map { margin: 14px 0 0; }
-
-.sa-board-map-kicker {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0 0 8px;
-  color: var(--sa-ink-soft);
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.sa-board-map-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.sa-board-map-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 34px;
-  padding: 6px 12px;
-  border: 2px solid var(--sa-paint-line-soft);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-  color: var(--sa-ink);
-  font-size: 12.5px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.sa-board-map-item:hover { filter: brightness(1.05); }
-
-.sa-board-map-item.is-wild { color: var(--sa-ink-soft); }
 
 .sa-contracts-standing {
   display: flex;
@@ -3936,7 +3781,6 @@
    portrait it is one column in that same order. */
 .sa-workshop-col { min-width: 0; }
 
-.sa-workshop-hint,
 .sa-workshop-empty,
 .sa-workshop-job {
   margin: 6px 0 0;
@@ -3987,14 +3831,6 @@
   font-size: 10px;
   font-weight: 600;
   line-height: 1.2;
-}
-
-.sa-workshop-shelf .sa-workshop-sell {
-  flex: none;
-  margin-top: 0;
-  min-height: 36px;
-  padding: 4px 12px;
-  font-size: 13.5px;
 }
 
 /* A machine card: unbuilt reads plain, running gets a leaf ring,
@@ -4108,7 +3944,6 @@
   .sa-workshop .sa-sheet-head { padding-top: 6px; padding-bottom: 6px; }
   .sa-workshop .sa-sheet-note { margin-top: 4px; font-size: 13px; line-height: 1.3; }
   .sa-workshop .sa-group-label { margin-top: 10px; }
-  .sa-workshop-hint,
   .sa-workshop-empty,
   .sa-workshop-job { font-size: 12.5px; line-height: 1.3; }
   .sa-workshop .sa-cta { min-height: 42px; padding: 6px 14px; font-size: 14.5px; }
@@ -4125,271 +3960,7 @@
 
 
 
-/* ---- the Synergy Tree ------------------------------------------------- */
-
-/* The HUD badge, same paper pill as .sa-feed next door. The corn ring shows
-   up only once a perk is actually active -- an empty loadout reads as plain
-   paper, the same "nothing to see yet" the allowance meter gives a fresh
-   day. */
-.sa-synergy-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 38px;
-  padding: 0 11px;
-  border: 2px solid var(--sa-paint-line);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-paint-fill-open);
-  box-shadow: var(--sa-paint-rim-sm), var(--sa-drop);
-  color: var(--sa-ink);
-  font-family: var(--sa-font);
-  font-size: 15px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  transition:
-    transform var(--duration-fast) var(--sa-ease-out),
-    box-shadow var(--duration-fast) var(--sa-ease-out);
-}
-
-/* A highlight only once at least one perk is actually contributing --
-   otherwise the badge is indistinguishable chrome nobody has a reason to
-   tap. */
-.sa-synergy-badge.has-active {
-  background: var(--sa-tint-corn);
-  box-shadow: var(--sa-paint-rim-lit), var(--sa-drop);
-  color: var(--sa-lit-corn);
-}
-
-.sa-synergy-milestone {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 12px 0 0;
-  padding: 9px 12px;
-  border: 2px solid var(--sa-paint-line);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-tint-corn);
-  box-shadow: var(--sa-paint-rim-sm);
-  color: var(--sa-lit-corn);
-  font-size: 13.5px;
-  font-weight: 800;
-}
-
-/* A locked perk reads as scenery, not a decision -- dimmed the way a wild,
-   uncleared district is, so the eye lands on what is actually ownable. An
-   active one gets the same corn ring TownContractsModal's posted rung does:
-   the marker for "this is the one actually doing something right now". */
-.sa-synergy-perk.is-locked { opacity: .72; }
-
-.sa-synergy-perk.is-active {
-  background: var(--sa-tint-corn);
-  box-shadow: inset 0 0 0 1px var(--sa-corn), inset 0 1px 0 rgba(255, 255, 255, .3);
-}
-
-.sa-synergy-perk-desc {
-  margin: 6px 0 0;
-  color: var(--sa-ink-soft);
-  font-size: 13.5px;
-  line-height: 1.4;
-}
-
-.sa-synergy-perk-btn {
-  min-height: 44px;
-  font-size: 14px;
-}
-
-/* Slotting an owned perk spends no Gold, so it carries the leaf tint for the
-   same "growth, not a purchase" reason .sa-buy-btn.is-expand does. */
-.sa-synergy-perk-btn.is-slot {
-  background: var(--sa-tint-leaf);
-  box-shadow: var(--sa-paint-rim-lit);
-  color: var(--sa-lit-leaf);
-}
-
-/* ---- the Sunlight Forge sheet ----------------------------------------
-   Mirrors .sa-contracts-*'s own structure (a status readout, a scrollable
-   list of cards, one note banner answering the sheet's own last action) --
-   kept as its own prefix rather than folded into .sa-contract-* because the
-   two are unrelated features that only happen to look alike, the same
-   reasoning that already keeps .sa-buy-* and .sa-contract-* separate. */
-
-.sa-forge-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin: 12px 0 0;
-  padding: 10px 12px;
-  border: 2px solid var(--sa-paint-line-soft);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-}
-
-.sa-forge-stat { display: flex; flex-direction: column; gap: 2px; text-align: center; }
-
-.sa-forge-stat dt {
-  margin: 0;
-  color: var(--sa-ink-soft);
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.sa-forge-stat dd {
-  margin: 0;
-  color: var(--sa-ink);
-  font-size: 18px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
-.sa-forge-note {
-  margin: 12px 0 0;
-  padding: 9px 12px;
-  border: 2px solid var(--sa-paint-line-soft);
-  border-radius: var(--sa-r-block);
-  font-size: 13.5px;
-  font-weight: 700;
-}
-
-.sa-forge-note.is-paid {
-  background: var(--sa-tint-leaf);
-  box-shadow: var(--sa-paint-rim-sm);
-  color: var(--sa-lit-leaf);
-}
-
-.sa-forge-note.is-refused {
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: var(--sa-paint-rim-sm);
-  color: var(--sa-ink);
-}
-
-.sa-forge-slots {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 12px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.sa-forge-slot {
-  padding: 12px;
-  border: 2px solid var(--sa-paint-line-soft);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-}
-
-/* A forged slot gets the same corn-ring treatment .sa-contract.is-posted
-   uses for "this is the number to plan around" -- here it marks "this is
-   already yours" instead. */
-.sa-forge-slot.is-owned {
-  background: var(--sa-tint-corn);
-  box-shadow: inset 0 0 0 1px var(--sa-corn), inset 0 1px 0 rgba(255, 255, 255, .3);
-}
-
-.sa-forge-slot-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.sa-forge-slot-head h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 800;
-  color: var(--sa-ink);
-}
-
-.sa-forge-slot-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-  color: var(--sa-ink-soft);
-  font-size: 11.5px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.sa-forge-slot-tag.is-owned { color: var(--sa-lit-leaf); }
-
-.sa-forge-slot-desc {
-  margin: 6px 0 0;
-  color: var(--sa-ink-soft);
-  font-size: 13.5px;
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-.sa-forge-slot .sa-contract-req { margin-top: 10px; }
-.sa-forge-slot .sa-cta { margin-top: 12px; width: 100%; justify-content: center; }
-
-/* ---- the Prestige Reset Valve -----------------------------------------
-   Reuses TownContractsModal's own vocabulary wherever the shape already
-   fits (.sa-contracts-standing for the multiplier readout, .sa-contract-bar
-   for progress toward eligibility, .sa-contracts-note for the outcome
-   banner) -- only what is genuinely new to this sheet gets a class of its
-   own: the eligibility caption under the bar, the warning panel step 2
-   shows, the Cancel/confirm row, and the danger-toned CTA. */
-
-.sa-prestige-progress { margin: 12px 0 0; }
-
-.sa-prestige-progress-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 8px 0 0;
-  color: var(--sa-ink-soft);
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.35;
-  text-wrap: pretty;
-}
-
-/* Roof, not corn: the one panel on this surface meant to read as a warning
-   rather than as an offer. Corn means an offer and roof means trouble. */
-.sa-prestige-warning {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin: 14px 0 0;
-  padding: 12px 14px;
-  border: 1px solid var(--sa-roof);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-tint-roof);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-  color: var(--sa-lit-roof);
-}
-
-.sa-prestige-warning > svg { flex: none; margin-top: 2px; color: var(--sa-roof); }
-
-.sa-prestige-warning .sa-clear-promise,
-.sa-prestige-warning .sa-stock-terms { color: var(--sa-ink); }
-
-.sa-prestige-confirm-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.sa-prestige-confirm-row .sa-cta { flex: 1; margin-top: 0; }
-
-/* The same .sa-sheet-close chrome the header's own "Done" button uses,
-   just sized to sit beside the danger CTA in this row instead of floating
-   at the head of the sheet, and kept from stretching to match it. */
-.sa-prestige-cancel {
-  flex: none;
-  min-height: 52px;
-  padding: 10px 18px;
-}
-
+/* A destructive action's CTA, roof-toned. */
 .sa-cta.is-danger {
   display: inline-flex;
   align-items: center;
@@ -4415,19 +3986,10 @@
      spring in, and the component throws no motes at all (it checks the same
      query in JS and counts straight to the total). */
   .sa-contract-ticker { animation: none; }
-  /* The ring still appears at once; it just does not spring in. Keeping the
-     transform means the buttons stay centred on their own arc points. */
-  .sa-radial-btn { animation: none; }
-  /* The gel dock's tokens, shell and circle hold still too. A drag still
-     works; only the idle bob, pulse, pop-in, marching arrow and drop burst
-     go. */
+  /* The gel dock's tokens hold still too. */
   .sa-gel-row,
   .sa-gel-token,
-  .sa-gel-token .sa-ico,
-  .sa-gel-target,
-  .sa-gel-arrow-line,
-  .sa-gel-splash,
-  .sa-gel-burst i { animation: none; }
+  .sa-gel-token .sa-ico { animation: none; }
 }
 
 /* ---- the drag-and-drop tools ------------------------------------------
@@ -4486,9 +4048,6 @@
   .sa-contract-head h3 { font-size: 15px; }
   .sa-contract-req { margin-top: 8px; }
 
-  .sa-ground-tool { min-width: 44px; min-height: 44px; }
-  .sa-ground-tool .sa-ico { width: 20px; height: 20px; }
-
   /* The drawer is the tallest thing on a short landscape phone. It gives back
      padding rather than width: a narrower drawer wraps every buy button onto
      two lines, which costs more height than the padding saved. */
@@ -4498,206 +4057,8 @@
 
   .sa-sheet { max-height: 92dvh; }
   .sa-sheet-head h2 { font-size: 19px; }
-
-  /* The ring is dropped under a thumb on the shortest screen there is, so it
-     tightens rather than sprawling off the top of the map. It keeps its
-     travel and its outline, same rule as every other block in this block. */
-  .sa-radial-btn { width: 72px; min-height: 60px; padding: 5px 4px; }
-  .sa-radial-name { font-size: 11px; }
-  .sa-radial-cost { font-size: 11px; }
 }
 
-/* ---------------------------------------------------------------------- */
-/* The Crossbreeding Bed sheet (crossbreed-bed-sheet.tsx)                 */
-/* ---------------------------------------------------------------------- */
-/* Same sheet/scrim chrome as .sa-forge-*, its own prefix for the same
-   reason that block gives. The bed is a fixed 4x4 of square cells, each a
-   button: soil-brown when planted, paper when empty, a leaf ring once ripe
-   and a corn ring when a ripe neighbour could cross with it. */
-
-.sa-xb-note {
-  margin: 12px 0 0;
-  padding: 9px 12px;
-  border: 2px solid var(--sa-paint-line-soft);
-  border-radius: var(--sa-r-block);
-  font-size: 13.5px;
-  font-weight: 700;
-  color: var(--sa-ink);
-}
-
-.sa-xb-note.is-paid {
-  background: var(--sa-tint-leaf);
-  box-shadow: var(--sa-paint-rim-sm);
-  color: var(--sa-lit-leaf);
-}
-
-.sa-xb-note.is-refused {
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: var(--sa-paint-rim-sm);
-}
-
-.sa-xb-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  margin: 12px 0 0;
-  padding: 8px;
-  border: 2px solid var(--sa-paint-line-soft);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-}
-
-.sa-xb-cell {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  aspect-ratio: 1;
-  min-width: 0;
-  padding: 4px;
-  border: 2px solid var(--sa-paint-line-soft);
-  border-radius: var(--sa-r-block);
-  background: color-mix(in srgb, var(--sa-choc) 34%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-  color: var(--sa-ink);
-  font: inherit;
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1.1;
-  cursor: pointer;
-}
-
-.sa-xb-cell:disabled { cursor: default; }
-
-.sa-xb-cell.is-empty {
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-  color: var(--sa-ink-soft);
-}
-
-.sa-xb-cell.is-empty:not(:disabled):hover,
-.sa-xb-cell.is-picking {
-  color: var(--sa-ink);
-  box-shadow: inset 0 0 0 1px var(--sa-leaf), inset 0 1px 0 rgba(255, 255, 255, .3);
-}
-
-.sa-xb-cell.is-ripe {
-  box-shadow: inset 0 0 0 1px var(--sa-leaf), inset 0 1px 0 rgba(255, 255, 255, .3);
-}
-
-.sa-xb-cell.is-cross {
-  box-shadow: inset 0 0 0 1px var(--sa-corn), inset 0 1px 0 rgba(255, 255, 255, .3);
-}
-
-.sa-xb-cell-label {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sa-xb-sprite {
-  width: 36px;
-  height: 36px;
-  object-fit: contain;
-  image-rendering: pixelated;
-  pointer-events: none;
-}
-
-.sa-xb-picker {
-  margin: 12px 0 0;
-  padding: 10px 12px;
-  border: 2px solid var(--sa-paint-line-soft);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-paint-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-}
-
-.sa-xb-picker-title {
-  margin: 0 0 8px;
-  color: var(--sa-ink-soft);
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.sa-xb-stock {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.sa-xb-stock-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  width: 100%;
-  padding: 8px 6px;
-  border: 2px solid var(--sa-paint-line);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-paint-fill-ctl);
-  box-shadow: var(--sa-paint-rim-sm);
-  color: var(--sa-ink);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.sa-xb-stock-btn:disabled { cursor: default; }
-.sa-xb-stock-btn.is-short { opacity: .55; }
-
-.sa-xb-stock-cost {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  color: var(--sa-ink-soft);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-.sa-xb-h {
-  margin: 14px 0 0;
-  color: var(--sa-ink-soft);
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.sa-xb-pairs {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 6px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.sa-xb-pairs li {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-paint-fill-quiet);
-  color: var(--sa-ink);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.sa-xb-pairs li strong {
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
 /* Chapter 1: the energy tag beside Gold, and Ray's Kitchen tab. */
 .sa-energy {
   display: inline-flex;
@@ -4772,34 +4133,8 @@
   .sa-clock { min-width: 88px; min-height: 34px; padding: 0 8px; font-size: 13px; }
 }
 
-/* The bed's card borrows the Pixel Pilgrim's; only the pin turns night blue. */
+/* The bed's card: only the pin turns night blue. */
 .sa-sleep-dialogue .sa-monk-dialogue-pin { background: #3d4a86; }
-
-/* Sits beside the energy chip, which fishing spends, so both read as the
-   cast's own settings. */
-.sa-bait-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 38px;
-  padding: 0 11px;
-  border: 2px solid var(--sa-paint-line);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-paint-fill-open);
-  box-shadow: var(--sa-paint-rim-sm), var(--sa-drop);
-  color: var(--sa-ink);
-  font-family: var(--sa-font);
-  font-size: 13px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.sa-bait-toggle input {
-  width: 18px;
-  height: 18px;
-  margin: 0;
-  accent-color: var(--sa-leaf);
-}
 
 /* ---- the player's house: the kitchen -----------------------------------
  * Rides the barn store's popup (`.sa-store-scrim`/`.sa-store-card`), so the
@@ -4897,18 +4232,6 @@
   max-width: 560px;
 }
 
-.sa-kitchen-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.sa-kitchen-buttons .sa-cta {
-  flex: 1 1 180px;
-  margin-top: 0;
-}
-
 .sa-kitchen-energy {
   display: flex;
   align-items: center;
@@ -4972,24 +4295,6 @@
 .sa-kitchen-cellar-line {
   margin: 0;
   font-size: 13px;
-}
-
-/* The Farm Kitchen's standing-order picker. */
-.sa-kitchen-order {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 0;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.sa-kitchen-order select {
-  flex: 1;
-  min-width: 0;
-  min-height: 40px;
-  font: inherit;
-  font-weight: 600;
 }
 
 /* A kitchen building's card names the seeds it opens. */
@@ -5475,7 +4780,6 @@
 .sa-theme .htp-trigger,
 .sa-theme .gold-balance.floor-wallet,
 .sa-feed,
-.sa-upkeep,
 .sa-energy,
 .sa-prestige-badge,
 .sa-music-toggle {
@@ -5492,7 +4796,6 @@
 .sa-theme .htp-trigger,
 .sa-theme .gold-balance.floor-wallet,
 .sa-feed,
-.sa-upkeep,
 .sa-energy,
 .sa-prestige-badge { padding: 0 4px 2px; }
 .sa-music-toggle { width: 44px; padding: 0 0 2px; }
@@ -5507,7 +4810,6 @@
 }
 .sa-theme .gold-balance.floor-wallet strong,
 .sa-feed strong,
-.sa-upkeep strong,
 .sa-energy strong,
 .sa-prestige-badge strong {
   font-family: var(--sa-font-pixel);
@@ -5578,6 +4880,32 @@
 }
 .sa-belt-slot:active { box-shadow: none; }
 .sa-belt-slot .sa-px-lg { margin: -4px; }
+/* The tractor on Ray's machinery shelf: its own map frame, facing right, doubled. */
+.sa-tractor-art {
+  display: block;
+  width: 128px;
+  height: 108px;
+  margin: 0 auto;
+  background: url("/stackacres-td/common/tractor.png") -1536px 0 / 2048px 108px no-repeat;
+  image-rendering: pixelated;
+}
+/* Earl standing, facing you: his idle_down frame (96) off characters/earl, at 2x. */
+.sa-hand-art {
+  display: block;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto;
+  background: url("/stackacres-td/characters/earl.png") 0 -2304px / 384px 4224px no-repeat;
+  image-rendering: pixelated;
+}
+/* Up on the tractor: the key that climbs him down, in words, since there is no icon for it. */
+.sa-belt-getoff {
+  font-family: var(--sa-font-pixel);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 10px;
+  text-align: center;
+}
 .sa-belt-count {
   right: -10px;
   bottom: -10px;
@@ -5774,16 +5102,12 @@
 .sa-loading { background: var(--sa-lake); }
 .sa-loading-logo { filter: drop-shadow(0 4px 0 rgba(58, 21, 17, .35)); }
 
-/* Pixel logos are drawn at 1x; keep them crisp at any size. */
-.sa-px-logo { image-rendering: pixelated; }
-
 @media (orientation: landscape) and (max-height: 520px) {
   .sa-theme .floor-back,
   .sa-theme .htp-trigger,
   .sa-theme .gold-balance.floor-wallet,
   .sa-feed,
-  .sa-upkeep,
-  .sa-energy,
+    .sa-energy,
   .sa-prestige-badge { min-height: 40px; }
   .sa-music-toggle { width: 40px; min-height: 40px; }
   .sa-toolbelt { gap: 3px; }
@@ -5911,7 +5235,9 @@
   position: absolute;
   top: calc(var(--sa-header-h) + 48px);
   right: max(10px, var(--safe-right));
-  z-index: 3;
+  /* Under the header (2 is .floor-bar) so the More drawer, which hangs down
+     over this column, is not covered by it. */
+  z-index: 1;
   display: grid;
   gap: 5px;
   width: min(272px, 42%);
@@ -5971,6 +5297,32 @@
   font-weight: 700;
   line-height: 1.25;
 }
+
+/* The objective is the panel's own details toggle: tap it for the reason and
+   the full list of what is short. Unpainted, so it still reads as a title. */
+.sa-next-toggle {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sa-next-toggle-icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--sa-ink-soft);
+  transition: transform var(--duration-fast, 120ms) var(--sa-ease-out);
+}
+
+.sa-next-toggle[aria-expanded="true"] .sa-next-toggle-icon { transform: rotate(180deg); }
 
 .sa-next-why {
   margin: 0;
@@ -6066,7 +5418,7 @@
   position: absolute;
   top: calc(var(--sa-header-h) + 48px);
   right: max(10px, var(--safe-right));
-  z-index: 3;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -6075,15 +5427,14 @@
   cursor: pointer;
 }
 
-/* A short landscape phone has the clock, the belt and the stick to fit; the
-   panel narrows and drops its "why" line rather than covering half the map. */
+/* A short landscape phone has the clock, the belt and the stick to fit, so
+   the panel narrows. Its details only show once the objective is tapped. */
 @media (orientation: landscape) and (max-height: 520px) {
   .sa-next {
     top: calc(var(--sa-header-h) + 42px);
     width: min(232px, 38%);
     gap: 4px;
   }
-  .sa-next-why { display: none; }
   .sa-next-reopen { top: calc(var(--sa-header-h) + 42px); }
 }
 
@@ -6201,6 +5552,24 @@
   white-space: nowrap;
 }
 
+/* What Hank is about to take to market, one animal to a line. */
+.sa-sale-barn-list {
+  margin: 4px 0 8px;
+  padding: 0 0 0 16px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A hog or steer's weight: its own row under the card, so the three
+   columns above keep their widths. */
+.sa-barn-weight {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--sa-ink-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .sa-barn-streak { color: var(--sa-ink-soft); }
 .sa-barn-bonus { color: var(--sa-sprout-3); font-weight: 800; }
 
@@ -6244,6 +5613,9 @@
   .sa-barn-card { grid-template-columns: minmax(0, 1fr) auto; }
   .sa-barn-state { grid-column: 1 / -1; }
 }
+
+/* "Move animals" beside Done in the sheet's head. */
+.sa-sheet-head-keys { display: flex; flex: none; gap: 6px; }
 
 /* Ray's own line, when a care streak earns one of his three gifts
    (lib/stackacres/barn.ts). A quotation, not a number: quieter than
@@ -6289,3 +5661,135 @@
   88% { opacity: 1; transform: translate(-50%, 0); }
   100% { opacity: 0; transform: translate(-50%, -6px); }
 }
+
+/* ---- the HUD grid ------------------------------------------------------
+   One spacing rule for everything pinned over the map. Every box sits the same
+   distance in from its screen edge, every tag and belt slot is one height, and
+   the gap between neighbours is one size. The belt starts one gap under the
+   top row, the Next card starts at the same line, and the stick and Use key
+   share the bottom line. Earlier sections still own colours and art; this one
+   owns where things sit and how big they are. */
+.sa-shell {
+  --hud-edge: 10px;
+  --hud-gap: 6px;
+  --hud-u: 44px;
+  --hud-top: max(var(--hud-edge), var(--safe-top));
+  --hud-left: max(var(--hud-edge), var(--safe-left));
+  --hud-right: max(var(--hud-edge), var(--safe-right));
+  --hud-bottom: max(var(--hud-edge), var(--safe-bottom));
+  /* The line under the top row. Toasts, the place sign and Ray's line hang off it. */
+  --sa-header-h: calc(var(--hud-top) + var(--hud-u));
+  --hud-below-top: calc(var(--sa-header-h) + var(--hud-gap));
+  /* Room the stick and the Use key take at the bottom corners. */
+  --hud-thumb: 100px;
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  .sa-shell {
+    --hud-edge: 8px;
+    --hud-u: 40px;
+    --hud-thumb: 84px;
+  }
+}
+
+/* The top row. */
+.sa-theme .floor-bar { padding: var(--hud-top) var(--hud-right) 0 var(--hud-left); }
+.sa-theme .floor-bar-left,
+.sa-hud { gap: var(--hud-gap); align-items: stretch; }
+.sa-theme .floor-back,
+.sa-theme .htp-trigger,
+.sa-theme .gold-balance.floor-wallet,
+.sa-feed,
+.sa-energy,
+.sa-prestige-badge,
+.sa-music-toggle,
+.sa-clock {
+  box-sizing: border-box;
+  height: var(--hud-u);
+  min-height: var(--hud-u);
+}
+.sa-music-toggle { width: var(--hud-u); }
+
+/* The clock is a tag in the row like Energy and Gold, not a glass pill under it. */
+.sa-clock {
+  position: static;
+  min-width: 0;
+  padding: 0 4px 2px;
+  border: 10px solid transparent;
+  border-image: var(--sa-9-chip) 5 fill / 10px stretch;
+  border-radius: 0;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+  font-family: var(--sa-font-pixel);
+  font-size: 15px;
+  font-weight: 700;
+  image-rendering: pixelated;
+}
+
+/* The belt: slots alone down the left edge, the same height as the tags above.
+   Five rows; by the dock the rod and the bait start a second column beside it. */
+.sa-toolbelt {
+  top: var(--hud-below-top);
+  left: var(--hud-left);
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(5, var(--hud-u));
+  grid-auto-columns: var(--hud-u);
+  gap: var(--hud-gap);
+  border-image-source: none;
+}
+.sa-belt-slot {
+  box-sizing: border-box;
+  width: var(--hud-u);
+  height: var(--hud-u);
+  border-width: 10px;
+  border-image-width: 10px;
+}
+.sa-belt-slot.is-held { transform: none; }
+.sa-belt-slot .sa-px-lg { margin: -6px; }
+.sa-belt-bait.is-on { border-image-source: var(--sa-9-slot-on); }
+.sa-belt-bait:disabled { cursor: default; }
+.sa-belt-count { right: -8px; bottom: -8px; }
+
+/* The seed wheel opens beside the pouch, the fourth slot. */
+.sa-seed-wheel {
+  top: calc(var(--hud-below-top) + 3 * (var(--hud-u) + var(--hud-gap)));
+  left: calc(var(--hud-left) + var(--hud-u) + var(--hud-gap));
+}
+
+/* The Next card and its reopen tag start on the belt's line, against the right edge. */
+.sa-next,
+.sa-next-reopen {
+  top: var(--hud-below-top);
+  right: var(--hud-right);
+}
+.sa-next-reopen { height: var(--hud-u); min-height: var(--hud-u); }
+
+/* The thumb controls share the bottom line. */
+.sa-joystick {
+  right: var(--hud-right);
+  bottom: var(--hud-bottom);
+}
+.sa-use-key {
+  left: var(--hud-left);
+  bottom: var(--hud-bottom);
+}
+
+/* Bottom centre, between the two thumb controls: placing animals or buildings,
+   and Harvest when something is ready. */
+.sa-build-open,
+.sa-build-bar {
+  bottom: var(--hud-bottom);
+}
+.sa-build-bar {
+  width: min(520px, calc(100vw - 2 * (var(--hud-edge) + var(--hud-thumb) + var(--hud-gap))));
+}
+.sa-harvest-all {
+  position: absolute;
+  left: 50%;
+  bottom: var(--hud-bottom);
+  z-index: 3;
+  transform: translateX(-50%);
+}
+.sa-harvest-all:not(:disabled):active { transform: translate(-50%, 2px); }

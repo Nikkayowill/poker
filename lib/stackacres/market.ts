@@ -21,7 +21,6 @@
  */
 
 import { STACKACRES_CATALOGUE, type StackAcresStock } from "./catalogue";
-import { yieldValue } from "./items";
 
 /**
  * What buying a tier outright costs, as a multiple of one cycle's seed price.
@@ -36,8 +35,8 @@ import { yieldValue } from "./items";
  * exists to avoid.
  *
  * So: one multiplier, applied to a number the player already sees on the shelf.
- * A Cattle Pen's seed is 1,200 Gold, so a Cattle Pen is 60,000 Gold, and it
- * stays 60,000 Gold whether it is your first or your fourth.
+ * A Cattle Pen's cycle is 670 Gold, so a Cattle Pen is 33,500 Gold, and it
+ * stays 33,500 Gold whether it is your first or your fourth.
  *
  * WAS 100 x A SEED PRICE IN BUSHELS. Seed prices are Gold now and doubled in
  * the conversion, so this halved to 50 and **every outright price is
@@ -70,28 +69,6 @@ export function stackacresStockOwnableOutright(stock: StackAcresStock): boolean 
 }
 
 /**
- * What a Gold-bought unit returns in ONE cycle as a fraction of what it cost.
- * THE NUMBER THAT MUST STAY BELOW 1 on every tier.
- *
- * Note it deliberately measures one cycle against the whole purchase price.
- * Permanent stock keeps producing, so over a long enough life any tier repays
- * itself -- that is the point of buying it, and it is bounded by the daily
- * ceiling rather than by this. What this rules out is the sharp edge: a stock
- * that could be bought and immediately liquidated for more Gold than it cost,
- * which would be a faucet with no cooldown on it at all.
- *
- * It got simpler with the single currency: there is no rate to pass in any
- * more, because a cycle's yield is already denominated in the money that
- * bought the animal. `market.test.ts` holds the check on every tier, and it
- * now also holds it against the largest Bountiful Harvest multiplier a sweep
- * can earn -- a synergy must not be able to push a single cycle past its own
- * purchase price either.
- */
-export function goldStockRoundTrip(stock: StackAcresStock, multiplier = 1): number {
-  return (yieldValue(stock) * multiplier) / stackacresStockPrice(stock);
-}
-
-/**
  * What retiring permanent stock refunds: NOTHING, stated as a function so the
  * decision is somewhere rather than implied by an absent branch.
  *
@@ -101,14 +78,4 @@ export function goldStockRoundTrip(stock: StackAcresStock, multiplier = 1): numb
  * as a way to undo a purchase -- the UI has to say so before it asks.
  */
 export const STACKACRES_RETIRE_REFUND = 0;
-
-/** Everything the district's buy section shows for one stock kind. */
-export interface StackAcresShelfItem {
-  stock: StackAcresStock;
-  label: string;
-  /** Gold, outright, permanent. */
-  price: number;
-  /** Gold, one cycle, the path that already existed. */
-  seedCost: number;
-}
 

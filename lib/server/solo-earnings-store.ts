@@ -11,8 +11,8 @@ import { adminClient } from "./supabase-admin";
 /**
  * Solo earnings: records every settled PVE and solo wager, and moves rank with it.
  *
- * Rank is the difficulty-weighted net of these wagers (lib/progression/
- * solo-earnings.ts), so a loss costs points and a win adds them. Two ordering
+ * Rank counts the wins among these wagers, weighted by stake band (lib/
+ * progression/solo-earnings.ts); a loss leaves it where it is. Two ordering
  * rules, restated here because breaking either is a silent money bug:
  *
  *  1. **Record, then pay.** The result is written (idempotently, keyed on the
@@ -20,8 +20,8 @@ import { adminClient } from "./supabase-admin";
  *     up before its Gold goes out. A retried settle records nothing and pays
  *     nothing. A failure between the mark and the credit loses that milestone's
  *     Gold rather than risking paying it twice.
- *  2. **Tier Gold pays once, ever.** Rank can fall, so the same tier can be
- *     reached again. max_level_rewarded holds the highest tier number paid (the
+ *  2. **Tier Gold pays once, ever.** A change to the rank rule can move a
+ *     player down, so the same tier can be reached again. max_level_rewarded holds the highest tier number paid (the
  *     column predates tiers), only moves up, and only tiers above it are paid.
  *
  * Never throws into its caller. The attempt is already settled and its payout

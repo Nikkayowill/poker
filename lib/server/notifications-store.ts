@@ -30,7 +30,7 @@ const NOTIFICATIONS_PAGE_SIZE = 30;
 
 // A wrapper, not an intersection (StoredNotification & { profileId }): a
 // discriminated union's kind/payload correlation only survives an update
-// that spreads an existing member (see markNotificationRead below), never a
+// that spreads an existing member (see markAllNotificationsRead below), never a
 // property-by-property rebuild -- keeping `notification` as one opaque field
 // means every read/update here copies it whole instead of reconstructing it.
 interface MemoryRow {
@@ -182,30 +182,6 @@ export async function listNotifications(profileId: string): Promise<Notification
 }
 
 // ---- marking read -----------------------------------------------------
-
-/** Marks one notification read. Returns false when it didn't exist or wasn't this profile's. */
-export async function markNotificationRead(profileId: string, id: string): Promise<boolean> {
-  const supabase = adminClient();
-  if (!supabase) {
-    const row = memoryNotifications.get(id);
-    if (!row || row.profileId !== profileId) return false;
-    // Spreads the existing member rather than rebuilding kind/payload --
-    // this is what keeps the discriminated union correlated without a cast;
-    // see MemoryRow's own comment.
-    row.notification = { ...row.notification, readAt: row.notification.readAt ?? new Date().toISOString() };
-    return true;
-  }
-
-  const { data, error } = await supabase
-    .from("notifications")
-    .update({ read_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("profile_id", profileId)
-    .is("read_at", null)
-    .select("id");
-  if (error) throw new Error(`Could not update that notification: ${error.message}`);
-  return (data ?? []).length > 0;
-}
 
 /** Marks every unread notification for this profile read. */
 export async function markAllNotificationsRead(profileId: string): Promise<void> {

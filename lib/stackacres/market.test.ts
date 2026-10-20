@@ -4,7 +4,6 @@ import {
   STACKACRES_CAPACITY_PRICE,
   STACKACRES_RETIRE_REFUND,
   STACKACRES_SEED_MULTIPLE_TO_OWN,
-  goldStockRoundTrip,
   stackacresCapacityPrice,
   stackacresStockPrice,
 } from "./market";
@@ -44,9 +43,8 @@ describe("stock prices", () => {
     const first = stackacresStockPrice("cattle");
     const later = stackacresStockPrice("cattle");
     expect(later).toBe(first);
-    // Unchanged across the single-currency conversion, deliberately: seed
-    // prices doubled and the multiple halved, so no price on the shelf moved.
-    expect(first).toBe(60_000);
+    // 670 a cycle since the 2026-10-02 retune, so 50 times that outright.
+    expect(first).toBe(33_500);
   });
 
   it("rank the tiers the same way the seed prices do", () => {
@@ -61,22 +59,6 @@ describe("stock prices", () => {
 });
 
 describe("the round trip", () => {
-  it("always loses, on every tier", () => {
-    for (const stock of STACKACRES_STOCK) {
-      expect(goldStockRoundTrip(stock)).toBeLessThan(1);
-    }
-  });
-
-  it("loses by a wide enough margin that a retune cannot silently flip it", () => {
-    // The closest tier to breaking even is the one to watch. A margin this
-    // wide means yields would have to rise by an order of magnitude, or the
-    // outright multiple fall by one, before a single cycle paid for the animal
-    // -- either of which is a deliberate act, not a slip.
-    // Only stock that can be bought outright: seed-only crops (tier 1, wheat)
-    // have an outright price on paper but nobody can pay it.
-    const ratios = STACKACRES_STOCK.filter(stackacresStockOwnableOutright).map((stock) => goldStockRoundTrip(stock));
-    expect(Math.max(...ratios)).toBeLessThan(0.1);
-  });
 
   it("is what the outright multiple being far above one cycle buys", () => {
     // A tier costs fifty seeds to own outright and one seed to sow once, and
@@ -146,6 +128,30 @@ describe("districts", () => {
     expect(stockZone("pig")).toBe("wallow");
     expect(stockZone("corn")).toBe("farmstead");
     expect(stockZone("hen")).toBe("henhaven");
+  });
+});
+
+describe("the 2026-10-02 lease retune", () => {
+  it("makes one leased cycle of every animal and of corn pay a little", () => {
+    expect(STACKACRES_CATALOGUE.hen.seedCost).toBe(35);
+    expect(STACKACRES_CATALOGUE.pig.seedCost).toBe(170);
+    expect(STACKACRES_CATALOGUE.cattle.seedCost).toBe(670);
+    expect(STACKACRES_CATALOGUE.corn.seedCost).toBe(75);
+    for (const stock of ["hen", "pig", "cattle", "corn", "hog", "steer"] as const) {
+      expect(yieldValue(stock)).toBeGreaterThan(STACKACRES_CATALOGUE[stock].seedCost);
+    }
+  });
+
+  it("prices owning outright at fifty cycles", () => {
+    expect(stackacresStockPrice("hen")).toBe(1_750);
+    expect(stackacresStockPrice("pig")).toBe(8_500);
+    expect(stackacresStockPrice("cattle")).toBe(33_500);
+    expect(stackacresStockPrice("corn")).toBe(3_750);
+  });
+
+  it("never sells a hog or steer outright", () => {
+    expect(stackacresStockOwnableOutright("hog")).toBe(false);
+    expect(stackacresStockOwnableOutright("steer")).toBe(false);
   });
 });
 

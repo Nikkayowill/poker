@@ -36,7 +36,6 @@ export function PlayRail({
   sessionReady,
   onOpenBuyIn,
   featuredDuel,
-  onOpenExpansion,
 }: {
   profile: PlayerProfile;
   wallet: ArcadeWallet;
@@ -44,7 +43,6 @@ export function PlayRail({
   sessionReady: boolean;
   onOpenBuyIn: () => void;
   featuredDuel: ArcadeGame | null;
-  onOpenExpansion: () => void;
 }) {
   return (
     <section className="mshell-section" aria-label="Play">
@@ -84,16 +82,20 @@ export function PlayRail({
             <small>Raise crops and livestock</small>
           </Link>
         ) : (
-          <button
-            type="button"
+          // Not owned yet: the same door, which shows the price and sells it
+          // (or says to ask for access while it is not for sale). A tile that
+          // only said "coming soon" left a player with no way to buy.
+          <Link
             className="mshell-card mshell-play-card mshell-play-mid"
-            onClick={() => { tapSound(); onOpenExpansion(); }}
+            href="/games/stackacres"
+            onClick={tapSound}
+            prefetch={false}
           >
             <span className="mshell-premium-badge">Premium</span>
             <StackAcresLogo variant="badge" className="mshell-play-art" alt="" />
             <strong>StackAcres</strong>
             <small>Raise crops and livestock</small>
-          </button>
+          </Link>
         )}
 
         {featuredDuel && <RailGameCard game={featuredDuel} wallet={wallet} />}

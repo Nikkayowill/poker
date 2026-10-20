@@ -7,7 +7,6 @@ import {
   isoUnprojectLocal,
   projectedBounds,
   projectedCorners,
-  unprojectBoundsApprox,
 } from "./iso";
 
 describe("isoProject / isoUnproject", () => {
@@ -70,39 +69,6 @@ describe("projectedBounds", () => {
     const big = projectedBounds({ x: 0, y: 0, width: 320, height: 320 });
     expect(big.width).toBeGreaterThan(small.width);
     expect(big.height).toBeGreaterThan(small.height);
-  });
-});
-
-describe("unprojectBoundsApprox", () => {
-  it("contains every corner a screen rect could have come from", () => {
-    const screenRect = { x: -100, y: -50, width: 300, height: 150 };
-    const worldBox = unprojectBoundsApprox(screenRect);
-    const screenCorners = [
-      { x: screenRect.x, y: screenRect.y },
-      { x: screenRect.x + screenRect.width, y: screenRect.y },
-      { x: screenRect.x + screenRect.width, y: screenRect.y + screenRect.height },
-      { x: screenRect.x, y: screenRect.y + screenRect.height },
-    ];
-    for (const corner of screenCorners) {
-      const world = isoUnproject(corner.x, corner.y);
-      expect(world.x).toBeGreaterThanOrEqual(worldBox.x - 1e-6);
-      expect(world.x).toBeLessThanOrEqual(worldBox.x + worldBox.width + 1e-6);
-      expect(world.y).toBeGreaterThanOrEqual(worldBox.y - 1e-6);
-      expect(world.y).toBeLessThanOrEqual(worldBox.y + worldBox.height + 1e-6);
-    }
-  });
-
-  it("round-trips a box that was itself produced by projectedBounds, loosely", () => {
-    // Not exact (projectedBounds' box corners are not the diamond's actual
-    // corners), but unprojecting it must at least still cover the original
-    // world rect -- the property tendWorld's chunk loading actually depends on.
-    const worldRect = { x: 0, y: 0, width: 320, height: 320 };
-    const screen = projectedBounds(worldRect);
-    const back = unprojectBoundsApprox(screen);
-    expect(back.x).toBeLessThanOrEqual(worldRect.x + 1e-6);
-    expect(back.y).toBeLessThanOrEqual(worldRect.y + 1e-6);
-    expect(back.x + back.width).toBeGreaterThanOrEqual(worldRect.x + worldRect.width - 1e-6);
-    expect(back.y + back.height).toBeGreaterThanOrEqual(worldRect.y + worldRect.height - 1e-6);
   });
 });
 

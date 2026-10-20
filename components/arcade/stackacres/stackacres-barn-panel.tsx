@@ -3,7 +3,8 @@
 import { useCallback, useMemo, useState, type SyntheticEvent } from "react";
 import { Heart } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
-import { STACKACRES_CATALOGUE, isLivestock } from "@/lib/stackacres/catalogue";
+import { STACKACRES_CATALOGUE, isLivestock, isMarketLivestock, marketAnimalPrice } from "@/lib/stackacres/catalogue";
+import { marketWeightOf, maxMarketWeight } from "@/lib/stackacres/sale-barn";
 import {
   BARN_STATUS_LABELS,
   MOOD_LABELS,
@@ -19,8 +20,7 @@ import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { StackAcresIcon } from "./stackacres-icon";
 
 /** The farm canvas sits under every sheet and listens for pointers of its
- *  own, so a tap that lands on this panel must not also reach it. Same
- *  guard, for the same reason, as CrossbreedBedSheet's. */
+ *  own, so a tap that lands on this panel must not also reach it. */
 function contain<E extends SyntheticEvent>(handler?: (event: E) => void) {
   return (event: E) => {
     event.stopPropagation();
@@ -64,6 +64,10 @@ export interface BarnAnimalCard {
   bonusIfTended: number;
   canTend: boolean;
   hungryAt: string | null;
+  /** A hog or steer: how heavy it is, how heavy it can get, what it would
+   *  sell for now, and whether it is ready to go to the sale barn. Null for
+   *  everyone else. */
+  market: { weight: number; maxWeight: number; gold: number; ready: boolean; food: string } | null;
 }
 
 /** Every animal on the farm, worst first. Crops and mucked plots are not
@@ -99,6 +103,18 @@ export function barnCardsFor(
         bonusIfTended: careYieldBonus(tended ? streak : streak + 1),
         canTend: !tended && unit.state !== "mucked",
         hungryAt: unit.hungryAt,
+        market: isMarketLivestock(unit.stock)
+          ? (() => {
+              const weight = marketWeightOf({ ...unit, stock: unit.stock });
+              return {
+                weight,
+                maxWeight: maxMarketWeight(unit.stock),
+                gold: marketAnimalPrice(unit.stock, weight),
+                ready: unit.state === "ready",
+                food: unit.stock === "hog" ? "corn" : "cattle feed",
+              };
+            })()
+          : null,
       };
     })
     .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || a.name.localeCompare(b.name));
@@ -124,6 +140,8 @@ export interface StackAcresBarnPanelProps {
   busy: boolean;
   hasBarn: boolean;
   onTend: (unitId: string) => void;
+  /** Closes the sheet and opens the herd bar to move animals around. Null when there is no herd out on the Homestead. */
+  onMoveAnimals: (() => void) | null;
   onClose: () => void;
 }
 
@@ -134,6 +152,7 @@ export function StackAcresBarnPanel({
   busy,
   hasBarn,
   onTend,
+  onMoveAnimals,
   onClose,
 }: StackAcresBarnPanelProps) {
   const close = useCallback(() => onClose(), [onClose]);
@@ -198,19 +217,26 @@ export function StackAcresBarnPanel({
             </p>
             <h2 id="sa-barn-title">Who lives here</h2>
           </div>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            className="sa-sheet-close"
-            onClick={contain(close)}
-          >
-            Done
-          </button>
+          <div className="sa-sheet-head-keys">
+            {onMoveAnimals && (
+              <button type="button" className="sa-sheet-close" onClick={contain(onMoveAnimals)}>
+                Move animals
+              </button>
+            )}
+            <button
+              ref={closeButtonRef}
+              type="button"
+              className="sa-sheet-close"
+              onClick={contain(close)}
+            >
+              Done
+            </button>
+          </div>
         </header>
 
         <p className="sa-sheet-note">
           {cards.length === 0
-            ? "Nobody lives here yet. Buy a hen, a sheep or a cow and they will show up on this list."
+            ? "Nobody lives here yet. Buy a hen, a sheep, a cow or a pig and they will show up on this list."
             : waiting > 0
               ? `${waiting} of your ${cards.length} animals haven't had your time today.`
               : "Everyone has had your time today."}
@@ -226,7 +252,7 @@ export function StackAcresBarnPanel({
                 </div>
                 <div className="sa-barn-state">
                   <span className={`sa-barn-status is-${card.status}`}>
-                    {BARN_STATUS_LABELS[card.status]}
+                    {card.market?.ready ? "Ready to sell" : BARN_STATUS_LABELS[card.status]}
                   </span>
                   <span className="sa-barn-mood">{card.moodLabel}</span>
                   {card.status !== "producing" && card.hungryAt && (
@@ -252,6 +278,14 @@ export function StackAcresBarnPanel({
                       : "Tended"}
                   </button>
                 </div>
+                {card.market && (
+                  <p className="sa-barn-weight">
+                    Weight {card.market.weight} of {card.market.maxWeight}.{" "}
+                    {card.market.ready
+                      ? `Hank will pay ${card.market.gold.toLocaleString()} Gold at the sale barn.`
+                      : `Feed it ${card.market.food} to put on weight.`}
+                  </p>
+                )}
               </li>
             ))}
           </ul>

@@ -40,7 +40,7 @@ export interface StackAcresCutterDef extends StackAcresShopLock {
   /** Gold, or null for the one nobody buys. */
   price: number | null;
   /** Painter name in stackacres-art.ts. A plain string so this file stays free
-   *  of a components/ import, same as StackAcresToolDef.icon. */
+   *  of a components/ import. */
   icon: string;
   /** How far either side of the drag line one stroke cuts, world units. */
   reach: number;
@@ -89,16 +89,6 @@ export function isStackAcresBuyableCutter(value: unknown): value is StackAcresBu
   return typeof value === "string" && (STACKACRES_BUYABLE_CUTTERS as readonly string[]).includes(value);
 }
 
-/** A stored or remembered value read back as a cutter, falling back to the Scythe. */
-export function toStackAcresCutter(value: unknown): StackAcresCutter {
-  return isStackAcresCutter(value) ? value : STACKACRES_STARTING_CUTTER;
-}
-
-/** Position in STACKACRES_CUTTERS. 0 is the Scythe. */
-export function cutterRank(cutter: StackAcresCutter): number {
-  return STACKACRES_CUTTERS.indexOf(cutter);
-}
-
 /**
  * Every cutter a player owns, in catalogue order, from the bought list the
  * server keeps. The Scythe is always first. Unknown or repeated names are
@@ -124,22 +114,3 @@ export function heldStackAcresCutter(
   return owned[owned.length - 1] ?? STACKACRES_STARTING_CUTTER;
 }
 
-/** How far one stroke reaches with this cutter, world units. */
-export function cutterReach(cutter: StackAcresCutter): number {
-  return STACKACRES_CUTTER_DEFS[cutter].reach;
-}
-
-/** How long one level of grass takes to grow back after this cutter. */
-export function cutterRegrowMs(cutter: StackAcresCutter): number {
-  return STACKACRES_CUTTER_DEFS[cutter].regrowMs;
-}
-
-/**
- * How many straight passes it takes to clear a band of meadow `widthWorld`
- * wide. One pass cuts `reach` either side of the line, so it is `reach * 2`
- * wide. Ceiling, not round: two and a half passes' worth takes three.
- */
-export function strokesToClearWidth(widthWorld: number, cutter: StackAcresCutter): number {
-  if (!Number.isFinite(widthWorld) || widthWorld <= 0) return 0;
-  return Math.ceil(widthWorld / (cutterReach(cutter) * 2));
-}

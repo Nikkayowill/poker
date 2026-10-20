@@ -11,6 +11,20 @@ import { expect, test, type BrowserContext, type Page } from "./fixtures";
 
 test.use({ viewport: { width: 932, height: 430 } });
 
+/** Gets one crop into the ground so the farm is past the seed cues and on to its first building. A truly
+ *  empty farm is told to sow or to see Cora instead (stackacres-seed-seller.spec.ts). */
+async function plantOneCrop(context: BrowserContext) {
+  const act = (data: Record<string, unknown>) => context.request.post("/api/stackacres/actions", { data });
+  expect((await act({ action: "buy-seed", crop: "wheat", quantity: 1 })).ok()).toBe(true);
+  expect((await act({ action: "place-soil-tile", tx: -6, ty: 2 })).ok()).toBe(true);
+  expect((await act({ action: "stock", stock: "wheat", tx: -6, ty: 2 })).ok()).toBe(true);
+  // Ray is how a new player is first pointed at things, so meet him; a person waiting to be met would lead the panel.
+  expect((await act({ action: "story-meet", traveler: "ray" })).ok()).toBe(true);
+  // A seed starts dry, and a dry bed is its own cue, so water it.
+  const farm = (await (await context.request.get("/api/stackacres")).json()) as { units: { id: string }[] };
+  expect((await act({ action: "water", unitId: farm.units[0].id })).ok()).toBe(true);
+}
+
 async function openStackAcres(context: BrowserContext, page: Page) {
   const { profile } = (await (await context.request.post("/api/profile")).json()) as {
     profile: { id: string; goldBalance: number };
@@ -22,6 +36,7 @@ async function openStackAcres(context: BrowserContext, page: Page) {
   expect(
     (await context.request.post("/api/admin/gold/adjust", { data: { profileId: profile.id, delta: 20_000 - profile.goldBalance } })).ok(),
   ).toBe(true);
+  await plantOneCrop(context);
   await page.addInitScript(() => window.localStorage.setItem("sa-ray-welcomed", "1"));
   await page.goto("/games/stackacres");
   await page.getByRole("button", { name: "Play", exact: true }).click({ timeout: 15_000 });
@@ -39,13 +54,13 @@ test("the chip's title and the sheet's line are the same line", async ({ context
   await openStackAcres(context, page);
   await openMore(page);
 
-  // The chip is a compact badge now (icon + "1/6"); the line it used to show
+  // The chip is a compact badge now (icon + "1/4"); the line it used to show
   // in its own text lives in the title and in the sheet, not duplicated on
   // screen. The title is "<chapter>: <now line>".
   const chip = page.getByTitle(/^Chapter 1/);
   const title = (await chip.getAttribute("title")) ?? "";
   const line = title.split(": ").slice(1).join(": ");
-  expect(line).toContain("Mill");
+  expect(line).toContain("Feed Grinder");
   expect(line).toContain("Wood");
 
   await chip.click();
@@ -77,16 +92,16 @@ test("the sheet shows both tracks: the buildings and the reach", async ({ contex
   const sheet = page.getByRole("dialog", { name: "The Journal" });
   await expect(sheet).toBeVisible();
 
-  // The production track: all six chapters, and the Mill's real cost, where
+  // The production track: every chapter, and the Mill's real cost, where
   // it goes up, where the Wood comes from and what it opens.
-  for (const title of ["Bread", "Stew", "Fresh Greens", "Feed the Herd", "Jars and Pickles", "Harvest Feast"]) {
+  for (const title of ["Bread", "Stew", "Fresh Greens", "Feed the Herd"]) {
     await expect(sheet.getByRole("heading", { name: title })).toBeVisible();
   }
   // Chapter 1's first step. Locate it by position, not by the word "Mill".
   const mill = sheet.locator(".sa-goals-list > li").first().locator("ul > li").first();
   await expect(mill).toContainText("in the Workshop");
   await expect(mill).toContainText("0 / 15 Wood");
-  await expect(mill).toContainText("Chop the trees around the farm");
+  await expect(mill).toContainText("Chop the trees by the workshop and the house");
   await expect(mill).toContainText("Opens Corn and Green Bean seeds");
 
   // The expansion track, which had no surface at all before this sheet.
@@ -94,9 +109,9 @@ test("the sheet shows both tracks: the buildings and the reach", async ({ contex
   for (const flag of [
     "Break ground in the Crop Fields",
     "Fill an order for the town",
-    "Clear the Fold",
+    "Buy a Sheep Pen",
     "Raise the Greenhouse",
-    "Clear the Cattle Pasture",
+    "Buy a Cattle Pen",
   ]) {
     await expect(sheet.locator(".sa-journal-reach")).toContainText(flag);
   }
@@ -105,8 +120,9 @@ test("the sheet shows both tracks: the buildings and the reach", async ({ contex
   // (lib/stackacres/story/travelers.ts's own header), so no reach step
   // shows a "Brings" line now.
   await expect(sheet.locator(".sa-journal-reach")).not.toContainText("Brings");
-  // The Fold cannot be cleared on the live world, so it shows no price.
-  await expect(sheet.locator(".sa-journal-reach")).toContainText("Not open yet");
-  await expect(sheet.locator(".sa-journal-reach")).not.toContainText("45,000 Gold");
+  // The first acre prices the Crop Fields, and a sheep prices the Fold.
+  await expect(sheet.locator(".sa-journal-reach")).toContainText("300 Gold + 15 Wood + 5 Stone");
+  await expect(sheet.locator(".sa-journal-reach")).toContainText("8,500 Gold");
+  await expect(sheet.locator(".sa-journal-reach")).not.toContainText("Not open yet");
   await expect(sheet.locator(".sa-journal-foot")).toContainText("Chef Pierre");
 });

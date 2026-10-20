@@ -9,6 +9,12 @@
  * driver.js upgrade changes them, this file goes quiet rather than erroring
  * -- worth a visual check against the popover after any driver.js bump.
  *
+ * Every selector is prefixed with `body` on purpose. driver.css is imported
+ * by the tour hook, so on a route that loads the hook in its own chunk (the
+ * farm does) it lands AFTER this file, and a bare `.driver-popover` here
+ * loses to the library's white card: chalk text on white. One extra level
+ * of specificity wins regardless of load order.
+ *
  * Previous version of this file used --ink/--muted (the pre-Neon-Marquee,
  * green-tinted text family from 01-tokens.css's original green-felt era) on
  * top of --neon-ground-lift (the violet-black chrome ground). That's a
@@ -22,7 +28,7 @@
  * Prev/Close, and the Neon Marquee text family throughout.
  */
 
-.driver-popover {
+body .driver-popover {
   background: var(--neon-ground-lift);
   color: var(--neon-chalk);
   border-radius: 14px;
@@ -32,34 +38,34 @@
   font-family: inherit;
 }
 
-.driver-popover-title {
+body .driver-popover-title {
   color: var(--neon-chalk);
   font-size: 16px;
   font-weight: 700;
   margin-bottom: 7px;
 }
 
-.driver-popover-description {
+body .driver-popover-description {
   color: var(--neon-muted);
   font-size: 13.5px;
   line-height: 1.55;
 }
 
-.driver-popover-progress-text {
+body .driver-popover-progress-text {
   color: var(--neon-muted-2);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
 
-.driver-popover-footer {
+body .driver-popover-footer {
   border-top: none;
   margin-top: 14px;
   padding-top: 0;
   gap: 8px;
 }
 
-.driver-popover-footer button {
+body .driver-popover-footer button {
   background: transparent;
   color: var(--neon-chalk);
   text-shadow: none;
@@ -72,31 +78,34 @@
   transition: background-color var(--duration-fast) var(--ease-decelerate);
 }
 
-.driver-popover-footer button:hover {
+body .driver-popover-footer button:hover {
   background: var(--brand-surface-2);
 }
 
-.driver-popover-footer .driver-popover-next-btn {
+body .driver-popover-footer .driver-popover-next-btn {
   background: var(--neon-yellow);
   color: var(--neon-ground);
   box-shadow: none;
 }
 
-.driver-popover-footer .driver-popover-next-btn:hover {
+body .driver-popover-footer .driver-popover-next-btn:hover {
   background: var(--neon-yellow-bright);
 }
 
-.driver-popover-close-btn {
+body .driver-popover-close-btn {
   color: var(--neon-muted-2);
 }
 
-.driver-popover-close-btn:hover {
+body .driver-popover-close-btn:hover {
   color: var(--neon-chalk);
 }
 
-.driver-popover-arrow {
-  border-color: var(--neon-ground-lift);
-}
+/* One side per direction, since driver.js keeps the other three transparent
+   with single-class rules this has to outrank. */
+body .driver-popover-arrow-side-left.driver-popover-arrow { border-left-color: var(--neon-ground-lift); }
+body .driver-popover-arrow-side-right.driver-popover-arrow { border-right-color: var(--neon-ground-lift); }
+body .driver-popover-arrow-side-top.driver-popover-arrow { border-top-color: var(--neon-ground-lift); }
+body .driver-popover-arrow-side-bottom.driver-popover-arrow { border-bottom-color: var(--neon-ground-lift); }
 
 /* driver.js draws the dimmed backdrop as an SVG path; overlayColor is set
    from the hook (matches --neon-ground) rather than overridden here, since

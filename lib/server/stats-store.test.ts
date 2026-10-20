@@ -4,7 +4,6 @@ import { createGame } from "@/lib/game/engine";
 import type { GameState } from "@/lib/game/types";
 import {
   getActiveSeason,
-  getLeaderboard,
   getPlayerStanding,
   recordHandStats,
   rolloverSeasonIfDue,
@@ -110,21 +109,6 @@ describe("recording a hand (memory mode)", () => {
 });
 
 describe("leaderboard reads", () => {
-  it("ranks lifetime by Gold won, decorated with the player's display name", async () => {
-    const game = finishedHand({ winnerIndex: 0, amount: 500 });
-    await recordHandStats(game);
-
-    const board = await getLeaderboard("lifetime", 10);
-    expect(board[0].profileId).toBeDefined();
-    expect(board[0].rank).toBe(1);
-    expect(board[0].displayName.length).toBeGreaterThan(0);
-    // Sorted by totalChipsWon, not net profit -- a lifetime board must not
-    // drop someone for a loss that came after their biggest wins.
-    for (let i = 1; i < board.length; i += 1) {
-      expect(board[i - 1].totalChipsWon).toBeGreaterThanOrEqual(board[i].totalChipsWon);
-    }
-  });
-
   it("keeps a lifetime leader on top even after a loss shrinks their net profit", async () => {
     // Hero wins huge once (Gold won: 100,000), then loses a hand later (net
     // profit drops, but total Gold won can't go backwards). A second player
@@ -151,22 +135,7 @@ describe("leaderboard reads", () => {
     expect(heroStanding?.stats.netProfit).toBe(99_800); // +99,900 then -100
     expect(rivalStanding?.stats.totalChipsWon).toBe(99_950); // less Gold won...
     expect(rivalStanding?.stats.netProfit).toBe(99_850); // ...but a higher net profit
-    expect(heroStanding?.rank).toBe(1);
-
-    const board = await getLeaderboard("lifetime", 10);
-    expect(board[0].profileId).toBe(hero.id); // ranked by Gold won, not net profit
-  });
-
-  it("finds a player's own rank even when they are outside the top slice", async () => {
-    // Three separate hands so three distinct profiles have a net_profit to
-    // rank against each other, then ask for a leaderboard too small to
-    // contain the last one directly.
-    for (let amount = 100; amount <= 300; amount += 100) {
-      const game = finishedHand({ winnerIndex: 0, amount });
-      await recordHandStats(game);
-    }
-    const board = await getLeaderboard("lifetime", 1);
-    expect(board).toHaveLength(1);
+    expect(heroStanding?.rank).toBe(1); // ranked by Gold won, not net profit
   });
 
   it("returns an empty season board when no season is active", async () => {

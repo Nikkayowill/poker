@@ -25,7 +25,7 @@ import {
   type WordStackSnapshot,
   type WordStackTile,
 } from "@/lib/arcade/puzzles/word-stack";
-import { MIN_ANTE_UP_WAGER, WORD_STACK_PRESSURE_RULES } from "@/lib/arcade/ante-up-word-stack";
+import { MIN_ANTE_UP_WAGER, WORD_STACK_PRESSURE_RULES, WORD_STACK_TIER_LABELS } from "@/lib/arcade/ante-up-word-stack";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 /**
@@ -336,13 +336,15 @@ export function WordStackBoard({ day, onExit }: { day?: string; onExit?: () => v
           </div>
           <h1>
             Daily Word Stack
-            {round?.hardMode && <span className="word-stack-hard-badge">Hard mode</span>}
+            {round?.wordTier && <span className="word-stack-hard-badge">{WORD_STACK_TIER_LABELS[round.wordTier]}</span>}
           </h1>
           <p>
             {meta
               ? isArchive
                 ? `Puzzle #${meta.puzzleNumber} · ${meta.day}`
-                : `Puzzle #${meta.puzzleNumber} · Six guesses · One word a day for everyone`
+                : round?.wordTier
+                  ? `Puzzle #${meta.puzzleNumber} · Six guesses · A harder word for big stakes`
+                  : `Puzzle #${meta.puzzleNumber} · Six guesses · One word a day for everyone`
               : "Loading…"}
           </p>
         </div>
@@ -378,9 +380,8 @@ export function WordStackBoard({ day, onExit }: { day?: string; onExit?: () => v
             is locked in the moment the round opens.
           </p>
           <p>
-            Wagers of 10,000 Gold or more play hard mode: a green letter has to stay in its spot
-            and a gold letter has to be used in every later guess. A guess that skips a hint is
-            turned away without costing you a try.
+            Wagers of 10,000 Gold or more play a harder word instead of the daily one, and the
+            bigger the stake, the harder the word. You can still guess any word you like.
           </p>
         </HowToPlayModal>
       )}

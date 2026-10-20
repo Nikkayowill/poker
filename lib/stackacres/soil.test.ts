@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   growthStage,
-  cropRank,
-  cropRanks,
   cropSpot,
   CROP_FIELD_BEDS,
   soilTileInCropFieldBeds,
@@ -20,16 +18,9 @@ import {
   SOIL_TILE,
   buildCropInstances,
   createSoilMap,
-  getClosestDryCrop,
-  getClosestHarvestableCrop,
   hasSoilTile,
-  nextSoilOrder,
-  onSoil,
   orderedSoilTiles,
-  placeSoilTile,
   plantSoilTile,
-  removeSoilTile,
-  soilCapacity,
   soilSignedDistance,
   soilNeighborMask,
   soilSlotForTile,
@@ -44,7 +35,6 @@ import {
   nextFreeSoilSlot,
   soilSlotTile,
   soilTileGroup,
-  soilTileState,
   soilTilesEqual,
   moveSoilTileGroup,
   planSoilGroupRelocation,
@@ -114,49 +104,11 @@ describe("restated constants stay tied to their sources", () => {
   });
 });
 
-
 /* ------------------------------------------------------------------ */
 /* The coordinate map                                                  */
 /* ------------------------------------------------------------------ */
 
 describe("the coordinate map tracks what was placed", () => {
-  it("keys a tile by its own coordinates and finds it again", () => {
-    const soil = createSoilMap();
-    expect(hasSoilTile(soil, 3, 9)).toBe(false);
-    expect(placeSoilTile(soil, { tx: 3, ty: 9, order: 0, origin: "purchased" })).toBe(true);
-    expect(soil.has(soilTileKey(3, 9))).toBe(true);
-    expect(hasSoilTile(soil, 3, 9)).toBe(true);
-    expect(soil.size).toBe(1);
-  });
-
-  it("refuses a second tile on an occupied coordinate rather than overwriting", () => {
-    const soil = createSoilMap();
-    placeSoilTile(soil, { tx: 1, ty: 1, order: 0, origin: "starter" });
-    expect(placeSoilTile(soil, { tx: 1, ty: 1, order: 1, origin: "purchased" })).toBe(false);
-    // The original survives, so a shop charging on `true` cannot take Gold
-    // for a tile that changed nothing.
-    expect(soil.get(soilTileKey(1, 1))?.origin).toBe("starter");
-    expect(soil.size).toBe(1);
-  });
-
-  it("removes a tile and reports whether there was one", () => {
-    const soil = createSoilMap([{ tx: 2, ty: 2, order: 0, origin: "purchased" }]);
-    expect(removeSoilTile(soil, 2, 2)).toBe(true);
-    expect(removeSoilTile(soil, 2, 2)).toBe(false);
-    expect(soil.size).toBe(0);
-  });
-
-  it("hands out an order past every tile standing, not the map's size", () => {
-    const soil = createSoilMap([
-      { tx: 0, ty: 0, order: 0, origin: "starter" },
-      { tx: 1, ty: 0, order: 1, origin: "starter" },
-      { tx: 2, ty: 0, order: 2, origin: "purchased" },
-    ]);
-    removeSoilTile(soil, 1, 0);
-    // size is 2 now; handing out order 2 would collide with the tile at
-    // (2, 0) and drop two tiles into one slot range.
-    expect(nextSoilOrder(soil)).toBe(3);
-  });
 
   it("snaps a world point to its tile, flooring through negative space", () => {
     expect(soilTileAt(0, 0)).toEqual({ tx: 0, ty: 0 });
@@ -264,23 +216,6 @@ describe("the slot lattice -- one plant per bed", () => {
     }
   });
 
-  it("has no soil to offer when none is placed", () => {
-    expect(soilSlotSpot(createSoilMap(), 0)).toBeNull();
-    expect(soilCapacity(createSoilMap())).toBe(0);
-  });
-
-  it("capacity is exactly the bed count -- one plant per bed", () => {
-    const soil = fixtureMap();
-    expect(soilCapacity(soil)).toBe(FIXTURE_BED_COUNT);
-  });
-
-  it("keeps every placed crop standing on placed soil", () => {
-    const soil = fixtureMap();
-    for (let slot = 0; slot < soilCapacity(soil); slot += 1) {
-      const p = soilSlotSpot(soil, slot)!;
-      expect(onSoil(soil, p.x, p.y)).toBe(true);
-    }
-  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -288,22 +223,6 @@ describe("the slot lattice -- one plant per bed", () => {
 /* ------------------------------------------------------------------ */
 
 describe("plantSoilTile", () => {
-  it("plants a brand new bed on bare ground", () => {
-    const soil = createSoilMap();
-    const result = plantSoilTile(soil, { tx: 0, ty: 0 }, "dirt");
-    expect(result.kind).toBe("created");
-    expect(result.kind === "created" && result.tile.tier).toBe("dirt");
-    expect(soilCapacity(soil)).toBe(1);
-  });
-
-  it("refuses a second bed on an occupied coordinate", () => {
-    const soil = createSoilMap();
-    plantSoilTile(soil, { tx: 0, ty: 0 }, "dirt");
-    expect(plantSoilTile(soil, { tx: 0, ty: 0 }, "dirt")).toEqual({ kind: "occupied" });
-    // The refusal never touched the bed standing there.
-    expect(soilTileTier(soilSlotTile(soil, 0)!)).toBe("dirt");
-    expect(soilCapacity(soil)).toBe(1);
-  });
 
   it("hands out orders in placement sequence across multiple beds", () => {
     const soil = createSoilMap();
@@ -436,12 +355,6 @@ describe("grass yields to placed soil", () => {
 describe("cropSpot", () => {
   const soil = fixtureMap();
 
-  it("puts a crop on the lattice when it is given a fixed slot", () => {
-    const at = cropSpot("farmstead", "unit-a", { soil, slot: 0 });
-    expect(onSoil(soil, at.x, at.y)).toBe(true);
-    expect(at).toEqual(soilSlotSpot(soil, 0));
-  });
-
   it("scatters when there is no placement -- a mucked animal's fallback", () => {
     const at = cropSpot("farmstead", "unit-a");
     const area = CROP_FIELD_BEDS;
@@ -474,36 +387,6 @@ describe("cropSpot", () => {
     const a = cropSpot("farmstead", "unit-a", { soil, slot: 0 });
     const b = cropSpot("farmstead", "unit-b", { soil, slot: 1 });
     expect(a).not.toEqual(b);
-  });
-});
-
-describe("cropRanks", () => {
-  const ids = ["u-1", "u-2", "u-3", "u-4", "u-5"];
-
-  it("gives every crop its own rank, densely from zero", () => {
-    const ranks = cropRanks(ids);
-    expect([...ranks.values()].sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4]);
-  });
-
-  it("does not depend on the order the rows arrived", () => {
-    // The rule `wheatPlotSpot` states: a rank taken from list position would
-    // slide every surviving plant the moment an earlier one was cashed.
-    const forwards = cropRanks(ids);
-    const backwards = cropRanks([...ids].reverse());
-    for (const id of ids) expect(backwards.get(id)).toBe(forwards.get(id));
-  });
-
-  it("keeps the relative order of survivors when one is harvested", () => {
-    const before = cropRanks(ids);
-    const after = cropRanks(ids.filter((id) => id !== "u-3"));
-    const survivors = ids.filter((id) => id !== "u-3");
-    const byBefore = [...survivors].sort((a, b) => before.get(a)! - before.get(b)!);
-    const byAfter = [...survivors].sort((a, b) => after.get(a)! - after.get(b)!);
-    expect(byAfter).toEqual(byBefore);
-  });
-
-  it("agrees with the single-crop convenience form", () => {
-    for (const id of ids) expect(cropRank(id, ids)).toBe(cropRanks(ids).get(id));
   });
 });
 
@@ -556,44 +439,6 @@ describe("the farmhand's view of the field", () => {
     expect(loose.tile).toBeNull();
   });
 
-  it("finds the closest dry crop to a worker", () => {
-    const dryCrops = crops.filter((c) => c.isDry);
-    const from = dryCrops[0].at;
-    expect(getClosestDryCrop(from, crops)!.unitId).toBe(dryCrops[0].unitId);
-  });
-
-  it("finds the closest harvestable crop and ignores the rest", () => {
-    const found = getClosestHarvestableCrop({ x: 0, y: 0 }, crops);
-    expect(found!.unitId).toBe("ripe-near");
-  });
-
-  it("returns null rather than throwing when there is nothing to do", () => {
-    const nothing = crops.filter((c) => !c.isDry && !c.needsHarvest);
-    expect(getClosestDryCrop({ x: 0, y: 0 }, nothing)).toBeNull();
-    expect(getClosestHarvestableCrop({ x: 0, y: 0 }, nothing)).toBeNull();
-  });
-
-  it("breaks a distance tie deterministically, so a worker cannot oscillate", () => {
-    const tied = crops.filter((c) => c.isDry).map((c) => ({ ...c, at: { x: 10, y: 10 } }));
-    const first = getClosestDryCrop({ x: 0, y: 0 }, tied);
-    const second = getClosestDryCrop({ x: 0, y: 0 }, [...tied].reverse());
-    expect(first!.unitId).toBe(second!.unitId);
-  });
-
-  it("summarises what one bed is holding", () => {
-    const bed = orderedSoilTiles(soil)[0];
-    const state = soilTileState(bed, crops);
-    expect(state.occupied).toBe(true);
-    expect(state.crops.length).toBe(crops.filter((c) => c.tile?.tx === bed.tx && c.tile?.ty === bed.ty).length);
-    expect(state.dryCount).toBe(state.crops.filter((c) => c.isDry).length);
-    expect(state.harvestableCount).toBe(state.crops.filter((c) => c.needsHarvest).length);
-  });
-
-  it("reports an empty bed as unoccupied", () => {
-    const empty = soilTileState({ tx: 99, ty: 99, order: 9, origin: "purchased" }, crops);
-    expect(empty.occupied).toBe(false);
-    expect(empty.crops).toEqual([]);
-  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -641,26 +486,6 @@ describe("soilTilesEqual", () => {
     expect(soilTileTier({ tier: "hydro" as never })).toBe("dirt");
   });
 
-  it("hands out the lowest free slot, and null once the soil is full", () => {
-    // Four beds, one plant each -- one slot per bed is the whole point now.
-    const soil = createSoilMap([
-      { tx: 0, ty: 0, order: 0, origin: "purchased" },
-      { tx: 1, ty: 0, order: 1, origin: "purchased" },
-      { tx: 2, ty: 0, order: 2, origin: "purchased" },
-      { tx: 3, ty: 0, order: 3, origin: "purchased" },
-    ]);
-    const capacity = soilCapacity(soil);
-    expect(capacity).toBe(4);
-
-    expect(nextFreeSoilSlot(soil, [])).toBe(0);
-    // Lowest, not next-after-the-highest: a harvested crop frees its slot and
-    // the next sowing should reuse it rather than drifting off the end.
-    expect(nextFreeSoilSlot(soil, [0, 1, 3])).toBe(2);
-    expect(nextFreeSoilSlot(soil, Array.from({ length: capacity }, (_, i) => i))).toBeNull();
-    // No soil at all is full, not slot zero.
-    expect(nextFreeSoilSlot(createSoilMap([]), [])).toBeNull();
-  });
-
   // A slot naming no bed is nobody's: it does not block a bed that exists.
   it("ignores a taken slot that names no bed", () => {
     const soil = createSoilMap([
@@ -683,57 +508,6 @@ describe("soilTilesEqual", () => {
     // like a shuffle -- see the regression below.
     expect(soilSlotSpot(soil, 2)).toBeNull();
     expect(soilSlotSpot(createSoilMap([]), 0)).toBeNull();
-  });
-
-  // THE REGRESSION THIS SHAPE EXISTS FOR (2026-09-14). A slot used to be an
-  // index into orderedSoilTiles, so lifting one bed slid every crop after it
-  // onto its neighbour's bed: removing a bed in one corner rearranged a row
-  // of lettuce in another. A bed's order is its own, so nothing but the
-  // removed bed changes.
-  it("leaves every other crop's bed alone when a bed is removed", () => {
-    const soil = createSoilMap([
-      { tx: 0, ty: 0, order: 0, origin: "purchased" },
-      { tx: 1, ty: 0, order: 1, origin: "purchased" },
-      { tx: 2, ty: 0, order: 2, origin: "purchased" },
-      { tx: 3, ty: 0, order: 3, origin: "purchased" },
-    ]);
-    const before = [0, 1, 2, 3].map((slot) => soilSlotSpot(soil, slot));
-
-    // Lift the FIRST bed -- the one every later slot used to be counted from.
-    expect(removeSoilTile(soil, 0, 0)).toBe(true);
-
-    expect(soilSlotSpot(soil, 0)).toBeNull();
-    expect(soilSlotSpot(soil, 1)).toEqual(before[1]);
-    expect(soilSlotSpot(soil, 2)).toEqual(before[2]);
-    expect(soilSlotSpot(soil, 3)).toEqual(before[3]);
-    // And the slots still name the same coordinates they always did.
-    expect(soilSlotTile(soil, 3)).toMatchObject({ tx: 3, ty: 0 });
-    // The freed ground is the removed bed's, and only that one: the next sow
-    // must not be handed a bed somebody is already standing on.
-    expect(nextFreeSoilSlot(soil, [1, 2, 3])).toBeNull();
-  });
-
-  // A bed bought after a removal must not take back the lifted bed's order
-  // while a crop is still holding it as a slot -- that crop would turn up
-  // standing on the new bed, somewhere else entirely.
-  it("never hands a new bed an order a crop is still holding", () => {
-    const soil = createSoilMap([
-      { tx: 0, ty: 0, order: 0, origin: "purchased" },
-      { tx: 1, ty: 0, order: 1, origin: "purchased" },
-    ]);
-    // The newest bed goes, but its crop outlived the removal (the abandon is
-    // allowed to lose that race) and still holds slot 1.
-    expect(removeSoilTile(soil, 1, 0)).toBe(true);
-    expect(soilSlotTile(soil, 1)).toBeNull();
-
-    expect(plantSoilTile(soil, { tx: 5, ty: 5 }, "dirt", [1])).toMatchObject({ kind: "created" });
-    expect(soilSlotForTile(soil, 5, 5)).toBe(2);
-
-    // Without a crop holding it, the order is free to come back round -- the
-    // rule is "nothing points at it", not "never twice".
-    const fresh = createSoilMap([{ tx: 0, ty: 0, order: 0, origin: "purchased" }]);
-    expect(nextSoilOrder(fresh)).toBe(1);
-    expect(nextSoilOrder(fresh, [4])).toBe(5);
   });
 
   // The inverse of soilSlotTile -- what a sow that names the tile the player

@@ -8,8 +8,6 @@ import {
   SECTOR_LADDER,
   STACKACRES_SECTORS,
   cropFieldOvergrowth,
-  isSectorUnlocked,
-  lockedSectors,
   sectorClearCheck,
   sectorLabel,
   sectorOvergrowth,
@@ -28,7 +26,6 @@ import {
   type StackAcresLivestock,
   type StackAcresStock,
 } from "./catalogue";
-import { isMachineRawItem } from "./machine-items";
 import { nearPath } from "./paths";
 // Test-only, and Phaser-free at runtime (that module imports Phaser as a
 // TYPE only): the scene's painter table, so overgrowth can be held to what
@@ -117,12 +114,6 @@ describe("unlockedSectors", () => {
     expect(a).toEqual(SECTOR_IDS.filter((id) => a.includes(id)));
   });
 
-  it("splits cleanly against lockedSectors", () => {
-    const open = unlockedSectors(["wallow"], []);
-    const shut = lockedSectors(open);
-    expect([...open, ...shut].sort()).toEqual([...SECTOR_IDS].sort());
-    for (const id of shut) expect(isSectorUnlocked(id, open)).toBe(false);
-  });
 });
 
 describe("sectorClearCheck", () => {
@@ -191,15 +182,11 @@ describe("unlockedPlotCount", () => {
     expect(home).toBe(STACKACRES_UPKEEP_FREE_PLOTS);
   });
 
-  it("grows as land is cleared", () => {
+  it("does not charge for sheep or cattle", () => {
+    // Keeping a sheep or a cow opens the Fold or the Cattle Pasture, and
+    // that must not move the fee, nor must the pen slots bought for them.
     const home = unlockedPlotCount([...HOME_SECTORS], {}, false);
-    const plusWallow = unlockedPlotCount([...HOME_SECTORS, "wallow"], {}, false);
-    // Only the pig is zoned to the Fold (wallow), so clearing it alone is
-    // worth exactly one stock kind's slots. Crops do not add to this at all
-    // while their own flag is unset, even though they stand inside the
-    // Farmstead (a HOME sector, already counted in `home`) -- see the next
-    // test.
-    expect(plusWallow).toBe(home + capFor(0));
+    expect(unlockedPlotCount([...HOME_SECTORS, "wallow", "oxfields"], { pig: 3, cattle: 3 }, false)).toBe(home);
   });
 
   it("grows as capacity is bought on cleared ground", () => {

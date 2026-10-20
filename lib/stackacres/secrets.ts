@@ -139,16 +139,6 @@ export const HIDDEN_ZONES: readonly HiddenZoneDef[] = [
   },
 ];
 
-/** Which hidden zone a tapped ground point lands on, or null anywhere else.
- *  Same plain AABB-loop pattern as `growAreaAt`/`barnHitAt` in ./world.ts. */
-export function hiddenZoneAt(x: number, y: number): HiddenZoneDef | null {
-  for (const zone of HIDDEN_ZONES) {
-    const b = zone.bounds;
-    if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) return zone;
-  }
-  return null;
-}
-
 /**
  * Rolls one zone's daily attempt. Pure, with an injected RNG -- the same
  * convention `rollHarvestCrit` in ./equipment.ts holds, and for the same

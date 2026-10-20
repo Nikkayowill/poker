@@ -16,7 +16,7 @@ const CATTLE = STACKACRES_CATALOGUE.cattle;
 const henHunger = HEN.hungerMs ?? 0;
 const cattleHunger = CATTLE.hungerMs ?? 0;
 
-function unit(id: string, stock: "hen" | "cattle", overrides: Partial<SiloUnit> = {}): SiloUnit {
+function unit(id: string, stock: "hen" | "cattle" | "hog" | "steer", overrides: Partial<SiloUnit> = {}): SiloUnit {
   const def = STACKACRES_CATALOGUE[stock];
   return { id, stock, status: "working", lastFedAt: iso(0), readyAt: iso(def.durationMs), ...overrides };
 }
@@ -49,6 +49,13 @@ describe("the Feed Silo's plan", () => {
     expect(feeding.fedAts).toHaveLength(3);
     expect(Date.parse(feeding.fedAts[2])).toBe(at(CATTLE.durationMs + 30 * cattleHunger).getTime());
     expect(plan.feedUsed).toBe(3);
+  });
+
+  it("leaves hogs and steers to be hand-fed, so their weight can land", () => {
+    const hog = STACKACRES_CATALOGUE.hog;
+    const plan = planWithSilo([unit("h", "hog"), unit("s", "steer")], { corn: 5 }, 10, 48, at((hog.hungerMs ?? 0) + 1000));
+    expect(plan.servings).toBe(0);
+    expect(plan.feedings).toEqual([]);
   });
 
   it("leaves an animal that is not hungry yet alone", () => {

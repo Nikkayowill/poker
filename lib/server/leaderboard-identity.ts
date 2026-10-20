@@ -37,14 +37,9 @@ export type RankedIdentity = {
  * same "Player" / null / gold fallbacks every board uses) to an already-
  * sorted row list.
  *
- * Shared across every leaderboard-shaped decorator -- poker's global/season
- * board, every registered game's board, and poker's own stats board -- so
- * none of them can drift on the fallback values by building the same shape
- * twice. Split into its own module rather than living in leaderboard-store.ts
- * (where it started) because stats-store.ts needs it too, and
- * leaderboard-store.ts already imports from stats-store.ts for the global
- * blend -- defining it there would have made stats-store import back from a
- * module that imports it.
+ * Shared across every leaderboard-shaped decorator (the global board and
+ * every registered game's board) so none of them can drift on the fallback
+ * values by building the same shape twice.
  */
 export async function decorateRankedRows<Row extends { profileId: string }, Extra>(
   rows: Row[],

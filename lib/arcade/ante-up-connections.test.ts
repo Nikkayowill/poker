@@ -57,7 +57,7 @@ describe("connectionsStakeRules", () => {
     [9_999, 4, 0],
     [10_000, 3, 1],
     [100_000, 2, 2],
-    [1_000_000, 1, 3],
+    [1_000_000, 2, 3],
   ] as const)("a %i wager allows %i mistakes, band %i ladder", (wager, maxMistakes, band) => {
     expect(connectionsStakeRules(wager)).toEqual({ maxMistakes, ladder: CONNECTIONS_LADDER_BY_PRESSURE[band] });
   });
@@ -86,10 +86,11 @@ describe("connectionsStakeRules", () => {
     expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 3), ladder })).toBe(1050);
   });
 
-  it("pays a 1M clean solve 1.6x", () => {
+  it("pays a 1M clean solve 1.6x and a one-mistake solve 0.2x", () => {
     const ladder = CONNECTIONS_LADDER_BY_PRESSURE[3];
     expect(anteUpConnectionsPayout({ wager: 1_000_000, puzzle: puzzle("won", 0), ladder })).toBe(1_600_000);
-    // A rung the ladder does not name falls to the usual floor, never higher.
-    expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 2), ladder })).toBe(600);
+    expect(anteUpConnectionsPayout({ wager: 1_000_000, puzzle: puzzle("won", 1), ladder })).toBe(200_000);
+    // A rung the ladder does not name falls to its lowest rung, never higher.
+    expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 2), ladder })).toBe(200);
   });
 });

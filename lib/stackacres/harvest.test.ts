@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { harvestTally, settleHarvest, type HarvestCandidate } from "./harvest";
-import { STACKACRES_YIELDS, itemSellPrice, yieldValue } from "./items";
+import { STACKACRES_YIELDS, baseYieldQuantity, itemSellPrice, yieldValue } from "./items";
 import type { StackAcresStock } from "./catalogue";
 
 let seq = 0;
@@ -9,14 +9,14 @@ function unit(stock: StackAcresStock, yieldQuantity?: number): HarvestCandidate 
   return {
     unitId: `u${seq}`,
     stock,
-    yieldQuantity: yieldQuantity ?? STACKACRES_YIELDS[stock].quantity,
+    yieldQuantity: yieldQuantity ?? baseYieldQuantity(stock),
   };
 }
 
 /**
  * The harvest tally. A harvest credits inventory now and pays no Gold, so
  * this only has to get the per-line produce right plus the nominal gross
- * the ledger and Prestige eligibility read.
+ * the ledger reads.
  */
 describe("settleHarvest", () => {
   it("values a single unit at its snapshotted yield times today's sell price", () => {

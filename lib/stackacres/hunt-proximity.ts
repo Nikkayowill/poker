@@ -39,10 +39,6 @@
 import { QUARRY_SPECIES, type HuntingWeapon, type QuarrySpecies } from "./hunting";
 import { clampFrameMs, type WorldPoint } from "./world";
 
-/** How far the quarry's own body reaches from its centre, in world units.
- *  One tile's worth: big enough that "adjacent" reads as adjacent. */
-export const QUARRY_RADIUS = 12;
-
 /**
  * Half-width of the square the quarry wanders inside, centred on where the
  * stalk started. Keeps a fled-from Deer from wandering the whole map before

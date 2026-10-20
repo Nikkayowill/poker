@@ -30,7 +30,6 @@ import {
   hintNonogramCell,
   markNonogramCell,
   markNonogramCells,
-  nonogramConfig,
   nonogramElapsedMs,
   nonogramHintProblem,
   nonogramMarkProblem,
@@ -369,9 +368,4 @@ export function toAnteUpNonogramSnapshot(
     elapsedMs: nonogramElapsedMs(attempt.board, now),
     payout: anteUpNonogramPayout(attempt),
   };
-}
-
-/** How wide the board at this difficulty is, for copy that names it before one is dealt. */
-export function anteUpNonogramSize(difficulty: NonogramDifficulty): number {
-  return nonogramConfig(difficulty).size;
 }

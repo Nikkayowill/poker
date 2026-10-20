@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { rankProgress } from "./rank";
 import {
-  GOLD_PER_RANK_POINT,
+  RANK_POINTS_PER_WIN,
   bandRankWeight,
   rankPointsFrom,
   stakeBandIndexes,
   summarizeSoloEarnings,
-  weightedNet,
+  weightedWins,
   withoutResult,
   type EarningsByBand,
 } from "./solo-earnings";
@@ -21,36 +21,35 @@ describe("bandRankWeight", () => {
     expect(weights).toEqual([...weights].sort((a, b) => a - b));
   });
 
-  it("lets a hard-band player out-rank an easy grinder who earned more Gold", () => {
-    const grinder: EarningsByBand = { 0: totals(100_000, 400_000) };
-    const expert: EarningsByBand = { 3: totals(10_000, 60_000) };
+  it("lets a hard-band winner out-rank an easy grinder with more wins and more Gold", () => {
+    const grinder: EarningsByBand = { 0: totals(100_000, 400_000, 5) };
+    const expert: EarningsByBand = { 3: totals(10_000, 60_000, 1) };
     expect(rankPointsFrom(0, expert)).toBeGreaterThan(rankPointsFrom(0, grinder));
   });
 });
 
 describe("rank points", () => {
-  it("rise on a win by the Gold made over the stake, weighted by band", () => {
-    const easy: EarningsByBand = { 0: totals(1000, 1500) };
-    const hard: EarningsByBand = { 2: totals(1000, 1500) };
-    expect(rankPointsFrom(0, easy)).toBe(Math.floor(500 / GOLD_PER_RANK_POINT));
-    expect(rankPointsFrom(0, hard)).toBe(Math.floor((500 * bandRankWeight(2)) / GOLD_PER_RANK_POINT));
+  it("rise by a fixed amount per win, weighted by band", () => {
+    expect(rankPointsFrom(0, { 0: totals(1000, 1500) })).toBe(RANK_POINTS_PER_WIN);
+    expect(rankPointsFrom(0, { 2: totals(1000, 1500) })).toBe(Math.floor(RANK_POINTS_PER_WIN * bandRankWeight(2)));
   });
 
-  it("fall on a loss, and a loss on a harder band costs more", () => {
-    const easyLoss: EarningsByBand = { 0: totals(1000, 0, 0, 1) };
-    const hardLoss: EarningsByBand = { 2: totals(1000, 0, 0, 1) };
-    expect(rankPointsFrom(1000, easyLoss)).toBe(1000 - 1000 / GOLD_PER_RANK_POINT);
-    expect(rankPointsFrom(1000, hardLoss)).toBeLessThan(rankPointsFrom(1000, easyLoss));
+  it("ignore how much Gold was staked or paid", () => {
+    const small: EarningsByBand = { 3: totals(1_000_000, 1_600_000) };
+    const huge: EarningsByBand = { 3: totals(15_000_000, 24_000_000) };
+    expect(rankPointsFrom(0, huge)).toBe(rankPointsFrom(0, small));
   });
 
-  it("net a win against a loss in the same band", () => {
-    const byBand: EarningsByBand = { 1: totals(2000, 1500, 1, 1) };
-    expect(weightedNet(byBand)).toBeCloseTo(-500 * bandRankWeight(1));
+  it("do not fall on a loss, however big the stake", () => {
+    const before: EarningsByBand = { 3: totals(1_000_000, 1_600_000, 1, 0) };
+    const after: EarningsByBand = { 3: totals(16_000_000, 1_600_000, 1, 1) };
+    expect(rankPointsFrom(1_237_500, after)).toBe(rankPointsFrom(1_237_500, before));
+    expect(rankProgress(rankPointsFrom(1_237_500, after)).tier.id).toBe("goat");
   });
 
-  it("never go below zero, however deep the player is down", () => {
-    expect(rankPointsFrom(0, { 3: totals(5_000_000, 0, 0, 5) })).toBe(0);
-    expect(rankProgress(rankPointsFrom(0, { 3: totals(5_000_000, 0, 0, 5) })).tier.id).toBe("bronze");
+  it("add up wins across bands", () => {
+    const byBand: EarningsByBand = { 0: totals(2000, 3000, 2, 1), 3: totals(1_000_000, 1_600_000, 1) };
+    expect(weightedWins(byBand)).toBeCloseTo(2 * RANK_POINTS_PER_WIN + RANK_POINTS_PER_WIN * bandRankWeight(3));
   });
 
   it("start a carried-over player from the base they were given", () => {

@@ -14,8 +14,8 @@
  *
  * NO CLOCK HERE, the same posture ./units.ts takes: every function is handed
  * `today` or `now`. The care day is `stackacresExchangeDay`'s UTC day, the
- * boundary ./devotion.ts, ./friendship.ts and ./feed-silo.ts already share,
- * so a player's whole farm rolls over at one instant rather than four.
+ * boundary ./friendship.ts and ./feed-silo.ts already share, so a player's
+ * whole farm rolls over at one instant rather than three.
  *
  * OFFLINE IS DERIVED, NEVER SIMULATED. A streak is stored as "the last day
  * tended" plus a count, and whether it survived is a comparison against
@@ -57,8 +57,7 @@ export const CARE_BONUS_CAP = 2;
  * The first two days pay nothing on purpose. Care is meant to read as a
  * habit rather than a button with a prize behind it, and a reward on the
  * very first tap would make the mood and the name decoration on a vending
- * machine. The rungs are the same shape ./devotion.ts's ladder uses: a
- * handful of real steps, not a grind.
+ * machine. A handful of real steps, not a grind.
  */
 export function careYieldBonus(streak: number): number {
   if (streak >= 7) return 2;
@@ -110,10 +109,22 @@ const CATTLE_NAMES = [
   "Bluebell", "Hattie", "Winnie", "Agnes", "Constance", "Dorothy", "Edith", "Florence",
 ] as const;
 
+const HOG_NAMES = [
+  "Porky", "Truffle", "Hamlet", "Rosie", "Biscuit", "Peanut", "Wilbur", "Clover",
+  "Muddy", "Pickles", "Dumpling", "Sprout", "Button", "Taffy", "Spud", "Waddles",
+] as const;
+
+const STEER_NAMES = [
+  "Duke", "Rusty", "Buck", "Tex", "Boots", "Moose", "Chester", "Rocky",
+  "Buster", "Dusty", "Bandit", "Tank", "Ranger", "Copper", "Gus", "Jasper",
+] as const;
+
 const NAME_POOLS: Readonly<Record<string, readonly string[]>> = {
   hen: HEN_NAMES,
   pig: SHEEP_NAMES,
   cattle: CATTLE_NAMES,
+  hog: HOG_NAMES,
+  steer: STEER_NAMES,
 };
 
 /** FNV-1a over the id. Any stable spread would do; this one is short, has no
@@ -309,13 +320,6 @@ export const CARE_GIFT_LADDER: readonly CareGiftRung[] = [
     line: "Fortnight straight. They know your step now -- you can hear it when you come up the track.",
   },
 ];
-
-/** The most feed Ray's care gifts can ever hand out to one farm. Asserted in
- *  the tests: the ladder is closed, so this number is the whole exposure. */
-export const CARE_GIFT_TOTAL_SERVINGS = CARE_GIFT_LADDER.reduce(
-  (total, rung) => total + rung.servings,
-  0,
-);
 
 /**
  * The gift rung a tend that lands on `streak` earns, given the rungs already

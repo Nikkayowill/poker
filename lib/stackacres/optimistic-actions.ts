@@ -15,16 +15,16 @@
  *
  * WHAT IS NOT PREDICTED, and why:
  *   - `collect` payout, `tap-secret-zone`, `request-contract`, `work`: the
- *     server rolls dice the client cannot reproduce (muck, crit, discovery,
- *     the drawn contract, a mill's double-output). `collect` still gets an
+ *     server rolls dice or reads clocks the client cannot reproduce (muck,
+ *     crit, discovery, the drawn contract, a machine's run). `collect` still gets an
  *     optimistic unit removal (that part is deterministic); the Gold it pays
  *     waits for the real number rather than flashing one that then corrects
  *     downward. stackacres-farm.tsx's `act` does show a numberless "on its
  *     way" toast the instant this predictor applies, so the tap still gets
  *     an immediate answer -- it just never promises a figure it might have
  *     to walk back.
- *   - anything the client keeps no state for (blueprints, prestige): there
- *     is nothing on screen to move.
+ *   - anything the client keeps no state for: there is nothing on screen to
+ *     move.
  *
  * `place-pipe`/`remove-pipe` ARE predicted. Irrigation earned the exception
  * once the pipe tool's own drag gesture (lib/stackacres/tools.ts's `pipe`)
@@ -50,11 +50,11 @@
  * and the Workshop sheet is a scrim over the map, so a press that waited on a
  * round trip would have nothing else on screen to hide behind. `sell`'s
  * inventory debit is predicted the same way, but its Gold is not, for the
- * identical reason `collect`'s Gold is not: the server applies the Prestige
- * multiplier and the daily ceiling, and a guess that then corrected downward
+ * identical reason `collect`'s Gold is not: the server applies the daily
+ * ceiling, and a guess that then corrected downward
  * would be worse than showing nothing until the real number lands. `work`
- * stays unpredicted (a Mill's double-output roll), and so do
- * `seal-vat`/`collect-vat` -- the vat's own sheet awaits the answer and says
+ * stays unpredicted (the server settles every machine on its own clock), and so does
+ * `collect-vat` -- the vat's own sheet awaits the answer and says
  * so in its own note, the same way the town board does.
  *
  * The patch is shaped as a subset of the component's own response type, so
@@ -68,6 +68,7 @@ import {
   STACKACRES_CATALOGUE,
   STACKACRES_FEED,
   isLivestock,
+  isMarketLivestock,
   stackacresCapacityPrice,
   type SeedStock,
   type StackAcresStock,
@@ -76,13 +77,6 @@ import { stackacresStockOwnableOutright, stackacresStockPrice } from "./market";
 import type { StackAcresContractRow } from "./contracts";
 import type { SectorId } from "./sectors";
 import { decrementHeldSecret, nextUpkeepPaidAfterDiceTrade, type SecretItemId } from "./secrets";
-import {
-  SYNERGY_MAX_ACTIVE_SLOTS,
-  SYNERGY_PERKS,
-  applySynergyEffects,
-  nextActiveLoadout,
-  type SynergyArchetype,
-} from "./synergy-perks";
 import { nextToolTier, toolUpgradePrice, type StackAcresToolTier } from "./equipment";
 import { ownedStackAcresCutters, stackacresCutterDef, type StackAcresCutter } from "./cutters";
 import { applyInfluenceDiscount } from "./influence-tiers";
@@ -117,9 +111,12 @@ import type { Action } from "./farm-actions";
 import { WATER_CAPACITY } from "./water-can";
 import { stockZone } from "./world";
 import { addToInventory, removeFromInventory, type StackAcresInventory } from "./inventory";
+import { buyerTakes } from "./town-buyers";
+import { acreGate } from "./acres";
 import { isHoeableSoilTile, isWildSoilTile, mapToSoilTile, soilToMapTile } from "./hoeable";
 import { herdKey, herdPlacementProblem, herdSquares, isHerdStock } from "./herd";
 import { FENCE_CAP, FENCE_WOOD_COST, isFenceableMapTile, type FencePiece } from "./fences";
+import type { GuardDog } from "./guard-dog";
 import { overgrownSoilTile } from "./crop-field-obstacles";
 import {
   LAND_SWING_ENERGY,
@@ -127,6 +124,7 @@ import {
   landClearingProgress,
   landObstacle,
   landObstacleStateOf,
+  landOreForSwing,
   swingAtLandObstacle,
   withLandObstacleState,
   isClearableSector,
@@ -142,7 +140,7 @@ import {
   energyAt,
   type StackAcresEnergyAnchor,
 } from "./energy";
-import { SHELF_FEED_ITEMS, planServings, type ServingPlan } from "./feeding";
+import { SHELF_FEED_ITEMS, planServings, servingBonus, type ServingPlan, type ServingSource } from "./feeding";
 import { FEED_SILO_DAILY_FEEDS } from "./feed-silo";
 import { FISHING_BAIT_ITEM } from "./fishing";
 import {
@@ -183,9 +181,6 @@ export interface FarmPredictContext {
   upkeep: StackAcresUpkeepState;
   influence: number;
   contract: StackAcresContractRow | null;
-  synergyUnlocked: SynergyArchetype[];
-  synergyActive: SynergyArchetype[];
-  farmhandSpeedMultiplier: number;
   secrets: { held: Partial<Record<SecretItemId, number>>; boostArmed: boolean };
   secretDonations: Record<SecretItemId, boolean>;
   greenhouseBuilt: boolean;
@@ -207,6 +202,8 @@ export interface FarmPredictContext {
   landObstacles: readonly LandObstacleSnapshot[];
   /** The fence pieces this farm has put up, by Homestead map square. */
   fences: readonly FencePiece[];
+  /** The wild acres this farm owns (./acres.ts). Missing means unknown, so nothing is refused on it. */
+  ownedAcres?: readonly string[];
   /** The processing track, straight off the component's own `processing`
    *  state. Always patched together with `contract` (see `processingPatch`)
    *  because the component applies the four as one unit. */
@@ -240,17 +237,34 @@ export interface FarmStatePatch {
   forageNodes?: ForageNodeSnapshot[];
   landObstacles?: LandObstacleSnapshot[];
   fences?: FencePiece[];
+  guardDogs?: GuardDog[];
   contract?: StackAcresContractRow | null;
   inventory?: StackAcresInventory;
   wheatPlots?: StackAcresWheatPlotSnapshot[];
   machines?: MachineView[];
   secrets?: { held: Partial<Record<SecretItemId, number>>; boostArmed: boolean };
   secretDonations?: Record<SecretItemId, boolean>;
-  synergy?: {
-    unlocked: SynergyArchetype[];
-    active: SynergyArchetype[];
-    farmhandSpeedMultiplier: number;
-  };
+}
+
+/** The bed a press of the hoe on (tx, ty) would dig, or null where the server would refuse it. */
+function predictedBed(ctx: FarmPredictContext, tx: number, ty: number): SoilTile | null {
+  // The same ground the server allows (lib/stackacres/hoeable.ts), so a tap
+  // on the road never flashes a bed the answer then takes away.
+  if (!isHoeableSoilTile(tx, ty)) return null;
+  if (overgrownSoilTile(tx, ty, clearedLandIds(ctx.landObstacles))) return null;
+  if (!ownsMapTile(ctx, soilToMapTile(tx, ty))) return null;
+  // Every slot a crop currently holds, so the new bed's order clears them
+  // all -- see `nextSoilOrder` on why max-plus-one over the beds alone would
+  // let a fresh bed adopt an orphaned crop.
+  const claimed = ctx.units.map((unit) => unit.soilSlot).filter((slot): slot is number => slot !== null);
+  const result = plantSoilTile(createSoilMap(ctx.soilTiles), { tx, ty }, SOIL_DEFAULT_TIER, claimed);
+  return result.kind === "created" ? result.tile : null;
+}
+
+/** Whether the acre under a map square is one the farm owns, as far as this guess can tell. */
+function ownsMapTile(ctx: FarmPredictContext, tile: { mx: number; my: number }): boolean {
+  if (!ctx.ownedAcres) return true;
+  return acreGate(tile.mx, tile.my, new Set(ctx.ownedAcres)).ok;
 }
 
 /** A Gold debit, or `null` when the balance won't cover it -- the same
@@ -397,6 +411,14 @@ function openedSectorPatch(
   return { sectors: [...ctx.sectors, sector] };
 }
 
+/** A hog or steer fed something that fattens it shows the weight at once,
+ *  never past its cap. Everything else is returned as it was. */
+function fattened(unit: StackAcresUnitSnapshot, source: ServingSource | undefined): StackAcresUnitSnapshot {
+  if (!source || !isMarketLivestock(unit.stock)) return unit;
+  const added = servingBonus(unit.stock, source, unit.feedBonus ?? 0);
+  return added > 0 ? { ...unit, feedBonus: (unit.feedBonus ?? 0) + added } : unit;
+}
+
 /** Takes what hens and cattle ate off the shelf for a feeding, through `processingPatch`
  *  for the same reason every other shelf change does. */
 function shelfSpentPatch(ctx: FarmPredictContext, plan: ServingPlan): ReturnType<typeof processingPatch> | null {
@@ -429,7 +451,7 @@ export function predictStackAcresAction(
       const plan = planServings([unit.stock], ctx.inventory, ctx.feed);
       if (plan.fed === 0) return null;
       return {
-        units: ctx.units.map((u) => (u.id === unit.id ? optimisticallyFedUnit(u, ctx.nowMs) : u)),
+        units: ctx.units.map((u) => (u.id === unit.id ? fattened(optimisticallyFedUnit(u, ctx.nowMs), plan.sources[0]) : u)),
         feed: ctx.feed - plan.feedUsed,
         ...shelfSpentPatch(ctx, plan),
       };
@@ -459,9 +481,12 @@ export function predictStackAcresAction(
         ctx.feed,
       );
       if (plan.fed === 0) return null;
-      const ids = new Set(hungry.slice(0, plan.fed).map((u) => u.id));
+      const fedIds = hungry.slice(0, plan.fed).map((u) => u.id);
       return {
-        units: ctx.units.map((u) => (ids.has(u.id) ? optimisticallyFedUnit(u, ctx.nowMs) : u)),
+        units: ctx.units.map((u) => {
+          const at = fedIds.indexOf(u.id);
+          return at === -1 ? u : fattened(optimisticallyFedUnit(u, ctx.nowMs), plan.sources[at]);
+        }),
         feed: ctx.feed - plan.feedUsed,
         ...shelfSpentPatch(ctx, plan),
       };
@@ -497,8 +522,12 @@ export function predictStackAcresAction(
       return { units: withoutStackAcresUnit(ctx.units, unit.id) };
     }
     case "collect": {
+      // A hog or steer is never collected; the server skips it, so the guess does too.
       const targets = ctx.units.filter(
-        (u) => isNow(u, "ready", ctx.nowMs) && (!body.unitIds || body.unitIds.includes(u.id)),
+        (u) =>
+          !isMarketLivestock(u.stock) &&
+          isNow(u, "ready", ctx.nowMs) &&
+          (!body.unitIds || body.unitIds.includes(u.id)),
       );
       if (targets.length === 0) return null;
       const targetIds = new Set(targets.map((u) => u.id));
@@ -692,31 +721,6 @@ export function predictStackAcresAction(
       if (!profile) return null;
       return { cutters: ownedStackAcresCutters([...ctx.cutters, body.cutter]), profile };
     }
-    case "unlock-synergy-perk": {
-      if (ctx.synergyUnlocked.includes(body.archetype)) return null;
-      const profile = debited(ctx, SYNERGY_PERKS[body.archetype].unlockCostGold);
-      if (!profile) return null;
-      return {
-        synergy: {
-          unlocked: [...ctx.synergyUnlocked, body.archetype],
-          active: ctx.synergyActive,
-          farmhandSpeedMultiplier: ctx.farmhandSpeedMultiplier,
-        },
-        profile,
-      };
-    }
-    case "activate-synergy-perk": {
-      if (ctx.synergyActive.includes(body.archetype)) return null;
-      if (body.slot !== ctx.synergyActive.length || ctx.synergyActive.length >= SYNERGY_MAX_ACTIVE_SLOTS) {
-        return null;
-      }
-      const active = nextActiveLoadout(ctx.synergyActive, body.archetype, body.slot);
-      const farmhandSpeedMultiplier = applySynergyEffects(
-        { harvestCritChance: 0, farmhandSpeed: 1, millDoubleOutputChance: 0 },
-        active,
-      ).farmhandSpeed;
-      return { synergy: { unlocked: ctx.synergyUnlocked, active, farmhandSpeedMultiplier } };
-    }
     case "donate-secret-item": {
       if ((ctx.secrets.held[body.itemId] ?? 0) < 1) return null;
       return {
@@ -746,28 +750,22 @@ export function predictStackAcresAction(
       return { greenhouseBuilt: true };
     }
     case "place-soil-tile": {
-      // The same ground the server allows (lib/stackacres/hoeable.ts), so a tap
-      // on the road never flashes a bed the answer then takes away.
-      if (!isHoeableSoilTile(body.tx, body.ty)) return null;
-      if (overgrownSoilTile(body.tx, body.ty, clearedLandIds(ctx.landObstacles))) return null;
-      const soil = createSoilMap(ctx.soilTiles);
-      // Every slot a crop currently holds, so the new bed's order clears
-      // them all -- see `nextSoilOrder` on why max-plus-one over the beds
-      // alone would let a fresh bed adopt an orphaned crop.
-      const claimed = ctx.units
-        .map((unit) => unit.soilSlot)
-        .filter((slot): slot is number => slot !== null);
-      const result = plantSoilTile(soil, { tx: body.tx, ty: body.ty }, SOIL_DEFAULT_TIER, claimed);
-      if (result.kind !== "created") return null;
-      return {
-        soilTiles: [...ctx.soilTiles, result.tile],
+      // A tractor row guesses each bed the way a single press does, skipping
+      // the ones that press would not dig, as the server does.
+      let soilTiles = ctx.soilTiles;
+      let cropFieldsUnlocked = ctx.cropFieldsUnlocked;
+      for (const tile of body.tiles ?? [{ tx: body.tx, ty: body.ty }]) {
+        const dug = predictedBed({ ...ctx, soilTiles }, tile.tx, tile.ty);
+        if (!dug) continue;
+        soilTiles = [...soilTiles, dug];
         // Breaking ground out in the wild land IS clearing the Crop Fields, and
         // the server records the flag off this same placement, so the browser
         // predicts it rather than waiting a round trip. `isWildSoilTile` is the
         // same check the server makes, so a bed in the yard never claims it.
-        cropFieldsUnlocked:
-          ctx.cropFieldsUnlocked || isWildSoilTile(body.tx, body.ty),
-      };
+        cropFieldsUnlocked ||= isWildSoilTile(tile.tx, tile.ty);
+      }
+      if (soilTiles === ctx.soilTiles) return null;
+      return { soilTiles: [...soilTiles], cropFieldsUnlocked };
     }
     case "remove-soil-tile": {
       const existing = ctx.soilTiles.find((t) => t.tx === body.tx && t.ty === body.ty);
@@ -852,36 +850,25 @@ export function predictStackAcresAction(
       // collects it. The row itself becomes the queue entry, snapshotting
       // the recipe and yield exactly as `startStackAcresMachine` does. Every
       // queued recipe today (only the Mill's Flour) has exactly one input.
+      const batches = body.batches ?? 1;
       let inventory: StackAcresInventory | null = ctx.inventory;
       for (const input of def.inputs) {
-        inventory = removeFromInventory(inventory, input.item, input.quantity);
+        inventory = removeFromInventory(inventory, input.item, input.quantity * batches);
         if (!inventory) return null;
       }
       const working: MachineView = {
         ...machine,
         status: "working",
         startedAt: new Date(ctx.nowMs).toISOString(),
-        readyAt: new Date(ctx.nowMs + def.processingMs).toISOString(),
+        readyAt: new Date(ctx.nowMs + def.processingMs * batches).toISOString(),
         recipeId: body.recipe,
-        unitsProcessing: def.output.quantity,
+        unitsProcessing: def.output.quantity * batches,
         done: false,
         progress: 0,
       };
       return processingPatch(ctx, {
         inventory,
         machines: ctx.machines.map((candidate) => (candidate.id === machine.id ? working : candidate)),
-      });
-    }
-    case "set-kitchen-order": {
-      const kitchen = ctx.machines.find((candidate) => candidate.kind === "farm_kitchen");
-      if (!kitchen) return null;
-      const updated: MachineView = {
-        ...kitchen,
-        standingRecipe: body.recipe,
-        kitchenSince: kitchen.kitchenSince ?? new Date(ctx.nowMs).toISOString(),
-      };
-      return processingPatch(ctx, {
-        machines: ctx.machines.map((candidate) => (candidate.id === kitchen.id ? updated : candidate)),
       });
     }
     case "eat": {
@@ -910,6 +897,7 @@ export function predictStackAcresAction(
       // The same refusals the server makes, so a piece never flashes up and
       // back down: open grass, no bed, no piece already, the cap, and the Wood.
       if (!isFenceableMapTile(body.tx, body.ty)) return null;
+      if (!ownsMapTile(ctx, { mx: body.tx, my: body.ty })) return null;
       if (ctx.fences.some((piece) => piece.tx === body.tx && piece.ty === body.ty)) return null;
       if (ctx.fences.length >= FENCE_CAP) return null;
       const bed = mapToSoilTile(body.tx, body.ty);
@@ -961,8 +949,10 @@ export function predictStackAcresAction(
       const energy = applyEnergyDelta(ctx.energy, -LAND_SWING_ENERGY, now);
       if (!energy) return null;
       const landObstacles = withLandObstacleState(ctx.landObstacles, obstacle, swing.nextState);
-      const inventory =
+      let inventory =
         swing.item && swing.quantity > 0 ? addToInventory(ctx.inventory, swing.item, swing.quantity) : ctx.inventory;
+      const ore = landOreForSwing(obstacle.kind, swing.cleared);
+      if (ore > 0) inventory = addToInventory(inventory, "iron_ore", ore);
       return {
         energy,
         landObstacles,
@@ -1004,9 +994,20 @@ export function predictStackAcresAction(
         ),
       };
     }
+    case "ship-livestock": {
+      // Every ready hog and steer that is home leaves for the sale barn. The
+      // Gold is the server's to say, same as a sale.
+      const going = new Set(
+        ctx.units.filter((u) => isMarketLivestock(u.stock) && !u.away && isNow(u, "ready", ctx.nowMs)).map((u) => u.id),
+      );
+      if (going.size === 0) return null;
+      return { units: ctx.units.filter((u) => !going.has(u.id)) };
+    }
     case "sell": {
       // Known-insufficient is a real refusal, not a guess -- refuse locally
-      // rather than optimistically show a sale that cannot happen.
+      // rather than optimistically show a sale that cannot happen. So is the
+      // wrong buyer.
+      if (!buyerTakes(body.buyer, body.item)) return null;
       const inventory = removeFromInventory(ctx.inventory, body.item, body.quantity);
       if (!inventory) return null;
       // Gold is not predicted -- see this module's own header on why `sell`
@@ -1027,9 +1028,9 @@ export function predictStackAcresAction(
     }
     // The rest are dice rolls this browser cannot honestly guess (`collect`'s
     // own Gold, `tap-secret-zone`, `request-contract`, `work`), await their
-    // own sheet's answer (`seal-vat`, `collect-vat`), or move nothing the
+    // own sheet's answer (`collect-vat`), or move nothing the
     // client keeps state for (`build-greenhouse`'s materials aside from the
-    // flag itself, blueprints, prestige). See this module's own header.
+    // flag itself). See this module's own header.
     default:
       return null;
   }

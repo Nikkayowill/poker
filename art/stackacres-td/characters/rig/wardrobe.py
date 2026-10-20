@@ -207,9 +207,6 @@ CHARACTERS = {
     "leo": {"head": "space_helmet", "torso": "shirt", "roles": {
         "S": "W", "s": "s", "h": "W", "H": "W", "j": "s", "C": "W", "c": "s", "k": "W", "A": "C", "a": "L", "E": "K",
         "R": "W", "r": "s", "L": "W", "l": "s", "Y": "L", "u": "L", **STEEL_BOOTS}},
-    "pilgrim": {"head": "shaved", "torso": "robe", "roles": {
-        **N_SKIN, "H": "N", "j": "P", "C": "o", "c": "N", "k": "o", "A": "o", "a": "N", "E": "K",
-        "R": "o", "r": "N", "L": "o", "l": "N", "Y": "o", "u": "o", **BOOTS}},
     "merchant": {"head": "hood", "torso": "robe", "roles": {
         "S": "P", "s": "K", "h": "B", "H": "P", "j": "K", "C": "P", "c": "K", "k": "B", "A": "P", "a": "K", "E": "Y",
         "R": "P", "r": "B", "L": "P", "l": "K", "Y": "Y", "u": "B", **STEEL_BOOTS}},

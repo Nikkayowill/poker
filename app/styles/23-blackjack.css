@@ -1,21 +1,17 @@
-/* Blackjack 21 -- the first live arcade game.
+/* The page shell Blackjack left behind. Blackjack itself is gone; Word Stack
+ * and Connections still build their pages on .bj-shell plus .puzzle-shell, so
+ * only the shell, header and hand-row pieces they use are kept here.
  *
- * The cards themselves are .playing-card/.card-large from 07-cards.css, and
- * the balance chip is .gold-balance from 03-profile.css. This file is the
- * table around them.
- *
- * Every outer edge takes a safe-area inset. The shell is a full-viewport page
- * with a bottom-docked action bar on a phone, which is exactly the pair of
- * edges that lands under the notch and the home indicator, and it follows the
- * codebase's own `max(Npx, env(...))` idiom rather than a bare env() -- a
- * desktop browser reports 0 for every inset, so a bare env() would collapse
- * the padding to nothing off-device.
+ * Every outer edge takes a safe-area inset, using the codebase's own
+ * `max(Npx, env(...))` idiom rather than a bare env() -- a desktop browser
+ * reports 0 for every inset, so a bare env() would collapse the padding to
+ * nothing off-device.
  */
 
 .bj-shell {
-  /* svh, not vh: on mobile Safari vh is the *largest* viewport, so the action
-     bar sits under the URL bar until it collapses. The table shell in
-     06-table.css already pairs these for the same reason. */
+  /* svh, not vh: on mobile Safari vh is the *largest* viewport, so the
+     bottom of the page sits under the URL bar until it collapses. The table
+     shell in 06-table.css already pairs these for the same reason. */
   min-height: 100svh;
   display: flex;
   flex-direction: column;
@@ -26,7 +22,6 @@
   padding-top: max(28px, calc(var(--safe-top) + 12px));
   padding-bottom: calc(40px + var(--safe-bottom));
   color: var(--ink);
-  /* Ten-and-a-half totals in a column that must not jitter as they change. */
   font-variant-numeric: tabular-nums;
 }
 
@@ -42,156 +37,22 @@
 .bj-header-copy h1 { margin: 6px 0 3px; font: 600 23px Georgia, serif; }
 .bj-header-copy p { margin: 0; color: var(--muted); font-size: 12.5px; }
 
-.bj-back {
-  color: var(--muted);
-  font-size: 12px;
-  text-decoration: none;
-}
-.bj-back:hover { color: var(--gold-light); }
+/* ---- Hand row ---- */
 
-.bj-header-meters { display: flex; flex-wrap: wrap; gap: 8px; }
-.bj-meter {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 82px;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: rgba(255,255,255,.025);
-}
-.bj-meter small {
-  color: #64736b;
-  font-size: 8.5px;
-  font-weight: 750;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-}
-.bj-meter > strong { font-size: 13px; font-weight: 750; }
-.bj-meter-up > strong { color: #6fd6a4; }
-.bj-meter-down > strong { color: #e08b8b; }
-
-.bj-practice-note {
-  margin: 0;
-  padding: 10px 13px;
-  color: #9fb0a7;
-  border: 1px solid rgba(217,184,93,.16);
-  border-left-width: 3px;
-  border-radius: 8px;
-  background: rgba(217,184,93,.05);
-  font-size: 11.5px;
-  line-height: 1.5;
-}
-
-/* Reuses .bj-practice-note's box wholesale and only re-tints it: an error
-   here occupies the same slot and wants the same shape, and restating the
-   padding/radius/type would be two rules to keep in step instead of one. */
-.bj-error {
-  margin: 0;
-  padding: 10px 13px;
-  color: #f4b9b2;
-  border: 1px solid rgba(220,110,95,.28);
-  border-left-width: 3px;
-  border-radius: 8px;
-  background: rgba(220,110,95,.08);
-  font-size: 11.5px;
-  line-height: 1.5;
-}
-
-/* ---- Felt ---- */
-
-/* The room, and the single authority on where the table's rail is.
- *
- * This used to be a flex column that stacked a 560px WebGL panel of two dogs
- * on top of two hands of cards -- a picture of a room inside a room, which is
- * what made the dealers look like something on a television rather than
- * somebody across a table. It is one continuous space now: the casino, the
- * cloth and the pair are layers behind the cards (app/styles/27-dealer-stage
- * .css), and the game is played inside the same picture they are in.
- *
- * TWO ROWS. Row one is the dealers' airspace; row two is the playing surface.
- * THE BOUNDARY BETWEEN THEM IS THE RAIL, and expressing it as a grid line is
- * deliberate: the alternative is a shared percentage restated in this file and
- * in the layer sheet, which is precisely the two-places-one-number drift that
- * has already cost this project a mis-aimed speech bubble and a header whose
- * height was declared twice.
- *
- * The `0.85fr` is a ratio, not a size, so the pair keep their share of a short
- * landscape phone and a tall desktop alike; `minmax` floors it so they never
- * collapse to a sliver, and `auto` on row two means the cards always take
- * exactly the room they need and the dogs get the rest. */
-.bj-felt {
-  position: relative;
-  flex: 1;
-  display: grid;
-  grid-template-columns: 1fr;
-  grid-template-rows: minmax(clamp(132px, 22vh, 260px), .85fr) auto;
-  min-height: 0;
-  overflow: hidden;
-  border-radius: 18px;
-  /* A new stacking context, so the layers' z-indexes are scoped to the room
-     and cannot interleave with the page's fixed action bar. */
-  isolation: isolate;
-  /* Only ever seen through a layer that failed to load. Every visible surface
-     is painted by 27-dealer-stage.css. */
-  background: #06100c;
-}
-
-/* The live game: cards, totals, the verdict. Nearest the player, so above
-   every painted layer. */
-.bj-play {
-  grid-area: 2 / 1;
-  position: relative;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  justify-content: center;
-  min-width: 0;
-  /* That top padding is CLEARANCE, not taste. `.bj-felt-print` is painted by
-     the surface layer 44px below the rail, and this row starts at the same
-     line -- so at the old 46px the dealer's name and total printed straight
-     across "DEALER STANDS ON SOFT 17". The cards have to start below the
-     cloth's own lettering, exactly as they would on a real table. Keep this
-     and .bj-felt-print's `top` in step; there is a spec pinning that they do
-     not overlap. */
-  padding: clamp(58px, 6vw, 82px) clamp(14px, 3vw, 30px) clamp(18px, 3vw, 30px);
-}
-
-.bj-hand { display: flex; flex-direction: column; gap: 8px; align-items: center; }
-/* `center`, not `baseline`: the head now carries a 34px avatar disc beside
-   the text, and baseline alignment would hang the disc off the cap-height of
-   a 9px label. */
-.bj-hand-head { display: flex; align-items: center; gap: 9px; }
-
-/* Name over patter, so the head stays two lines tall whether or not there is
-   a caption -- the felt must not jump as the dealer's line changes length. */
+/* Name over caption, so the head stays two lines tall whether or not there
+   is a caption. */
 .bj-hand-who { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-/* Everything in .bj-play now sits on lit green cloth rather than on the old
-   near-black panel, so the muted greys it used to use went illegible. The
-   type is lifted and given a real drop shadow instead of a plate behind it --
-   a box here would put the framed panel back that this whole pass removed. */
+/* Lifted type with a real drop shadow rather than a plate behind it. */
 .bj-hand-caption {
   color: #cbdccf;
   font-size: 10.5px;
   font-style: italic;
   text-shadow: 0 1px 4px rgba(0,0,0,.85);
-  /* One line, always. The dealer's lines are constants (lib/arcade/dealer.ts)
-     so this cannot actually trigger today -- it is here so a longer line
-     added later clips instead of reflowing the felt. */
+  /* One line, always: a longer caption clips instead of reflowing the row. */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-/* The player's avatar in the hand row. .profile-avatar brings its own sizing,
-   hence the override. */
-.bj-hand-head .profile-avatar {
-  flex: none;
-  width: 34px;
-  height: 34px;
-}
-
 .bj-hand-label {
   color: #e2ece4;
   font-size: 9px;
@@ -200,223 +61,24 @@
   text-transform: uppercase;
   text-shadow: 0 1px 4px rgba(0,0,0,.85);
 }
-.bj-hand-total {
-  min-width: 30px;
-  padding: 2px 8px;
-  color: var(--gold-light);
-  border: 1px solid rgba(217,184,93,.22);
-  border-radius: 999px;
-  background: rgba(0,0,0,.28);
-  font-size: 12px;
-  font-weight: 750;
-  text-align: center;
-}
 
-/* wrap, because a hard-hitting hand can reach seven or eight cards and must
-   never push the felt sideways. */
-.bj-cards { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; }
-
-/* Dealt, not appeared. The stagger is nth-child rather than a per-card
-   inline style so the whole animation stays in CSS; past the sixth card it
-   simply shares the last delay, which nobody reads as wrong. */
-.bj-cards .playing-card { animation: bj-deal .22s ease-out both; }
-.bj-cards .playing-card:nth-child(2) { animation-delay: .06s; }
-.bj-cards .playing-card:nth-child(3) { animation-delay: .12s; }
-.bj-cards .playing-card:nth-child(n+4) { animation-delay: .18s; }
-@keyframes bj-deal {
-  from { opacity: 0; transform: translateY(-10px) scale(.94); }
-  to { opacity: 1; transform: none; }
-}
-
-.bj-verdict { display: flex; justify-content: center; min-height: 34px; align-items: center; }
-.bj-verdict-idle {
-  color: #cbdccf;
-  text-shadow: 0 1px 4px rgba(0,0,0,.85);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .18em;
-  text-transform: uppercase;
-}
-.bj-verdict-chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 9px;
-  padding: 7px 15px;
-  color: var(--ink);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: rgba(0,0,0,.34);
-  font: 600 14px Georgia, serif;
-}
-.bj-verdict-chip em { font: 750 11.5px/1 system-ui, sans-serif; font-style: normal; }
-.bj-verdict-win { color: #7fdcaa; border-color: rgba(111,214,164,.32); }
-.bj-verdict-loss { color: #e79898; border-color: rgba(224,139,139,.3); }
-
-/* ---- Controls ---- */
-
-.bj-controls { display: flex; flex-direction: column; gap: 10px; }
-
-/* The tier ladder plus the practice toggle sitting beside it. The toggle is
-   flex: 0 0 auto so the ladder keeps the scroll width it already had -- it
-   does not shrink to make room. */
-.bj-stake-row { display: flex; align-items: center; gap: 8px; }
-
-/* Eight tiers do not fit a phone in one row, so the ladder scrolls sideways
-   rather than wrapping into a block that pushes the actions off screen. */
-.bj-stakes {
-  display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
-  gap: 7px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-  scrollbar-width: none;
-}
-.bj-stakes::-webkit-scrollbar { display: none; }
-/* Practice mode is on: the tier ladder still shows what it was set to, but
-   dimmed, since a practice deal ignores it entirely. */
-.bj-stakes-dim { opacity: .4; }
-.bj-stake {
-  flex: 0 0 auto;
-  padding: 8px 13px;
-  color: #9fb0a7;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: rgba(255,255,255,.025);
-  font-size: 11.5px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: border-color .16s ease, color .16s ease;
-}
-.bj-stake-on {
-  color: #17170f;
-  border-color: transparent;
-  background: var(--gold);
-}
-.bj-stake:disabled { opacity: .4; cursor: not-allowed; }
-.bj-stake:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
-
-/* Same base look as .bj-stake -- it is a peer of the ladder, not a smaller
-   or larger idea -- but its own class, since "on" here means the opposite
-   of the ladder being live: a real tier is dimmed instead. */
-.bj-practice-toggle {
-  flex: 0 0 auto;
-  padding: 8px 13px;
-  color: #9fb0a7;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: rgba(255,255,255,.025);
-  font-size: 11.5px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: border-color .16s ease, color .16s ease, background .16s ease;
-}
-.bj-practice-toggle-on {
-  color: #17170f;
-  border-color: transparent;
-  background: var(--gold-light);
-}
-.bj-practice-toggle:disabled { opacity: .4; cursor: not-allowed; }
-.bj-practice-toggle:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
-
-/* grid-auto-columns: 1fr rather than leaving columns at their auto/content
-   width -- Resign made this a 4-up row, and four content-sized buttons with
-   fixed 18px padding is what overflows a narrow phone. Equal, shrinkable
-   columns keep 3-up (every other outcome) visually identical to before while
-   making 4-up safe. */
-.bj-actions { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 9px; }
-.bj-action {
-  min-height: 48px;
-  min-width: 0;
-  padding: 0 18px;
-  color: var(--ink);
-  border: 1px solid rgba(255,255,255,.12);
-  border-radius: 12px;
-  /* The same 3-stop enamelled fill the action bar and the gold CTAs use,
-     rather than a fourth flat two-stop gradient. */
-  background: linear-gradient(168deg, #26332d 0%, #1a2621 42%, #131d19 100%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.07);
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: border-color .16s ease, transform .08s ease;
-}
-.bj-action:hover:not(:disabled) { border-color: rgba(217,184,93,.34); }
-.bj-action:active:not(:disabled) { transform: translateY(1px); }
-.bj-action:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
-.bj-action:disabled { opacity: .45; cursor: not-allowed; }
-
-.bj-action-deal {
-  color: #17170f;
-  border-color: rgba(217,184,93,.5);
-  background: linear-gradient(168deg, #f0dca4 0%, #dcbb63 44%, #c3a049 100%);
-}
-.bj-action-deal:disabled { color: #6c7570; background: rgba(255,255,255,.06); }
-
-/* ---- Phone ----
- *
- * The actions dock to the bottom edge, which is the one place a thumb reaches
- * on a tall screen -- and therefore the one place the home indicator sits, so
- * the bar carries its own bottom inset on top of the shell's. */
+/* ---- Phone ---- */
 @media (max-width: 640px) {
   .bj-shell {
     gap: 12px;
     padding-top: max(16px, calc(var(--safe-top) + 8px));
     padding-left: max(12px, var(--safe-left));
     padding-right: max(12px, var(--safe-right));
-    /* Room for the docked bar, which is out of flow. */
     padding-bottom: calc(126px + var(--safe-bottom));
   }
   .bj-header { gap: 10px; }
   .bj-header-copy h1 { font-size: 19px; }
-  .bj-meter { min-width: 0; flex: 1; padding: 6px 10px; }
-  .bj-header-meters { width: 100%; gap: 6px; }
 
-  /* The pair keep a smaller share of a phone: two hands, a verdict and the
-     docked action bar all have to fit one viewport, and the dogs are the only
-     thing here that can afford to be smaller. */
-  .bj-felt { grid-template-rows: minmax(clamp(96px, 17vh, 150px), .6fr) auto; border-radius: 14px; }
-  /* Same clearance argument as the desktop rule, against the phone's smaller
-     print offset (27-dealer-stage.css moves .bj-felt-print to top: 30px). */
-  .bj-play { gap: 9px; padding: 46px 10px 14px; }
-  /* Cards drop to the community size on a phone; two .card-large hands plus
-     the verdict do not fit a 640px-tall viewport otherwise. */
-  .bj-cards .playing-card.card-large { width: clamp(52px, 17vw, 68px); }
-  .bj-cards { gap: 5px; }
-
-  .bj-controls {
-    position: fixed;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    z-index: 6;
-    gap: 8px;
-    padding: 10px 12px;
-    padding-left: max(12px, var(--safe-left));
-    padding-right: max(12px, var(--safe-right));
-    padding-bottom: max(10px, var(--safe-bottom));
-    border-top: 1px solid var(--line);
-    /* Opaque, not translucent: cards scroll under this and a blur would put
-       a moving rank behind the Stand button. */
-    background: #0b1310;
-  }
-  .bj-action { min-height: 46px; padding: 0 10px; font-size: 12.5px; }
-
-  /* Word Stack and Connections reuse .bj-shell but have no docked
-     .bj-controls bar -- only Blackjack does. The 126px reserved above is
-     real clearance for that fixed bar; on these it was dead space with
-     nothing docked into it, and was most of why a daily puzzle's grid+keypad
-     forced the whole page to scroll on a phone. (Sudoku's and Memory
-     Match's own daily-board shells were deleted when those games dropped
-     their daily gate -- see CLAUDE.md's 2026-08-21 Ante Up entries -- and
-     took their .sk-shell/.mm-shell rules with them.) */
+  /* The 126px above was clearance for Blackjack's docked action bar. The
+     puzzle pages have no docked bar, so they take it back; without this a
+     daily puzzle's grid and keypad forced the whole page to scroll. */
   .puzzle-shell {
     gap: 10px;
     padding-bottom: calc(20px + var(--safe-bottom));
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .bj-cards .playing-card { animation: none; }
-  .bj-action:active:not(:disabled) { transform: none; }
 }

@@ -29,7 +29,7 @@
  *
  * IT NEVER NAMES SOMETHING THAT CANNOT BE DONE. That falls out of reusing the
  * Journal: `candidateCues` only pushes a cue the farm can truthfully show,
- * `nextReachableStackAcresMilestone` already skips the three flags behind a
+ * `nextReachableStackAcresMilestone` already skips any flag behind a
  * wall (./shop-locks.ts's `STACKACRES_UNREACHABLE_FLAGS`), and a locked
  * traveler is never a caller. The one thing added here is the same care about
  * DESTINATIONS: a rung whose work happens on the map in front of the player
@@ -40,8 +40,11 @@
  * own, no store, nothing that moves Gold.
  */
 
+import type { BuildLine } from "./build-cost";
 import { machineItemLabel } from "./machine-items";
 import type { MapPlaceId } from "./map-places";
+import type { TravelerId } from "./story/travelers";
+import { SEED_SELLER_WHERE } from "./seed-seller";
 import {
   STACKACRES_QUEST_LABELS,
   nextReachableStackAcresMilestone,
@@ -69,7 +72,9 @@ export type NextActionTarget =
   | { readonly kind: "workshop" }
   | { readonly kind: "house" }
   | { readonly kind: "contracts" }
-  | { readonly kind: "travel"; readonly place: MapPlaceId };
+  | { readonly kind: "travel"; readonly place: MapPlaceId }
+  /** Walk up to a traveler, or to the door of the building they are in. */
+  | { readonly kind: "person"; readonly who: TravelerId };
 
 export interface NextActionButton {
   /** "Open Workshop", "Go to the Crop Fields". */
@@ -124,6 +129,18 @@ function byShortfall(a: NextActionRequirement, b: NextActionRequirement): number
   return a.have / a.need - b.have / b.need;
 }
 
+/** Cost lines as panel requirements. A met line needs no "where to get it". */
+function requirementsFrom(lines: readonly BuildLine[]): NextActionRequirement[] {
+  return lines
+    .map((line) => ({
+      label: line.label,
+      have: line.have,
+      need: line.need,
+      source: line.met ? null : line.source,
+    }))
+    .sort(byShortfall);
+}
+
 /** The room a building goes up in, as a button. ./build-cost.ts's
  *  `BuildPlace` is the only thing that decides this, so the panel and the
  *  Journal's own place chip can never disagree. */
@@ -141,14 +158,7 @@ function buildAction(cue: JournalCueKind, step: JournalStep, chapterBlurb: strin
     cue,
     title: `Build the ${step.name}`,
     why: step.opens ? `${chapterBlurb} ${step.opens}.` : chapterBlurb,
-    requirements: step.lines
-      .map((line) => ({
-        label: line.label,
-        have: line.have,
-        need: line.need,
-        source: line.met ? null : line.source,
-      }))
-      .sort(byShortfall),
+    requirements: requirementsFrom(step.lines),
     button: roomButton(step.place),
   };
 }
@@ -233,6 +243,16 @@ export function nextAction(input: JournalInput, view: JournalView): NextAction |
     case "contract":
       return contractAction(cue, input, heldForContract(input));
 
+    case "ship":
+      return {
+        id: "ship",
+        cue,
+        title: "Sell your animals to Hank",
+        why: "Hank at the sale barn pays for each hog and steer by its weight. Feed them well first and they fetch more.",
+        requirements: [],
+        button: { label: "Go to the City", target: { kind: "travel", place: "city" } },
+      };
+
     case "harvest":
       return {
         id: "harvest",
@@ -243,14 +263,42 @@ export function nextAction(input: JournalInput, view: JournalView): NextAction |
         button: null,
       };
 
-    case "water":
+    case "water": {
+      const canEmpty = input.water !== undefined && input.water < 1;
       return {
-        id: "water",
+        id: canEmpty ? "water:fill" : "water",
         cue,
-        title: "Water the beds that have gone dry",
-        why: "A dry bed stops growing altogether, and the time it stands dry is never credited back.",
+        title: canEmpty ? "Fill your can at the well" : "Water your beds",
+        why: canEmpty
+          ? "The can is empty, and a dry bed stops growing altogether. Tap the well, then water the beds."
+          : "A dry bed stops growing altogether, and the time it stands dry is never credited back.",
         requirements: [],
         button: null,
+      };
+    }
+
+    case "sow": {
+      const wheat = (input.seedStock.wheat ?? 0) > 0;
+      return {
+        id: "sow",
+        cue,
+        title: wheat ? "Plant your wheat" : "Plant your seed",
+        why: wheat
+          ? "Wheat is the first crop on the farm. It grows while you chop, and the Feed Grinder turns it into flour."
+          : "Hoe a bed on the grass by the house, sow the seed and water it from the well.",
+        requirements: [],
+        button: null,
+      };
+    }
+
+    case "seeds":
+      return {
+        id: "seeds",
+        cue,
+        title: "Buy seed from Cora",
+        why: `Cora sells seed at ${SEED_SELLER_WHERE}. Every crop you grow starts there.`,
+        requirements: [],
+        button: { label: "Go to the City", target: { kind: "travel", place: "city" } },
       };
 
     case "build":
@@ -288,9 +336,9 @@ export function nextAction(input: JournalInput, view: JournalView): NextAction |
                 need: objective.need,
                 source: null,
               })),
-        // Travelers stand around the Homestead and nothing in the catalogue
-        // says where, so this points at the map rather than at a door.
-        button: { label: "Go to the Homestead", target: { kind: "travel", place: "farmstead" } },
+        // They keep a daily round, so they are often off-screen or behind Ray's counter in the barn.
+        // The button walks the farmer to them.
+        button: { label: `Find ${caller.name}`, target: { kind: "person", who: caller.traveler } },
       };
     }
 
@@ -307,7 +355,7 @@ export function nextAction(input: JournalInput, view: JournalView): NextAction |
           opens.length > 0
             ? `It raises your Standing, which opens ${opens.join(", ")}.`
             : "It raises your Standing, and another rung of Ray's shelf with it.",
-        requirements: [],
+        requirements: requirementsFrom(rung?.lines ?? []),
         button: FLAG_BUTTON[flag] ?? null,
       };
     }

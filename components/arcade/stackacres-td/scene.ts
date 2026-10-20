@@ -74,6 +74,7 @@ import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import {
   axeSound,
   doorSound,
+  toolSound,
   floorStepSound,
   grassStepSound,
   castSwishSound,
@@ -131,6 +132,7 @@ import type { QuestPlaceId } from "@/lib/stackacres/story/places";
 import { isTravelerId, type TravelerId } from "@/lib/stackacres/story/travelers";
 import { cropSpot, penFeedSpot, stockZone, type WorldPoint } from "@/lib/stackacres/world";
 import { isHerdStock } from "@/lib/stackacres/herd";
+import type { GuardDog } from "@/lib/stackacres/guard-dog";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresSceneUnit, TapPoint, TravelerUnlocks, UseSquare } from "../stackacres/world-contract";
@@ -148,6 +150,8 @@ import { EMPIRE_BUILDINGS, buildingTiles, doorTile, type PlacedEmpireBuilding, t
 import type { BuildGhost, GroceryGhost, GroceryScene } from "../stackacres/world-contract";
 import { Worksite, marketLayout, type MarketArea } from "@/lib/stackacres-td/worksite";
 import { STAFF_SPRITES, STORE_SHOPPERS, STORE_STAFF, staffAtPosts } from "@/lib/stackacres-td/store-cast";
+import { SEED_SELLER } from "@/lib/stackacres/seed-seller";
+import { townBuyerOfNpc, type TownBuyerId } from "@/lib/stackacres/town-buyers";
 import {
   DEFAULT_GROCERY_LAYOUT,
   GROCERY_ITEMS,
@@ -161,6 +165,9 @@ import {
 import { gridRouter } from "@/lib/stackacres-td/work-board";
 import type { AreaSpecForRoutines } from "@/lib/stackacres-td/npc-routine";
 import { WindSway } from "./wind-sway";
+import { TractorRig } from "./tractor-rig";
+import { HandRig, type HandJobKind } from "./hand-rig";
+import { GET_OFF_TRACTOR_FIRST } from "@/lib/stackacres/tractor";
 import { SeeThrough } from "./see-through";
 import { drawNodeTextures } from "./node-textures";
 import { NODE_ART, gatherKindOfTag, spentForage, spentStones, spentTrees, type SpentNode } from "@/lib/stackacres-td/gather-nodes";
@@ -263,7 +270,7 @@ const SLEEP_BEAT_MS = 450;
 const SLEEP_FADE_MS = 900;
 const SLEEP_FADE_REDUCED_MS = 150;
 const SLEEP_DARK_MS = 700;
-const CHARACTERS = ["farmer", "ray", "pilgrim", "pierre", "ivy"];
+const CHARACTERS = ["farmer", "ray", "pierre", "ivy", "earl"];
 /** People seen only in one place's areas, whose sheets load and go with its pictures (LOADS_WITH). The grocery's
  *  staff and shoppers; the shoppers also walk the City as its townsfolk. */
 const PLACE_CHARACTERS: Partial<Record<TopdownArea, readonly string[]>> = {
@@ -275,7 +282,7 @@ const TRAVELERS_ON_MAP: readonly TravelerId[] = ["pierre", "ivy"];
 const PINNED_CLOCK_MS_PER_HOUR = 3_600_000;
 
 function isEmoteTarget(name: string): name is EmoteTarget {
-  return name === "ray" || name === "pilgrim" || (TRAVELERS_ON_MAP as readonly string[]).includes(name);
+  return name === "ray" || (TRAVELERS_ON_MAP as readonly string[]).includes(name);
 }
 
 /**
@@ -302,6 +309,8 @@ const DOCK_CAST_SPOT: Point = { x: 416, y: 44 };
  * on the post: the post is at the top of the map, under the HUD bar on a landscape phone.
  */
 const DOCK_PLANKS = new Phaser.Geom.Rectangle(400, 16, 32, 96);
+/** How close to the dock he has to be for the belt to show the rod and the bait. */
+const NEAR_WATER = 64;
 /** Where each pen's animals stand: the area, its spots zone, and how the grid of them is laid out.
  *  Hen Haven is the only pen left (2026-09-28): the Fold's and Cattle Pasture's own rows went with
  *  those two districts. */
@@ -419,6 +428,8 @@ export interface TopdownCallbacks {
   onUseSquare: (square: UseSquare) => void;
   onGroundTap: (zone: ZoneId, at: TapPoint, world: WorldPoint) => void;
   onBarnTap: () => void;
+  onSeedSellerTap: () => void;
+  onTownBuyerTap: (buyer: TownBuyerId) => void;
   onSignpostTap: () => void;
   onWorkshopTap: () => void;
   onWellTap: (at: TapPoint) => void;
@@ -453,7 +464,6 @@ export interface TopdownCallbacks {
    *  `onTreeTap` takes. */
   onLandTap: (obstacleId: string, at: TapPoint) => void;
   onGreenhouseTap: () => void;
-  onMonkTap: (at: TapPoint) => void;
   onRayTap: (at: TapPoint) => void;
   onHouseTap: (at: TapPoint) => void;
   /** The bed in the farmhouse (a prop tagged `bed`): the farmer has walked up to it. */
@@ -468,6 +478,8 @@ export interface TopdownCallbacks {
    *  stands the thumb stick and the Use key down for the duration: they are
    *  refused anyway, and leaving them lit reads as the game having frozen. */
   onInputLocked: (locked: boolean) => void;
+  /** He has walked up to the dock, or away from it. The belt shows the rod and the bait while he is there. */
+  onNearWater: (near: boolean) => void;
   /** A tap while placing a building: the map square it landed on, in the Far Field or the grocery. */
   onBuildTap: (tile: Tile) => void;
   /** The farmer walked up to the grocery's Help Wanted board. */
@@ -476,6 +488,8 @@ export interface TopdownCallbacks {
   onStoreDeskTap: () => void;
   /** A finger landed on someone working at the grocery: their name, and the point over their head. */
   onStaffTap: (name: string, at: TapPoint) => void;
+  /** He climbed onto the tractor or off it (./tractor-rig.ts). */
+  onDrivingChanged: (driving: boolean) => void;
 }
 
 /**
@@ -572,6 +586,10 @@ export class TopdownScene extends Phaser.Scene {
   private occupiedTiles = new Set<string>();
   /** The Use key is held (use-key.tsx), so stepping onto a new bed works it too. */
   private useDown = false;
+  /** The belt is holding the rod, so the Use key casts instead of working a square. */
+  private rodHeld = false;
+  /** What `onNearWater` last said, so it only fires on a change. */
+  private nearWater = false;
   /** The last bed a held stroke worked, so one step never fires twice. */
   private stroked: string | null = null;
   /** An action animation is playing and must not be trampled by the walk cycle. */
@@ -669,6 +687,9 @@ export class TopdownScene extends Phaser.Scene {
   /** The fence pieces the farm has put up, and what draws them. */
   private fences: FencePiece[] = [];
   private fenceImages: Phaser.GameObjects.Image[] = [];
+  /** The guard dogs on the Homestead, and what draws them. */
+  private guardDogs: GuardDog[] = [];
+  private guardDogImages: Phaser.GameObjects.Image[] = [];
   /** The buildings standing on the Far Field, and what draws them there. */
   private empireBuildings: PlacedEmpireBuilding[] = [];
   private buildingImages: Phaser.GameObjects.Image[] = [];
@@ -682,6 +703,14 @@ export class TopdownScene extends Phaser.Scene {
   private groceryGhost: GroceryGhost | null = null;
   private groceryObjects: Phaser.GameObjects.GameObject[] = [];
   private nextRegrowCheck = 0;
+  /** The tractor, once bought: parked by the barn, or driven. */
+  private tractor!: TractorRig;
+  private hand!: HandRig;
+  private handHired = false;
+  /** What the shell last said about owning one, kept for a push that lands before boot. */
+  private tractorOwned = false;
+  /** When a refused gate last said so, so a stick held into it does not say it every frame. */
+  private gateRefusedAt = 0;
 
   /**
    * Visitor Mode: this map belongs to somebody else, so nothing on it may be
@@ -712,6 +741,7 @@ export class TopdownScene extends Phaser.Scene {
     }
     this.load.atlas("common", `${ASSETS}/common/sprites.png`, `${ASSETS}/common/sprites.json`);
     this.load.atlas("buildings", `${ASSETS}/common/buildings.png`, `${ASSETS}/common/buildings.json`);
+    this.load.atlas("tractor", `${ASSETS}/common/tractor.png`, `${ASSETS}/common/tractor.json`);
     this.load.image("forest", `${ASSETS}/common/forest.png`);
     this.load.spritesheet("fence", `${ASSETS}/common/fence.png`, { frameWidth: FENCE_FRAME.width, frameHeight: FENCE_FRAME.height });
     this.load.image("waterfall", `${ASSETS}/common/waterfall.png`);
@@ -765,6 +795,11 @@ export class TopdownScene extends Phaser.Scene {
     this.walkers = new NpcWalkers(new Map<string, AreaSpecForRoutines>(this.specs), STANDING);
     this.walkers.setHourLength(STACKACRES_HOUR_MS);
     this.speech = new SpeechBubbles(this.host, (p) => this.mapToCss(p));
+    this.tractor = new TractorRig(this, (object) => this.keep(object));
+    // Drawn by enterArea below, once there is an area to draw it in.
+    this.tractor.setOwned(this.tractorOwned, "");
+    this.hand = new HandRig(this, (object) => this.keep(object));
+    this.hand.setHired(this.handHired, "");
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.speech.clear());
     this.drops = new ChunkDrops(
       this,
@@ -803,7 +838,11 @@ export class TopdownScene extends Phaser.Scene {
       // Nothing to walk: the farmer is between two places.
     } else if (this.stick) this.walkByStick(delta);
     else if (this.path.length > 0) this.walk(delta);
+    // Snapped like his own sprite, so the machine does not shimmer against the ground.
+    this.tractor.update(time, { x: this.snap(this.pos.x), y: this.snap(this.pos.y) }, this.facing, this.isWalking());
+    if (this.areaName === "homestead") this.hand.update(time, delta, this.grid, this.reducedMotion);
     if (this.useDown && this.isWalking()) this.useSquare(true);
+    this.checkNearWater();
     if (this.shake.ms > 0) this.shake.ms = Math.max(0, this.shake.ms - delta);
     this.easeCamera(delta);
     this.easeHeadroom(delta);
@@ -892,7 +931,7 @@ export class TopdownScene extends Phaser.Scene {
   private playWalk(speed: number): void {
     // A stroke acts each bed out while he keeps moving (Kayo's call), so the
     // action animation owns the sprite until it finishes; the walk resumes after.
-    if (this.acting) return;
+    if (this.acting || this.tractor.driving) return;
     const key = `walk_${this.facing}`;
     const timeScale = speed / WALK_TIMED_FOR;
     const current = this.player.anims.currentAnim;
@@ -916,6 +955,14 @@ export class TopdownScene extends Phaser.Scene {
       (e) => at.x >= e.x && at.x < e.x + e.w && at.y >= e.y && at.y < e.y + e.h && this.canEnter(e.to),
     );
     if (!exit) return false;
+    // The tractor stays on the Homestead: it does not go through doors or gates.
+    if (this.tractor.driving) {
+      if (this.time.now - this.gateRefusedAt > 1500) {
+        this.gateRefusedAt = this.time.now;
+        this.floatAt(this.mapToCss({ x: this.pos.x, y: this.pos.y - 40 }), GET_OFF_TRACTOR_FIRST, "deny");
+      }
+      return false;
+    }
     this.path = [];
     this.pending = null;
     this.travelTo(exit.to, exit.spawn);
@@ -1151,6 +1198,8 @@ export class TopdownScene extends Phaser.Scene {
     this.soilImages.clear();
     for (const image of this.fenceImages) image.destroy();
     this.fenceImages = [];
+    for (const image of this.guardDogImages) image.destroy();
+    this.guardDogImages = [];
     for (const image of this.buildingImages) image.destroy();
     this.buildingImages = [];
     for (const object of this.ghostObjects) object.destroy();
@@ -1291,11 +1340,14 @@ export class TopdownScene extends Phaser.Scene {
     this.applyNpcs();
     this.drawSoil();
     this.drawFences();
+    this.drawGuardDogs();
     this.drawBuildings();
     this.drawGhost();
     this.drawGroceryGhost();
     if (name === "grocery" && !this.buildMode) this.openGrocery();
     this.drawUnits();
+    this.enterTractor(name);
+    this.hand.build(name);
     // Nothing of the place he left is drawn any more, so its pictures go (LOADS_WITH).
     for (const place of [...this.placesLoaded]) if (place !== "homestead" && place !== LOADS_WITH[name]) this.dropPlace(place);
   }
@@ -1422,8 +1474,11 @@ export class TopdownScene extends Phaser.Scene {
       canopy?.setVisible(visible);
       if (visible) for (const [tx, ty] of spec.blocks) blocked.add(tileKey(tx, ty));
     }
-    // A fence piece stands on its square like anything else built there.
-    if (this.areaName === "homestead") for (const piece of this.fences) blocked.add(tileKey(piece.tx, piece.ty));
+    // A fence piece stands on its square like anything else built there, and so does a dog.
+    if (this.areaName === "homestead") {
+      for (const piece of this.fences) blocked.add(tileKey(piece.tx, piece.ty));
+      for (const dog of this.guardDogs) blocked.add(tileKey(dog.tx, dog.ty));
+    }
     // So does a building on the Far Field, over its whole plan.
     if (this.areaName === "empire") {
       for (const building of this.empireBuildings) {
@@ -1560,7 +1615,7 @@ export class TopdownScene extends Phaser.Scene {
 
   private unitPlacement(unit: StackAcresSceneUnit): { x: number; y: number } | null {
     if (unit.housedIn) return null;
-    // Sheep and cattle stand on the square the player set them on. One not set down yet is not drawn.
+    // Sheep, cattle, hogs and steers stand on the square the player set them on. One not set down yet is not drawn.
     if (isHerdStock(unit.stock)) {
       if (unit.mapTx == null || unit.mapTy == null || unit.away || this.areaName !== "homestead") return null;
       const { tile } = this.area;
@@ -1591,6 +1646,9 @@ export class TopdownScene extends Phaser.Scene {
     const zone = stockZone(unit.stock);
     const side = unit.id.charCodeAt(unit.id.length - 1) % 2 ? "left" : "right";
     if (zone === "henhaven") return `hen_${side}`;
+    // Market animals share the herd's districts, so they are checked first.
+    if (unit.stock === "hog") return `hog_${side}`;
+    if (unit.stock === "steer") return `cattle_${side}_hereford`;
     if (zone === "wallow") return `sheep_${side}`;
     if (zone === "oxfields") return unit.id.charCodeAt(0) % 2 ? `cattle_${side}` : `cattle_${side}_plain`;
     if (unit.state === "mucked") return "crop_withered";
@@ -1992,6 +2050,11 @@ export class TopdownScene extends Phaser.Scene {
       this.callbacks.onViewMoved();
       return;
     }
+    // Ground that can't take a bed is still somewhere to walk. With a bed tool held the
+    // tap was meant to dig or sow there, so the shell is told and says why it can't.
+    if (target.kind === "nothing" && this.areaName === "homestead") {
+      this.callbacks.onUseSquare({ tile: null, unitId: null, at: this.mapToCss(map), stroke: false, bare: true });
+    }
     const goal =
       target.kind === "nothing"
         ? map
@@ -2014,7 +2077,7 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   /** Out along the dock to cast. The face point is due west along the planks, which turns him toward the water. */
-  private dockTarget(spec: PropSpec): Target {
+  private dockTarget(spec: PropSpec): Extract<Target, { kind: "tag" }> {
     return { kind: "tag", tag: "dock", anchor: DOCK_CAST_SPOT, face: { x: spec.x - spec.w, y: DOCK_CAST_SPOT.y } };
   }
 
@@ -2036,7 +2099,14 @@ export class TopdownScene extends Phaser.Scene {
     for (const [name, node] of this.npcSprites) {
       if (!node.sprite.visible) continue;
       const box = new Phaser.Geom.Rectangle(node.sprite.x - 9, node.sprite.y - 30, 18, 32);
-      if (box.contains(map.x, map.y)) consider({ kind: "npc", name, anchor: { x: node.sprite.x, y: node.sprite.y + 10 }, face: { x: node.sprite.x, y: node.sprite.y } }, node.sprite.depth);
+      // Someone who trades (Cora, the town's buyers) wins over a prop drawn in front of them, so Dale is
+      // still tappable behind the quay's crane.
+      const trades = name === SEED_SELLER || townBuyerOfNpc(name) !== null;
+      if (box.contains(map.x, map.y)) consider({ kind: "npc", name, anchor: { x: node.sprite.x, y: node.sprite.y + 10 }, face: { x: node.sprite.x, y: node.sprite.y } }, node.sprite.depth + (trades ? 1000 : 0));
+    }
+    if (this.tractor.hit(map)) {
+      const { anchor, face } = this.tractor.approach();
+      consider({ kind: "tag", tag: "tractor", anchor: this.tractor.driving ? { ...this.pos } : anchor, face: this.tractor.driving ? null : face }, this.tractor.position.y);
     }
     for (const { spec, image } of this.propImages) {
       if (!spec.tag || !image.visible) continue;
@@ -2548,12 +2618,21 @@ export class TopdownScene extends Phaser.Scene {
     if (target.kind === "unit") {
       const node = this.unitNodes.get(target.id);
       const at = node ? this.mapToCss({ x: node.sprite.x, y: node.sprite.y - node.sprite.height / 2 }) : this.mapToCss(target.anchor);
-      cb.onUseSquare({ tile: this.tileOfUnit.get(target.id) ?? null, unitId: target.id, at, stroke: false });
+      cb.onUseSquare({ tile: this.tileOfUnit.get(target.id) ?? null, unitId: target.id, at, stroke: false, facing: this.facing });
       return;
     }
     if (target.kind === "field") {
       const { tx, ty } = soilTileAt(target.world.x, target.world.y);
-      cb.onUseSquare({ tile: { tx, ty }, unitId: null, at: this.mapToCss(target.anchor), stroke: false });
+      cb.onUseSquare({ tile: { tx, ty }, unitId: null, at: this.mapToCss(target.anchor), stroke: false, facing: this.facing });
+      return;
+    }
+    if (target.kind === "tag" && target.tag === "tractor") {
+      this.toggleTractor();
+      return;
+    }
+    // Up on the tractor he works beds and drives; everything else waits until he climbs down.
+    if (this.tractor.driving && (target.kind === "npc" || target.kind === "tag")) {
+      this.floatAt(this.mapToCss({ x: this.pos.x, y: this.pos.y - 40 }), GET_OFF_TRACTOR_FIRST, "deny");
       return;
     }
     if (target.kind === "npc") {
@@ -2561,8 +2640,9 @@ export class TopdownScene extends Phaser.Scene {
       const node = this.npcSprites.get(target.name);
       const at = this.mapToCss(node ? { x: node.sprite.x, y: node.sprite.y - 20 } : target.anchor);
       if (target.name === "ray") cb.onRayTap(at);
-      else if (target.name === "pilgrim") cb.onMonkTap(at);
-      // The City's townsfolk turn to look at the farmer (talkTo above) but have no story of their own yet.
+      else if (target.name === SEED_SELLER) cb.onSeedSellerTap();
+      else if (townBuyerOfNpc(target.name)) cb.onTownBuyerTap(townBuyerOfNpc(target.name) as TownBuyerId);
+      // The rest of the City's townsfolk only turn to look at the farmer (talkTo above).
       else if (isTravelerId(target.name)) cb.onTravelerTap(target.name, at);
       return;
     }
@@ -2635,12 +2715,55 @@ export class TopdownScene extends Phaser.Scene {
       } else if (down) this.castTapped();
       return;
     }
+    if (this.rodHeld && this.nearWater) {
+      if (down) this.walkToCast();
+      return;
+    }
     this.useDown = down;
     if (!down) {
       this.stroked = null;
       return;
     }
     this.useSquare(false);
+  }
+
+  /** The belt picked the rod up or put it down. */
+  setRodHeld(on: boolean): void {
+    this.rodHeld = on;
+  }
+
+  private checkNearWater(): void {
+    const dock = this.propImages.find(({ spec }) => spec.tag === "dock");
+    let near = false;
+    if (dock?.image.visible && !this.travelling) {
+      const dx = Math.max(DOCK_PLANKS.left - this.pos.x, 0, this.pos.x - DOCK_PLANKS.right);
+      const dy = Math.max(DOCK_PLANKS.top - this.pos.y, 0, this.pos.y - DOCK_PLANKS.bottom);
+      near = Math.hypot(dx, dy) <= NEAR_WATER;
+    }
+    if (this.cast) near = true;
+    if (near === this.nearWater) return;
+    this.nearWater = near;
+    this.callbacks.onNearWater(near);
+  }
+
+  /** The rod's Use press: out along the dock and cast, the same as a tap on the planks. */
+  private walkToCast(): void {
+    const dock = this.propImages.find(({ spec }) => spec.tag === "dock");
+    if (!dock || this.swing) return;
+    const target = this.dockTarget(dock.spec);
+    this.pending = target;
+    if (Math.hypot(target.anchor.x - this.pos.x, target.anchor.y - this.pos.y) <= REACH) {
+      this.path = [];
+      this.arrive();
+      return;
+    }
+    this.path = findPath(this.grid, this.pos, target.anchor);
+    if (this.path.length === 0) {
+      this.arrive();
+      return;
+    }
+    this.callbacks.onViewMoved();
+    this.drawMarker(this.path[this.path.length - 1]);
   }
 
   /**
@@ -2657,7 +2780,7 @@ export class TopdownScene extends Phaser.Scene {
     if (stroke && (key === null || key === this.stroked)) return;
     this.stroked = key;
     const unitId = key !== null ? this.unitTiles.get(key) ?? null : this.nearestUnit();
-    this.callbacks.onUseSquare({ tile, unitId, at: this.mapToCss(front), stroke });
+    this.callbacks.onUseSquare({ tile, unitId, at: this.mapToCss(front), stroke, facing: this.facing });
   }
 
   /** The map square a bed target stands on: a bare bed or grass, or the bed a crop
@@ -2689,6 +2812,81 @@ export class TopdownScene extends Phaser.Scene {
       if (distance <= REACH && (!best || distance < best.distance)) best = { id, distance };
     }
     return best?.id ?? null;
+  }
+
+  // ------------------------------------------------------------------ tractor
+
+  // ------------------------------------------------------------------ hired hand
+
+  /** Whether Earl works here, so he is on the Homestead. */
+  setHandHired(hired: boolean): void {
+    this.handHired = hired;
+    if (!this.booted) return;
+    this.hand.setHired(hired, this.areaName);
+  }
+
+  /** The beds his last chores pass worked: he walks to each and acts it out. */
+  handChores(jobs: { unitId: string; kind: HandJobKind }[]): void {
+    if (!this.booted || this.areaName !== "homestead") return;
+    const spots = jobs.flatMap(({ unitId, kind }) => {
+      const node = this.unitNodes.get(unitId);
+      return node ? [{ at: { x: node.sprite.x, y: node.sprite.y }, kind }] : [];
+    });
+    this.hand.queue(spots);
+  }
+
+  /** Whether the farm owns a tractor, so one is parked by the barn. */
+  setTractorOwned(owned: boolean): void {
+    this.tractorOwned = owned;
+    if (!this.booted) return;
+    if (!owned && this.tractor.driving) this.getOffTractor();
+    this.tractor.setOwned(owned, this.areaName);
+  }
+
+  /** The belt's Get off key, the same as tapping the tractor while on it. */
+  getOffTractor(): void {
+    if (this.tractor.driving) this.toggleTractor();
+  }
+
+  private toggleTractor(): void {
+    this.stand();
+    if (!this.tractor.driving) {
+      const { at, facing } = this.tractor.mount();
+      this.facing = facing;
+      this.setPlayerAt(at);
+      this.player.setVisible(false);
+      this.playerShadow.setVisible(false);
+      this.tractor.update(this.time.now, this.pos, this.facing, false);
+    } else {
+      this.tractor.dismount();
+      // He steps down beside it rather than standing inside it.
+      const beside = [
+        { x: this.pos.x - 26, y: this.pos.y },
+        { x: this.pos.x + 26, y: this.pos.y },
+        { x: this.pos.x, y: this.pos.y + 14 },
+      ].find((p) => this.isOpenTile(Math.floor(p.x / this.area.tile), Math.floor(p.y / this.area.tile)));
+      if (beside) this.setPlayerAt(beside);
+      this.facing = "down";
+      this.player.setVisible(true);
+      this.playerShadow.setVisible(true);
+      this.stand();
+    }
+    toolSound();
+    this.callbacks.onDrivingChanged(this.tractor.driving);
+  }
+
+  /** Draws the tractor for the place just entered. Taken off the Homestead some other way, he is off it too. */
+  private enterTractor(name: TopdownArea): void {
+    if (this.tractor.driving && name !== "homestead") {
+      this.tractor.sendHome();
+      this.callbacks.onDrivingChanged(false);
+    }
+    this.tractor.build(name);
+    if (!this.tractor.driving) return;
+    // Moved somewhere on the Homestead while driving (the map sheet): he takes it with him.
+    this.player.setVisible(false);
+    this.playerShadow.setVisible(false);
+    this.tractor.update(this.time.now, this.pos, this.facing, false);
   }
 
   setStick(push: Point | null): void {
@@ -3333,6 +3531,27 @@ export class TopdownScene extends Phaser.Scene {
     }
   }
 
+  setGuardDogs(dogs: readonly GuardDog[]): void {
+    this.guardDogs = [...dogs];
+    if (!this.booted) return;
+    this.applyGates();
+    this.drawGuardDogs();
+  }
+
+  /** Each dog on its square, facing the way its id says, sorted in by its feet like the herd. */
+  private drawGuardDogs(): void {
+    for (const image of this.guardDogImages) image.destroy();
+    this.guardDogImages = [];
+    if (this.areaName !== "homestead") return;
+    const { tile } = this.area;
+    for (const dog of this.guardDogs) {
+      const side = dog.id.charCodeAt(dog.id.length - 1) % 2 ? "left" : "right";
+      const y = (dog.ty + 1) * tile - 2;
+      const image = this.add.image(dog.tx * tile + tile / 2, y, "common", `dog_${side}`).setOrigin(0.5, 1).setDepth(y);
+      this.guardDogImages.push(image);
+    }
+  }
+
   setEmpireBuildings(buildings: readonly PlacedEmpireBuilding[]): void {
     this.empireBuildings = [...buildings];
     if (!this.booted) return;
@@ -3801,6 +4020,46 @@ export class TopdownScene extends Phaser.Scene {
    */
   cameraState(): { zoom: number; following: boolean; centre: Point } {
     return { zoom: this.zoom, following: this.following, centre: { ...this.centre } };
+  }
+
+  /** e2e only: whether a tractor is parked or driven here, where it stands, and whether he is on it. */
+  tractorState(): { drawn: boolean; driving: boolean; at: Point } {
+    return { drawn: this.tractor.drawn, driving: this.tractor.driving, at: this.tractor.position };
+  }
+
+  /**
+   * Walks him to someone who keeps a daily round: straight up to them when they are on this map,
+   * or to the door of the building they are in (Ray behind his counter in the barn). Arriving
+   * opens them the way a tap on them does. Null when they can't be reached from here.
+   */
+  walkToPerson(name: string): "here" | "inside" | null {
+    if (!this.booted || this.travelling || this.visitor) return null;
+    const node = this.npcSprites.get(name);
+    let goal: Point;
+    if (node?.sprite.visible) {
+      goal = { x: node.sprite.x, y: node.sprite.y + 10 };
+      this.pending = { kind: "npc", name, anchor: goal, face: { x: node.sprite.x, y: node.sprite.y } };
+    } else {
+      const pose = this.walkers.pose(name, this.routineDay(), this.routineHour(), this.reducedMotion);
+      const door = pose ? this.area.exits.find((exit) => exit.to === pose.area) : undefined;
+      if (!door) return null;
+      goal = { x: door.x + door.w / 2, y: door.y + door.h / 2 };
+      this.pending = null;
+    }
+    this.homeCamera();
+    this.path = findPath(this.grid, this.pos, goal);
+    if (this.path.length === 0) {
+      if (this.pending) this.arrive();
+      return node?.sprite.visible ? "here" : "inside";
+    }
+    this.callbacks.onViewMoved();
+    this.drawMarker(goal);
+    return node?.sprite.visible ? "here" : "inside";
+  }
+
+  /** e2e only: whether Earl is drawn here, where he stands, and whether he has beds to work. */
+  handState(): { drawn: boolean; busy: boolean; at: Point } {
+    return { drawn: this.hand.drawn, busy: this.hand.busy, at: this.hand.position };
   }
 
   isWalking(): boolean {

@@ -66,6 +66,20 @@ export async function fulfillStackAcresPurchase(
   return data === true;
 }
 
+/** Whether this profile has a StackAcres purchase that is paid and not refunded or disputed. */
+export async function hasPaidStackAcresPurchase(profileId: string): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) return false;
+  const { data, error } = await supabase
+    .from("stackacres_purchases")
+    .select("stripe_session_id")
+    .eq("profile_id", profileId)
+    .eq("status", "paid")
+    .limit(1);
+  if (error) throw new Error(`Could not read StackAcres purchases: ${error.message}`);
+  return (data ?? []).length > 0;
+}
+
 /** Takes back the access a refunded or disputed payment gave. Returns the profile id, or null when there was nothing to revoke. */
 export async function revokeStackAcresPurchase(
   paymentIntentId: string,

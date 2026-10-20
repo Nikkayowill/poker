@@ -49,12 +49,3 @@ export const QUEST_PLACES: readonly QuestPlaceDef[] = [
   },
 ];
 
-/** Which quest place a tapped ground point lands on, or null anywhere else.
- *  Same plain AABB-loop pattern as ../secrets.ts's `hiddenZoneAt`. */
-export function questPlaceAt(x: number, y: number): QuestPlaceDef | null {
-  for (const place of QUEST_PLACES) {
-    const b = place.bounds;
-    if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) return place;
-  }
-  return null;
-}

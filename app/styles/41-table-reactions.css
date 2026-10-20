@@ -212,57 +212,6 @@
 }
 
 /* ------------------------------------------------------------------------
-   THE BUBBLE BESIDE A SEAT
-   ------------------------------------------------------------------------ */
-
-/* Anchored above the figure, clear of the nameplate and cards at every seat
-   and breakpoint, with generous headroom (-30px/.34 of --seat-width) so it
-   never collides with the revealed winning hand if a reaction lands right as
-   a hand resolves. The outward nudge along --seat-out-x is what keeps a bubble
-   from always sitting dead centre above the avatar: that vector already
-   points a different way at each of the six ring positions, so this is "the nearest
-   clear felt for this seat" without a per-seat special case. It's 0 for the
-   near/local seat, which is also right -- pushing outward there would aim
-   straight at the hole cards and action bar. */
-.seat-reaction-bubble {
-  position: absolute;
-  left: 50%;
-  top: calc(-30px - var(--seat-width) * .34);
-  z-index: 13;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 30px;
-  height: 30px;
-  padding: 0 6px;
-  border-radius: var(--radius-pill);
-  background: rgba(15, 12, 20, .82);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, .4), inset 0 0 0 1px rgba(255, 255, 255, .1);
-  font-size: 17px;
-  line-height: 1;
-  pointer-events: none;
-  translate: calc(var(--seat-out-x) * 22px) 0;
-  animation: reaction-bubble-life 2.2s cubic-bezier(.2, .85, .3, 1) both;
-}
-
-/* Scale up on entry, hold, then drift 6px up while fading out -- one
-   timeline, matching REACTION_BUBBLE_MS in reaction-channel.ts. */
-@keyframes reaction-bubble-life {
-  0% { opacity: 0; transform: translateX(-50%) scale(.9); }
-  8% { opacity: 1; transform: translateX(-50%) scale(1); }
-  82% { opacity: 1; transform: translateX(-50%) scale(1); }
-  100% { opacity: 0; transform: translate(-50%, -6px) scale(1); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .seat-reaction-bubble { animation: reaction-bubble-life-reduced 2.2s ease both; }
-}
-@keyframes reaction-bubble-life-reduced {
-  0%, 82% { opacity: 1; }
-  100% { opacity: 0; }
-}
-
-/* ------------------------------------------------------------------------
    MOBILE PORTRAIT: A BOTTOM SHEET
    ------------------------------------------------------------------------ */
 

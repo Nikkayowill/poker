@@ -64,8 +64,8 @@ export interface StackAcresToolTierDef extends StackAcresShopLock {
   sprite: string;
   /**
    * Name of a painter in components/arcade/stackacres/stackacres-art.ts (its
-   * `PainterName` union). Kept a plain string for the same reason
-   * StackAcresToolDef.icon is: this file stays free of a components/ import.
+   * `PainterName` union). Kept a plain string so this file stays free of a
+   * components/ import.
    *
    * One per rung: a sprite-backed painter fronting the same PNG `sprite` above
    * points the store shelf at (the painter is the canvas route to that file,
@@ -95,19 +95,13 @@ export const STACKACRES_TOOL_TIER_DEFS: Readonly<
 > = {
   trowel: {
     label: "Trowel",
-    blurb: "The one in your back pocket. Never gets lucky.",
+    blurb: "The one in your back pocket. Gets lucky now and then.",
     price: null,
     sprite: "/stackacres/sprites/tool-trowel.webp",
     icon: "toolTrowel",
-    // ZERO, and deliberately so. The free rung is the game as it already
-    // plays: a player who never buys anything must see no behaviour change at
-    // all from this feature shipping. A lucky harvest is a
-    // thing the ladder INTRODUCES, which also makes the first purchase legible
-    // ("harvests can come up rich now") instead of a rate nudge nobody can
-    // perceive. It has a practical half too: a non-zero chance here would make
-    // every harvest in the app non-deterministic, and the service's own tests
-    // assert exact payouts.
-    critChance: 0,
+    // A small chance from the very first harvest, so luck is part of the game before anything
+    // is bought. The Iron Shovel is a clear step up from it.
+    critChance: 0.06,
     critBonus: 0.5,
   },
   "iron-shovel": {
@@ -116,7 +110,7 @@ export const STACKACRES_TOOL_TIER_DEFS: Readonly<
     price: 45_000,
     sprite: "/stackacres/sprites/tool-iron-shovel.webp",
     icon: "toolIronShovel",
-    critChance: 0.12,
+    critChance: 0.15,
     critBonus: 0.75,
     // One milestone: in practice unlocking the Crop Fields (./crop-fields.ts),
     // which costs 15,000 Gold against this rung's 45,000. A gentle gate, and
@@ -215,12 +209,18 @@ export function rollHarvestCrit(
   return random() < chance;
 }
 
+/** Test seam: pins the free Trowel's crit chance so a test can have exact harvests or a lucky one. */
+export function __setTrowelCritChanceForTest(chance: number): void {
+  STACKACRES_TOOL_TIER_DEFS.trowel.critChance = chance;
+}
+
 /**
  * What a critical harvest pays on top, in extra UNITS of a line's own
  * produce, given how many units that line already brought in.
  *
- * Floored rather than rounded, and never negative: a bonus is a bonus, and
- * produce is counted in whole units everywhere else in the app. Called once
+ * Floored rather than rounded, never negative, and never less than one unit
+ * for a line with something in it (unless the bonus itself is zero): a bonus
+ * is a bonus, and produce is counted in whole units everywhere else in the app. Called once
  * per settled line -- a mono-crop sweep of three hens crits every line the
  * same way a mixed sweep crits each of its lines independently, since the
  * roll is one per SWEEP but the multiplier is a property of each line's own
@@ -229,20 +229,11 @@ export function rollHarvestCrit(
  * A line with nothing in it crits for nothing. That is deliberate: the crit
  * multiplies a harvest, and there is no sensible reading in which doubling
  * zero is a reward.
- *
- * `bonusOverride` is optional and defaults to the tier's own base bonus --
- * every existing call site is unaffected. It exists for the Sunlight
- * Forge (lib/stackacres/forge.ts): a `crit_yield_bonus` enchantment raises
- * `critBonus` past the bare tier number, and the caller computes that
- * forged value and passes it straight in, the same "caller computes, this
- * module just multiplies" split `chanceOverride` above already takes.
  */
-export function critBonusQuantity(
-  lineQuantity: number,
-  tier: StackAcresToolTier,
-  bonusOverride?: number,
-): number {
+export function critBonusQuantity(lineQuantity: number, tier: StackAcresToolTier): number {
   if (!Number.isFinite(lineQuantity) || lineQuantity <= 0) return 0;
-  const bonus = bonusOverride ?? STACKACRES_TOOL_TIER_DEFS[tier].critBonus;
-  return Math.max(0, Math.floor(lineQuantity * bonus));
+  const bonus = STACKACRES_TOOL_TIER_DEFS[tier].critBonus;
+  if (!(bonus > 0)) return 0;
+  // At least one extra unit, so a crit on a single pick is never worth nothing.
+  return Math.max(1, Math.floor(lineQuantity * bonus));
 }

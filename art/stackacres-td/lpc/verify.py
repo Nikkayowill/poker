@@ -36,7 +36,7 @@ def standing(name, direction="down"):
 def main(out):
     os.makedirs(out, exist_ok=True)
     area = mockup.Area()
-    # The Homestead as the game lays it out: Ray and the Pilgrim where area.json puts them, the
+    # The Homestead as the game lays it out: Ray and the others where area.json puts them, the
     # player on the spawn.
     people = [(standing(n["name"]), n["x"], n["y"]) for n in area.data["npcs"]
               if os.path.exists(os.path.join(NEW, f"{n['name']}.png"))]

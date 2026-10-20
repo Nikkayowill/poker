@@ -1,40 +1,27 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import {
-  CELLAR_AGING_TIERS,
-  CELLAR_CAPACITY,
-  CELLAR_ITEMS,
-  toVatContainer,
-  type CellarItem,
-  type VatContainer,
-} from "@/lib/stackacres/aging";
+import { useState } from "react";
+import { CELLAR_AGING_TIERS, toVatContainer, type VatContainer } from "@/lib/stackacres/aging";
 import { ENERGY_MAX, FOOD_ENERGY, FOOD_ITEMS, type FoodItem } from "@/lib/stackacres/energy";
 import { MACHINE_CATALOGUE, type MachineKind } from "@/lib/stackacres/machines";
-import { machineItemIcon, machineItemLabel, machineItemNoun, type MachineItemId } from "@/lib/stackacres/machine-items";
+import { machineItemIcon, machineItemLabel, type MachineItemId } from "@/lib/stackacres/machine-items";
 import { RECIPE_CATALOGUE, RECIPE_VERB, recipesForMachine, type RecipeId } from "@/lib/stackacres/recipes";
-import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
+import type { StackAcresInventory } from "@/lib/stackacres/inventory";
 import { missingLine, recipeIngredients } from "@/lib/stackacres/recipe-uses";
 import { BuildCostLines } from "./build-cost-lines";
 import { buildCost, buildShortfall, costSummary } from "@/lib/stackacres/build-cost";
-import {
-  FARM_KITCHEN_BANK,
-  FARM_KITCHEN_RECIPES,
-  FARM_KITCHEN_YIELD,
-  batchesAffordable,
-  farmKitchenBanked,
-} from "@/lib/stackacres/farm-kitchen";
 import { seedsOpenedLine } from "@/lib/stackacres/seed-unlocks";
 import { StackAcresIcon } from "./stackacres-icon";
 import type { PainterName } from "./stackacres-art";
 
 /**
- * The kitchen in the player's house: one section at a time, picked by the
- * house panel's tabs (./stackacres-house.tsx). Cook builds the Oven, the Stew
- * Pot and the Kitchen Counter and makes what they make; Eat turns food into
- * energy; the Preserves Cellar ages jars; the Farm Kitchen cooks while you're
- * away. Every button goes through the farm's own `act`, so each one is
- * optimistic like any other farm tap.
+ * The house kitchen: one section at a time, picked by the house panel's tabs
+ * (./stackacres-house.tsx). Cook builds the Oven, the Stew Pot and the
+ * Kitchen Counter and makes what they make; Eat turns food into energy. Food
+ * is mainly for eating, so it sells for little more than what went in. The
+ * Preserves Cellar takes no new jars; its tab shows only while jars sealed
+ * before that are still down there. Every button goes through the farm's own
+ * `act`, so each one is optimistic like any other farm tap.
  */
 
 export interface KitchenResult {
@@ -42,11 +29,9 @@ export interface KitchenResult {
   message?: string;
   /** Set when opening the cellar paid out. */
   gold?: number;
-  /** Set when the Farm Kitchen cooked something. */
-  cooked?: { item: MachineItemId; quantity: number } | null;
 }
 
-export type KitchenTab = "cook" | "eat" | "cellar" | "farm_kitchen";
+export type KitchenTab = "cook" | "eat" | "cellar";
 
 /** The cooking machines, in the order the kitchen lists them. */
 const KITCHEN_MACHINES = ["oven", "stew_pot", "counter"] as const satisfies readonly MachineKind[];
@@ -81,19 +66,12 @@ export interface StackAcresKitchenProps {
   /** Null while the profile is unknown; unlimited Gold passes Infinity. */
   goldBalance: number | null;
   busy: (intent: string) => boolean;
-  /** True while a Farm Kitchen order change is in flight, whichever dish. */
-  orderBusy: boolean;
   onBuild: (kind: MachineKind) => Promise<KitchenResult>;
   onMake: (recipe: RecipeId) => Promise<KitchenResult>;
   onEat: (item: FoodItem) => Promise<KitchenResult>;
+  /** Jars sealed in the Preserves Cellar before it stopped taking new ones. */
   cellar: VatContainer | null;
-  onStoreJars: (item: CellarItem) => Promise<KitchenResult>;
   onOpenCellar: () => Promise<KitchenResult>;
-  /** The Farm Kitchen's standing order and bank start; null until built. */
-  farmKitchen: { standingRecipe: RecipeId | null; kitchenSince: string | null } | null;
-  onSetKitchenOrder: (recipe: RecipeId) => Promise<KitchenResult>;
-  /** Lets the Farm Kitchen cook whatever it has banked. */
-  onRunFarmKitchen: () => Promise<KitchenResult>;
 }
 
 function icon(item: MachineItemId): PainterName {
@@ -118,38 +96,14 @@ export function StackAcresKitchen({
   built,
   goldBalance,
   busy,
-  orderBusy,
   onBuild,
   onMake,
   onEat,
   cellar,
-  onStoreJars,
   onOpenCellar,
-  farmKitchen,
-  onSetKitchenOrder,
-  onRunFarmKitchen,
 }: StackAcresKitchenProps) {
   const [note, setNote] = useState<string | null>(null);
   const full = energy >= ENERGY_MAX;
-
-  // Opening the house lets the Farm Kitchen cook what it banked while the
-  // player was away, once, so they see it without pressing anything.
-  const banked = farmKitchen ? farmKitchenBanked(farmKitchen.kitchenSince, new Date(nowMs)) : 0;
-  const order = farmKitchen?.standingRecipe ?? null;
-  const canCook = order !== null && banked > 0 && batchesAffordable(inventory, order) > 0;
-  const ranOnOpen = useRef(false);
-  useEffect(() => {
-    if (ranOnOpen.current || !canCook) return;
-    ranOnOpen.current = true;
-    void onRunFarmKitchen().then((result) => {
-      // Refused (say, a Workshop pass already in flight): allow another try
-      // the next time the kitchen can cook.
-      if (!result.ok) ranOnOpen.current = false;
-      if (result.ok && result.cooked) {
-        setNote(`While you were away, the Farm Kitchen made ${machineItemLabel(result.cooked.item, result.cooked.quantity)}.`);
-      }
-    });
-  }, [canCook, onRunFarmKitchen]);
 
   const run = async (call: () => Promise<KitchenResult>, done: string | ((result: KitchenResult) => string)) => {
     setNote(null);
@@ -193,6 +147,7 @@ export function StackAcresKitchen({
     <div className="sa-kitchen">
       {note && <p className="sa-kitchen-note" role="status">{note}</p>}
 
+      {tab === "cook" && <p className="sa-sheet-note">Cook here, then eat when your energy runs low.</p>}
       {tab === "cook" && (
         <div className="sa-kitchen-grid">
           {KITCHEN_MACHINES.map((kind) =>
@@ -253,51 +208,22 @@ export function StackAcresKitchen({
         </>
       )}
 
-      {tab === "cellar" &&
-        (built("cellar") ? (
-          <CellarPanel
-            cellar={
-              cellar?.manifest
-                ? toVatContainer({ id: cellar.machineId }, cellar.manifest, new Date(nowMs), CELLAR_AGING_TIERS)
-                : cellar
-            }
-            inventory={inventory}
-            nowMs={nowMs}
-            busy={busy}
-            onStore={(item) =>
-              void run(() => onStoreJars(item), `Stored in the cellar. They'll be worth more the longer they sit.`)
-            }
-            onOpen={() =>
-              void run(onOpenCellar, (result) =>
-                result.gold !== undefined ? `Sold the aged jars for ${result.gold.toLocaleString()} Gold!` : "Sold!",
-              )
-            }
-          />
-        ) : (
-          <div className="sa-kitchen-grid">
-            {buildCard("cellar", "Ages pickles and sauerkraut so they sell for more Gold.")}
-          </div>
-        ))}
-
-      {tab === "farm_kitchen" &&
-        (farmKitchen ? (
-          <FarmKitchenPanel
-            order={order}
-            banked={banked}
-            inventory={inventory}
-            busy={orderBusy}
-            onPick={(recipe) =>
-              void run(
-                () => onSetKitchenOrder(recipe),
-                `The Farm Kitchen will cook ${RECIPE_CATALOGUE[recipe].label} while you're away.`,
-              )
-            }
-          />
-        ) : (
-          <div className="sa-kitchen-grid">
-            {buildCard("farm_kitchen", "Cooks for you while you're away, twice as much per batch.")}
-          </div>
-        ))}
+      {tab === "cellar" && (
+        <CellarPanel
+          cellar={
+            cellar?.manifest
+              ? toVatContainer({ id: cellar.machineId }, cellar.manifest, new Date(nowMs), CELLAR_AGING_TIERS)
+              : cellar
+          }
+          nowMs={nowMs}
+          busy={busy}
+          onOpen={() =>
+            void run(onOpenCellar, (result) =>
+              result.gold !== undefined ? `Sold the aged jars for ${result.gold.toLocaleString()} Gold!` : "Sold!",
+            )
+          }
+        />
+      )}
     </div>
   );
 }
@@ -344,15 +270,13 @@ function KitchenRecipe({ recipe, inventory, busy, onMake }: KitchenRecipeProps) 
 
 interface CellarPanelProps {
   cellar: VatContainer | null;
-  inventory: StackAcresInventory;
   nowMs: number;
   busy: (intent: string) => boolean;
-  onStore: (item: CellarItem) => void;
   onOpen: () => void;
 }
 
-/** The Preserves Cellar: store jars, wait, sell them for more. */
-function CellarPanel({ cellar, inventory, nowMs, busy, onStore, onOpen }: CellarPanelProps) {
+/** The Preserves Cellar: no new jars, but jars already down there can be opened and sold. */
+function CellarPanel({ cellar, nowMs, busy, onOpen }: CellarPanelProps) {
   const title = <h3>{MACHINE_CATALOGUE.cellar.label}</h3>;
   const manifest = cellar?.manifest ?? null;
 
@@ -360,25 +284,7 @@ function CellarPanel({ cellar, inventory, nowMs, busy, onStore, onOpen }: Cellar
     return (
       <div className="sa-stock-card sa-kitchen-card sa-kitchen-wide">
         {title}
-        <p className="sa-kitchen-cellar-line">
-          Store up to {CELLAR_CAPACITY} jars. The longer they sit, the more they sell for.
-        </p>
-        <div className="sa-kitchen-buttons">
-          {CELLAR_ITEMS.map((item) => {
-            const count = Math.min(CELLAR_CAPACITY, inventoryQuantity(inventory, item));
-            return (
-              <button
-                key={item}
-                type="button"
-                className="sa-cta"
-                disabled={busy("seal-cellar") || count < 1}
-                onClick={() => onStore(item)}
-              >
-                {count < 1 ? `No ${machineItemNoun(item, 2)} yet` : `Store ${machineItemLabel(item, count)}`}
-              </button>
-            );
-          })}
-        </div>
+        <p className="sa-kitchen-cellar-line">The cellar is empty, and it takes no new jars.</p>
       </div>
     );
   }
@@ -407,54 +313,6 @@ function CellarPanel({ cellar, inventory, nowMs, busy, onStore, onOpen }: Cellar
             Sell the jars · {cellar.collectibleGoldValue.toLocaleString()} Gold
           </button>
         </>
-      )}
-    </div>
-  );
-}
-
-interface FarmKitchenPanelProps {
-  order: RecipeId | null;
-  banked: number;
-  inventory: StackAcresInventory;
-  busy: boolean;
-  onPick: (recipe: RecipeId) => void;
-}
-
-/** The Farm Kitchen: pick one standing order; it cooks it while you're away. */
-function FarmKitchenPanel({ order, banked, inventory, busy, onPick }: FarmKitchenPanelProps) {
-  const waitingOn = order
-    ? recipeIngredients(order, inventory).find((ingredient) => ingredient.missing > 0)
-    : undefined;
-  return (
-    <div className="sa-stock-card sa-kitchen-card sa-kitchen-wide">
-      <h3>{MACHINE_CATALOGUE.farm_kitchen.label}</h3>
-      <p className="sa-kitchen-cellar-line">
-        Cooks one batch every half hour while you&apos;re away, up to {FARM_KITCHEN_BANK}, and each batch makes{" "}
-        {FARM_KITCHEN_YIELD === 2 ? "double" : `${FARM_KITCHEN_YIELD}x`}. It uses what&apos;s on your shelf.
-      </p>
-      <label className="sa-kitchen-order">
-        <span>Cook:</span>
-        <select
-          value={order ?? ""}
-          disabled={busy}
-          onChange={(event) => {
-            const picked = FARM_KITCHEN_RECIPES.find((recipe) => recipe === event.target.value);
-            if (picked) onPick(picked);
-          }}
-        >
-          {order === null && <option value="">Pick a dish</option>}
-          {FARM_KITCHEN_RECIPES.map((recipe) => (
-            <option key={recipe} value={recipe}>
-              {RECIPE_CATALOGUE[recipe].label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {order && (
-        <p className="sa-kitchen-cellar-line">
-          {banked} of {FARM_KITCHEN_BANK} batches ready to cook.
-          {waitingOn ? ` Waiting on ${machineItemNoun(waitingOn.item, 2)}.` : ""}
-        </p>
       )}
     </div>
   );

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { GOLD_PER_RANK_POINT } from "./solo-earnings";
+import { RANK_POINTS_PER_WIN } from "./solo-earnings";
+import { MIN_ANTE_UP_WAGER } from "../arcade/ante-up";
 import {
   GOLD_PER_XP,
   RANK_TIERS,
   TOP_TIER,
-  goldForTierUps,
   rankProgress,
   rewardsBetween,
   tierByNumber,
@@ -114,7 +114,6 @@ describe("tier rewards", () => {
   it("pays every tier crossed, in order, when one win jumps several", () => {
     const rewards = rewardsBetween(1, 4);
     expect(rewards.map((reward) => reward.tier.id)).toEqual(["silver", "platinum", "emerald"]);
-    expect(goldForTierUps(1, 4)).toBe(RANK_TIERS[1].rewardGold + RANK_TIERS[2].rewardGold + RANK_TIERS[3].rewardGold);
   });
 
   it("pays nothing when rank stands still or falls", () => {
@@ -138,9 +137,9 @@ describe("tier rewards", () => {
     // and Gold is sold for money. Reaching GOAT must pay back only a small
     // sliver of what it costs to get there, or grinding the ladder becomes a
     // way to print Gold that undermines what a real-money purchase is worth.
-    // The cheapest route to GOAT is Easy-band net earnings, at weight 1.
-    const turnover = RANK_TIERS[RANK_TIERS.length - 1].from * GOLD_PER_RANK_POINT;
-    const paid = goldForTierUps(1, TOP_TIER);
+    // The cheapest route to GOAT is Easy-band wins at the minimum stake, at weight 1.
+    const turnover = (RANK_TIERS[RANK_TIERS.length - 1].from / RANK_POINTS_PER_WIN) * MIN_ANTE_UP_WAGER;
+    const paid = rewardsBetween(1, TOP_TIER).reduce((sum, reward) => sum + reward.gold, 0);
     expect(paid / turnover).toBeLessThan(0.03);
   });
 });

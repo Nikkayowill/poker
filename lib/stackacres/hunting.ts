@@ -50,10 +50,6 @@ export const QUARRY_SPECIES = ["rabbit", "deer", "boar"] as const;
 
 export type QuarrySpecies = (typeof QUARRY_SPECIES)[number];
 
-export function isQuarrySpecies(value: string): value is QuarrySpecies {
-  return (QUARRY_SPECIES as readonly string[]).includes(value);
-}
-
 /** Out of 100, the same common/uncommon/rare shape ./fishing.ts's own
  *  `FISH_WEIGHTS` uses -- a player who has learned what a Catfish means
  *  already knows what a Boar means. */
@@ -111,10 +107,6 @@ export const HUNTING_WEAPONS = ["bow", "rifle"] as const;
 
 export type HuntingWeapon = (typeof HUNTING_WEAPONS)[number];
 
-export function isHuntingWeapon(value: string): value is HuntingWeapon {
-  return (HUNTING_WEAPONS as readonly string[]).includes(value);
-}
-
 export interface HuntingWeaponDef {
   readonly label: string;
   /** One line for the slot's title, same shape as `BeltToolDef.hint`. */
@@ -171,7 +163,3 @@ export function bestWeapon(progress: StackAcresShopProgress): HuntingWeapon {
   return rifleUnlocked(progress) ? "rifle" : "bow";
 }
 
-/** What the locked Telephoto Lens Scanner slot says it is waiting for. */
-export function rifleLockHint(): string {
-  return `Reaches you at Level ${RIFLE_LEVEL}.`;
-}

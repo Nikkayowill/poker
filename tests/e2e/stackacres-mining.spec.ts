@@ -126,7 +126,7 @@ test("mining a Stone node credits inventory, breaks after its swing count, and r
       profile: { goldBalance: number };
     };
     const sold = await api.post("/api/stackacres/actions", {
-      data: { action: "sell", item: "stone", quantity: 1 },
+      data: { action: "sell", buyer: "general-store", item: "stone", quantity: 1 },
     });
     expect(sold.ok()).toBe(true);
     const after = (await (await api.get("/api/profile")).json()) as {

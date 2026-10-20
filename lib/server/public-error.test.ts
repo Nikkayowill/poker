@@ -18,7 +18,7 @@ describe("playerFacingMessage", () => {
 
   it("drops database, code and debug text", () => {
     expect(playerFacingMessage('column "gold" does not exist')).toBeNull();
-    expect(playerFacingMessage("unlock_stackacres_perk returned no row")).toBeNull();
+    expect(playerFacingMessage("give_homestead_gift returned no row")).toBeNull();
     expect(playerFacingMessage("barnaby: not-ready with no active quest")).toBeNull();
     expect(playerFacingMessage("PGRST116")).toBeNull();
     expect(playerFacingMessage("Cannot read properties of undefined (reading 'id')")).toBeNull();

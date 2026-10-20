@@ -232,7 +232,7 @@ test("a one-finger drag pans the map instead of walking the farmer, and a pinch 
   }
 });
 
-test("the seed pouch opens the wheel and a plain tap picks the crop", async ({ browser }) => {
+test("the seed pouch holds the seed you have, opens the wheel on a second press, and a plain tap picks the crop", async ({ browser }) => {
   const adminContext = await browser.newContext();
   const farmerContext = await browser.newContext({
     viewport: LANDSCAPE_PHONE,
@@ -263,6 +263,10 @@ test("the seed pouch opens the wheel and a plain tap picks the crop", async ({ b
 
     const pouch = page.getByRole("radio", { name: /^Seed pouch/ });
     await expect(pouch).toBeVisible();
+    // The only seed held is already in it, so the first press just takes the pouch up.
+    await expect(pouch).toHaveAttribute("aria-label", /carrot/i);
+    await pouch.click();
+    await expect(pouch).toHaveAttribute("aria-checked", "true");
     await pouch.click();
 
     const wheel = page.locator(".sa-seed-wheel");

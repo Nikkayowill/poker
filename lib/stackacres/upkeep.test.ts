@@ -7,6 +7,7 @@ import {
   stackacresUpkeepFee,
   upkeepState,
 } from "./upkeep";
+import { ACRE_UPKEEP_GOLD } from "./acres";
 import { STACKACRES_BASE_CAP, STACKACRES_MAX_EXTRA_CAP, STACKACRES_STOCK } from "./catalogue";
 
 /**
@@ -111,5 +112,27 @@ describe("upkeepState", () => {
 
   it("clamps a nonsense estate rather than rendering a negative one", () => {
     expect(upkeepState(-2, -9)).toEqual({ plots: 0, fee: 0, paidToday: 0, due: 0 });
+  });
+});
+
+describe("acres on the bill", () => {
+  it("adds a flat fee per bought acre, even on a farm with no chargeable plots", () => {
+    expect(stackacresUpkeepFee(0, 3)).toBe(3 * ACRE_UPKEEP_GOLD);
+    expect(stackacresUpkeepFee(STACKACRES_UPKEEP_FREE_PLOTS, 1)).toBe(ACRE_UPKEEP_GOLD);
+  });
+
+  it("stacks on the plot curve instead of replacing it", () => {
+    expect(stackacresUpkeepFee(9, 2)).toBe(stackacresUpkeepFee(9) + 2 * ACRE_UPKEEP_GOLD);
+  });
+
+  it("changes nothing for a farm with no acres", () => {
+    expect(stackacresUpkeepFee(9, 0)).toBe(stackacresUpkeepFee(9));
+    expect(stackacresUpkeepFee(9, -4)).toBe(stackacresUpkeepFee(9));
+    expect(stackacresUpkeepFee(9, Number.NaN)).toBe(stackacresUpkeepFee(9));
+  });
+
+  it("reads what is due and reported with the acres in", () => {
+    expect(stackacresUpkeepDue(0, 30, 2)).toBe(2 * ACRE_UPKEEP_GOLD - 30);
+    expect(upkeepState(0, 0, 2)).toEqual({ plots: 0, fee: 2 * ACRE_UPKEEP_GOLD, paidToday: 0, due: 2 * ACRE_UPKEEP_GOLD });
   });
 });

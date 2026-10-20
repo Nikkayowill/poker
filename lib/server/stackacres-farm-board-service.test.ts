@@ -140,7 +140,7 @@ describe("progress", () => {
     const { profileId } = await newFarm();
     await board(profileId, MONDAY);
     const before = await board(profileId, MONDAY);
-    await recordFarmBoardEvents(profileId, [{ kind: "enchantment-forged" }], MONDAY);
+    await recordFarmBoardEvents(profileId, [{ kind: "soil-placed", count: 1 }], MONDAY);
     expect(await board(profileId, MONDAY)).toEqual(before);
   });
 

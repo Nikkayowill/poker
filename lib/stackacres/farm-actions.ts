@@ -12,17 +12,23 @@
  */
 
 import type { AxePayment } from "./axe";
-import { isLivestock, STACKACRES_CATALOGUE, type StackAcresCrop, type StackAcresStock } from "./catalogue";
+import {
+  isLivestock,
+  isMarketLivestock,
+  STACKACRES_CATALOGUE,
+  STACKACRES_MARKET_ANIMALS,
+  type StackAcresCrop,
+  type StackAcresStock,
+} from "./catalogue";
 import type { StackAcresBuyableCutter } from "./cutters";
+import type { StackAcresBuyableEquipment } from "./tractor";
 import type { HiddenZoneId, SecretItemId } from "./secrets";
-import type { SynergyArchetype } from "./synergy-perks";
 import type { NpcId } from "./friendship";
-import type { CellarItem } from "./aging";
 import type { MachineItemId } from "./machine-items";
+import type { TownBuyerId } from "./town-buyers";
 import type { MachineKind } from "./machines";
 import type { RecipeId } from "./recipes";
 import type { FoodItem } from "./energy";
-import type { BlueprintId } from "./blueprints";
 import type { ZoneId } from "./zones";
 import type { QuestPlaceId } from "./story/places";
 import type { TravelerId } from "./story/travelers";
@@ -64,6 +70,10 @@ export type Action =
   | { action: "water"; unitId: string; unitIds?: string[] }
   // Fills the watering can at the well.
   | { action: "draw-water" }
+  // Ray's starter pouch of wheat seed, once per farm.
+  | { action: "claim-starter-seeds" }
+  // Today's land upkeep out of Gold, sent once when the farm opens.
+  | { action: "pay-upkeep" }
   // The dock's cast, completed: which fish it lands is the server's own
   // dice roll, same posture as `collect`'s Gold.
   // `bait` spends one Radish on the hook for better odds.
@@ -90,22 +100,30 @@ export type Action =
   | { action: "buy-feed"; itemId: string; quantity: number }
   // Sells any inventory item -- raw harvest or crafted good -- for Gold, at
   // that item's own sell price, any time. The baseline income path now that
-  // harvest always credits inventory instead of Gold.
-  | { action: "sell"; item: MachineItemId; quantity: number }
+  // harvest always credits inventory instead of Gold. Sold to one of the
+  // town's buyers (./town-buyers.ts), who only takes their own goods.
+  | { action: "sell"; buyer: TownBuyerId; item: MachineItemId; quantity: number }
+  // Hank's sale barn: every ready hog and steer goes, paid by weight.
+  | { action: "ship-livestock" }
   | { action: "upgrade-tool" }
   | { action: "upgrade-axe"; pay: AxePayment }
   | { action: "buy-cutter"; cutter: StackAcresBuyableCutter }
+  // A machine from Ray (./tractor.ts). Spends Gold and Metal.
+  | { action: "buy-equipment"; kind: StackAcresBuyableEquipment }
+  // Earl, the hired hand (./hired-hand.ts). `hire-hand` pays his first day;
+  // `hand-chores` pays any wage owed and lets him take a pass at the beds.
+  | { action: "hire-hand" }
+  | { action: "dismiss-hand" }
+  | { action: "hand-chores" }
   // The processing track, all from the Workshop sheet (WorkshopModal.tsx).
   // `place-machine` spends Gold; the rest move inventory only.
   | { action: "place-machine"; kind: MachineKind }
   // One batch. Instant for a Dairy or a Loom; a Mill enqueues and `work`
   // collects it.
-  | { action: "process"; recipe: RecipeId }
-  | { action: "seal-vat" }
+  | { action: "process"; recipe: RecipeId; batches?: number }
+  // The Vat and the Cellar take no new batches; one sealed before that still collects.
   | { action: "collect-vat" }
-  | { action: "seal-cellar"; item: CellarItem }
   | { action: "collect-cellar" }
-  | { action: "set-kitchen-order"; recipe: RecipeId }
   // The idle-worker pass: settles every ripe wheat plot and every mill that
   // has become startable or finished. Moves no Gold. The Workshop sheet
   // fires it when something is due and on its own "work the farm" key.
@@ -123,14 +141,11 @@ export type Action =
   | { action: "donate-secret-item"; itemId: SecretItemId }
   | { action: "consume-secret-item"; itemId: SecretItemId }
   | { action: "trade-secret-item"; itemId: SecretItemId }
-  // The Synergy Tree. `unlock-synergy-perk` spends Gold, once, permanent;
-  // `activate-synergy-perk` moves no Gold, only the loadout.
-  | { action: "unlock-synergy-perk"; archetype: SynergyArchetype }
-  | { action: "activate-synergy-perk"; archetype: SynergyArchetype; slot: number }
   // Placeable soil beds (./soil.ts). `tx`/`ty` are SOIL_TILE lattice
   // coordinates, not world units -- see soilTileAt. Breaking ground is free:
   // neither action spends or refunds anything.
-  | { action: "place-soil-tile"; tx: number; ty: number }
+  // `tiles` is the tractor's straight row; `tx`/`ty` stay the first bed of it.
+  | { action: "place-soil-tile"; tx: number; ty: number; tiles?: { tx: number; ty: number }[] }
   | { action: "remove-soil-tile"; tx: number; ty: number }
   | { action: "place-fence"; tx: number; ty: number }
   | { action: "remove-fence"; tx: number; ty: number }
@@ -138,12 +153,18 @@ export type Action =
   // map square. Neither spends or refunds anything.
   | { action: "place-animal"; unitId: string; tx: number; ty: number }
   | { action: "pick-up-animal"; unitId: string }
+  // The guard dog (./guard-dog.ts), by Homestead map square. Buying spends
+  // Gold; moving one you own is free.
+  | { action: "buy-dog"; tx: number; ty: number }
+  | { action: "move-dog"; id: string; tx: number; ty: number }
   // Far Field buildings (./empire-buildings.ts), by the top-left square of
   // their plan. Buying spends Gold, Wood and Metal; placing one you own and
   // picking it up are free.
   | { action: "buy-building"; kind: EmpireBuildingKind; tx: number; ty: number }
   | { action: "place-building"; id: string; tx: number; ty: number }
   | { action: "pick-up-building"; id: string }
+  // One acre of the wild land (./acres.ts): Gold, Wood and Stone, priced by the server.
+  | { action: "buy-acre"; acreId: string }
   // The city grocery (./grocery.ts): taking it over, its staff, its till, and arranging its floor.
   | { action: "grocery-take-over" }
   | { action: "grocery-hire"; name: string }
@@ -163,10 +184,6 @@ export type Action =
   // instead of charging Gold directly once the crop it names is a crop
   // rather than livestock. See stockStackAcres's own header.
   | { action: "buy-seed"; crop: StackAcresCrop; quantity: number }
-  // The Pixel Pilgrim's prayer. Only ever sent from his dialogue's own
-  // "yes" -- see StackAcresMonkDialogue -- never from the tap that opens
-  // it, so declining never reaches this at all.
-  | { action: "pray" }
   // The farmhouse bed: the farm clock jumps to 6 AM (./clock.ts). Only ever
   // sent from the bed's own "Sleep" button, and by night.
   | { action: "sleep" }
@@ -193,25 +210,7 @@ export type Action =
   // a harvest's own secret-find roll takes), only the scene's own
   // local-optimistic vacuum animation. See lib/stackacres/drone.ts.
   | { action: "deploy-drone" }
-  | { action: "collect-drone-forage"; droneId: string }
-  // The Prestige Reset Valve. `confirm: true` is required rather than
-  // inferred from the action name alone -- see the route's own comment on
-  // this action for why an irreversible sweep with no row to version-guard
-  // wants a payload shape a stray retry cannot satisfy by accident.
-  | { action: "prestige-reset"; confirm: true }
-  // The Sunlight Forge: a permanent tool enchantment, catalogue id (not the
-  // versioned wrapper). See lib/stackacres/forge.ts.
-  | { action: "forge-enchantment"; itemId: string }
-  // The Crossbreeding Bed (./crossbreeding.ts). `plant-crossbreed` pays the
-  // way `stock` does -- a seed off the shelf for a crop, Gold for livestock;
-  // `harvest-crossbreed` moves no Gold, a hybrid is inventory not a payout.
-  | { action: "plant-crossbreed"; row: number; col: number; stock: StackAcresStock }
-  | { action: "harvest-crossbreed"; plotId: string }
-  // Ray's Mythic Blueprints. Neither moves Gold -- a stage is filled from
-  // the processing inventory, same as a Town Contract. See
-  // lib/server/stackacres-blueprint-service.ts's own header.
-  | { action: "start-blueprint"; structureId: BlueprintId }
-  | { action: "contribute-blueprint"; structureId: BlueprintId; itemId: MachineItemId; amount: number };
+  | { action: "collect-drone-forage"; droneId: string };
 
 /**
  * A harvest is keyed by the crops it names. Keyed on the bare action, a
@@ -245,11 +244,6 @@ export function intentOf(body: Action): string {
   if (body.action === "collect" && body.unitIds && body.unitIds.length > 0) {
     return `${COLLECT_INTENT_PREFIX}${[...body.unitIds].sort().join(",")}`;
   }
-  // One bed cell, not one stock kind: two presses planting hens in two
-  // different cells are two intents, and the generic "stock" branch below
-  // would collapse them onto one. Checked before it for that reason.
-  if (body.action === "plant-crossbreed") return `${body.action}:${body.row},${body.col}`;
-  if ("plotId" in body) return `${body.action}:${body.plotId}`;
   // Keyed by where it goes. A greenhouse sow and an outdoor sow of the same
   // crop are different intents, and so are two beds of the same crop: keyed
   // on the crop alone, walking a row with seed in hand dropped every sowing
@@ -270,9 +264,15 @@ export function intentOf(body: Action): string {
   if ("crop" in body) return `${body.action}:${body.crop}`;
   // One building at a time is moved or picked up; two different ones are two intents.
   if (body.action === "place-building" || body.action === "pick-up-building") return `building:${body.id}`;
+  // One dog at a time is moved; two different dogs are two intents.
+  if (body.action === "move-dog") return `dog:${body.id}`;
   // Likewise one piece of the grocery's floor, and one person at a time hired or let go. Keyed on kind as
   // well as the square, checked before the generic `tx` branch below: two different kinds can share a
   // square (a rug under a fixture), and buying one must never be taken for a retry of the other.
+  // A tractor row is its own intent, apart from a single bed at its first square.
+  if (body.action === "place-soil-tile" && body.tiles && body.tiles.length > 0) {
+    return `place-soil-tile:${body.tiles.map((tile) => `${tile.tx},${tile.ty}`).join(";")}`;
+  }
   if (body.action === "grocery-buy") return `${body.action}:${body.kind}:${body.tx},${body.ty}`;
   if (body.action === "grocery-place" || body.action === "grocery-store") return `grocery-item:${body.id}`;
   if (body.action === "grocery-hire" || body.action === "grocery-fire") return `grocery-staff:${body.name}`;
@@ -284,24 +284,13 @@ export function intentOf(body: Action): string {
   // there is only ever one greet in flight for a given NPC at a time.
   if ("npc" in body) return "item" in body ? `${body.action}:${body.npc}:${body.item}` : `${body.action}:${body.npc}`;
   if (body.action === "eat") return `eat:${body.item}`;
-  // One cellar, so storing either kind of jar is the same press.
-  if (body.action === "seal-cellar") return "seal-cellar";
   if ("item" in body) return `${body.action}:${body.item}:${body.quantity}`;
-  // A contribution to one blueprint must never dedupe against or block a
-  // contribution to a different one -- checked before the generic `itemId`
-  // fallback below, which would otherwise collapse every structure's
-  // delivery of the same material onto one shared intent. `start-blueprint`
-  // carries no `itemId`, so it falls into this branch on `structureId` alone.
-  if ("structureId" in body) {
-    return "itemId" in body ? `${body.action}:${body.structureId}:${body.itemId}` : `${body.action}:${body.structureId}`;
-  }
   if ("itemId" in body) return `${body.action}:${body.itemId}`;
   // A forage claim on one drone must never dedupe against or block a claim
   // on a different drone -- checked before the generic fallback below,
   // which would otherwise collapse every drone's claim onto one shared
   // "collect-drone-forage" intent.
   if ("droneId" in body) return `${body.action}:${body.droneId}`;
-  if ("archetype" in body) return `${body.action}:${body.archetype}`;
   // Feeding one pen must never block feeding another.
   if ("zone" in body) return `${body.action}:${body.zone}`;
   if ("tx" in body) return `${body.action}:${body.tx},${body.ty}`;
@@ -344,8 +333,9 @@ export function intentOf(body: Action): string {
 export function purchaseCueText(body: Action): string | null {
   switch (body.action) {
     case "stock":
-      // A 50 Gold cycle, not the animal: "Bought a Hen Coop!" read as the 2,500 Gold outright buy.
+      // A 35 Gold cycle, not the animal: "Bought a Hen Coop!" read as the 1,750 Gold outright buy.
       // A crop going in is answered by the seed on the bed and its sound.
+      if (isMarketLivestock(body.stock)) return `Bought a ${STACKACRES_MARKET_ANIMALS[body.stock].feederLabel.toLowerCase()}!`;
       return isLivestock(body.stock) ? `Started a ${STACKACRES_CATALOGUE[body.stock].label} cycle!` : null;
     case "buy-stock":
       return `Bought a ${STACKACRES_CATALOGUE[body.stock].label}!`;
@@ -361,16 +351,14 @@ export function purchaseCueText(body: Action): string | null {
       return "New axe in hand!";
     case "buy-cutter":
       return "New tool in hand!";
-    case "unlock-synergy-perk":
-      return "Perk unlocked!";
     case "build-greenhouse":
       return "Greenhouse begun!";
-    case "forge-enchantment":
-      return "Enchantment forged!";
     case "deploy-drone":
       return "Drone deployed!";
     case "buy-building":
       return `${EMPIRE_BUILDINGS[body.kind].label} built!`;
+    case "buy-dog":
+      return "Your dog's on watch!";
     default:
       return null;
   }

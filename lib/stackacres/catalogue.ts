@@ -43,7 +43,7 @@
  * untouched by this swap, only which crop sits in which tier changed.
  *
  * WHEAT is the one crop grown for the Mill rather than for Gold: cheap,
- * five minutes, four to a bed (see WHEAT below). It is a bed crop like any
+ * twenty minutes, four to a bed (see WHEAT below). It is a bed crop like any
  * other; the Workshop's own separate "wheat plots" are gone.
  */
 
@@ -51,8 +51,9 @@ import type { MaterialCost } from "./machine-items";
 import type { StackAcresShopLock } from "./shop-locks";
 
 export const STACKACRES_CROPS = [
-  // Tier 1 (fast/cheap): 1 seed / 15s / 8m thirst (unreachable at 15s -- see
-  // TIER1 below) / 2 muck.
+  // Early crops: minutes-long cycles with watering relevant to all field crops.
+  // The longer windows on potato and wheat allow a player to be away without
+  // turning either crop into an implausible no-water crop.
   "lettuce",
   "spinach",
   "radish",
@@ -137,12 +138,9 @@ export interface StackAcresStockDef {
    * the neglected time is never silently credited as work. Same rule feeding
    * already follows -- neglect costs time, never yield.
    *
-   * Both numbers sit UNDER their kind's own `durationMs` on purpose, unlike
-   * the Hen Coop's deliberately-unreachable hunger window: watering is the
-   * crop track's whole tending loop, so a crop that could finish a cycle
-   * without ever needing a drink would have no loop at all. TIER1's own
-   * `thirstMs` is now the one crop exception, unreachable since TIER1's
-   * `durationMs` dropped to 15s -- see TIER1's comment below.
+   * Both numbers sit UNDER their kind's own `durationMs` on purpose. A
+   * thirsty crop that can finish before its first watering window has no
+   * tending loop, so early cash crops must keep that window reachable.
    */
   thirstMs: number | null;
   /**
@@ -184,21 +182,20 @@ export interface StackAcresStockDef {
 }
 
 /**
- * Retuned 2026-09-11 from the original 20 seed / 15m / 32 muck: tier 1 was
- * the new player's first several minutes, and a 15-minute wait with one
- * watering touchpoint read as "nothing to do but look around" rather than
- * constant management. Growth dropped to a 15-second, arcade-fast cycle;
- * `thirstMs` (8m) is left as-is and is now unreachable within one cycle --
- * an accepted trade-off, not an oversight (see items.ts for the matching
- * seedCost/sellPrice/quantity retune, kept as whole Gold throughout since
- * nothing in this economy handles fractional currency).
+ * Early crops are intentionally measured in minutes, not seconds. The old
+ * 15-second tier made planting and harvesting feel like a timer and meant
+ * watering could never matter. The entries below give each starter crop a
+ * distinct job while keeping the existing one-currency, snapshotted-unit model.
  */
-const TIER1 = { seedCost: 1, durationMs: 15 * 1000, hungerMs: null, thirstMs: 8 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
+const TIER1 = { seedCost: 1, durationMs: 5 * 60 * 1000, hungerMs: null, thirstMs: 2 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
+const POTATO = { seedCost: 1, durationMs: 10 * 60 * 1000, hungerMs: null, thirstMs: 5 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
+const RADISH = { seedCost: 1, durationMs: 15 * 60 * 1000, hungerMs: null, thirstMs: 5 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
 const TIER2 = { seedCost: 55, durationMs: 90 * 60 * 1000, hungerMs: null, thirstMs: 40 * 60 * 1000, spoils: false, muckFee: 90, ownableOutright: true } as const;
-/** The first crop anyone grows: 3 Gold of seed, ripe in 5 minutes. Thirst is
- *  longer than the cycle, so wheat never needs water. Sown from seed, never
- *  bought outright, like tier 1. Muck fee is twice the net (4 x 4 - 3 = 13). */
-const WHEAT = { seedCost: 3, durationMs: 5 * 60 * 1000, hungerMs: null, thirstMs: 8 * 60 * 1000, spoils: false, muckFee: 26, ownableOutright: false } as const;
+/** Wheat is the low-value utility crop. Its longer watering window suits a
+ * crop a player may plant before leaving, while still requiring soil moisture
+ * through the cycle. It is valuable because other farm systems consume it,
+ * not because it is a cash crop. */
+const WHEAT = { seedCost: 3, durationMs: 20 * 60 * 1000, hungerMs: null, thirstMs: 8 * 60 * 1000, spoils: false, muckFee: 26, ownableOutright: false } as const;
 const TIER3 = { seedCost: 120, durationMs: 4 * 60 * 60 * 1000, hungerMs: null, thirstMs: 90 * 60 * 1000, spoils: false, muckFee: 200, ownableOutright: true } as const;
 
 /**
@@ -210,10 +207,10 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
   // ---- Tier 1 (fast/cheap). ----
   lettuce: { label: "Lettuce", ...TIER1 },
   spinach: { label: "Spinach", ...TIER1 },
-  radish: { label: "Radish", ...TIER1 },
+  radish: { label: "Radish", ...RADISH },
   onion: { label: "Onion", ...TIER1 },
   carrot: { label: "Carrot", ...TIER1 },
-  potato: { label: "Potato", ...TIER1 },
+  potato: { label: "Potato", ...POTATO },
   cabbage: { label: "Cabbage", ...TIER1 },
 
   // ---- Tier 2 (medium). ----

@@ -16,7 +16,9 @@ import { MACHINE_CATALOGUE, type MachineKind } from "./machines";
 /** Every building a crop needs; all of them must be built. */
 export const SEED_UNLOCKS: Readonly<Record<StackAcresCrop, readonly MachineKind[]>> = {
   potato: ["stew_pot"],
-  carrot: ["stew_pot"],
+  // Carrot is the first active crop: it gives a new farm a reason to hoe,
+  // water, wait, and harvest before any processing building exists.
+  carrot: [],
   onion: ["stew_pot"],
   lettuce: ["counter"],
   spinach: ["counter"],

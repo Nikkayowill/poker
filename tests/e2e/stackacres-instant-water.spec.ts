@@ -101,9 +101,8 @@ async function openSlowFarm(browser: Browser, before: (context: BrowserContext) 
   // is seed to sow.
   //
   // The Stew Pot first: Ray will not sell Carrot seed until something on the
-  // farm uses it (lib/stackacres/seed-unlocks.ts), and wheat is the wrong
-  // crop for a watering test -- its thirst outlasts its five-minute cycle,
-  // so it never goes dry.
+  // farm uses it (lib/stackacres/seed-unlocks.ts), and wheat's longer watering
+  // window would make this less focused than the active carrot loop.
   await farmAction(farmerContext, { action: "place-machine", kind: "stew_pot" });
   await farmAction(farmerContext, { action: "buy-seed", crop: "carrot", quantity: 2 });
   await before(farmerContext);

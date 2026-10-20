@@ -638,6 +638,15 @@ describe("stocking", () => {
 });
 
 describe("buyStackAcresSeed — Ray's shelf", () => {
+  it("sells carrot seed before any processing building exists", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresSeedStock(id, "carrot", -1000);
+
+    const view = await buyStackAcresSeed(token, { crop: "carrot", quantity: 1 }, T0);
+
+    expect(view.seedStock.carrot).toBe(1);
+  });
+
   it("charges the crop's seed price x quantity and shelves the seeds", async () => {
     const { token, id } = await funded();
     await createStackAcresMachine(id, "stew_pot"); // Opens carrots (seed-unlocks.ts).
@@ -1074,7 +1083,8 @@ describe("group-planting a >=2x2 block", () => {
 });
 
 describe("thirst", () => {
-  // Corn, not the carrot this block used to sow: tier 1 ripens in 15s now,
+  // Corn, not the carrot this block used to sow: the starter cash crop has a
+  // short cycle now,
   // long before its 8m thirst window, so it can no longer go dry mid-cycle.
   // Corn's cycle outlasts two of its thirst windows, so a test that needs it
   // to reach the finish line waters it through each drought.

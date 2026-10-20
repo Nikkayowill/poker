@@ -876,6 +876,39 @@ function withLocalClock(units: StackAcresUnitSnapshot[], nowMs: number): StackAc
 
 const NO_CLAIMS: ReadonlySet<ClaimKey> = new Set();
 
+const STACKACRES_OFFLINE_CACHE_PREFIX = "stackacres-view:";
+const STACKACRES_LAST_PROFILE_KEY = "stackacres-last-profile";
+
+/** The offline copy is presentation-only. It is never used as authority for
+ * Gold, inventory, seeds, readiness, or a write. The server remains the only
+ * place where those values become real. */
+function cacheStackAcresView(data: Partial<StackAcresResponse>): void {
+  const profileId = data.profile?.id;
+  if (!profileId || !data.units) return;
+  try {
+    window.localStorage.setItem(
+      `${STACKACRES_OFFLINE_CACHE_PREFIX}${profileId}`,
+      JSON.stringify({ savedAt: Date.now(), data }),
+    );
+    window.localStorage.setItem(STACKACRES_LAST_PROFILE_KEY, profileId);
+  } catch {
+    // Private browsing and full storage are both valid browser states.
+  }
+}
+
+function readCachedStackAcresView(): Partial<StackAcresResponse> | null {
+  try {
+    const profileId = window.localStorage.getItem(STACKACRES_LAST_PROFILE_KEY);
+    if (!profileId) return null;
+    const raw = window.localStorage.getItem(`${STACKACRES_OFFLINE_CACHE_PREFIX}${profileId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { data?: Partial<StackAcresResponse> };
+    return parsed.data?.profile?.id === profileId && Array.isArray(parsed.data.units) ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The part of an answer a guess can touch, in the shape the farm holds it. */
 function farmFieldsOf(data: Partial<StackAcresResponse>): Partial<FarmFields> {
   const fields: Partial<FarmFields> = {};
@@ -1137,6 +1170,7 @@ export function StackAcresFarm() {
   /** The wild district a finger just landed on, if the clearing modal is up. */
   const [clearing, setClearing] = useState<SectorId | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [offline, setOffline] = useState(() => typeof navigator !== "undefined" && !navigator.onLine);
   /** The first read of the farm failed, so the loading screen offers a retry instead of an empty farm. */
   const [loadFailed, setLoadFailed] = useState(false);
   const hasLoadedOnce = useRef(false);
@@ -1938,10 +1972,21 @@ export function StackAcresFarm() {
       if (!mounted.current) return;
       if (response.ok) {
         applyResponse(data);
+        cacheStackAcresView(data);
+        setOffline(false);
         ok = true;
       }
     } catch {
-      // A dropped read is not worth a banner once the farm is up; it just stays as it was.
+      const cached = !hasLoadedOnce.current ? readCachedStackAcresView() : null;
+      if (cached && mounted.current) {
+        applyResponse(cached);
+        setOffline(true);
+        hasLoadedOnce.current = true;
+        setLoadFailed(false);
+        setLoaded(true);
+        ok = true;
+      }
+      // A dropped read after the farm is up leaves the last known farm in place.
     } finally {
       if (mounted.current) {
         if (ok) {
@@ -1964,6 +2009,20 @@ export function StackAcresFarm() {
   useEffect(() => {
     const timer = window.setTimeout(() => void refresh(), 0);
     return () => window.clearTimeout(timer);
+  }, [refresh]);
+
+  useEffect(() => {
+    const onOffline = () => setOffline(true);
+    const onOnline = () => {
+      setOffline(false);
+      void refresh();
+    };
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
+    return () => {
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
+    };
   }, [refresh]);
 
   // Tab-return is the one moment the server may know something this client
@@ -2040,6 +2099,11 @@ export function StackAcresFarm() {
    */
   const act = useCallback(
     async (requested: Action, options?: { after?: Promise<unknown> }): Promise<ContractActionResult> => {
+      if (offline || (typeof navigator !== "undefined" && !navigator.onLine)) {
+        const message = "You are offline. Reconnect to save farm actions.";
+        if (mounted.current) setError(message);
+        return { ok: false, message };
+      }
       // Everything the press changes on screen happens before the first await
       // below. Two things can hold the REQUEST back: a crop tapped the instant
       // it was sown still has an id this browser made up, so the request waits
@@ -2216,6 +2280,7 @@ export function StackAcresFarm() {
         // This action's own claims are the one thing this answer is the truth
         // for, so they do not shield it.
         applyResponse(data, ownClaims);
+        cacheStackAcresView(data);
         // What a tap on the just-made crop will match its provisional id
         // against, recorded before React has committed the list above.
         if (createGate && data.units) unitsFromLastCreate.current = data.units;
@@ -2445,6 +2510,7 @@ export function StackAcresFarm() {
     },
     [
       applyResponse,
+      offline,
       refresh,
       markInFlight,
       clearInFlight,
@@ -4415,6 +4481,13 @@ export function StackAcresFarm() {
           {compactNav && <StackAcresHudOverflow>{secondaryHud}</StackAcresHudOverflow>}
         </div>
       </header>
+
+      {offline && (
+        <div className="sa-offline-banner" role="status">
+          Offline: your farm is available to look around, but planting, watering,
+          harvesting, fishing, and purchases wait until you reconnect.
+        </div>
+      )}
 
       <div className="sa-main">
         {/* The world. Everything after it inside .sa-field is chrome pinned

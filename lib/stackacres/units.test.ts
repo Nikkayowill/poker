@@ -103,6 +103,16 @@ describe("isStackAcresUnitHungry / isStackAcresUnitReady", () => {
     expect(isStackAcresUnitReady(r, NOW)).toBe(true);
   });
 
+  it("potatoes tolerate a longer dry window but still stop growing when neglected", () => {
+    const r = row({
+      stock: "potato",
+      lastFedAt: null,
+      lastWateredAt: NOW.toISOString(),
+      readyAt: new Date(NOW.getTime() + 60 * 1000).toISOString(),
+    });
+    expect(isStackAcresUnitReady(r, NOW)).toBe(false);
+  });
+
   it("a mucked row is never hungry or ready", () => {
     const r = row({ status: "mucked", muckFee: 22 });
     expect(isStackAcresUnitHungry(r, NOW)).toBe(false);
@@ -248,10 +258,10 @@ describe("toStackAcresUnitSnapshots", () => {
 /* Soil watering                                                       */
 /* ------------------------------------------------------------------ */
 
-// Tier 2, not tier 1: these tests exercise the thirst-freeze mechanic, which
-// needs thirstMs under durationMs. Tier 1's own thirstMs sits OVER its 15s
-// durationMs since the 2026-09-11 pacing retune (see catalogue.ts's TIER1
-// comment), so it can no longer stand in for "a crop that can go dry".
+// Tier 2, not tier 1: these tests exercise the established thirst-freeze
+// mechanic with a longer-running crop. Starter crops now also have reachable
+// watering windows, but tomato keeps this suite independent of starter-role
+// balance changes.
 const THIRSTY_CROP = STACKACRES_CATALOGUE.tomato;
 const THIRST = THIRSTY_CROP.thirstMs ?? 0;
 

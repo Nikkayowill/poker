@@ -69,14 +69,14 @@ export const STACKACRES_ITEM_CATALOGUE: Readonly<Record<StackAcresItem, StackAcr
   wool: { label: "Fleece", plural: "Fleeces", icon: "ico-fleece", sellPrice: 76 },
   milk: { label: "Milk", plural: "Milk", icon: "ico-milk", sellPrice: 220 },
 
-  /* ---- Tier 1 (fast/cheap): sellPrice 2, yield quantity 1. Unchanged by the
-   * 2026-09-12 crop-roster swap -- see catalogue.ts's TIER1 comment. ---- */
+  /* ---- Early crop roles: carrot is the cash crop, potato is bulk utility,
+   * and radish is a utility crop used by fishing. ---- */
   lettuce: { label: "Lettuce", plural: "Lettuce", icon: "ico-lettuce", sellPrice: 2 },
   spinach: { label: "Spinach", plural: "Spinach", icon: "ico-spinach", sellPrice: 2 },
   radish: { label: "Radish", plural: "Radishes", icon: "ico-radish", sellPrice: 2 },
   onion: { label: "Onion", plural: "Onions", icon: "ico-onion", sellPrice: 2 },
-  carrot: { label: "Carrot", plural: "Carrots", icon: "ico-carrot", sellPrice: 2 },
-  potato: { label: "Potato", plural: "Potatoes", icon: "ico-potato", sellPrice: 2 },
+  carrot: { label: "Carrot", plural: "Carrots", icon: "ico-carrot", sellPrice: 5 },
+  potato: { label: "Potato", plural: "Potatoes", icon: "ico-potato", sellPrice: 1 },
   cabbage: { label: "Cabbage", plural: "Cabbages", icon: "ico-cabbage", sellPrice: 2 },
 
   /* ---- Tier 2 (medium): sellPrice 25, yield quantity 4. ---- */
@@ -90,11 +90,11 @@ export const STACKACRES_ITEM_CATALOGUE: Readonly<Record<StackAcresItem, StackAcr
   tomato: { label: "Tomato", plural: "Tomatoes", icon: "ico-tomato", sellPrice: 25 },
 
   /* ---- Tier 3 (slow/valuable): sellPrice 44, yield quantity 5. Wheat is the
-   * exception below: sellPrice 4, quantity 4. ---- */
+   * utility exception below: quantity 4 for processing and farm upkeep. ---- */
   corn: { label: "Corn", plural: "Corn", icon: "ico-corn", sellPrice: 44 },
   eggplant: { label: "Eggplant", plural: "Eggplants", icon: "ico-eggplant", sellPrice: 44 },
-  // The one Wheat: what the Wheat crop pays and what the Mill grinds. Sells for
-  // 4, so Flour (3 Wheat -> 40) is always the better use. Sprite-backed icon.
+  // Flour (3 Wheat -> 40) and other farm uses are the reason to grow wheat;
+  // its longer utility cycle keeps raw wheat from being the best cash crop.
   wheat: { label: "Wheat", plural: "Wheat", icon: "ico-wheat", sellPrice: 4 },
 };
 
@@ -117,7 +117,7 @@ export const STACKACRES_YIELDS: Readonly<Record<StackAcresStock, StackAcresYield
   radish: { item: "radish", quantity: 1 },
   onion: { item: "onion", quantity: 1 },
   carrot: { item: "carrot", quantity: 1 },
-  potato: { item: "potato", quantity: 1 },
+  potato: { item: "potato", quantity: 3 },
   cabbage: { item: "cabbage", quantity: 1 },
   broccoli: { item: "broccoli", quantity: 4 },
   pepper: { item: "pepper", quantity: 4 },

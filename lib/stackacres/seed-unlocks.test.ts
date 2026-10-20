@@ -11,9 +11,15 @@ describe("seed locks", () => {
     expect(seedLockLine("wheat", built())).toBeNull();
   });
 
-  it("gates every other crop behind at least one real building", () => {
+  it("keeps carrot and wheat available for the first farming loop", () => {
+    expect(isSeedUnlocked("carrot", built())).toBe(true);
+    expect(isSeedUnlocked("wheat", built())).toBe(true);
+    expect(seedLockLine("carrot", built())).toBeNull();
+  });
+
+  it("gates every later crop behind at least one real building", () => {
     for (const crop of STACKACRES_CROPS) {
-      if (crop === "wheat") continue;
+      if (crop === "wheat" || crop === "carrot") continue;
       expect(SEED_UNLOCKS[crop].length).toBeGreaterThan(0);
       for (const kind of SEED_UNLOCKS[crop]) expect(MACHINE_KINDS).toContain(kind);
     }
@@ -43,7 +49,7 @@ describe("seed locks", () => {
 
 describe("seedsOpenedBy", () => {
   it("lists only the seeds that are actually open now", () => {
-    expect(seedsOpenedBy(["stew_pot"], new Set<MachineKind>(["stew_pot"]))).toBe("Opens Potato, Carrot and Onion seeds");
+    expect(seedsOpenedBy(["stew_pot"], new Set<MachineKind>(["stew_pot"]))).toBe("Opens Potato and Onion seeds");
   });
 
   it("adds the seeds that needed two buildings once the second one is built", () => {

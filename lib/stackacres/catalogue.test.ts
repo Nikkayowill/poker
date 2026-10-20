@@ -33,8 +33,8 @@ describe("StackAcres early crop loop", () => {
     expect(yieldValue("potato")).toBe(2);
     expect(yieldValue("wheat")).toBe(28);
     expect(yieldValue("wheat")).toBeGreaterThan(yieldValue("carrot"));
-    expect(yieldValue("carrot") / STACKACRES_CATALOGUE.carrot.durationMs).toBeGreaterThan(
-      yieldValue("wheat") / STACKACRES_CATALOGUE.wheat.durationMs,
+    expect(yieldValue("wheat") / STACKACRES_CATALOGUE.wheat.durationMs).toBeGreaterThan(
+      yieldValue("carrot") / STACKACRES_CATALOGUE.carrot.durationMs,
     );
   });
 });

@@ -474,6 +474,19 @@ describe("predictStackAcresAction: buying and selling stock", () => {
     expect(patch?.units?.[0].soilSlot).toBe(0);
   });
 
+  it("predicts harvest-and-replant on the same bed and spends one seed", () => {
+    const ready = unit({ id: "c1", stock: "corn", state: "ready", soilSlot: 0 });
+    const patch = predictStackAcresAction(
+      { action: "replant", unitId: ready.id },
+      ctx({ seedStock: { corn: 2 }, soilTiles: ONE_BED, units: [ready] }),
+    );
+    expect(patch?.units).toHaveLength(1);
+    expect(patch?.units?.[0].id).not.toBe(ready.id);
+    expect(patch?.units?.[0].stock).toBe("corn");
+    expect(patch?.units?.[0].soilSlot).toBe(0);
+    expect(patch?.seedStock).toEqual({ corn: 1 });
+  });
+
   it("guesses nothing for a tapped bed that is already taken", () => {
     const standing = unit({ id: "c1", stock: "corn", state: "working", soilSlot: 0 });
     const twoBeds = [...ONE_BED, { tx: 1, ty: 0, order: 1, origin: "purchased" as const }];

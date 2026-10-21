@@ -50,6 +50,7 @@ import {
   applyCare,
   barnComfort,
   BARN_CAPACITY_BONUS,
+  CARE_BONUS_CAP,
   CARE_GIFT_LADDER,
   careGiftFor,
   hasCaredToday,
@@ -3797,6 +3798,16 @@ function waterPushFor(row: StoredStackAcresUnit, now: Date): { pushed: Date; res
   return { pushed: new Date((Number.isFinite(readyAt) ? readyAt : now.getTime()) + dryMs), restartedAt: null };
 }
 
+/** Manual watering is a small positive interaction, not just a penalty
+ * avoided. Each real hand-water adds at most one produce unit to this crop's
+ * current cycle, capped with the same hard ceiling as animal care. Automatic
+ * irrigation and the hired hand pass the stored value through unchanged. */
+function manualWaterCareBonus(row: StoredStackAcresUnit): number {
+  return isStackAcresCrop(row.stock)
+    ? Math.min(CARE_BONUS_CAP, (row.careBonus ?? 0) + 1)
+    : row.careBonus ?? 0;
+}
+
 export async function waterStackAcres(
   token: string,
   unitIdInput: string,
@@ -3842,7 +3853,7 @@ export async function waterStackAcres(
 
   let watered: StoredStackAcresUnit | null;
   try {
-    watered = await waterStackAcresUnit(unit, now, pushed, restartedAt);
+    watered = await waterStackAcresUnit(unit, now, pushed, restartedAt, manualWaterCareBonus(unit));
     // Same version-guard retry as waterStackAcresGroup below, and for the
     // same reason: a miss here almost always means this function's own read
     // at the top went stale for this one unit (irrigation's auto-water tick,
@@ -3859,7 +3870,13 @@ export async function waterStackAcres(
         isStackAcresUnitDry(fresh, now, irrigated.has(fresh.id))
       ) {
         const retryPush = waterPushFor(fresh, now);
-        watered = await waterStackAcresUnit(fresh, now, retryPush.pushed, retryPush.restartedAt);
+        watered = await waterStackAcresUnit(
+          fresh,
+          now,
+          retryPush.pushed,
+          retryPush.restartedAt,
+          manualWaterCareBonus(fresh),
+        );
       }
     }
   } catch (error) {
@@ -3921,7 +3938,7 @@ export async function waterStackAcresGroup(
 
     let watered: StoredStackAcresUnit | null;
     try {
-      watered = await waterStackAcresUnit(unit, now, pushed, restartedAt);
+      watered = await waterStackAcresUnit(unit, now, pushed, restartedAt, manualWaterCareBonus(unit));
       // A version-guard miss here almost always means THIS SAME drop's own
       // read at the top of the function is a beat stale for this one unit --
       // a second in-flight action on the same crop (irrigation's own auto-
@@ -3942,7 +3959,13 @@ export async function waterStackAcresGroup(
           isStackAcresUnitDry(fresh, now, irrigated.has(fresh.id))
         ) {
           const retryPush = waterPushFor(fresh, now);
-          watered = await waterStackAcresUnit(fresh, now, retryPush.pushed, retryPush.restartedAt);
+          watered = await waterStackAcresUnit(
+            fresh,
+            now,
+            retryPush.pushed,
+            retryPush.restartedAt,
+            manualWaterCareBonus(fresh),
+          );
         }
       }
     } catch (error) {
@@ -5430,6 +5453,8 @@ export interface StackAcresHarvestResult {
   crit: boolean;
   /** Bonus units a crit added, summed per item. Empty when the roll missed. */
   critBonus: { item: StackAcresItem; quantity: number }[];
+  /** Extra produce earned by manual crop care in this sweep. */
+  careBonus: number;
 }
 
 /**
@@ -5691,8 +5716,65 @@ export async function harvestStackAcres(
       mucked,
       crit: critical,
       critBonus: [...critBonusTally].map(([item, quantity]) => ({ item, quantity })),
+      careBonus: settled.reduce((total, row) => total + (row.careBonus ?? 0), 0),
     },
   };
+}
+
+/**
+ * Brings in one ready crop and immediately sows the same crop back into the
+ * same bed. This is intentionally a single server action so the client never
+ * has to guess which bed became free or send a second request with a stale
+ * crop id.
+ *
+ * Harvest settlement remains the authority and happens first. If the player
+ * has no seed, or the bed was changed by another action in the small gap
+ * between settlement and sowing, the harvest still stands and the seed is
+ * never consumed. That is the safe failure mode: a missed replant is visible,
+ * but produce and seeds cannot disappear together.
+ */
+export async function replantStackAcres(
+  token: string,
+  unitIdInput: string,
+  now = new Date(),
+): Promise<StackAcresView & { harvest: StackAcresHarvestResult; replanted: boolean; replantError?: string }> {
+  const profile = await ensureProfile(token);
+  const unitId = parseUnitId(unitIdInput);
+  const row = await getStackAcresUnit(profile.id, unitId);
+  if (!row || row.status !== "working" || !isStackAcresCrop(row.stock)) {
+    throw new StackAcresRequestError("Only a ready crop can be replanted.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  if (row.soilSlot === null) {
+    throw new StackAcresRequestError("That crop has no bed to replant.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const soil = soilMapFor(await listStackAcresSoilTiles(profile.id));
+  const bed = soilSlotTile(soil, row.soilSlot);
+  if (!bed) {
+    throw new StackAcresRequestError("That crop's bed is no longer available.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const harvested = await harvestStackAcres(token, { unitIds: [unitId] }, now);
+  try {
+    const replanted = await stockStackAcres(
+      token,
+      { stock: row.stock, tile: { tx: bed.tx, ty: bed.ty }, exactTile: true },
+      now,
+    );
+    return { ...replanted, harvest: harvested.harvest, replanted: true };
+  } catch (error) {
+    const message = error instanceof StackAcresRequestError ? error.message : "The bed stayed harvested; replant it when ready.";
+    if (!(error instanceof StackAcresRequestError)) {
+      console.error("stackacres.replant_failed_after_harvest", { profileId: profile.id, unitId, error });
+    }
+    return { ...harvested, replanted: false, replantError: message };
+  }
 }
 
 /**

@@ -21,7 +21,7 @@
  * Pure, so it is tested without React or Phaser (toolbelt.test.ts).
  */
 
-import { STACKACRES_CATALOGUE, type StackAcresCrop } from "./catalogue";
+import { STACKACRES_CATALOGUE, isLivestock, type StackAcresCrop } from "./catalogue";
 import { tapActionFor } from "./tap-action";
 import type { StackAcresUnitSnapshot } from "./units";
 import type { StackAcresInventory } from "./inventory";
@@ -126,6 +126,7 @@ export type BeltAction =
   /** The square affords nothing and the player asked for nothing: he simply walked here. Silent. */
   | { kind: "idle" }
   | { kind: "collect"; unitId: string }
+  | { kind: "replant"; unitId: string }
   | { kind: "feed"; unitId: string }
   | { kind: "water"; unitId: string }
   | { kind: "clear"; unitId: string }
@@ -155,6 +156,7 @@ export function beltAnimation(action: BeltAction): "water" | "harvest" | "hoe" |
     case "water":
       return "water";
     case "collect":
+    case "replant":
     case "clear":
       return "harvest";
     case "till":
@@ -257,7 +259,17 @@ function unownedGround(target: BeltTarget): BeltAction | null {
 
 function seedAction(target: BeltTarget, ctx: BeltContext): BeltAction {
   if (!target.tile) return blocked("Seeds go in a soil bed.");
-  if (target.unit) return blocked("Something is already growing here.");
+  if (target.unit) {
+    if (
+      target.unit.state === "ready" &&
+      !isLivestock(target.unit.stock) &&
+      ctx.seed === target.unit.stock &&
+      ctx.seedsHeld > 0
+    ) {
+      return { kind: "replant", unitId: target.unit.id };
+    }
+    return blocked("Something is already growing here.");
+  }
   if (!target.bedded) return blocked("Break the ground with the hoe first.");
   if (!ctx.seed) return blocked("No seed in your pouch. Cora sells it in town.");
   if (ctx.seedsHeld < 1) return blocked(`No ${STACKACRES_CATALOGUE[ctx.seed].label} seeds left.`);

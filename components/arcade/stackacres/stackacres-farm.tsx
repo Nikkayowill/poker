@@ -502,7 +502,11 @@ interface StackAcresResponse {
     crit: boolean;
     /** Bonus units a crit added, summed per item. Empty when the roll missed. */
     critBonus: { item: StackAcresItem; quantity: number }[];
+    /** Extra produce earned by manual crop care in this sweep. */
+    careBonus: number;
   };
+  replanted?: boolean;
+  replantError?: string;
   upgraded?: { from: StackAcresToolTier; to: StackAcresToolTier };
   /** Gold `pay-upkeep` just took for today's land upkeep. */
   upkeepCharged?: number;
@@ -1856,6 +1860,26 @@ export function StackAcresFarm() {
         window.location.reload();
         return;
       }
+      // A captive portal, proxy or briefly unhealthy app server can answer
+      // with a valid HTTP error instead of making fetch throw. Treat a 5xx
+      // read exactly like a dropped read on the first load: the cached farm
+      // is safe to inspect, while actions remain blocked until a real server
+      // snapshot arrives. Do not do this for 4xx responses; those can mean
+      // the session or account is no longer valid and must not reveal an old
+      // farm from this browser.
+      if (response.status >= 500) {
+        const cached = !hasLoadedOnce.current ? readCachedStackAcresView() : null;
+        if (cached && mounted.current) {
+          applyResponse(cached);
+          setOffline(true);
+          hasLoadedOnce.current = true;
+          setLoadFailed(false);
+          setLoaded(true);
+          ok = true;
+        }
+        return;
+      }
+      if (!response.ok) return;
       const data = (await response.json()) as Partial<StackAcresResponse>;
       if (!mounted.current) return;
       if (response.ok) {
@@ -2177,26 +2201,37 @@ export function StackAcresFarm() {
         // that was tapped. A sidebar press leaves this null and the toast
         // below is the whole answer, same as it always was.
         const anchor = tapAnchor.current;
-        if (body.action === "collect" && data.harvest) {
+        if ((body.action === "collect" || body.action === "replant") && data.harvest) {
           const { harvest } = data;
-          const single = body.unitIds?.length === 1 ? body.unitIds[0] : null;
+          const single = body.action === "collect" && body.unitIds?.length === 1 ? body.unitIds[0] : null;
           // Critical Harvest Cascade: stash it for `triggerCascade` to pick
           // up once this call has fully returned -- see lastHarvests' own
           // header.
-          if (single) lastHarvests.current.set(single, { crit: harvest.crit, units: data.units ?? [] });
+          if (body.action === "collect" && single) {
+            lastHarvests.current.set(single, { crit: harvest.crit, units: data.units ?? [] });
+          }
           // A tapped crop already sounded on the press; a sweep sounds here
           // with the loudest thing it brought in.
           const sounded = single ? undefined : unitsRef.current.find((candidate) => candidate.state === "ready");
           if (sounded) collectSound(sounded.stock);
-          if (single) setCelebrate({ unitId: single, nonce: Date.now() });
+          if (body.action === "collect" && single) setCelebrate({ unitId: single, nonce: Date.now() });
           // A critical harvest shows on the crop itself: the crit flash names
           // the multiple the ladder just paid. `1 + critBonus` because the
           // label reads as a total ("CRIT! x2" for a bonus of 1).
-          if (single && harvest.crit && harvest.critBonus.length > 0) {
+          if (body.action === "collect" && single && harvest.crit && harvest.critBonus.length > 0) {
             // The multiple the pick really paid: everything it brought in over what it would have.
             const total = harvest.tally.reduce((sum, line) => sum + line.quantity, 0);
             const bonus = harvest.critBonus.reduce((sum, line) => sum + line.quantity, 0);
             world.current?.celebrateCrit(single, total > bonus ? total / (total - bonus) : 1 + bonus);
+          }
+          if (harvest.careBonus > 0) {
+            setLastCollect({
+              text: `Well cared for: +${harvest.careBonus} produce`,
+              nonce: Date.now(),
+            });
+          }
+          if (body.action === "replant" && data.replanted === false) {
+            setError(data.replantError ?? "Harvested, but the bed needs replanting.");
           }
         }
         if (body.action === "pay-upkeep" && data.upkeepCharged) {
@@ -3727,6 +3762,15 @@ export function StackAcresFarm() {
           void act({ action: "collect", unitIds: [action.unitId] }).then((result) => {
             if (result.ok && picked) void triggerCascade(action.unitId, picked.stock);
             else lastHarvests.current.delete(action.unitId);
+          });
+          return;
+        }
+        case "replant": {
+          const picked = liveUnits.find((candidate) => candidate.id === action.unitId);
+          if (picked) collectSound(picked.stock);
+          world.current?.pullCrop(action.unitId);
+          void act({ action: "replant", unitId: action.unitId }).then((result) => {
+            if (!result.ok) setError(result.message ?? "That crop could not be replanted.");
           });
           return;
         }

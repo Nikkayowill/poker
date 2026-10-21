@@ -126,6 +126,11 @@ describe("the seed pouch", () => {
     expect(resolveBeltAction("seeds", target, ctx())).toMatchObject({ kind: "nothing", why: "blocked" });
   });
 
+  it("harvests and replants a ready crop when the same seed is held", () => {
+    const target: BeltTarget = { ...bareBed, unit: unit({ state: "ready", progress: 1 }) };
+    expect(resolveBeltAction("seeds", target, ctx())).toEqual({ kind: "replant", unitId: "u1" });
+  });
+
   it("asks the player to pick a seed when the wheel is empty", () => {
     const action = resolveBeltAction("seeds", bareBed, ctx({ seed: null }));
     expect(action).toHaveProperty("reason", expect.stringContaining("pouch"));
@@ -141,6 +146,7 @@ describe("beltAnimation", () => {
   it("acts out everything that is sent, and nothing that is not", () => {
     expect(beltAnimation({ kind: "water", unitId: "u1" })).toBe("water");
     expect(beltAnimation({ kind: "collect", unitId: "u1" })).toBe("harvest");
+    expect(beltAnimation({ kind: "replant", unitId: "u1" })).toBe("harvest");
     expect(beltAnimation({ kind: "clear", unitId: "u1" })).toBe("harvest");
     expect(beltAnimation({ kind: "till", tx: 0, ty: 0 })).toBe("hoe");
     expect(beltAnimation({ kind: "lift", tx: 0, ty: 0 })).toBe("hoe");

@@ -19,6 +19,7 @@ import {
   feedStackAcres,
   feedStackAcresPen,
   harvestStackAcres,
+  replantStackAcres,
   readStackAcres,
   retireStackAcresStock,
   runStackAcresAction,
@@ -1236,13 +1237,14 @@ describe("thirst", () => {
     expect(unitOf(late, "corn").state).toBe("ready");
 
     // And it actually yields -- a drought after the harvest was made takes
-    // nothing away from it.
+    // nothing away from it. The two manual watering touches earned the
+    // capped +2 care bonus for this cycle.
     const before = await balance(token);
     const paid = await collectOne(token, unitId, muchLater);
     expect(paid.harvest.tally).toEqual([
-      { item: STACKACRES_YIELDS.corn.item, quantity: STACKACRES_YIELDS.corn.quantity },
+      { item: STACKACRES_YIELDS.corn.item, quantity: STACKACRES_YIELDS.corn.quantity + 2 },
     ]);
-    expect(paid.inventory.corn).toBe(STACKACRES_YIELDS.corn.quantity);
+    expect(paid.inventory.corn).toBe(STACKACRES_YIELDS.corn.quantity + 2);
     expect(await balance(token)).toBe(before);
   });
 
@@ -1306,14 +1308,32 @@ describe("thirst", () => {
     ).rejects.toBeInstanceOf(StackAcresRequestError);
   });
 
-  it("never lets neglect cost produce: the snapshotted yield is untouched by watering", async () => {
+  it("rewards manual watering without changing the snapshotted base yield", async () => {
     const { token, id } = await funded();
     const view = await stockStackAcres(token, { stock: "corn" }, T0);
     const unitId = unitOf(view, "corn").id;
     await waterStackAcres(token, unitId, new Date(dryAt.getTime() + 6 * 60 * 60 * 1000));
-    expect((await getStackAcresUnit(id, unitId))?.yieldQuantity).toBe(
-      STACKACRES_YIELDS.corn.quantity,
+    const after = await getStackAcresUnit(id, unitId);
+    expect(after?.yieldQuantity).toBe(STACKACRES_YIELDS.corn.quantity);
+    expect(after?.careBonus).toBe(1);
+  });
+
+  it("harvests once and replants the same crop into the same bed", async () => {
+    const { token, id } = await funded();
+    const seedsBefore = (await readStackAcresSeedStock(id)).corn ?? 0;
+    const sown = await stockStackAcres(token, { stock: "corn" }, T0);
+    const unitId = unitOf(sown, "corn").id;
+    await waterStackAcres(token, unitId, T0);
+    const readyAt = new Date(await waterUntilRipe(token, id, unitId, T0));
+
+    const replanted = await replantStackAcres(token, unitId, new Date(readyAt.getTime() + 1000));
+    expect(replanted.replanted).toBe(true);
+    expect(replanted.harvest.units).toBe(1);
+    expect(replanted.units.filter((unit) => unit.stock === "corn")).toHaveLength(1);
+    expect(replanted.units.find((unit) => unit.stock === "corn")?.soilSlot).toBe(
+      unitOf(sown, "corn").soilSlot,
     );
+    expect((await readStackAcresSeedStock(id)).corn ?? 0).toBe(seedsBefore - 2);
   });
 
   it("waters a crop stocked with Gold the same way, and still moves no Gold", async () => {
@@ -2448,6 +2468,7 @@ describe("the currency wall", () => {
       "reach-quest-place",
       "remove-fence",
       "remove-soil-tile",
+      "replant",
       "request-contract",
       "retire",
       "sell",

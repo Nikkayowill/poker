@@ -562,6 +562,15 @@ describe("optimisticallyWateredUnit", () => {
     expect(Date.parse(watered.thirstyAt ?? "")).toBe(NOW.getTime() + THIRST);
   });
 
+  it("shows the small harvest bonus earned by manual watering", () => {
+    const dry = crop(THIRST + 60_000);
+    const [snap] = toStackAcresUnitSnapshots([dry], NOW);
+    expect(optimisticallyWateredUnit(snap, NOW.getTime()).careBonus).toBe(1);
+    expect(
+      optimisticallyWateredUnit({ ...snap, careBonus: 2 }, NOW.getTime()).careBonus,
+    ).toBe(2);
+  });
+
   it("never predicts thirst for livestock, which drinks from its own trough", () => {
     const [snap] = toStackAcresUnitSnapshots([row({ stock: "cattle" })], NOW);
     expect(optimisticallyWateredUnit(snap, NOW.getTime()).thirstyAt).toBeNull();

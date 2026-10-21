@@ -21,8 +21,8 @@ describe("StackAcres early crop loop", () => {
     });
     expect(STACKACRES_CATALOGUE.wheat).toMatchObject({
       seedCost: 3,
-      durationMs: 20 * 60 * 1000,
-      thirstMs: 8 * 60 * 1000,
+      durationMs: 10 * 60 * 1000,
+      thirstMs: 10 * 60 * 1000,
     });
   });
 

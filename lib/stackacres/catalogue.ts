@@ -43,7 +43,7 @@
  * untouched by this swap, only which crop sits in which tier changed.
  *
  * WHEAT is the one crop grown for the Mill rather than for Gold: cheap,
- * twenty minutes, four to a bed (see WHEAT below). It is a bed crop like any
+ * ten minutes, four to a bed (see WHEAT below). It is a bed crop like any
  * other; the Workshop's own separate "wheat plots" are gone.
  */
 
@@ -71,7 +71,7 @@ export const STACKACRES_CROPS = [
   // Tier 3 (slow/valuable): 120 seed / 4h / 90m thirst / 200 muck.
   "corn",
   "eggplant",
-  // Wheat: 3 seed / 20m / 4 to a bed. Its own numbers, see WHEAT below.
+  // Wheat: 3 seed / 10m / 4 to a bed. Its own numbers, see WHEAT below.
   "wheat",
 ] as const;
 export const STACKACRES_LIVESTOCK = ["hen", "pig", "cattle", "hog", "steer"] as const;
@@ -209,7 +209,7 @@ const TIER2 = { seedCost: 55, durationMs: 90 * 60 * 1000, hungerMs: null, thirst
  * crop a player may plant before leaving, while still requiring soil moisture
  * through the cycle. It is valuable because other farm systems consume it,
  * not because it is a cash crop. */
-const WHEAT = { seedCost: 3, durationMs: 20 * 60 * 1000, hungerMs: null, thirstMs: 8 * 60 * 1000, spoils: false, muckFee: 26, ownableOutright: false } as const;
+const WHEAT = { seedCost: 3, durationMs: 10 * 60 * 1000, hungerMs: null, thirstMs: 10 * 60 * 1000, spoils: false, muckFee: 26, ownableOutright: false } as const;
 const TIER3 = { seedCost: 120, durationMs: 4 * 60 * 60 * 1000, hungerMs: null, thirstMs: 90 * 60 * 1000, spoils: false, muckFee: 200, ownableOutright: true } as const;
 
 /**

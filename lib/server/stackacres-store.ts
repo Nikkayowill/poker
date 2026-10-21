@@ -2,7 +2,7 @@ import "server-only";
 import { randomUUID } from "crypto";
 import { AXE_LEVELS, STARTING_AXE_LEVEL, isAxeLevel, type AxeLevel } from "@/lib/stackacres/axe";
 import type { StackAcresUnitRow } from "@/lib/stackacres/units";
-import { freshAnimalCare, type AnimalCare } from "@/lib/stackacres/barn";
+import { freshAnimalCare, type AnimalCare, CARE_BONUS_CAP } from "@/lib/stackacres/barn";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
 import type { SectorId } from "@/lib/stackacres/sectors";
 import {
@@ -669,6 +669,8 @@ export async function feedStackAcresUnit(
 
 /**
  * Tends one animal: writes the day, the streak and the clamped care bonus.
+ * Crops use the same stored bonus column for their separate manual-watering
+ * reward; their watering path never calls this animal-only writer.
  *
  * DELIBERATELY THE SAME SHAPE AS `feedStackAcresUnit` -- same version and
  * status guard, same null-means-lost-race contract -- because it is the same
@@ -747,6 +749,7 @@ export async function waterStackAcresUnit(
   wateredAt: Date,
   newReadyAt: Date,
   newStartedAt: Date | null = null,
+  careBonus = current.careBonus ?? 0,
 ): Promise<StoredStackAcresUnit | null> {
   const supabase = adminClient();
   const version = current.version + 1;
@@ -759,6 +762,7 @@ export async function waterStackAcresUnit(
       ...(newStartedAt ? { startedAt: newStartedAt.toISOString() } : {}),
       lastWateredAt: wateredAt.toISOString(),
       readyAt: newReadyAt.toISOString(),
+      careBonus: Math.max(0, Math.min(CARE_BONUS_CAP, careBonus)),
       version,
     };
     memoryUnits.set(current.id, clone(updated));
@@ -771,6 +775,7 @@ export async function waterStackAcresUnit(
       ...(newStartedAt ? { started_at: newStartedAt.toISOString() } : {}),
       last_watered_at: wateredAt.toISOString(),
       ready_at: newReadyAt.toISOString(),
+      care_bonus: Math.max(0, Math.min(CARE_BONUS_CAP, careBonus)),
       version,
     })
     .eq("id", current.id)

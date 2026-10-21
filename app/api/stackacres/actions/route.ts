@@ -39,6 +39,7 @@ import {
   sleepStackAcres,
   retireStackAcresStock,
   harvestStackAcres,
+  replantStackAcres,
   runStackAcresAction,
   stockStackAcres,
   stockStackAcresGroup,
@@ -237,6 +238,7 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("collect"),
     unitIds: z.array(unitIdSchema).min(1).max(64).optional(),
   }),
+  z.object({ action: z.literal("replant"), unitId: unitIdSchema }),
   z.object({ action: z.literal("feed"), unitId: unitIdSchema }),
   // The daily tend. Takes a unit and nothing else: it spends no Gold, no
   // feed and no energy, so there is no quantity to bound here.
@@ -573,6 +575,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return retireStackAcresStock(token, action.unitId, now);
     case "collect":
       return harvestStackAcres(token, { unitIds: action.unitIds }, now);
+    case "replant":
+      return replantStackAcres(token, action.unitId, now);
     case "feed":
       return feedStackAcres(token, action.unitId, now);
     case "care":

@@ -26,7 +26,7 @@ import { STACKACRES_CATALOGUE, isLivestock, type StackAcresStock } from "./catal
 import { baseYieldQuantity } from "./items";
 import { greenhouseDurationMs } from "./greenhouse";
 import { enrichedGrowthMultiplier } from "./soil-enrich";
-import { applyCare, freshAnimalCare } from "./barn";
+import { applyCare, CARE_BONUS_CAP, freshAnimalCare } from "./barn";
 import type { HerdAway } from "./herd-risk";
 
 /** One owned unit as a store row. See lib/server/stackacres-store.ts. */
@@ -99,8 +99,9 @@ export interface StackAcresUnitRow {
   mapTx?: number | null;
   mapTy?: number | null;
   /**
-   * The barn routine (./barn.ts). Livestock only; a crop carries the blank
-   * row and nothing ever reads it there.
+   * The barn routine (./barn.ts) and the crop-care reward. Livestock uses the
+   * daily tend fields; crops use careBonus for manual watering earned on the
+   * current cycle. Both are optional for the same backfill reason.
    *
    * Optional, and absent is how every animal bought before the Barn shipped
    * loads -- the same posture `mapTx`/`mapTy` above already take. `?? null`
@@ -109,6 +110,7 @@ export interface StackAcresUnitRow {
    */
   caredOn?: string | null;
   careStreak?: number;
+  /** Extra produce earned by tending this current cycle, capped at two. */
   careBonus?: number;
   /** Set while a placed sheep or cow is away for the night (./herd-risk.ts). It
    *  cannot be collected from, and it shows as working so nothing offers to. */
@@ -179,6 +181,7 @@ export interface StackAcresUnitSnapshot {
    *  three. */
   caredOn?: string | null;
   careStreak?: number;
+  /** Extra produce earned by tending this current cycle, capped at two. */
   careBonus?: number;
   /** Set while a placed sheep or cow is away for the night (./herd-risk.ts). It
    *  cannot be collected from, and it never shows as ready, so nothing offers to. */
@@ -657,6 +660,7 @@ export function optimisticallyWateredUnit(
       thirstyAt: thirstMs === null ? null : new Date(nowMs + thirstMs).toISOString(),
       isWatered: true,
       seed: false,
+      careBonus: Math.min(CARE_BONUS_CAP, (unit.careBonus ?? 0) + 1),
     };
   }
   const driedAt = unit.thirstyAt ? Date.parse(unit.thirstyAt) : NaN;
@@ -672,6 +676,7 @@ export function optimisticallyWateredUnit(
     state: "working",
     readyAt: new Date(pushed).toISOString(),
     thirstyAt: thirstMs === null ? null : new Date(nowMs + thirstMs).toISOString(),
+    careBonus: Math.min(CARE_BONUS_CAP, (unit.careBonus ?? 0) + 1),
   };
 }
 

@@ -2168,7 +2168,11 @@ export class TopdownScene extends Phaser.Scene {
     this.stand();
     if (!target || target.kind === "nothing") return;
     const distance = Math.hypot(target.anchor.x - this.pos.x, target.anchor.y - this.pos.y);
-    if (distance > REACH * 2.5) {
+    // Do not let a failed or incomplete path turn into a remote interaction.
+    // `approachSpot` already chooses a reachable standing point for props, so
+    // the action should only fire inside the same reach window used by the
+    // early-arrival fast path and by nearby-unit targeting.
+    if (distance > REACH) {
       this.floatAt(this.mapToCss(target.anchor), "Can't reach that from here", "deny");
       this.emote("farmer", "sweat");
       return;

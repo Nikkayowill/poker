@@ -57,6 +57,9 @@ export type Action =
   // No `unitIds` means "bring in everything that is ready" -- what the
   // Harvest key sends. A single id is what tapping one unit sends.
   | { action: "collect"; unitIds?: string[] }
+  // A ready crop, with the seed pouch held on the same crop, can be brought
+  // in and sown back into its exact bed in one deliberate press.
+  | { action: "replant"; unitId: string }
   | { action: "feed"; unitId: string }
   | { action: "care"; unitId: string }
   // Feeds the hungry animals in one pen, a serving each, as far as the feed

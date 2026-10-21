@@ -315,7 +315,7 @@ function newOptimisticUnitId(): string {
 /** Whether `body` is one of the two actions that makes a new unit row, and
  *  so leaves a provisional id on screen until its response lands. */
 export function createsStackAcresUnit(body: Action): boolean {
-  return body.action === "stock" || body.action === "buy-stock";
+  return body.action === "stock" || body.action === "buy-stock" || body.action === "replant";
 }
 
 /** Every unit id `body` names, across the two shapes actions carry them in
@@ -548,6 +548,36 @@ export function predictStackAcresAction(
       return {
         units: [...kept, ...resown],
         soilTiles: withEnriched(ctx.soilTiles, enrichedSlots, true),
+      };
+    }
+    case "replant": {
+      const old = ctx.units.find((unit) => unit.id === body.unitId);
+      if (
+        !old ||
+        isLivestock(old.stock) ||
+        old.soilSlot === null ||
+        !isNow(old, "ready", ctx.nowMs) ||
+        (ctx.seedStock[old.stock] ?? 0) < 1
+      ) {
+        return null;
+      }
+      const bed = ctx.soilTiles.find((tile) => tile.order === old.soilSlot);
+      if (!bed) return null;
+      const unit = optimisticallyStockedUnit({
+        id: newOptimisticUnitId(),
+        stock: old.stock,
+        permanent: false,
+        inGreenhouse: false,
+        nowMs: ctx.nowMs,
+        soilSlot: old.soilSlot,
+        enriched: isSoilTileEnriched(bed),
+      });
+      return {
+        units: [...ctx.units.filter((candidate) => candidate.id !== old.id), unit],
+        seedStock: { ...ctx.seedStock, [old.stock]: (ctx.seedStock[old.stock] ?? 0) - 1 },
+        ...(isSoilTileEnriched(bed)
+          ? { soilTiles: withEnriched(ctx.soilTiles, new Set([old.soilSlot]), false) }
+          : {}),
       };
     }
     case "stock": {

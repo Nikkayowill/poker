@@ -45,13 +45,13 @@ export function StackAcresRayWelcome({ onClose }: { onClose: () => void }) {
             className="sa-ray-welcome-portrait"
           />
           <p>
-            &ldquo;Well now, come on in. Name&rsquo;s Ray, and this land&rsquo;s been in the family a
-            long while. Tap the ground to walk, and tap whatever you&rsquo;re standing by to use it.&rdquo;
+            &ldquo;Well now, come on in. Name&rsquo;s Ray. This land&rsquo;s been in the family a long while. The
+            old bed by the porch is waiting on someone with a little patience.&rdquo;
           </p>
           <p>
-            &ldquo;Here&rsquo;s a pouch of wheat seed to start you off. Break ground with the hoe, sow
-            it, and water it from the well. Cora sells every other seed at the market in town, over the
-            west bridge. When the wheat comes in, Dale buys it down by the river.&rdquo;
+            &ldquo;Here&rsquo;s a pouch of wheat seed. See what the place tells you. If the can runs dry, the well
+            hasn&rsquo;t gone anywhere. And when you&rsquo;re ready to look beyond this fence, Cora keeps a stall
+            over the west bridge.&rdquo;
           </p>
           <button type="button" className="sa-cta" onClick={onClose}>
             Thanks, Ray

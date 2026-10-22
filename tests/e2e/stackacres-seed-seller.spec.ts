@@ -47,7 +47,10 @@ test("Ray's welcome gives one pouch of wheat seed and the panel says to plant it
   await start(page);
 
   const welcome = page.getByRole("dialog", { name: "Ray" });
-  await expect(welcome).toContainText("Cora sells every other seed");
+  await expect(welcome).toContainText("old bed by the porch");
+  await expect(welcome).toContainText("If the can runs dry");
+  await expect(welcome).toContainText("the well");
+  await expect(welcome).not.toContainText("Dale");
   await welcome.getByRole("button", { name: "Thanks, Ray" }).click();
 
   await expect.poll(async () => (await farm(context)).seedStock.wheat, { timeout: 10_000 }).toBe(12);
@@ -77,6 +80,9 @@ test("Cora sells seed at the city market", async ({ context, page }) => {
   const sheet = page.getByRole("dialog", { name: "Seed seller" });
   await expect(sheet).toBeVisible();
   await expect(sheet).toContainText("Cora");
+  await expect(sheet).toContainText("Wheat is a forgiving crop");
+  await expect(sheet).not.toContainText("early");
+  await expect(sheet).toContainText("The rest can wait");
   const wheat = sheet.locator(".sa-stock-card", { hasText: "Wheat" });
   await expect(wheat).toBeVisible();
 

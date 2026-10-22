@@ -133,7 +133,7 @@ describe("the seed pouch", () => {
 
   it("asks the player to pick a seed when the wheel is empty", () => {
     const action = resolveBeltAction("seeds", bareBed, ctx({ seed: null }));
-    expect(action).toHaveProperty("reason", expect.stringContaining("pouch"));
+    expect(action).toHaveProperty("reason", "The pouch is empty. Cora keeps seed at the market in town.");
   });
 
   it("names the crop it has run out of", () => {

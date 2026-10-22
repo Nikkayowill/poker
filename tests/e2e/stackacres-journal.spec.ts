@@ -58,6 +58,7 @@ test("the chip's title and the sheet's line are the same line", async ({ context
   // in its own text lives in the title and in the sheet, not duplicated on
   // screen. The title is "<chapter>: <now line>".
   const chip = page.getByTitle(/^Chapter 1/);
+  await expect(chip).toHaveAccessibleName(/The Journal.*Feed Grinder.*Wood/);
   const title = (await chip.getAttribute("title")) ?? "";
   const line = title.split(": ").slice(1).join(": ");
   expect(line).toContain("Feed Grinder");

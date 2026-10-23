@@ -90,7 +90,8 @@ describe("the one line", () => {
   it("tells a farm with seed and nothing planted to sow first, before any building", () => {
     const cue = journalView(farm({ units: [], seedStock: { wheat: 12 } })).now;
     expect(cue.kind).toBe("sow");
-    expect(cue.line).toContain("sow");
+    expect(cue.line).toContain("empty bed");
+    expect(cue.line).toContain("first experiment");
   });
 
   it("sends a farm with nothing planted and no seed to Cora in the city", () => {

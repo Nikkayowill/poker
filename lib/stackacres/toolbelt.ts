@@ -271,7 +271,7 @@ function seedAction(target: BeltTarget, ctx: BeltContext): BeltAction {
     return blocked("Something is already growing here.");
   }
   if (!target.bedded) return blocked("Break the ground with the hoe first.");
-  if (!ctx.seed) return blocked("No seed in your pouch. Cora sells it in town.");
+  if (!ctx.seed) return blocked("The pouch is empty. Cora keeps seed at the market in town.");
   if (ctx.seedsHeld < 1) return blocked(`No ${STACKACRES_CATALOGUE[ctx.seed].label} seeds left.`);
   return { kind: "plant", tx: target.tile.tx, ty: target.tile.ty, stock: ctx.seed };
 }

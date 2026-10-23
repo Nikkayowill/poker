@@ -568,7 +568,7 @@ function candidateCues(input: JournalInput, chapters: readonly JournalChapter[])
     // Wheat in the barn is work in hand (the Mill), so it is not "out of seed" until that is used up too.
     const wheatToMill = inventoryQuantity(input.inventory, "wheat") >= RECIPE_CATALOGUE.flour.inputs[0].quantity;
     if (seedCount > 0) {
-      cues.push(cue("sow", "Hoe a bed on the grass by the house, sow your seed and water it from the well."));
+      cues.push(cue("sow", "The empty bed is waiting. Your seed pouch, the hoe and the well should make a good first experiment."));
     } else if (!wheatToMill) {
       cues.push(cue("seeds", `You're out of seed. Cora sells it at ${SEED_SELLER_WHERE}.`, "The City"));
     }

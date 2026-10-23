@@ -4683,7 +4683,8 @@ export function StackAcresFarm() {
             </header>
             <div className="sa-store-panel">
           <p className="sa-sheet-note">
-            &ldquo;Seed for every bed you can build. Take it back over the bridge, hoe a bed by the house and sow it.&rdquo;
+            &ldquo;Ray sent you? Wheat is a forgiving crop: give it a bed, a drink and a little time. The rest
+            can wait.&rdquo;
           </p>
           <div className="sa-stock-cards">
             {openSeeds.map((crop) => {

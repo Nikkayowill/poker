@@ -62,9 +62,12 @@ function sceneCall<M extends SceneMethod>(page: Page, method: M, ...args: Parame
  * (at most five, a boulder), and a tap mid-swing is ignored, so each waits for
  * the swing before it to play out.
  */
-async function swingUntilDown(page: Page, id: string, point: { x: number; y: number }): Promise<void> {
+async function swingUntilDown(page: Page, id: string): Promise<void> {
   for (let swing = 1; swing < 6 && (await sceneCall(page, "landObstaclePoint", id)) !== null; swing += 1) {
     await page.waitForTimeout(700);
+    const at = await sceneCall(page, "landObstaclePoint", id);
+    if (!at) break;
+    const point = await sceneCall(page, "clientPointFor", at.x, at.y);
     await page.mouse.click(point.x, point.y);
   }
   await expect.poll(() => sceneCall(page, "landObstaclePoint", id), { timeout: 10_000 }).toBeNull();
@@ -93,6 +96,6 @@ test("the Crop Fields start overgrown, and a swing clears a square", async ({ co
   const point = await sceneCall(page, "clientPointFor", target.at.x, target.at.y);
   await page.mouse.click(point.x, point.y);
 
-  await swingUntilDown(page, target.id, point);
+  await swingUntilDown(page, target.id);
   expect(await sceneCall(page, "isBlockedAt", target.at)).toBe(false);
 });

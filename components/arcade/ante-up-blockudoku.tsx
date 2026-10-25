@@ -306,6 +306,7 @@ export function AnteUpBlockudoku() {
   // A drag ends in a click on the tray button; this swallows that one click.
   const swallowClick = useRef(false);
   const clearTimer = useRef<number | null>(null);
+  const clearCueKey = useRef(0);
 
   const applyResponse = useCallback((data: Partial<AnteUpBlockudokuResponse>) => {
     if (data.profile) setProfile(data.profile);
@@ -523,7 +524,7 @@ export function AnteUpBlockudoku() {
       if (isCombo) comboSound(); else clearSound();
       setClearing(order);
       setClearingKinds(Object.fromEntries(groups.flatMap((group) => group.cells.map((index) => [index, group.kind]))) as Record<number, BlockudokuClearGroupKind>);
-      setClearCue({ groups, streak: (attempt?.board.streak ?? 0) + 1, key: Date.now() });
+      setClearCue({ groups, streak: (attempt?.board.streak ?? 0) + 1, key: ++clearCueKey.current });
       setCombo(isCombo);
       if (clearTimer.current !== null) window.clearTimeout(clearTimer.current);
       clearTimer.current = window.setTimeout(() => {

@@ -2108,6 +2108,19 @@ export class TopdownScene extends Phaser.Scene {
       const { anchor, face } = this.tractor.approach();
       consider({ kind: "tag", tag: "tractor", anchor: this.tractor.driving ? { ...this.pos } : anchor, face: this.tractor.driving ? null : face }, this.tractor.position.y);
     }
+    // Land art can overlap because the sprite is taller than the tile it
+    // blocks. A tap on an obstacle's base should work that obstacle instead
+    // of whichever overlapping prop happens to have the greater draw depth.
+    const landTarget = this.propImages
+      .filter(({ spec, image }) => spec.tag?.startsWith("land:") && image.visible)
+      .map(({ spec }) => ({ spec, distance: Math.hypot(map.x - spec.x, map.y - (spec.y - 6)) }))
+      .filter(({ distance }) => distance <= 18)
+      .sort((a, b) => a.distance - b.distance)[0];
+    if (landTarget) {
+      const { spec } = landTarget;
+      const { anchor, face } = approachSpot(this.grid, this.pos, { x: spec.x, y: spec.y }, spec.w, spec.h);
+      return { kind: "tag", tag: spec.tag!, anchor, face };
+    }
     for (const { spec, image } of this.propImages) {
       if (!spec.tag || !image.visible) continue;
       if (!image.getBounds().contains(map.x, map.y)) continue;

@@ -146,9 +146,27 @@ async function castFromDock(page: Page, holdMs = 600) {
   );
   await page.touchscreen.tap(target.x, target.y);
   await page.waitForFunction(() => (window as unknown as Handle).__stackacres.scene.cast?.phase === "aim", null, { timeout: 15_000 });
-  await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.setUseHeld(true));
-  await page.waitForTimeout(holdMs);
-  await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.setUseHeld(false));
+  await page.evaluate((minimumMs) => new Promise<void>((resolve) => {
+    const scene = (window as unknown as Handle).__stackacres.scene as unknown as {
+      cast: { chargeFrom: number | null } | null;
+      time: { now: number };
+      setUseHeld: (down: boolean) => void;
+    };
+    scene.setUseHeld(true);
+    const release = () => {
+      if (!scene.cast || scene.cast.chargeFrom == null) {
+        resolve();
+        return;
+      }
+      if (scene.time.now - scene.cast.chargeFrom >= minimumMs) {
+        scene.setUseHeld(false);
+        resolve();
+        return;
+      }
+      requestAnimationFrame(release);
+    };
+    requestAnimationFrame(release);
+  }), holdMs);
 }
 
 test("a fuller power bar throws the float farther, on a line from the rod", async ({ browser }) => {
@@ -243,9 +261,13 @@ test("a landed fish jumps into his hands and is held up, losing one snaps the ro
     await page.waitForFunction(() => (window as unknown as Handle).__stackacres.scene.cast?.phase === "tension", null, {
       timeout: 15_000,
     });
-    await page.evaluate((key) => (window as unknown as Handle).__stackacres.game.scene.getScene(key)?.giveUp(), GAUGE_SCENE_KEY);
-    // The snap is a quarter of a second, so this watches every frame rather than polling past it.
-    await page.waitForFunction(() => (window as unknown as Handle).__stackacres.scene.cast?.phase === "snap", null, { timeout: 10_000 });
+    await expect.poll(() => page.evaluate((key) => (window as unknown as Handle).__stackacres.game.scene.isActive(key), GAUGE_SCENE_KEY)).toBe(true);
+    const escaped = await page.evaluate((key) => {
+      const { scene, game } = (window as unknown as Handle).__stackacres;
+      game.scene.getScene(key)?.giveUp();
+      return scene.cast?.phase ?? null;
+    }, GAUGE_SCENE_KEY);
+    expect(escaped).toBe("snap");
     await page.waitForFunction(() => (window as unknown as Handle).__stackacres.scene.cast === null, null, { timeout: 15_000 });
     // The gauge took itself down with it, so the map has its own taps back.
     await expect.poll(() => page.evaluate((key) => (window as unknown as Handle).__stackacres.game.scene.isActive(key), GAUGE_SCENE_KEY)).toBe(false);

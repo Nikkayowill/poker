@@ -70,7 +70,7 @@ export function StackAcresHudOverflow({ children }: { children: ReactNode }) {
         className={clsx("sa-music-toggle", "sa-hud-more-btn", { "is-open": open })}
         aria-haspopup="true"
         aria-expanded={open}
-        aria-label="More — Journal and farm tools"
+        aria-label="More"
         title="More — Journal and farm tools"
         onClick={() => setOpen((value) => !value)}
       >

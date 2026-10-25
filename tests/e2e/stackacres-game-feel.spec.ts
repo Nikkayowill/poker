@@ -213,21 +213,22 @@ test("the thumb stick walks him, stops him when let go, and carries him between 
     await page.waitForTimeout(300);
     expect((await scene()).pos).toEqual(stopped.pos);
 
-    // Off the bottom of the yard and straight out into the Crop Fields, the wild
-    // land round it. They are part of this same map, so walking out never loads
-    // anything: the farmer simply ends up standing in the wild. Column 16 has
-    // three clear wild squares under the yard's last row of grass.
-    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 264, y: 488 }));
+    // Across the yard's east road and into the translated Crop Fields. They
+    // are part of this same map, so walking out never loads anything.
+    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 208, y: 488 }));
     await page.waitForTimeout(200);
-    await push(0, 50);
-    await expect.poll(async () => await place(), { timeout: 5_000 }).toBe("cropfields");
+    await push(0, -50);
+    await expect.poll(async () => {
+      const current = await place();
+      return current;
+    }, { timeout: 5_000 }).toBe("cropfields");
     expect((await scene()).area).toBe("homestead");
     await touch("touchEnd");
 
-    // And back up into the yard, still without a load.
-    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 264, y: 536 }));
+    // And back down into the yard, still without a load.
+    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 208, y: 536 }));
     await page.waitForTimeout(200);
-    await push(0, -50);
+    await push(0, 50);
     await expect.poll(async () => await place(), { timeout: 5_000 }).toBe("farmstead");
     expect((await scene()).area).toBe("homestead");
     await touch("touchEnd");

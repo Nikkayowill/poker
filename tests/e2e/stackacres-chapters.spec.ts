@@ -90,7 +90,7 @@ test("building the Stew Pot finishes chapter 2 with Ray's card, once", async ({ 
   const card = page.getByRole("dialog", { name: "Stew" });
   await expect(card).toBeVisible({ timeout: 10_000 });
   await expect(card).toContainText("CHAPTER 2 DONE");
-  await expect(card).toContainText("Opens Potato, Carrot and Onion seeds");
+  await expect(card).toContainText("Opens Potato and Onion seeds");
   await expect(card).toContainText("Next up, chapter 1: Bread");
   await card.getByRole("button", { name: "Thanks, Ray" }).click();
   await expect(card).toBeHidden();

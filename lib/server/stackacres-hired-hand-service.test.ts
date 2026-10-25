@@ -44,6 +44,7 @@ async function farm(gold: number, beds = HIRED_HAND_BEDS_TO_HIRE) {
   if (delta !== 0) await adjustGold(profile.id, delta);
   await recordStackAcresCropFieldsUnlocked(profile.id, T0);
   await adjustStackAcresSeedStock(profile.id, "wheat", 100);
+  await adjustStackAcresSeedStock(profile.id, "carrot", 100);
   const origin = soilTileAt(CROP_FIELD_BEDS.x + SOIL_TILE, CROP_FIELD_BEDS.y + SOIL_TILE);
   const tiles = Array.from({ length: beds }, (_, i) => ({ tx: origin.tx + (i % 3), ty: origin.ty + Math.floor(i / 3) }));
   for (const tile of tiles) await placeStackAcresSoilTile(profile.id, tile.tx, tile.ty);
@@ -157,7 +158,7 @@ describe("Earl's wage", () => {
 describe("Earl's chores", () => {
   it("waters sown seed from the well, never the player's can", async () => {
     const { token, profileId, tiles } = await farm(1_000);
-    await stockStackAcres(token, { stock: "wheat", tile: tiles[0] }, T0);
+    await stockStackAcres(token, { stock: "carrot", tile: tiles[0] }, T0);
     await hireStackAcresHand(token, T0);
     const can = await readStackAcresWater(profileId);
     const pass = await runStackAcresHiredHand(token, at(PASS));
@@ -199,7 +200,7 @@ describe("Earl's chores", () => {
 
   it("takes one pass per interval", async () => {
     const { token, tiles } = await farm(1_000);
-    for (const tile of tiles) await stockStackAcres(token, { stock: "wheat", tile }, T0);
+    for (const tile of tiles) await stockStackAcres(token, { stock: "carrot", tile }, T0);
     await hireStackAcresHand(token, T0);
     const passes = await Promise.all([runStackAcresHiredHand(token, at(PASS)), runStackAcresHiredHand(token, at(PASS))]);
     expect(passes.map((pass) => pass.handChores.watered.length).sort()).toEqual([0, 4]);

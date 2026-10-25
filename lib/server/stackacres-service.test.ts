@@ -334,6 +334,7 @@ async function funded(
   // Cellar this file's own tests place freely.
   await adjustStackAcresInventory(profile.id, "wood", 1000);
   await adjustStackAcresInventory(profile.id, "stone", 1000);
+  await adjustStackAcresInventory(profile.id, "straw", 1000);
   if (beds) {
     // Straight into the store, not through `placeStackAcresSoilTile`: that
     // route spends a bag off Ray's shelf, and nothing here is about bags.
@@ -748,6 +749,21 @@ describe("hunger", () => {
     expect(Date.parse(after?.readyAt ?? "")).toBe(Date.parse(before?.readyAt ?? "") + starved);
     expect(after?.lastFedAt).toBe(fedAt.toISOString());
     expect(await readStackAcresFeed(id)).toBe(1);
+  });
+
+  it("does not spend feed when cattle have no Straw bedding", async () => {
+    const { token, id } = await funded();
+    const view = await stockStackAcres(token, { stock: "cattle" }, T0);
+    const unitId = unitOf(view, "cattle").id;
+    await adjustStackAcresInventory(id, "straw", -1000);
+    await adjustStackAcresFeed(id, 1);
+
+    await expect(feedStackAcres(token, unitId, hungryAt)).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringContaining("Straw bedding"),
+    });
+    expect(await readStackAcresFeed(id)).toBe(1);
+    expect((await readStackAcres(token, hungryAt)).inventory.straw ?? 0).toBe(0);
   });
 
   it("refuses to feed with an empty barn, and spends nothing", async () => {
@@ -2582,6 +2598,21 @@ describe("a pristine farm", () => {
  * way to pay it.
  */
 describe("buying stock outright", () => {
+  it("requires the Hen Coop's one-time Straw build cost and leaves Gold untouched when short", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresInventory(id, "straw", -1000);
+    const before = await balance(token);
+
+    await expect(buyStackAcresStock(token, { stock: "hen" }, T0)).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringContaining("12 Straw"),
+    });
+
+    expect(await balance(token)).toBe(before);
+    expect((await readStackAcres(token, T0)).units).toEqual([]);
+    expect((await readStackAcres(token, T0)).inventory.straw ?? 0).toBe(0);
+  });
+
   it("charges the listed price and creates the unit already working", async () => {
     const { token } = await funded();
     const before = await balance(token);
@@ -3354,6 +3385,7 @@ describe("wheat and machines", () => {
     const ripe = await workStackAcres(token, ripenedAt);
     expect(ripe.work).toEqual({ wheatCollected: 1, machinesStarted: 1, machinesCollected: 0, siloServings: 0 });
     expect(ripe.inventory.wheat).toBe(WHEAT_YIELD_QUANTITY - RECIPE_CATALOGUE.flour.inputs[0].quantity);
+    expect(ripe.inventory.straw).toBe(1003);
     expect(ripe.machines[0].status).toBe("working");
     expect(ripe.wheatPlots).toHaveLength(0);
 
@@ -4191,6 +4223,19 @@ describe("sellStackAcresItem", () => {
     expect(cake.sold.gold).toBe(machineItemSellPrice("cake"));
     const wheat = await sellStackAcresItem(token, { buyer: "grain-elevator", item: "wheat", quantity: 3 }, T0);
     expect(wheat.sold.gold).toBe(machineItemSellPrice("wheat") * 3);
+  });
+
+  it("keeps Straw as a farm material instead of allowing a zero-value sale", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresInventory(id, "straw", 3);
+    const before = await balance(token);
+
+    await expect(
+      sellStackAcresItem(token, { buyer: "general-store", item: "straw", quantity: 1 }, T0),
+    ).rejects.toMatchObject({ status: 400, message: expect.stringContaining("farm material") });
+
+    expect(await balance(token)).toBe(before);
+    expect((await readStackAcres(token, T0)).inventory.straw).toBe(1003);
   });
 
   it("refuses more than is held, and moves no Gold and no goods", async () => {

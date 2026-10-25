@@ -8,6 +8,7 @@ import {
   STACKACRES_CROPS,
   STACKACRES_FEED,
   STACKACRES_FEED_SHIPMENTS_PER_PURCHASE,
+  STACKACRES_HEN_COOP_STRAW_COST,
   STACKACRES_MARKET_ANIMALS,
   STACKACRES_MAX_EXTRA_CAP,
   STACKACRES_MUCK_CHANCE,
@@ -496,7 +497,7 @@ import {
 } from "@/lib/stackacres/hired-hand";
 import { isActiveStock } from "@/lib/stackacres/scope";
 import { isUnbuiltCutter } from "@/lib/stackacres/unbuilt";
-import { feedingToast, servingBonus, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
+import { feedingToast, requiresBedding, servingBonus, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
 import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/feed-silo";
 import { isSeedUnlocked, seedLockedMessage } from "@/lib/stackacres/seed-unlocks";
 import { TOWN_BUYERS, buyerTakes, isTownBuyer, townBuyerFor } from "@/lib/stackacres/town-buyers";
@@ -2776,6 +2777,21 @@ export async function buyStackAcresStock(
     });
   }
 
+  const coopStraw = stock === "hen" ? STACKACRES_HEN_COOP_STRAW_COST : 0;
+  let strawSpent = false;
+  if (coopStraw > 0) {
+    const remaining = await adjustStackAcresInventory(profile.id, "straw", -coopStraw);
+    if (remaining === null) {
+      await refundGold(profile.id, price);
+      throw new StackAcresRequestError(
+        `The ${def.label.toLowerCase()} also needs ${coopStraw} Straw.`,
+        400,
+        { round: await snapshots(profile.id, now) },
+      );
+    }
+    strawSpent = true;
+  }
+
   // Buying a crop outright puts a plant in the ground exactly like sowing
   // one does, so it needs a bed the same way (`stockStackAcres`'s own gate).
   // Without this the Buy outright button was the way around it: it never
@@ -2852,6 +2868,7 @@ export async function buyStackAcresStock(
     // any other reason, and nothing came into existence, so the player must
     // not have paid for it.
     await refundGold(profile.id, price);
+    if (strawSpent) await adjustStackAcresInventory(profile.id, "straw", coopStraw).catch(() => null);
     throw error;
   }
 
@@ -3357,6 +3374,16 @@ async function refundServing(profileId: string, source: ServingSource): Promise<
   }
 }
 
+/** Sheep and cattle use one Straw as bedding each time their hunger cycle is
+ * reset. Hens pay the one-time coop Straw cost at purchase instead. */
+async function spendBedding(profileId: string, stock: StackAcresStock): Promise<boolean> {
+  return !requiresBedding(stock) || (await adjustStackAcresInventory(profileId, "straw", -1)) !== null;
+}
+
+async function refundBedding(profileId: string, stock: StackAcresStock): Promise<void> {
+  if (requiresBedding(stock)) await adjustStackAcresInventory(profileId, "straw", 1).catch(() => null);
+}
+
 /**
  * The Feed Silo's lazy settlement: feeds every animal that went hungry, as of
  * the moment it went hungry, from the barn (lib/stackacres/feed-silo.ts).
@@ -3401,13 +3428,19 @@ async function runFeedSilo(profileId: string, now: Date): Promise<number> {
     const unit = units.find((candidate) => candidate.id === feeding.unitId);
     if (!unit) continue;
     const spent: ServingSource[] = [];
+    let beddingSpent = 0;
     for (const source of feeding.sources) {
+      if (!(await spendBedding(profileId, unit.stock))) break;
       const left =
         source === "feed"
           ? await adjustStackAcresFeed(profileId, -1)
           : await adjustStackAcresInventory(profileId, source, -1);
-      if (left === null) break;
+      if (left === null) {
+        await refundBedding(profileId, unit.stock);
+        break;
+      }
       spent.push(source);
+      beddingSpent += 1;
     }
     if (spent.length === 0) continue;
 
@@ -3421,6 +3454,7 @@ async function runFeedSilo(profileId: string, now: Date): Promise<number> {
     }
     if (!written) {
       for (const source of spent) await refundServing(profileId, source);
+      for (let i = 0; i < beddingSpent; i += 1) await refundBedding(profileId, unit.stock);
       continue;
     }
     served += spent.length;
@@ -3480,8 +3514,15 @@ export async function feedStackAcres(
   // Rule 1 again, in servings rather than Gold: the feed is spent before the
   // write it pays for. Null is "not enough", which reads exactly like a lost
   // race because it is one.
+  const beddingSpent = await spendBedding(profile.id, unit.stock);
+  if (!beddingSpent) {
+    throw new StackAcresRequestError("You need Straw bedding before this animal can eat.", 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
   const source = await spendServing(profile.id, unit.stock);
   if (source === null) {
+    await refundBedding(profile.id, unit.stock);
     throw new StackAcresRequestError("You are out of feed. Buy a shipment first.", 400, {
       round: await snapshots(profile.id, now),
     });
@@ -3515,10 +3556,12 @@ export async function feedStackAcres(
     }
   } catch (error) {
     await refundServing(profile.id, source);
+    await refundBedding(profile.id, unit.stock);
     throw error;
   }
   if (!fed) {
     await refundServing(profile.id, source);
+    await refundBedding(profile.id, unit.stock);
     throw new StackAcresRequestError("That moved on.", 409, {
       round: await snapshots(profile.id, now),
     });
@@ -3569,8 +3612,13 @@ export async function feedStackAcresPen(
   let fedCount = 0;
   const sources: ServingSource[] = [];
   for (const unit of hungry) {
+    const beddingSpent = await spendBedding(profile.id, unit.stock);
+    if (!beddingSpent) break;
     const source = await spendServing(profile.id, unit.stock);
-    if (source === null) break;
+    if (source === null) {
+      await refundBedding(profile.id, unit.stock);
+      break;
+    }
 
     const { pushed, newStartedAt } = feedPushFor(unit, now, comfort);
 
@@ -3597,12 +3645,14 @@ export async function feedStackAcresPen(
       }
     } catch (error) {
       await refundServing(profile.id, source);
+      await refundBedding(profile.id, unit.stock);
       // The animals already fed stay fed. Only throw if nothing went through.
       if (fedCount === 0) throw error;
       break;
     }
     if (!fed) {
       await refundServing(profile.id, source);
+      await refundBedding(profile.id, unit.stock);
       continue;
     }
     fedCount += 1;
@@ -5442,7 +5492,7 @@ export interface StackAcresHarvestResult {
   /** Produce actually credited to inventory, summed per item -- base yield
    *  plus any crit bonus folded in. See `critBonus` below for what it
    *  contributed. */
-  tally: { item: StackAcresItem; quantity: number }[];
+  tally: { item: MachineItemId; quantity: number }[];
   /** Every settled unit's yield valued at today's sell price, before any
    *  bonus -- a production figure for the ledger, not Gold paid (a harvest pays none) and not what landed in inventory
    *  (see `tally` for that). */
@@ -5661,11 +5711,17 @@ export async function harvestStackAcres(
   // settlement above is already durable, and a credit hiccup here must not
   // turn a settled harvest into an error response, only report less than
   // what actually landed in the barn.
-  const finalTally = new Map<StackAcresItem, number>();
-  for (const { item, quantity } of baseTally) finalTally.set(item, quantity);
+  const finalTally = new Map<MachineItemId, number>();
+  for (const { item, quantity } of baseTally) {
+    const inventoryItem: MachineItemId = item;
+    finalTally.set(inventoryItem, (finalTally.get(inventoryItem) ?? 0) + quantity);
+    // One wheat bed produces four grain and three straw. A harvest crit adds
+    // grain only; bedding remains the predictable base byproduct.
+    if (item === "wheat") finalTally.set("straw", (finalTally.get("straw") ?? 0) + 3);
+  }
   for (const [item, bonus] of critBonusTally) finalTally.set(item, (finalTally.get(item) ?? 0) + bonus);
 
-  const credited: { item: StackAcresItem; quantity: number }[] = [];
+  const credited: { item: MachineItemId; quantity: number }[] = [];
   for (const [item, quantity] of finalTally) {
     try {
       await adjustStackAcresInventory(profile.id, item, quantity);
@@ -6157,6 +6213,16 @@ export async function workStackAcres(
       wheatCollected += 1;
     } catch (error) {
       console.error("stackacres.wheat_credit_failed", { profileId: profile.id, plotId: plot.id, error });
+      continue;
+    }
+    try {
+      // Wheat keeps its established inventory ID for live-farm compatibility;
+      // Straw is the new predictable byproduct reserved for the coop/bedding
+      // economy. It is credited separately so a material-write hiccup cannot
+      // make an already-settled Wheat plot appear uncollected.
+      await adjustStackAcresInventory(profile.id, "straw", 3);
+    } catch (error) {
+      console.error("stackacres.straw_credit_failed", { profileId: profile.id, plotId: plot.id, error });
     }
   }
 
@@ -6673,6 +6739,11 @@ export async function sellStackAcresItem(
     });
   }
   const item: MachineItemId = input.item;
+  if (machineItemSellPrice(item) <= 0) {
+    throw new StackAcresRequestError(`${MACHINE_ITEM_CATALOGUE[item].label} is a farm material, not a sale good.`, 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
   if (!Number.isInteger(input.quantity) || input.quantity <= 0) {
     throw new StackAcresRequestError("Sell a positive amount.", 400, {
       round: await snapshots(profile.id, now),

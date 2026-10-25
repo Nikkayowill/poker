@@ -24,6 +24,7 @@
 import {
   STACKACRES_BASE_CAP,
   STACKACRES_CATALOGUE,
+  STACKACRES_HEN_COOP_STRAW_COST,
   STACKACRES_LIVESTOCK,
   STACKACRES_MAX_EXTRA_CAP,
   isLivestock,
@@ -34,7 +35,7 @@ import {
 } from "./catalogue";
 import { stackacresStockOwnableOutright, stackacresStockPrice } from "./market";
 import { isActiveStock } from "./scope";
-import { shelfFeedFor } from "./feeding";
+import { requiresBedding, shelfFeedFor } from "./feeding";
 import { inventoryQuantity, type StackAcresInventory } from "./inventory";
 import type { StackAcresUnitSnapshot } from "./units";
 import { isSectorUnlocked, sectorLabel, type SectorId } from "./sectors";
@@ -65,8 +66,15 @@ export function unitRowAction(
       return isMarketLivestock(unit.stock) ? { kind: "ship" } : { kind: "collect" };
     case "hungry":
       // Hens and cattle eat off the shelf before the Feed Sack (./feeding.ts).
-      return context.feed < 1 && shelfFeedFor(unit.stock, context.shelfFeed ?? {}) < 1
-        ? { kind: "feed", disabled: true, reason: "No feed left in the barn." }
+      return (context.feed < 1 && shelfFeedFor(unit.stock, context.shelfFeed ?? {}) < 1) ||
+        (requiresBedding(unit.stock) && (context.shelfFeed?.straw ?? 0) < 1)
+        ? {
+            kind: "feed",
+            disabled: true,
+            reason: requiresBedding(unit.stock) && (context.shelfFeed?.straw ?? 0) < 1
+              ? "No Straw bedding in the barn."
+              : "No feed left in the barn.",
+          }
         : { kind: "feed", disabled: false, reason: null };
     case "dry":
       return { kind: "water" };
@@ -112,6 +120,8 @@ export interface BuyOption {
    *  that is never sold outright (tier-1 crops), which shows no Buy button at
    *  all rather than a disabled one. */
   outrightCost: number | null;
+  /** One-time farm material cost for an outright purchase, if any. */
+  outrightMaterial: { item: "straw"; need: number; have: number } | null;
   /** Null once capacity is already maxed, or for a crop, which never has
    *  anything to expand. `timber` is the Wood the slot also costs
    *  (catalogue.ts's STACKACRES_CAPACITY_MATERIALS) and how much is in the
@@ -158,6 +168,10 @@ export function buyOptionsForZone(
           ? `${def.label} seed costs ${def.seedCost.toLocaleString()} Gold.`
           : null,
       outrightCost: stackacresStockOwnableOutright(stock) ? stackacresStockPrice(stock) : null,
+      outrightMaterial:
+        stock === "hen"
+          ? { item: "straw", need: STACKACRES_HEN_COOP_STRAW_COST, have: inventoryQuantity(context.inventory ?? {}, "straw") }
+          : null,
       // Only worth showing once the base cap is actually the thing in the
       // way -- offering to expand a kind you have room in already would be
       // a Gold button for a problem you do not have. Never shown for a crop:

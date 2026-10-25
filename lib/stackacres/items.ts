@@ -77,14 +77,14 @@ export const STACKACRES_ITEM_CATALOGUE: Readonly<Record<StackAcresItem, StackAcr
   wool: { label: "Fleece", plural: "Fleeces", icon: "ico-fleece", sellPrice: 40 },
   milk: { label: "Milk", plural: "Milk", icon: "ico-milk", sellPrice: 120 },
 
-  /* ---- Tier 1 (fast/cheap): sellPrice 2, yield quantity 1. Unchanged by the
-   * 2026-09-12 crop-roster swap -- see catalogue.ts's TIER1 comment. ---- */
+  /* ---- Tier 1 (fast/cheap): mostly sellPrice 2, yield quantity 1. Carrot
+   * is the deliberate exception: it is the early active-money crop. ---- */
   lettuce: { label: "Lettuce", plural: "Lettuce", icon: "ico-lettuce", sellPrice: 2 },
   spinach: { label: "Spinach", plural: "Spinach", icon: "ico-spinach", sellPrice: 2 },
   radish: { label: "Radish", plural: "Radishes", icon: "ico-radish", sellPrice: 2 },
   onion: { label: "Onion", plural: "Onions", icon: "ico-onion", sellPrice: 2 },
-  carrot: { label: "Carrot", plural: "Carrots", icon: "ico-carrot", sellPrice: 2 },
-  potato: { label: "Potato", plural: "Potatoes", icon: "ico-potato", sellPrice: 2 },
+  carrot: { label: "Carrot", plural: "Carrots", icon: "ico-carrot", sellPrice: 5 },
+  potato: { label: "Potato", plural: "Potatoes", icon: "ico-potato", sellPrice: 1 },
   cabbage: { label: "Cabbage", plural: "Cabbages", icon: "ico-cabbage", sellPrice: 2 },
 
   /* ---- Tier 2 (medium): sellPrice 25, yield quantity 4. ---- */
@@ -122,15 +122,15 @@ export const STACKACRES_YIELDS: Readonly<Record<StackAcresProduceStock, StackAcr
   pig: { item: "wool", quantity: 6 },
   cattle: { item: "milk", quantity: 8 },
 
-  /* ---- All 16 crops: item id == stock id, always. Tier 1 quantity is 1,
-   * tier 2 is 4, tier 3 is 5 -- see the tier comments in
-   * STACKACRES_ITEM_CATALOGUE above. ---- */
+  /* ---- All 16 crops: item id == stock id, always. Most tier-1 crops yield
+   * 1; potato is the deliberate bulk exception. Tier 2 yields 4 and tier 3
+   * yields 5 -- see the tier comments above. ---- */
   lettuce: { item: "lettuce", quantity: 1 },
   spinach: { item: "spinach", quantity: 1 },
   radish: { item: "radish", quantity: 1 },
   onion: { item: "onion", quantity: 1 },
   carrot: { item: "carrot", quantity: 1 },
-  potato: { item: "potato", quantity: 1 },
+  potato: { item: "potato", quantity: 3 },
   cabbage: { item: "cabbage", quantity: 1 },
   broccoli: { item: "broccoli", quantity: 4 },
   pepper: { item: "pepper", quantity: 4 },

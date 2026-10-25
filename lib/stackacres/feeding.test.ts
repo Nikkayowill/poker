@@ -24,13 +24,20 @@ describe("the hen feeding order", () => {
   });
 
   it("never feeds cattle hen greens", () => {
-    const plan = planServings(["cattle", "hen"], { spinach: 3 }, 1);
+    const plan = planServings(["cattle", "hen"], { spinach: 3, straw: 1 }, 1);
     expect(plan.sources).toEqual(["feed", "spinach"]);
   });
 
   it("feeds pigs only from the Feed Sack", () => {
-    const plan = planServings(["pig"], { spinach: 3, cattle_feed: 3 }, 1);
+    const plan = planServings(["pig"], { spinach: 3, cattle_feed: 3, straw: 1 }, 1);
     expect(plan.sources).toEqual(["feed"]);
+    expect(plan.beddingUsed).toBe(1);
+  });
+
+  it("does not feed sheep or cattle without Straw bedding", () => {
+    expect(planServings(["pig"], {}, 1).fed).toBe(0);
+    expect(planServings(["cattle"], { cattle_feed: 1 }, 1).fed).toBe(0);
+    expect(planServings(["cattle"], { straw: 1 }, 0).beddingUsed).toBe(0);
   });
 
   it("stops at the first animal nothing is left for", () => {
@@ -43,14 +50,15 @@ describe("the hen feeding order", () => {
 describe("the cattle feeding order", () => {
   it("is Cattle Feed, one per serving, then the Feed Sack", () => {
     expect([...CATTLE_FEED_ORDER]).toEqual(["cattle_feed"]);
-    const plan = planServings(["cattle", "cattle", "cattle"], { cattle_feed: 2, wheat: 5 }, 1);
+    const plan = planServings(["cattle", "cattle", "cattle"], { cattle_feed: 2, wheat: 5, straw: 3 }, 1);
     expect(plan.sources).toEqual(["cattle_feed", "cattle_feed", "feed"]);
     expect(plan.shelfUsed).toEqual({ cattle_feed: 2 });
+    expect(plan.beddingUsed).toBe(3);
     expect(plan.bonusEggs).toBe(0);
   });
 
   it("keeps hen greens and Cattle Feed apart", () => {
-    const plan = planServings(["hen", "cattle"], { cattle_feed: 1 }, 1);
+    const plan = planServings(["hen", "cattle"], { cattle_feed: 1, straw: 1 }, 1);
     expect(plan.sources).toEqual(["feed", "cattle_feed"]);
     expect(shelfFeedFor("cattle", { cattle_feed: 2, spinach: 4 })).toBe(2);
     expect(shelfFeedFor("hen", { cattle_feed: 2, spinach: 4 })).toBe(4);

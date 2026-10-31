@@ -18,6 +18,7 @@
 
 import { STACKACRES_CATALOGUE, isMarketLivestock, type StackAcresStock } from "./catalogue";
 import {
+  requiresBedding,
   servingBonusEggs,
   servingBonusWeight,
   shelfFeedLeft,
@@ -129,6 +130,7 @@ export function planSiloFeeding(
   const nowMs = now.getTime();
   const builtMs = builtAt.getTime();
   const left = shelfFeedLeft(inventory);
+  let beddingLeft = Math.max(0, inventory.straw ?? 0);
   let feedLeft = Math.max(0, feed);
   let budgetLeft = Math.max(0, budget);
   const shelfUsed: Partial<Record<ShelfFeedItem, number>> = {};
@@ -167,6 +169,12 @@ export function planSiloFeeding(
       continue;
     }
 
+    const needsBedding = requiresBedding(next.unit.stock);
+    if (needsBedding && beddingLeft === 0) {
+      next.stopped = true;
+      continue;
+    }
+
     const shelfItem = siloFeedOrder(next.unit.stock).find((item) => left[item] > 0);
     let source: ServingSource;
     if (shelfItem) {
@@ -180,6 +188,7 @@ export function planSiloFeeding(
       next.stopped = true;
       continue;
     }
+    if (needsBedding) beddingLeft -= 1;
     next.sources.push(source);
     next.fedAts.push(new Date(nextMs).toISOString());
     next.lastFedMs = nextMs;

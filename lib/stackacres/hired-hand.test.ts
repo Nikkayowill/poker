@@ -47,14 +47,14 @@ describe("pickHiredHandChores", () => {
   it("waters unwatered seed first, then harvests what is ripe", () => {
     const rows = [
       row("ripe", { startedAt: ago(6 * MIN), readyAt: ago(MIN), lastWateredAt: ago(6 * MIN) }),
-      row("seed", { lastWateredAt: null, startedAt: ago(MIN) }),
+      row("seed", { stock: "carrot", lastWateredAt: null, startedAt: ago(MIN) }),
       row("growing"),
     ];
     expect(pickHiredHandChores(rows, NOW, new Set())).toEqual({ water: ["seed"], harvest: ["ripe"] });
   });
 
   it("does at most a pass's worth of beds, oldest first", () => {
-    const seeds = Array.from({ length: 6 }, (_, i) => row(`seed-${i}`, { lastWateredAt: null, startedAt: ago((i + 1) * MIN) }));
+    const seeds = Array.from({ length: 6 }, (_, i) => row(`seed-${i}`, { stock: "carrot", lastWateredAt: null, startedAt: ago((i + 1) * MIN) }));
     const ripe = row("ripe", { startedAt: ago(6 * MIN), readyAt: ago(MIN), lastWateredAt: ago(6 * MIN) });
     const picked = pickHiredHandChores([...seeds, ripe], NOW, new Set());
     expect(picked.water).toEqual(["seed-5", "seed-4", "seed-3", "seed-2"]);

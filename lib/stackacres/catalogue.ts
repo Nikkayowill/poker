@@ -111,6 +111,24 @@ export function isStackAcresCrop(value: string): value is StackAcresCrop {
   return (STACKACRES_CROPS as readonly string[]).includes(value);
 }
 
+/** Short, first-session guidance shown beside the seed price. Keep this about
+ * purpose, not balance numbers: the catalogue owns the rules and the player
+ * should learn what to do with a crop before doing the arithmetic. */
+export function cropPurpose(crop: StackAcresCrop): string | null {
+  switch (crop) {
+    case "carrot":
+      return "Fast money crop. Keep it watered while it grows.";
+    case "potato":
+      return "Bulk crop for Pierre's Stew Pot.";
+    case "radish":
+      return "Save it for gifts or fishing bait.";
+    case "wheat":
+      return "No watering needed. Feed hens or mill it into Flour.";
+    default:
+      return null;
+  }
+}
+
 /**
  * Seeds of each crop bought from Ray's shop but not yet planted, keyed by
  * crop id. A missing key and an explicit 0 mean the same thing everywhere
@@ -201,16 +219,21 @@ export interface StackAcresStockDef {
  * watering could never matter. The entries below give each starter crop a
  * distinct job while keeping the existing one-currency, snapshotted-unit model.
  */
+/** Carrot is the early active-money crop: cheap, quick, and thirsty enough
+ * that staying on the farm matters. */
+const CARROT = { seedCost: 1, durationMs: 5 * 60 * 1000, hungerMs: null, thirstMs: 2 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
 const TIER1 = { seedCost: 1, durationMs: 5 * 60 * 1000, hungerMs: null, thirstMs: 2 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
 const POTATO = { seedCost: 1, durationMs: 10 * 60 * 1000, hungerMs: null, thirstMs: 5 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
-const RADISH = { seedCost: 1, durationMs: 15 * 60 * 1000, hungerMs: null, thirstMs: 5 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
+/** Radish is for gifts and bait, not raw-crop profit. */
+const RADISH = { seedCost: 2, durationMs: 15 * 60 * 1000, hungerMs: null, thirstMs: 5 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
 const TIER2 = { seedCost: 55, durationMs: 90 * 60 * 1000, hungerMs: null, thirstMs: 40 * 60 * 1000, spoils: false, muckFee: 90, ownableOutright: true } as const;
-/** Wheat is the low-value utility crop. Its longer watering window suits a
- * crop a player may plant before leaving, while still requiring soil moisture
- * through the cycle. It is valuable because other farm systems consume it,
- * not because it is a cash crop. */
-const WHEAT = { seedCost: 3, durationMs: 10 * 60 * 1000, hungerMs: null, thirstMs: 10 * 60 * 1000, spoils: false, muckFee: 26, ownableOutright: false } as const;
+/** Wheat is the crop players can plant before leaving: it feeds hens and the
+ * Mill, so its purpose is infrastructure rather than active cash. */
+const WHEAT = { seedCost: 3, durationMs: 10 * 60 * 1000, hungerMs: null, thirstMs: null, spoils: false, muckFee: 26, ownableOutright: false } as const;
 const TIER3 = { seedCost: 120, durationMs: 4 * 60 * 60 * 1000, hungerMs: null, thirstMs: 90 * 60 * 1000, spoils: false, muckFee: 200, ownableOutright: true } as const;
+
+/** Straw is paid once when the permanent starter coop is built. */
+export const STACKACRES_HEN_COOP_STRAW_COST = 12;
 
 /**
  * Seed cost, time and hunger. What a unit YIELDS is in ./items.ts: the value
@@ -223,7 +246,7 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
   spinach: { label: "Spinach", ...TIER1 },
   radish: { label: "Radish", ...RADISH },
   onion: { label: "Onion", ...TIER1 },
-  carrot: { label: "Carrot", ...TIER1 },
+  carrot: { label: "Carrot", ...CARROT },
   potato: { label: "Potato", ...POTATO },
   cabbage: { label: "Cabbage", ...TIER1 },
 

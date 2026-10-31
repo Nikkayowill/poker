@@ -65,6 +65,7 @@ const STORE: TownBuyerId = "general-store";
 const ITEM_BUYER: Readonly<Record<MachineItemId, TownBuyerId>> = {
   // Grain and what the feed grinder makes from it.
   wheat: GRAIN,
+  straw: STORE,
   corn: GRAIN,
   flour: GRAIN,
   cattle_feed: GRAIN,

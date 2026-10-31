@@ -2367,6 +2367,20 @@ const DRAWN: Record<PainterName, Painter> = {
   "ico-spinach": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-spinach"], RAMPS.leaf)),
   "ico-tomato": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-tomato"], RAMPS.roof)),
   "ico-wheat": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-wheat"], RAMPS.straw)),
+  "ico-straw": painter(24, 24, (c) => {
+    // A compact bundle, separate from the standing wheat icon so the
+    // harvest byproduct reads as a stored farm material on the shelf.
+    rr(c, 5, 8, 14, 11, 3);
+    F(c, RAMPS.straw.top);
+    for (const x of [7, 10, 13, 16]) {
+      c.beginPath();
+      c.moveTo(x, 7);
+      c.lineTo(x + 2, 20);
+      stroke(c, RAMPS.straw.rim, 1.1);
+    }
+    rr(c, 5, 8, 14, 11, 3);
+    stroke(c, RAMPS.straw.rim, 1);
+  }),
 
   "ico-flour": painter(24, 24, (c) => {
     // A tied sack, the shape a Mill's output is stored and carried in.

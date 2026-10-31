@@ -430,6 +430,10 @@ function shelfSpentPatch(ctx: FarmPredictContext, plan: ServingPlan): ReturnType
     inventory = removeFromInventory(inventory, item, quantity) ?? inventory;
     used = true;
   }
+  if (plan.beddingUsed > 0) {
+    inventory = removeFromInventory(inventory, "straw", plan.beddingUsed) ?? inventory;
+    used = true;
+  }
   return used ? processingPatch(ctx, { inventory }) : null;
 }
 

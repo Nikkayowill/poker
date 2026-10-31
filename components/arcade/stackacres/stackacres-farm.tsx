@@ -70,6 +70,7 @@ import {
   STACKACRES_FEED_SHIPMENTS_PER_PURCHASE,
   STACKACRES_LIVESTOCK,
   STACKACRES_SEED_BAGS_PER_PURCHASE,
+  cropPurpose,
   isLivestock,
   isMarketLivestock,
   type SeedStock,
@@ -4698,6 +4699,7 @@ export function StackAcresFarm() {
                   <p className="sa-stock-yield">
                     <StoreCost amount={def.seedCost} /> / seed
                   </p>
+                  {cropPurpose(crop) && <p className="sa-stock-wanted">{cropPurpose(crop)}</p>}
                   {wantedFor && <p className="sa-stock-wanted">{wantedFor}</p>}
                   <BuyQuantityControls
                     unitPrice={def.seedCost}

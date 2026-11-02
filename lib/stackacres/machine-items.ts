@@ -12,8 +12,8 @@
  * `MachineItemId` below is the wider one a recipe, the inventory itself, or
  * the Sell action needs.
  *
- * WHEAT IS A `StackAcresItem` NOW: one item, one id, the crop's own harvest
- * and what the Mill consumes. What is left in `MACHINE_RAW_ITEMS` is the
+ * WHEAT remains the shared crop/grain item for compatibility. Its harvest also
+ * produces Straw as a farm-material byproduct. What is left in `MACHINE_RAW_ITEMS` is the
  * pond's three catchable fish (./fishing.ts), meat, pelt, wood and stone:
  * caught, hunted or chopped rather than grown or crafted, with nothing
  * consuming them either.
@@ -42,7 +42,9 @@ import { FISH_SPECIES } from "./fishing";
  *  crafted, and each is a required building material
  *  (./machines.ts's `woodCost`/`stoneCost`) rather than something a recipe
  *  consumes. */
-export const MACHINE_RAW_ITEMS = [...FISH_SPECIES, "meat", "pelt", "wood", "stone", "iron_ore"] as const;
+export const MACHINE_RAW_ITEMS = [
+  ...FISH_SPECIES, "meat", "pelt", "wood", "stone", "iron_ore", "straw",
+] as const;
 export const MACHINE_PROCESSED_ITEMS = [
   "flour",
   "cheese",
@@ -172,6 +174,7 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   // Metal at the Smelter. Priced under half a bar so smelting always beats
   // selling the ore.
   iron_ore: { label: "Iron Ore", plural: "Iron Ore", icon: "ico-iron-ore", sellPrice: 5 },
+  straw: { label: "Straw", plural: "Straw", icon: "ico-straw", sellPrice: 0 },
   // Smelted from Iron Ore. Its job is paying for the Far Field's buildings
   // (./empire-buildings.ts), so like Wood and Stone it sells for little: just
   // over the two ore it takes.
@@ -189,7 +192,7 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   // for little more than what went in. No bread art yet: it borrows the wheat icon.
   bread: { label: "Bread", plural: "Bread", icon: "ico-wheat", sellPrice: 26 },
   // Borrows the potato icon.
-  stew: { label: "Hearty Stew", plural: "Hearty Stew", icon: "ico-potato", sellPrice: 11 },
+  stew: { label: "Hearty Stew", plural: "Hearty Stew", icon: "ico-potato", sellPrice: 14 },
   // Borrows the lettuce icon.
   salad: { label: "Garden Salad", plural: "Garden Salads", icon: "ico-lettuce", sellPrice: 9 },
   // Ground from corn for cattle (./feeding.ts), four to a corn. Priced as
@@ -198,7 +201,7 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   // None of these has its own art yet, so each borrows its main crop's icon.
   sauce: { label: "Tomato Sauce", plural: "Tomato Sauce", icon: "ico-tomato", sellPrice: 88 },
   salsa: { label: "Hot Salsa", plural: "Hot Salsa", icon: "ico-pepper", sellPrice: 88 },
-  stuffed_peppers: { label: "Stuffed Peppers", plural: "Stuffed Peppers", icon: "ico-bell_pepper", sellPrice: 160 },
+  stuffed_peppers: { label: "Stuffed Peppers", plural: "Stuffed Peppers", icon: "ico-bell_pepper", sellPrice: 159 },
   pickles: { label: "Pickles", plural: "Pickles", icon: "ico-celery", sellPrice: 57 },
   sauerkraut: { label: "Sauerkraut", plural: "Sauerkraut", icon: "ico-cabbage", sellPrice: 6 },
   bean_casserole: { label: "Bean Casserole", plural: "Bean Casseroles", icon: "ico-green_bean", sellPrice: 113 },
@@ -237,6 +240,7 @@ export function machineItemLabel(item: MachineItemId, quantity: number): string 
  * the recipe and contract panels. */
 export function machineItemPurpose(item: MachineItemId): string {
   if (item === "wood" || item === "stone") return "Building material — keep some for farm upgrades.";
+  if (item === "straw") return "Farm material — keep it for coop and animal bedding.";
   if (item === "bluegill" || item === "trout" || item === "catfish") return "Catch from the pond, then sell for Gold.";
   if (item === "meat" || item === "pelt") return "Exploration find. Sell it in town.";
   if (isMachineProcessedItem(item)) return "Use in recipes or town orders, or sell it in town.";

@@ -73,7 +73,7 @@ export type Action =
   | { action: "water"; unitId: string; unitIds?: string[] }
   // Fills the watering can at the well.
   | { action: "draw-water" }
-  // Ray's starter pouch of wheat seed, once per farm.
+  // Ray's starter pouch of carrot seed, once per farm.
   | { action: "claim-starter-seeds" }
   // Today's land upkeep out of Gold, sent once when the farm opens.
   | { action: "pay-upkeep" }

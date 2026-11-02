@@ -25,11 +25,12 @@ describe("forage nodes", () => {
     expect(isForageNodeId("tree:homestead-1")).toBe(false);
   });
 
-  it("forages tier-1 crops only", () => {
-    // Anything dearer than a tier-1 seed belongs in Ray's shop, where Gold
-    // buys it -- see the file header.
+  it("forages the opening crop roster only", () => {
+    // Radish is intentionally a 2-Gold shop seed now, but remains a free
+    // discovery in the opening bushes so a new farm can learn its gift/bait
+    // role before the Kitchen Counter is built.
     for (const crop of FORAGE_CROPS) {
-      expect(STACKACRES_CATALOGUE[crop].seedCost).toBe(1);
+      expect(STACKACRES_CATALOGUE[crop].seedCost).toBe(crop === "radish" ? 2 : 1);
     }
   });
 

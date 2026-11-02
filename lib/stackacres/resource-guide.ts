@@ -125,6 +125,7 @@ const DESCRIPTIONS: Readonly<Record<GuideItemId, string>> = {
   corn: "A slow, valuable crop.",
   eggplant: "A slow, valuable crop.",
   wheat: "The farm's grain crop.",
+  straw: "A dry farm material for coop and animal bedding.",
   bluegill: "The common catch from the Homestead lake.",
   trout: "A fair catch from the Homestead lake.",
   catfish: "The rare catch from the Homestead lake.",
@@ -239,6 +240,7 @@ export function resourceSources(item: GuideItemId): ResourceSource[] {
   if (item === "meat" || item === "pelt") sources.push(GATHER_SOURCES.hunting);
   if (item === "wood") sources.push(GATHER_SOURCES.wood);
   if (item === "stone" || item === "iron_ore") sources.push(GATHER_SOURCES.stone);
+  if (item === "straw") sources.push({ label: "Harvest Wheat", open: true });
 
   return sources;
 }
@@ -249,6 +251,13 @@ export function resourceSources(item: GuideItemId): ResourceSource[] {
 
 export function resourceUses(item: GuideItemId): ResourceUse[] {
   const uses: ResourceUse[] = [];
+
+  if (item === "straw") {
+    uses.push(
+      { kind: "build", label: "Build a Hen Coop", detail: "Takes 12 Straw" },
+      { kind: "feed", label: "Sheep and cattle bedding", detail: "Takes 1 per feeding cycle" },
+    );
+  }
 
   for (const id of RECIPE_IDS) {
     const recipe = RECIPE_CATALOGUE[id];
@@ -326,6 +335,7 @@ export function resourceUses(item: GuideItemId): ResourceUse[] {
 
   if ((STACKACRES_ITEMS as readonly string[]).includes(item) || item in MACHINE_ITEM_CATALOGUE) {
     const price = machineItemSellPrice(item as MachineItemId);
+    if (price <= 0) return uses;
     const buyer = TOWN_BUYERS[townBuyerFor(item as MachineItemId)];
     uses.push({
       kind: "sell",

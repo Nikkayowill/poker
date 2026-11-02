@@ -35,7 +35,7 @@ function planWithSilo(
 
 describe("the Feed Silo's plan", () => {
   it("feeds a hungry animal at the moment it went hungry", () => {
-    const plan = planWithSilo([unit("c", "cattle")], { cattle_feed: 5 }, 0, 48, at(cattleHunger + 1000));
+    const plan = planWithSilo([unit("c", "cattle")], { cattle_feed: 5, straw: 1 }, 0, 48, at(cattleHunger + 1000));
     expect(plan.feedings).toEqual([{ unitId: "c", sources: ["cattle_feed"], fedAts: [iso(cattleHunger)] }]);
     expect(plan.shelfUsed).toEqual({ cattle_feed: 1 });
   });
@@ -43,7 +43,7 @@ describe("the Feed Silo's plan", () => {
   it("repeats while the animal would have gone hungry again before now", () => {
     // Hungry at 8h and 16h mid-batch, then done at 24h: one more serving at
     // its latest hunger moment leaves it collectable, and no more after that.
-    const plan = planWithSilo([unit("c", "cattle")], {}, 10, 48, at(CATTLE.durationMs + 30 * cattleHunger));
+    const plan = planWithSilo([unit("c", "cattle")], { straw: 3 }, 10, 48, at(CATTLE.durationMs + 30 * cattleHunger));
     const [feeding] = plan.feedings;
     expect(feeding.fedAts.slice(0, 2)).toEqual([iso(cattleHunger), iso(2 * cattleHunger)]);
     expect(feeding.fedAts).toHaveLength(3);
@@ -64,7 +64,7 @@ describe("the Feed Silo's plan", () => {
   });
 
   it("stops when the barn is empty", () => {
-    const plan = planWithSilo([unit("a", "cattle"), unit("b", "cattle")], { cattle_feed: 1 }, 0, 48, at(cattleHunger));
+    const plan = planWithSilo([unit("a", "cattle"), unit("b", "cattle")], { cattle_feed: 1, straw: 1 }, 0, 48, at(cattleHunger));
     expect(plan.servings).toBe(1);
     expect(plan.feedings.map((feeding) => feeding.unitId)).toEqual(["a"]);
   });

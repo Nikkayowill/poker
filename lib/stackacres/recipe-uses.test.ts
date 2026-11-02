@@ -20,8 +20,8 @@ describe("the Hearty Stew recipe", () => {
     });
   });
 
-  it("makes Stew an 11 Gold food worth 50 energy", () => {
-    expect(machineItemSellPrice("stew")).toBe(11);
+  it("makes Stew a 14 Gold food worth 50 energy", () => {
+    expect(machineItemSellPrice("stew")).toBe(14);
     expect(isFoodItem("stew")).toBe(true);
     expect(FOOD_ENERGY.stew).toBe(50);
   });

@@ -139,5 +139,6 @@ describe("machine item purpose hints", () => {
     expect(machineItemPurpose("bluegill")).toContain("sell for Gold");
     expect(machineItemPurpose("meat")).toContain("Exploration find");
     expect(machineItemPurpose("flour")).toContain("recipes");
+    expect(machineItemPurpose("straw")).toContain("coop and animal bedding");
   });
 });

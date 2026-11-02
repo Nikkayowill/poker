@@ -266,6 +266,7 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     const token = randomUUID();
     const profile = await profileStore.ensureProfile(token);
     await profileStore.adjustGold(profile.id, 500_000 - profile.goldBalance);
+    await store.adjustStackAcresInventory(profile.id, "straw", 1000);
     // Ray's seed shelf gates planting a crop now -- see the 2026-09-07 seed
     // inventory pass. The two carrot sowings below (unit-count gates for
     // clearing Wallow) predate that gate.

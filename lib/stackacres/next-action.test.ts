@@ -129,8 +129,8 @@ describe("picking the objective", () => {
     expect(action.button).toBeNull();
   });
 
-  it("says seed rather than wheat when the seed held is something else", () => {
-    expect(planned({ units: [], seedStock: { carrot: 3 } }).title).toBe("Plant your seed");
+  it("names the crop in the pouch", () => {
+    expect(planned({ units: [], seedStock: { carrot: 3 } }).title).toBe("Plant your carrot");
   });
 
   it("sends a farm out of seed to Cora, with a button to the city", () => {

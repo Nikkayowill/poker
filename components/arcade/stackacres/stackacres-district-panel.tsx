@@ -84,12 +84,29 @@ export function StackAcresBuySection({ options, isPending, onSeed, onBuyOutright
               <button
                 type="button"
                 className="sa-buy-btn is-gold"
-                disabled={isPending(`buy-stock:${option.stock}`) || option.atCap}
-                title={option.atCap ? option.seedReason ?? undefined : undefined}
+                disabled={
+                  isPending(`buy-stock:${option.stock}`) ||
+                  option.atCap ||
+                  (option.outrightMaterial !== null && option.outrightMaterial.have < option.outrightMaterial.need)
+                }
+                title={
+                  option.atCap
+                    ? option.seedReason ?? undefined
+                    : option.outrightMaterial !== null && option.outrightMaterial.have < option.outrightMaterial.need
+                      ? `Needs ${option.outrightMaterial.need} Straw.`
+                      : undefined
+                }
                 onClick={() => onBuyOutright(option.stock)}
               >
                 <span className="sa-buy-label">Buy outright</span>
-                <span className="sa-buy-price">{option.outrightCost.toLocaleString()} Gold</span>
+                <span className="sa-buy-price">
+                  {option.outrightCost.toLocaleString()} Gold
+                  {option.outrightMaterial !== null && (
+                    <span className={option.outrightMaterial.have >= option.outrightMaterial.need ? undefined : "is-short"}>
+                      {" + "}{option.outrightMaterial.need} Straw ({option.outrightMaterial.have})
+                    </span>
+                  )}
+                </span>
               </button>
             )}
             {option.expand && (

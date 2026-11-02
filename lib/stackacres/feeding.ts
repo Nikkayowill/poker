@@ -28,6 +28,12 @@ export const HOG_FEED_ORDER = ["corn", "cattle_feed"] as const;
 /** What a steer eats off the shelf. */
 export const STEER_FEED_ORDER = ["cattle_feed"] as const;
 
+/** Sheep and cattle need one fresh Straw bedding unit when their cycle is fed.
+ * Hens pay their Straw cost once when the coop is built. */
+export function requiresBedding(stock: StackAcresStock): boolean {
+  return stock === "pig" || stock === "cattle";
+}
+
 export type HenFeedItem = (typeof HEN_FEED_ORDER)[number];
 export type CattleFeedItem = (typeof CATTLE_FEED_ORDER)[number];
 export type HogFeedItem = (typeof HOG_FEED_ORDER)[number];
@@ -116,6 +122,8 @@ export interface ServingPlan {
   /** Shelf items eaten, by item. Only items actually used appear. */
   shelfUsed: Partial<Record<ShelfFeedItem, number>>;
   feedUsed: number;
+  /** Straw consumed as bedding alongside sheep/cattle servings. */
+  beddingUsed: number;
   bonusEggs: number;
 }
 
@@ -138,9 +146,12 @@ export function planServings(
 ): ServingPlan {
   const left = shelfFeedLeft(inventory);
   let feedLeft = Math.max(0, feed);
+  let beddingLeft = Math.max(0, inventory.straw ?? 0);
   const sources: ServingSource[] = [];
   const shelfUsed: Partial<Record<ShelfFeedItem, number>> = {};
   for (const stock of stocks) {
+    const needsBedding = requiresBedding(stock);
+    if (needsBedding && beddingLeft === 0) break;
     const shelfItem = shelfFeedOrder(stock).find((item) => left[item] > 0);
     if (shelfItem) {
       left[shelfItem] -= 1;
@@ -152,12 +163,14 @@ export function planServings(
     } else {
       break;
     }
+    if (needsBedding) beddingLeft -= 1;
   }
   return {
     fed: sources.length,
     sources,
     shelfUsed,
     feedUsed: Math.max(0, feed) - feedLeft,
+    beddingUsed: Math.max(0, inventory.straw ?? 0) - beddingLeft,
     bonusEggs: sources.reduce((total, source) => total + servingBonusEggs(source), 0),
   };
 }

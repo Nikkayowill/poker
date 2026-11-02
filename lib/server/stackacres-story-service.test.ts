@@ -28,7 +28,7 @@ beforeEach(() => {
   __resetStackAcresRevisionsForTest();
 });
 
-/** A new farm that has done what Ray's welcome says: three beds sown with his wheat and watered. */
+/** A new farm with Ray's three starter carrot seeds in waterable beds. */
 async function wateredThreeBeds() {
   const token = randomUUID();
   const profile = await ensureProfile(token);
@@ -38,7 +38,7 @@ async function wateredThreeBeds() {
   for (let i = 0; i < 3; i += 1) {
     const tile = { tx: origin.tx + i * 2, ty: origin.ty };
     await placeStackAcresSoilTile(profile.id, tile.tx, tile.ty);
-    await stockStackAcres(token, { stock: "wheat", tile }, T0);
+    await stockStackAcres(token, { stock: "carrot", tile }, T0);
   }
   for (const unit of (await readStackAcres(token, T0)).units) await waterStackAcres(token, unit.id, T0);
   return { token, profileId: profile.id };

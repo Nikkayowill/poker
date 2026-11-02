@@ -6,7 +6,7 @@ import { CROP_FIELD_BEDS } from "@/lib/stackacres/world";
 import { ensureProfile } from "./profile-store";
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
 import { __resetStackAcresRevisionsForTest } from "./stackacres-revision-store";
-import { __resetStackAcresSeedStockForTest, adjustStackAcresSeedStock, readStackAcresSeedStock } from "./stackacres-seed-store";
+import { __resetStackAcresSeedStockForTest, readStackAcresSeedStock } from "./stackacres-seed-store";
 import {
   claimStackAcresStarterSeeds,
   meetStackAcresTraveler,
@@ -28,15 +28,12 @@ beforeEach(() => {
   __resetStackAcresRevisionsForTest();
 });
 
-/** A new farm that has three waterable beds ready for Ray's watering objective.
- * Wheat is intentionally no-water in the launch loop, so use carrots here to
- * exercise the quest's watering bookkeeping. */
+/** A new farm with Ray's three starter carrot seeds in waterable beds. */
 async function wateredThreeBeds() {
   const token = randomUUID();
   const profile = await ensureProfile(token);
   await recordStackAcresCropFieldsUnlocked(profile.id, T0);
   await claimStackAcresStarterSeeds(token, T0);
-  await adjustStackAcresSeedStock(profile.id, "carrot", 3);
   const origin = soilTileAt(CROP_FIELD_BEDS.x + SOIL_TILE, CROP_FIELD_BEDS.y + SOIL_TILE);
   for (let i = 0; i < 3; i += 1) {
     const tile = { tx: origin.tx + i * 2, ty: origin.ty };

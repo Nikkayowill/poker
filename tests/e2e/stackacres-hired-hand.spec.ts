@@ -120,7 +120,7 @@ test("hire Earl at Ray's, see him on the farm, and watch him water the seed", as
     await page.waitForTimeout(500);
     expect((await scene(page)).drawn).toBe(true);
 
-    // The page asks for his chores by itself. His first pass waters the wheat seed.
+    // The page asks for his chores by itself. His first pass waters the carrot seed.
     const watered = page.waitForResponse(
       async (response) => {
         if (!response.url().includes("/api/stackacres/actions")) return false;

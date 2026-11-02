@@ -49,7 +49,7 @@ export function StackAcresRayWelcome({ onClose }: { onClose: () => void }) {
             old bed by the porch is waiting on someone with a little patience.&rdquo;
           </p>
           <p>
-            &ldquo;Here&rsquo;s a pouch of wheat seed. See what the place tells you. If the can runs dry, the well
+            &ldquo;Here&rsquo;s a pouch of carrot seed. See what the place tells you. If the can runs dry, the well
             hasn&rsquo;t gone anywhere. And when you&rsquo;re ready to look beyond this fence, Cora keeps a stall
             over the west bridge.&rdquo;
           </p>

@@ -3669,7 +3669,7 @@ export async function feedStackAcresPen(
 }
 
 /**
- * Ray's starter pouch of wheat seed (lib/stackacres/starter-seeds.ts). No Gold moves.
+ * Ray's starter pouch of carrot seed (lib/stackacres/starter-seeds.ts). No Gold moves.
  *
  * The claim comes first and is the whole guard: `adjustStackAcresSecretLedger` hands back 1 to exactly one
  * of two simultaneous requests, so a second tap never gets a second pouch. If the seed then fails to land the
@@ -6740,7 +6740,7 @@ export async function sellStackAcresItem(
   }
   const item: MachineItemId = input.item;
   if (machineItemSellPrice(item) <= 0) {
-    throw new StackAcresRequestError(`${MACHINE_ITEM_CATALOGUE[item].label} is a farm material, not a sale good.`, 400, {
+    throw new StackAcresRequestError(`${machineItemNoun(item, 1)} is a farm material, not a sale good.`, 400, {
       round: await snapshots(profile.id, now),
     });
   }

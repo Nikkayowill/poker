@@ -11,13 +11,13 @@ describe("StackAcres early crop loop", () => {
     });
     expect(STACKACRES_CATALOGUE.potato).toMatchObject({
       seedCost: 1,
-      durationMs: 10 * 60 * 1000,
-      thirstMs: 5 * 60 * 1000,
+      durationMs: 7.5 * 60 * 1000,
+      thirstMs: 3 * 60 * 1000,
     });
     expect(STACKACRES_CATALOGUE.radish).toMatchObject({
       seedCost: 2,
-      durationMs: 15 * 60 * 1000,
-      thirstMs: 5 * 60 * 1000,
+      durationMs: 2.5 * 60 * 1000,
+      thirstMs: 90 * 1000,
     });
     expect(STACKACRES_CATALOGUE.wheat).toMatchObject({
       seedCost: 3,

@@ -1,7 +1,7 @@
 import { expect, test, type BrowserContext, type Page } from "./fixtures";
 
 /**
- * The first loop is taught by people: Ray hands over a pouch of wheat seed in his welcome, the Next panel
+ * The first loop is taught by people: Ray hands over a pouch of carrot seed in his welcome, the Next panel
  * says to plant it, and every other seed is Cora's at the city market.
  */
 
@@ -42,7 +42,7 @@ async function start(page: Page) {
   await page.waitForFunction(() => "__stackacres" in window, null, { timeout: 60_000 });
 }
 
-test("Ray's welcome gives one pouch of wheat seed and the panel says to plant it", async ({ context, page }) => {
+test("Ray's welcome gives three carrot seeds for the first watering loop", async ({ context, page }) => {
   await admit(context);
   await start(page);
 
@@ -53,13 +53,13 @@ test("Ray's welcome gives one pouch of wheat seed and the panel says to plant it
   await expect(welcome).not.toContainText("Dale");
   await welcome.getByRole("button", { name: "Thanks, Ray" }).click();
 
-  await expect.poll(async () => (await farm(context)).seedStock.wheat, { timeout: 10_000 }).toBe(12);
-  await expect(page.getByText("Plant your wheat")).toBeVisible();
+  await expect.poll(async () => (await farm(context)).seedStock.carrot, { timeout: 10_000 }).toBe(3);
+  await expect(page.getByText("Plant your carrot")).toBeVisible();
 
   // A second claim, from a second tab or a cleared browser, gives nothing more.
   const again = await context.request.post("/api/stackacres/actions", { data: { action: "claim-starter-seeds" } });
   expect(again.ok()).toBe(true);
-  expect((await farm(context)).seedStock.wheat).toBe(12);
+  expect((await farm(context)).seedStock.carrot).toBe(3);
 });
 
 test("Cora sells seed at the city market", async ({ context, page }) => {

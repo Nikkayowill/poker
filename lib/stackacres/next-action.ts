@@ -41,6 +41,7 @@
  */
 
 import type { BuildLine } from "./build-cost";
+import { STACKACRES_CATALOGUE, STACKACRES_CROPS } from "./catalogue";
 import { machineItemLabel } from "./machine-items";
 import type { MapPlaceId } from "./map-places";
 import type { TravelerId } from "./story/travelers";
@@ -278,11 +279,12 @@ export function nextAction(input: JournalInput, view: JournalView): NextAction |
     }
 
     case "sow": {
-      const wheat = (input.seedStock.wheat ?? 0) > 0;
+      const crop = STACKACRES_CROPS.find((candidate) => (input.seedStock[candidate] ?? 0) > 0) ?? null;
+      const wheat = crop === "wheat";
       return {
         id: "sow",
         cue,
-        title: wheat ? "Plant your wheat" : "Plant your seed",
+        title: crop ? `Plant your ${STACKACRES_CATALOGUE[crop].label.toLowerCase()}` : "Plant your seed",
         why: wheat
           ? "Wheat is the first crop on the farm. It grows while you chop, and the Feed Grinder turns it into flour."
           : "Hoe a bed on the grass by the house, sow the seed and water it from the well.",

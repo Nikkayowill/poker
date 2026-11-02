@@ -221,11 +221,13 @@ export interface StackAcresStockDef {
  */
 /** Carrot is the early active-money crop: cheap, quick, and thirsty enough
  * that staying on the farm matters. */
+// Real maturity data informs the crop order, while these short timers are
+// tuned for the opening loop: Carrot is the first active-money crop.
 const CARROT = { seedCost: 1, durationMs: 5 * 60 * 1000, hungerMs: null, thirstMs: 2 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
 const TIER1 = { seedCost: 1, durationMs: 5 * 60 * 1000, hungerMs: null, thirstMs: 2 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
-const POTATO = { seedCost: 1, durationMs: 10 * 60 * 1000, hungerMs: null, thirstMs: 5 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
-/** Radish is for gifts and bait, not raw-crop profit. */
-const RADISH = { seedCost: 2, durationMs: 15 * 60 * 1000, hungerMs: null, thirstMs: 5 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
+const POTATO = { seedCost: 1, durationMs: 7.5 * 60 * 1000, hungerMs: null, thirstMs: 3 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
+/** Radish is an early crop as in real vegetable maturity data; gifts and bait remain its game uses. */
+const RADISH = { seedCost: 2, durationMs: 2.5 * 60 * 1000, hungerMs: null, thirstMs: 90 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
 const TIER2 = { seedCost: 55, durationMs: 90 * 60 * 1000, hungerMs: null, thirstMs: 40 * 60 * 1000, spoils: false, muckFee: 90, ownableOutright: true } as const;
 /** Wheat is the crop players can plant before leaving: it feeds hens and the
  * Mill, so its purpose is infrastructure rather than active cash. */

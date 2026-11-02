@@ -275,6 +275,7 @@ type CorePainterName =
   | "ico-stone"
   | "ico-iron-ore"
   | "ico-metal"
+  | "ico-straw"
   | "ico-fence";
 
 // The drawing shorthands (rr, ell, lin, rad, F, poly, stroke, leaf, painter)

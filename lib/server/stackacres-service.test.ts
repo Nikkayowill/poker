@@ -694,25 +694,25 @@ describe("buyStackAcresSeed — Ray's shelf", () => {
 });
 
 describe("claimStackAcresStarterSeeds, Ray's first pouch", () => {
-  it("shelves the starter wheat seed and takes no Gold", async () => {
+  it("shelves the starter carrot seed and takes no Gold", async () => {
     const { token, id } = await funded();
-    await adjustStackAcresSeedStock(id, "wheat", -1000);
+    await adjustStackAcresSeedStock(id, "carrot", -1000);
     const start = await balance(token);
 
     const view = await claimStackAcresStarterSeeds(token, T0);
 
-    expect(view.seedStock.wheat).toBe(STARTER_SEED_COUNT);
+    expect(view.seedStock.carrot).toBe(STARTER_SEED_COUNT);
     expect(await balance(token)).toBe(start);
   });
 
   it("gives one pouch for the life of the farm, even from two taps at once", async () => {
     const { token, id } = await funded();
-    await adjustStackAcresSeedStock(id, "wheat", -1000);
+    await adjustStackAcresSeedStock(id, "carrot", -1000);
 
     await Promise.all([claimStackAcresStarterSeeds(token, T0), claimStackAcresStarterSeeds(token, T0)]);
     await claimStackAcresStarterSeeds(token, T0);
 
-    expect((await readStackAcres(token, T0)).seedStock.wheat).toBe(STARTER_SEED_COUNT);
+    expect((await readStackAcres(token, T0)).seedStock.carrot).toBe(STARTER_SEED_COUNT);
   });
 });
 
@@ -2417,7 +2417,7 @@ describe("the currency wall", () => {
       // rather than an auto-credit precisely so that no OTHER action in
       // this list has to move Gold -- see lib/stackacres/farm-board.ts.
       "claim-farm-board",
-      // Moves no Gold: Ray's one pouch of wheat seed, claimed once per farm through the secret ledger.
+      // Moves no Gold: Ray's one pouch of carrot seed, claimed once per farm through the secret ledger.
       "claim-starter-seeds",
       "clear",
       "collect",

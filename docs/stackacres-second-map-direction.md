@@ -304,6 +304,51 @@ score per visit and a store reputation that sets how often people come, opening 
 farm clock, and staff-only squares behind the tills. Mood shows as behaviour (impatient customers glance
 about), never as an icon. 15-minute simulations: 73-86 average satisfaction, reputation 83-98.
 
+**NPC logic research foundation (2026-11-03).** The next NPC pass should make the existing routines
+feel more like people without replacing the deterministic simulation with an LLM. The target is a
+layered system:
+
+1. **Schedule layer** — keep `npc-schedules.ts` as the stable daily intention: homes, shops, work
+   stations, breaks and sleep. Chef RPG's schedule work is a useful reference for making NPCs exist
+   in the world even when the player is elsewhere: characters run shops, visit friends, go home and
+   sleep on a daily timetable ([Chef RPG schedule devlog](https://chef-rpg.backerkit.com/hosted_preorders/project_updates?page=4)).
+2. **Routine playback** — keep `npc-routine.ts` responsible for deterministic routes, doors, stations
+   and visible chores. A schedule should be reproducible from character + farm day, so a player can
+   learn a person's rhythm and tests can assert it.
+3. **Motive selection** — extend `npc-mind.ts` with a small utility score over needs and opportunities:
+   work, rest, eat, visit, talk, help, shop and return home. A schedule supplies the default priority;
+   utility only chooses when something interrupts it or when several actions are equally valid. This
+   follows the motive-based agent model in [Anthology](https://ojs.aaai.org/index.php/AIIDE/article/view/21967).
+4. **Goal fallback** — use lightweight GOAP-style preconditions/effects for recoverable interruptions:
+   a closed shop, blocked station, hungry worker, missing tool or unfinished delivery. Do not use a
+   planner for every frame. Replan only when the current goal becomes invalid, following the
+   real-time, regressive planning approach in [Behavior-Oriented Design for Game AI](https://cdn.aaai.org/Workshops/2004/WS-04-04/WS04-04-006.pdf).
+5. **Character differences** — traits must create trade-offs, not just buffs: fast but tiring, social
+   but distractible, careful but slow, dependable but inflexible. Chef RPG's staff model is a strong
+   reference here: stats, stamina, breaks and traits affect what workers do and how well they do it
+   ([Chef RPG restaurant/staff systems](https://chefrpg.wiki.gg/wiki/Restaurant)).
+6. **Social state** — relationships, recent favors, promises, irritation and familiarity should alter
+   available interactions and small behaviors. Keep the state compact and authored; [Social Modeling
+   via Logic Programming in *City of Gangsters*](https://ojs.aaai.org/index.php/AIIDE/article/view/18912)
+   is the useful reference for legible social rules at scale.
+7. **Character beats** — insert occasional authored micro-events between world events: a worker
+   notices a new building, two NPCs stop for a conversation, someone takes shelter in rain, or a
+   shopkeeper reacts to a rush. These should be rare, interruptible and visually readable rather than
+   text-heavy. See [Never a Dull Moment](https://ojs.aaai.org/index.php/AIIDE/article/view/21974).
+
+**Implementation rule.** The simulation remains pure and seedable. `npc-schedules.ts` provides the
+default plan, `npc-routine.ts` turns it into movement, `npc-mind.ts` handles interruptions and social
+reactions, and `npc-talk.ts` supplies authored dialogue. New decisions should be represented as
+typed actions with explicit preconditions, effects, duration and priority, then tested without Phaser.
+The player should infer personality from destinations, timing, animation, choices and consequences;
+NPCs should not constantly announce their internal state in UI text.
+
+**Do not build yet.** LLM-controlled NPC decisions, unconstrained autonomous dialogue, per-frame
+replanning, and opaque personality scores are explicitly out of scope. They make behavior harder to
+test, harder to balance and less consistent across saves. The research supports a structured,
+simulation-first foundation; generative text can be layered on later only where it cannot change
+gameplay state.
+
 **v2: a grocery market sim, not a farm (2026-09-25, same branch).** Kayo: "this sim is a grocery market
 sim. not the farming sim", staff sell produce shipped in and hand it out, nobody stands on plots. The farm
 side (`work-farm.ts`, plots, farmhands, haulers) is gone. The sim now runs the city grocery's walk-in

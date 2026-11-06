@@ -28,6 +28,7 @@
  */
 
 import type { Point } from "./movement";
+import { chooseMotive, type Motive } from "./npc-intent";
 import type { Dir, Pose } from "./npc-routine";
 
 export interface Temperament {
@@ -159,6 +160,8 @@ export class Mind {
   private chat: { with: string; talkMs: number; until: number | null; giveUpAt: number; meet: Point | null } | null = null;
   /** Off their spot on a walk to or from a chat: while it lasts their day waits for them. */
   private detour = false;
+  private energy = 1;
+  private socialNeed = 0;
 
   constructor(
     private readonly temper: Temperament,
@@ -180,6 +183,8 @@ export class Mind {
     this.beat = null;
     this.chat = null;
     this.detour = false;
+    this.energy = 1;
+    this.socialNeed = 0;
   }
 
   /** How far behind their day they are, in real ms. */
@@ -246,6 +251,9 @@ export class Mind {
     this.lag = Math.max(0, this.lag + dt * (1 - this.rate));
     if (this.lag === 0 && this.rate > 1) this.rate = 1;
     const pose = f.scheduled(this.lag);
+    const work = pose.doing === "walk" || (pose.doing !== "idle" && pose.doing !== "fish");
+    this.energy = Math.max(0, Math.min(1, this.energy + (work ? -dt / 480_000 : dt / 150_000)));
+    this.socialNeed = Math.max(0, Math.min(1, this.socialNeed + (f.talking || this.chat ? -dt / 90_000 : dt / 240_000)));
 
     const prev = this.prev;
     if (!prev) this.nextBeatAt = now + this.between(this.temper.fidget);
@@ -336,7 +344,14 @@ export class Mind {
     if (this.beat && (now >= this.beat.until || !idleNow)) this.beat = null;
     if (idleNow && !this.beat && now >= this.nextBeatAt) {
       // At night they are too sleepy to look about.
-      this.beat = f.night ? null : this.quietBeat(f, pose, here);
+      this.beat = f.night ? null : this.quietBeat(f, pose, here, chooseMotive({
+        needs: { energy: this.energy, social: this.socialNeed },
+        doing: pose.doing,
+        night: f.night,
+        nearbyPeople: f.others.filter((other) => Math.hypot(other.x - here.x, other.y - here.y) < 110).length,
+        farmerNearby: farmerDist < NOTICE_REACH,
+        behindMs: this.lag,
+      }));
       this.nextBeatAt = (this.beat?.until ?? now) + this.between(this.temper.fidget);
     }
 
@@ -450,9 +465,17 @@ export class Mind {
     return now >= this.pending.at ? want : this.facing;
   }
 
-  private quietBeat(f: Frame, pose: Pose, here: Point): { facing: Dir | null; anim: Anim | null; until: number } | null {
+  private quietBeat(f: Frame, pose: Pose, here: Point, motive: Motive): { facing: Dir | null; anim: Anim | null; until: number } | null {
     const roll = this.random();
     const now = f.now;
+    if (motive === "rest") return { facing: null, anim: "idle", until: now + 1600 + this.random() * 1200 };
+    if (motive === "social") {
+      const near = f.others
+        .map((o) => ({ o, d: Math.hypot(o.x - here.x, o.y - here.y) }))
+        .filter(({ d }) => d < 110)
+        .sort((a, b) => a.d - b.d)[0];
+      if (near) return { facing: facingToward(near.o.x - here.x, near.o.y - here.y, pose.facing), anim: "idle", until: now + 1200 + this.random() * 900 };
+    }
     if (pose.doing === "idle") {
       if (roll < 0.25) {
         const near = f.others

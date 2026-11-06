@@ -222,11 +222,6 @@ import {
   type LandObstacleSnapshot,
 } from "@/lib/stackacres/land-clearing";
 import { journalView, type JournalInput } from "@/lib/stackacres/journal";
-import { nextAction, type NextAction } from "@/lib/stackacres/next-action";
-import {
-  StackAcresNextActionPanel,
-  StackAcresNextActionReopen,
-} from "./stackacres-next-action";
 import { wantedForLine } from "@/lib/stackacres/recipe-uses";
 import { useStackAcresMusic } from "./use-stackacres-music";
 import { StackAcresTopdownWorld } from "../stackacres-td/topdown-world";
@@ -3121,34 +3116,6 @@ export function StackAcresFarm() {
     }
   }, [pickedCutter]);
 
-  // Whether the Farm Planner panel is hidden. On this device only, the same
-  // reason the cutter above is: it is a preference about this screen, not a
-  // fact about the farm, so there is nothing for the server to own and no
-  // migration to write. Shown by default, and the `Next` button in its place
-  // brings it straight back.
-  const [nextHidden, setNextHidden] = useState(false);
-  useEffect(() => {
-    if (!hasStarted) return;
-    // Deferred a tick, same reason Ray's welcome defers its own read.
-    const timer = window.setTimeout(() => {
-      try {
-        if (window.localStorage.getItem("sa-next-hidden") === "1") setNextHidden(true);
-      } catch {
-        // Storage blocked. The panel shows, which is the default anyway.
-      }
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [hasStarted]);
-  const setNextPanelHidden = useCallback((hidden: boolean) => {
-    panelSound();
-    setNextHidden(hidden);
-    try {
-      window.localStorage.setItem("sa-next-hidden", hidden ? "1" : "0");
-    } catch {
-      // Storage blocked. The choice still holds for this visit.
-    }
-  }, []);
-
   /** A finger landed on a district's fenced ground and hit nothing. That is
    *  "I want something HERE", answered where the finger is. */
   const onWorldGroundTap = useCallback(
@@ -3900,9 +3867,8 @@ export function StackAcresFarm() {
   );
 
   /**
-   * What the Journal (lib/stackacres/journal.ts) reads: the chip's line, the
-   * sheet behind it and the Farm Planner panel all come off this one
-   * derivation, so none of the three can say a different thing.
+   * What the Journal (lib/stackacres/journal.ts) reads: the chip's line and
+   * the sheet behind it come off this one derivation.
    *
    * It reads `liveUnits` rather than `units`, so a crop the optimistic layer
    * has already moved off dry is off the "gone dry" line at the same instant
@@ -3952,52 +3918,6 @@ export function StackAcresFarm() {
   );
 
   const journal = useMemo(() => journalView(journalInput), [journalInput]);
-
-  /**
-   * The Farm Planner's one objective (lib/stackacres/next-action.ts): the
-   * Journal's top line with its requirements, sources and a destination
-   * attached, for the panel pinned over the map. Same derivation, so the
-   * panel and the Journal sheet can never name different work.
-   */
-  const next = useMemo(() => nextAction(journalInput, journal), [journalInput, journal]);
-
-  /**
-   * The Farm Planner's button: the one place a `NextActionTarget` turns into
-   * an actual screen. The module names the destination and nothing else, so
-   * every door the panel can open is a door the farm already had.
-   */
-  const onNextGo = useCallback(
-    (action: NextAction) => {
-      const target = action.button?.target;
-      if (!target) return;
-      switch (target.kind) {
-        case "workshop":
-          panelSound();
-          setShowWorkshop(true);
-          return;
-        case "house":
-          panelSound();
-          setShowHouse(true);
-          return;
-        case "contracts":
-          panelSound();
-          setShowContracts(true);
-          return;
-        case "travel":
-          travelToPlace(target.place);
-          return;
-        case "person": {
-          const name = TRAVELER_CATALOGUE[target.who].name;
-          const where = onHomesteadMap ? world.current?.walkToPerson(target.who) ?? null : null;
-          if (where === "inside") setLastCollect({ text: `${name} is in the barn.`, nonce: Date.now() });
-          else if (where === null) setLastCollect({ text: `${name} is back on the Homestead.`, nonce: Date.now() });
-          return;
-        }
-      }
-    },
-    [travelToPlace, onHomesteadMap],
-  );
-
 
   /** The Supply Store's Livestock shelf: every livestock kind whose own
    *  district is unlocked, not just whichever one `place` happens to be --
@@ -4540,24 +4460,6 @@ export function StackAcresFarm() {
               {rayLine.text}
             </p>
           )}
-          {/* The Farm Planner, under the clock on the right. Absent entirely
-              when the Journal has nothing pressing to say -- an empty card
-              saying "nothing to do" is chrome a player learns to stop
-              reading, same reasoning as the Harvest key below. Only out on the
-              Homestead: indoors it sits over the barn counter and the other
-              props a finger has to reach. */}
-          {next &&
-            onHomesteadMap &&
-            (nextHidden ? (
-              <StackAcresNextActionReopen onOpen={() => setNextPanelHidden(false)} />
-            ) : (
-              <StackAcresNextActionPanel
-                action={next}
-                onGo={onNextGo}
-                onDismiss={() => setNextPanelHidden(true)}
-              />
-            ))}
-
           {/* The tool belt, top left. The places list is gone and so is the old
               tool dock: Shop, Town Board and Workshop are walked up
               to (Ray, the signpost, the windmill), and the ground is worked with

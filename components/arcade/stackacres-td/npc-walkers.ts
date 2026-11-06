@@ -7,6 +7,7 @@ import {
   daySeed,
   planDay,
   poseOn,
+  seededRandom,
   type AreaMap,
   type AreaSpecForRoutines,
   type DayPlan,
@@ -78,6 +79,16 @@ export class NpcWalkers {
   private nextChatCheck = 0;
   private talk: { name: string; at: Point; until: number } | null = null;
   private greetedAt = new Map<string, number>();
+  /** The current farm day, used to keep all NPC improvisation reproducible. */
+  private mindDay: number | null = null;
+  private socialRandom = seededRandom(0);
+
+  private setDay(day: number): void {
+    if (this.mindDay === day) return;
+    this.mindDay = day;
+    this.minds.clear();
+    this.socialRandom = seededRandom(daySeed("npc-social", day));
+  }
 
   constructor(
     private readonly specs: Map<string, AreaSpecForRoutines>,
@@ -117,6 +128,7 @@ export class NpcWalkers {
     this.keys.clear();
     this.conversations = [];
     this.talk = null;
+    this.nextChatCheck = 0;
   }
 
   /** The farmer has started talking to someone (or has tapped them and is walking over): they stop for
@@ -155,10 +167,14 @@ export class NpcWalkers {
     return plan;
   }
 
-  private mind(name: string): Mind {
+  private mind(name: string, day = this.mindDay ?? 0): Mind {
+    this.setDay(day);
     let mind = this.minds.get(name);
     if (!mind) {
-      mind = new Mind(NPC_TEMPERAMENTS[name], Math.random);
+      // A character gets a private stream, so adding another NPC cannot shift
+      // Ray's fidgets or chore pauses. The same farm day therefore feels
+      // consistent after reload while remaining different tomorrow.
+      mind = new Mind(NPC_TEMPERAMENTS[name], seededRandom(daySeed(`${name}:mind`, day)));
       this.minds.set(name, mind);
     }
     return mind;
@@ -191,6 +207,10 @@ export class NpcWalkers {
     const dt = Math.min(delta, 100);
     const gameHours = day * 24 + hour;
     const night = hour >= 22 || hour < 5;
+    // Establish the day's streams before any NPC is asked for its mind. Calls
+    // later in this frame (chat setup and speech completion) use the same
+    // seeded social stream.
+    this.setDay(day);
 
     if (this.talk && (now > this.talk.until || (farmer.walking && Math.hypot(farmer.x - this.talk.at.x, farmer.y - this.talk.at.y) > TALK_REACH))) {
       this.talk = null;
@@ -200,7 +220,7 @@ export class NpcWalkers {
     for (const name of this.names()) {
       const node = nodes.get(name);
       if (!node) continue;
-      const mind = this.mind(name);
+      const mind = this.mind(name, day);
       const at = (lagMs: number) => this.scheduled(name, gameHours - lagMs / (this.clockMsPerHour ?? this.msPerHour), reducedMotion);
       const here = at(mind.behind()).area === area && allowed(name);
       node.sprite.setVisible(here);
@@ -282,7 +302,7 @@ export class NpcWalkers {
 
     if (!reducedMotion && !night && now >= this.nextChatCheck) {
       this.nextChatCheck = now + CHAT_CHECK_MS;
-      const chat = pickChat(shown, now, this.lastTalked, Math.random, (p) => this.open(area, p));
+      const chat = pickChat(shown, now, this.lastTalked, this.socialRandom, (p) => this.open(area, p));
       if (chat) this.beginChat(chat, hour, now);
     }
     this.speakLines(now, speak);
@@ -291,9 +311,9 @@ export class NpcWalkers {
   /** Two people set off to meet: what they will say is settled now, and starts when they are face to face. */
   private beginChat(pair: { a: string; b: string; meetA: Point; meetB: Point }, hour: number, now: number): void {
     const pairKey = [pair.a, pair.b].sort().join("|");
-    const script = composeChat(pair.a, pair.b, hour, Math.random, this.lastTopic.get(pairKey));
+    const script = composeChat(pair.a, pair.b, hour, this.socialRandom, this.lastTopic.get(pairKey));
     // Anyone without lines just turns to each other for a moment, as before.
-    const talkMs = script ? script.duration + 1500 : 2500 + Math.random() * 2000;
+    const talkMs = script ? script.duration + 1500 : 2500 + this.socialRandom() * 2000;
     this.mind(pair.a).startChat(pair.b, talkMs, now, pair.meetA);
     this.mind(pair.b).startChat(pair.a, talkMs, now, pair.meetB);
     if (script) {

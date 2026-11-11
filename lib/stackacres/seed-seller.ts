@@ -9,5 +9,5 @@
 export const SEED_SELLER = "cora";
 export const SEED_SELLER_NAME = "Cora";
 
-/** Where the Next panel and Ray's welcome send a player who needs seed. */
+/** Where Ray's welcome points a player who needs more seed. */
 export const SEED_SELLER_WHERE = "the market in town, over the west bridge";

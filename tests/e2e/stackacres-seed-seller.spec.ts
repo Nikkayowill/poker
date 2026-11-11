@@ -1,8 +1,8 @@
 import { expect, test, type BrowserContext, type Page } from "./fixtures";
 
 /**
- * The first loop is taught by people: Ray hands over a pouch of carrot seed in his welcome, the Next panel
- * says to plant it, and every other seed is Cora's at the city market.
+ * The first loop is grounded in the world: Ray hands over a pouch of carrot
+ * seed in his welcome, and every other seed is Cora's at the city market.
  */
 
 interface Handle {
@@ -54,7 +54,6 @@ test("Ray's welcome gives three carrot seeds for the first watering loop", async
   await welcome.getByRole("button", { name: "Thanks, Ray" }).click();
 
   await expect.poll(async () => (await farm(context)).seedStock.carrot, { timeout: 10_000 }).toBe(3);
-  await expect(page.getByText("Plant your carrot")).toBeVisible();
 
   // A second claim, from a second tab or a cleared browser, gives nothing more.
   const again = await context.request.post("/api/stackacres/actions", { data: { action: "claim-starter-seeds" } });

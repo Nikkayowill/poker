@@ -228,6 +228,13 @@ describe("quiet moments", () => {
       expect(look.facing).toBe("down");
     }
   });
+
+  it("builds a stronger pull toward company while alone", () => {
+    const s = sim(standing(100, 100, "down", "idle"));
+    const first = s.mind.socialPull();
+    s.run(120_000);
+    expect(s.mind.socialPull()).toBeGreaterThan(first);
+  });
 });
 
 describe("pickChat", () => {

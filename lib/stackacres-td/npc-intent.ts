@@ -32,7 +32,7 @@ export function chooseMotive(context: MotiveContext): Motive {
   if (behindMs > 3000) return "work";
 
   const scores: Record<Motive, number> = {
-    work: doing === "walk" ? 0.75 : doing === "idle" ? 0.25 : 0.65,
+    work: doing === "walk" ? 0.75 : doing === "idle" ? 0.05 : 0.65,
     rest: (1 - clamp(needs.energy)) * 1.25 + (doing === "fish" ? 0.15 : 0),
     social: clamp(needs.social) * 0.9 + Math.min(nearbyPeople, 2) * 0.16 + (farmerNearby ? 0.12 : 0),
     observe: 0.2 + (farmerNearby ? 0.28 : 0) + Math.min(nearbyPeople, 2) * 0.08,

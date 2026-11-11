@@ -211,6 +211,11 @@ export class Mind {
     return this.temper.chatty;
   }
 
+  /** How strongly this person is pulled toward a conversation right now. */
+  socialPull(): number {
+    return this.temper.chatty * (0.35 + this.socialNeed * 0.65);
+  }
+
   /**
    * Turn to someone for a few words. They let go of whatever quiet beat they were in. With a `meet` point
    * (map px, absolute) they first walk to it, and the `talkMs` starts counting when they get there.
@@ -468,6 +473,7 @@ export class Mind {
   private quietBeat(f: Frame, pose: Pose, here: Point, motive: Motive): { facing: Dir | null; anim: Anim | null; until: number } | null {
     const roll = this.random();
     const now = f.now;
+    if (motive === "work") return null;
     if (motive === "rest") return { facing: null, anim: "idle", until: now + 1600 + this.random() * 1200 };
     if (motive === "social") {
       const near = f.others
@@ -578,7 +584,7 @@ export function pickChat(
       if (gap > MEET_REACH * 2 + 16) continue;
       const key = [a.name, b.name].sort().join("|");
       if (now - (lastTalked.get(key) ?? Number.NEGATIVE_INFINITY) < 45_000) continue;
-      if (random() > ((a.mind.chatty() + b.mind.chatty()) / 2) * 0.35) continue;
+      if (random() > ((a.mind.socialPull() + b.mind.socialPull()) / 2) * 0.35) continue;
       // Each steps toward the other until they stand a conversation apart, on the line between them.
       const ux = gap > 0.5 ? (b.x - a.x) / gap : 1;
       const uy = gap > 0.5 ? (b.y - a.y) / gap : 0;

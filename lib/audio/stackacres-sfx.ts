@@ -161,21 +161,23 @@ export function townFavorSound() {
   window.setTimeout(() => playFarmSample("glass-ping", 0.45, 0), 300);
 }
 
-/** One footstep indoors, on the floorboards of the house, barn or workshop. */
-export function floorStepSound(step: number) {
+/**
+ * One footstep indoors, on the floorboards of the house, barn or workshop.
+ * `loudness` is 1 for the farmer's own feet and less for someone else's.
+ */
+export function floorStepSound(step: number, loudness = 1) {
   const names = ["step-floor-1", "step-floor-2", "step-floor-3", "step-floor-4"] as const;
-  playFarmSample(names[step % names.length], step % 2 ? 0.38 : 0.45);
+  playFarmSample(names[step % names.length], (step % 2 ? 0.14 : 0.17) * loudness, 0.06, 1200);
 }
 
 /**
  * One footstep outdoors, on grass and dirt: real left/right foot recordings,
- * alternating. Only two recordings, so the pitch spread is wider than the
- * default: at a walk that is four steps a second, and two samples at one
- * pitch turn into a loop by the third stride.
+ * alternating. Quiet and dull because it plays all the time. Only two
+ * recordings, so the pitch spread is wide, or they turn into a loop.
  */
-export function grassStepSound(step: number) {
+export function grassStepSound(step: number, loudness = 1) {
   const names = ["step-grass-l", "step-grass-r"] as const;
-  playFarmSample(names[step % names.length], step % 2 ? 0.4 : 0.5, 0.16);
+  playFarmSample(names[step % names.length], (step % 2 ? 0.14 : 0.18) * loudness, 0.16, 1400);
 }
 
 /** Walking into or out of a building. */

@@ -329,7 +329,7 @@ class Ambience {
    * same bus as the synth voices. A small pitch spread keeps a repeated tap
    * (a footstep, a hoe stroke) from sounding like one sample on a loop.
    */
-  playFarmSample(name: FarmSample, gain = 1, spread = 0.06): void {
+  playFarmSample(name: FarmSample, gain = 1, spread = 0.06, softenHz?: number): void {
     const ctx = this.ctx;
     const bus = this.sfxBus;
     if (!ctx || !bus || this.sfxMuted || ctx.state !== "running") return;
@@ -344,7 +344,16 @@ class Ambience {
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.playbackRate.value = 1 - spread / 2 + Math.random() * spread;
-    source.connect(level);
+    if (softenHz) {
+      // Takes the crisp top off a recording that plays all the time.
+      const soften = ctx.createBiquadFilter();
+      soften.type = "lowpass";
+      soften.frequency.value = softenHz;
+      source.connect(soften);
+      soften.connect(level);
+    } else {
+      source.connect(level);
+    }
     source.start(ctx.currentTime + 0.005);
     source.onended = () => level.disconnect();
   }
@@ -809,8 +818,8 @@ export function playFarmVoice(voice: SynthVoice, gain?: number): void {
 }
 
 /** Fires one action recording. See ./stackacres-sfx.ts for the intent-named callers. */
-export function playFarmSample(name: FarmSample, gain?: number, spread?: number): void {
-  ambience.playFarmSample(name, gain, spread);
+export function playFarmSample(name: FarmSample, gain?: number, spread?: number, softenHz?: number): void {
+  ambience.playFarmSample(name, gain, spread, softenHz);
 }
 
 /** Fires one animal recording in the foreground, as an answer to a press. */

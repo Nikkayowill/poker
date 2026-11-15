@@ -286,13 +286,20 @@ export class NpcWalkers {
         });
       }
       if (key !== this.keys.get(name) || !node.sprite.anims.isPlaying) {
+        const current = node.sprite.anims.currentAnim;
+        const localFrame = current?.key.startsWith("walk_") && node.sprite.anims.currentFrame
+          ? current.frames.indexOf(node.sprite.anims.currentFrame)
+          : -1;
+        const turning = look.anim === "walk" && localFrame >= 0;
         node.sprite.play({
           key,
           repeat: -1,
           repeatDelay: chore ? mind.choreRest() : 0,
           timeScale,
           // Breathing out of step with everyone else.
-          startFrame: look.anim === "idle" ? Math.floor(Math.random() * 3) : 0,
+          startFrame: turning
+            ? Math.max(0, localFrame - 1)
+            : look.anim === "idle" ? Math.floor(Math.random() * 3) : 0,
         });
         this.keys.set(name, key);
       } else {

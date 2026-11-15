@@ -176,6 +176,7 @@ import type { LandObstacleSnapshot } from "@/lib/stackacres/land-clearing";
 import type { ForageNodeSnapshot } from "@/lib/stackacres/forage";
 import type { StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
 import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
+import { treeNodeIdForProp } from "@/lib/stackacres/tree-nodes";
 
 /**
  * The top-down farm: the Homestead, the areas past its gates, and the barn and workshop inside their doors, walked
@@ -940,7 +941,10 @@ export class TopdownScene extends Phaser.Scene {
       // at the first frame snapped his feet back together on every change of
       // heading, a hitch you saw on each corner of a tap-walk.
       const turning = current?.key.startsWith("walk_") && this.player.anims.isPlaying;
-      const startFrame = turning ? (this.player.anims.currentFrame?.index ?? 1) - 1 : 0;
+      const localFrame = turning && current && this.player.anims.currentFrame
+        ? current.frames.indexOf(this.player.anims.currentFrame)
+        : -1;
+      const startFrame = turning && localFrame >= 0 ? Math.max(0, localFrame - 1) : 0;
       this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
       this.player.play({ key, repeat: -1, timeScale, startFrame });
     } else {
@@ -1247,7 +1251,9 @@ export class TopdownScene extends Phaser.Scene {
         .setDepth(-10)
         .setDisplaySize(this.area.width * this.area.tile, this.area.height * this.area.tile),
     );
-    for (const spec of this.area.props) {
+    for (const rawSpec of this.area.props) {
+      const naturalTreeId = treeNodeIdForProp(rawSpec);
+      const spec = naturalTreeId && !rawSpec.tag ? { ...rawSpec, tag: `tree:${naturalTreeId}` } : rawSpec;
       const image = this.keep(
         this.add
           .image(spec.x - spec.ax, spec.y - spec.ay, spec.atlas ?? `props:${name}`, spec.frame)
@@ -1286,7 +1292,10 @@ export class TopdownScene extends Phaser.Scene {
         // The stump or rubble, hidden until the node is spent. It keeps the tag so a tap on it still answers.
         const stump = this.keep(this.add.image(spec.x, spec.y, NODE_ART[gather].texture).setOrigin(0.5, 1).setDepth(spec.y).setVisible(false));
         // A stump blocks only the tile it stands on: the one under the trunk's foot.
-        const foot: [number, number] = [Math.floor(spec.x / this.area.tile), Math.floor((spec.y - 1) / this.area.tile)];
+        // The art anchor is slightly right of the trunk's foot; use the
+        // visual base point rather than the prop origin when choosing the
+        // stump's one blocking tile.
+        const foot: [number, number] = [Math.floor((spec.x - 12) / this.area.tile), Math.floor((spec.y - 1) / this.area.tile)];
         const middle = gather === "tree" ? spec.blocks.find(([tx, ty]) => tx === foot[0] && ty === foot[1]) : undefined;
         this.propImages.push({
           spec: { ...spec, w: stump.width, h: stump.height, ax: stump.width / 2, ay: stump.height, blocks: middle ? [middle] : [], sway: undefined },
@@ -1304,9 +1313,11 @@ export class TopdownScene extends Phaser.Scene {
     // Someone who keeps a routine is placed by the clock wherever their day has taken them, so they are
     // made in every area and shown only in the one they are in (npc-walkers.ts). Everyone else stands
     // where area.json puts them.
+    const stepSound = this.area.indoor ? floorStepSound : grassStepSound;
     const spawnNpc = (name: string, x: number, y: number, driven: boolean) => {
       const sprite = this.keep(this.add.sprite(x, y, name, STANDING.down).setOrigin(0.5, 44 / 48).setDepth(y));
       this.anims.createFromAseprite(name, undefined, sprite);
+      this.bindFootsteps(sprite, stepSound);
       this.people.addNpc(name, sprite, driven);
       const shadow = this.keep(this.add.ellipse(x + 1, y + 1, 13, 4, 0x140c1c, 0.28).setDepth(-1));
       this.npcSprites.set(name, { sprite, shadow });
@@ -1319,15 +1330,10 @@ export class TopdownScene extends Phaser.Scene {
 
     this.player = this.keep(this.add.sprite(spawn.x, spawn.y, "farmer", STANDING[this.facing]).setOrigin(0.5, 44 / 48).setDepth(spawn.y));
     this.anims.createFromAseprite("farmer", undefined, this.player);
-    // A step on each foot's contact frame, the first and the middle of the
-    // walk cycle: floorboards indoors, grass outside.
-    const stepSound = this.area.indoor ? floorStepSound : grassStepSound;
-    let step = 0;
     this.player.on(Phaser.Animations.Events.ANIMATION_UPDATE, (anim: Phaser.Animations.Animation, frame: Phaser.Animations.AnimationFrame) => {
       if (anim.key.startsWith("water_") && frame.index === POUR_FRAME_INDEX) this.pour();
-      if (!anim.key.startsWith("walk_")) return;
-      if (frame.index === 1 || frame.index === Math.floor(anim.frames.length / 2) + 1) stepSound(step++);
     });
+    this.bindFootsteps(this.player, stepSound);
     this.playerShadow = this.keep(this.add.ellipse(spawn.x + 1, spawn.y + 1, 13, 4, 0x140c1c, 0.28).setDepth(-1));
     this.setPlayerAt(spawn);
     this.resetCamera();
@@ -1358,6 +1364,18 @@ export class TopdownScene extends Phaser.Scene {
     // area; without this the set only ever grew until he walked out.
     object.once(Phaser.GameObjects.Events.DESTROY, () => this.layer.delete(object));
     return object;
+  }
+
+  private bindFootsteps(sprite: Phaser.GameObjects.Sprite, stepSound: (step: number) => void): void {
+    let step = 0;
+    sprite.on(Phaser.Animations.Events.ANIMATION_UPDATE, (anim: Phaser.Animations.Animation, frame: Phaser.Animations.AnimationFrame) => {
+      if (!anim.key.startsWith("walk_")) return;
+      const localFrame = anim.frames.indexOf(frame);
+      const contactFrame = anim.frames.length >= 8
+        ? localFrame === 1 || localFrame === 5
+        : localFrame === 1 || localFrame === 3;
+      if (contactFrame) stepSound(step++);
+    });
   }
 
   /**
@@ -1472,7 +1490,14 @@ export class TopdownScene extends Phaser.Scene {
       const visible = held ? !stump : stump ? isSpent : !(isSpent || down);
       image.setVisible(visible);
       canopy?.setVisible(visible);
-      if (visible) for (const [tx, ty] of spec.blocks) blocked.add(tileKey(tx, ty));
+      if (visible) {
+        for (const [tx, ty] of spec.blocks) blocked.add(tileKey(tx, ty));
+        // A spent tree whose trunk tile was not found still blocks one tile,
+        // so a stump is never walked through.
+        if (stump && isSpent && kind === "tree" && spec.blocks.length === 0) {
+          blocked.add(tileKey(Math.floor(spec.x / this.area.tile), Math.floor((spec.y - 1) / this.area.tile)));
+        }
+      }
     }
     // A fence piece stands on its square like anything else built there, and so does a dog.
     if (this.areaName === "homestead") {
@@ -2131,6 +2156,13 @@ export class TopdownScene extends Phaser.Scene {
       // is approached with.
       if (spec.tag === "dock") {
         consider(this.dockTarget(spec), spec.y);
+        continue;
+      }
+      // Passable forage is ground the farmer can stand on, not an obstacle he
+      // needs to stop beside. Walking to its centre keeps a tap on a small
+      // bush from stopping a full reach away from the thing being picked.
+      if (spec.passable) {
+        consider({ kind: "tag", tag: spec.tag, anchor: { x: spec.x, y: spec.y }, face: { x: spec.x, y: spec.y } }, spec.y);
         continue;
       }
       // Whichever side of it he is already nearest -- not always the south side -- so he isn't
@@ -3966,6 +3998,11 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   // ------------------------------------------------------------------ dev handle (e2e specs, never production)
+
+  /** Whether a swing is still in the air. A tap during one is ignored, so specs wait for this to be false. */
+  isSwinging(): boolean {
+    return this.swing !== null;
+  }
 
   /** A map point in viewport CSS pixels, for a real pointer event. */
   clientPointFor(x: number, y: number): TapPoint {

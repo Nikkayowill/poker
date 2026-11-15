@@ -8,6 +8,7 @@ interface Handle {
     placeFarmer: (area: string, at: { x: number; y: number }) => void;
     farmerPoint: () => { x: number; y: number };
     isWalking: () => boolean;
+    isSwinging: () => boolean;
     isBlockedAt: (at: { x: number; y: number }) => boolean;
     nodeDrawn: (tag: string) => "standing" | "spent" | null;
   };
@@ -85,7 +86,8 @@ test("felling a tree in the game leaves a stump, and only that tree", async ({ c
   await expect.poll(() => hitsLeft(page, "woodNodes", "homestead-3"), { timeout: 10_000 }).toBe(2);
   expect(await sceneCall(page, "nodeDrawn", "tree:homestead-3")).toBe("standing");
   for (const left of [1, 0]) {
-    await page.waitForTimeout(700);
+    // A tap during a swing is ignored, so the next one waits for the blade to land.
+    await expect.poll(() => sceneCall(page, "isSwinging")).toBe(false);
     await page.mouse.click(point.x, point.y);
     await expect.poll(() => hitsLeft(page, "woodNodes", "homestead-3"), { timeout: 10_000 }).toBe(left);
   }
@@ -94,6 +96,35 @@ test("felling a tree in the game leaves a stump, and only that tree", async ({ c
   expect(await sceneCall(page, "nodeDrawn", "tree:homestead-4")).toBe("standing");
   // A standing trunk is three tiles wide; the stump only stops you at its middle.
   expect(await sceneCall(page, "isBlockedAt", TREE_3_OUTER)).toBe(false);
+});
+
+/** One of the yard's natural trees, on open ground with no other tree near. Its id comes from where it stands. */
+const YARD_TREE = { x: 312, y: 472, id: "homestead-tree-312-472" };
+
+test("any tree in the yard can be felled, and its stump blocks only one tile", async ({ context, page }) => {
+  await openStackAcres(context, page);
+  const tag = `tree:${YARD_TREE.id}`;
+  expect(await sceneCall(page, "nodeDrawn", tag)).toBe("standing");
+  expect(await hitsLeft(page, "woodNodes", YARD_TREE.id)).toBe(3);
+
+  // One row below the trunk is the last walkable row before the field's rock edge.
+  await sceneCall(page, "placeFarmer", "homestead", { x: YARD_TREE.x, y: YARD_TREE.y + 20 });
+  await page.waitForTimeout(500);
+  for (const left of [2, 1, 0]) {
+    await expect.poll(() => sceneCall(page, "isSwinging")).toBe(false);
+    // He walks to the trunk and the camera follows, so the point is read again for every swing.
+    const point = await sceneCall(page, "clientPointFor", YARD_TREE.x, YARD_TREE.y);
+    await page.mouse.click(point.x, point.y);
+    await expect.poll(() => hitsLeft(page, "woodNodes", YARD_TREE.id), { timeout: 10_000 }).toBe(left);
+  }
+  await expect.poll(() => sceneCall(page, "nodeDrawn", tag)).toBe("spent");
+
+  // The trunk is three tiles wide while it stands; the stump keeps just one of them.
+  let blockedTiles = 0;
+  for (const dx of [-1, 0, 1]) {
+    if (await sceneCall(page, "isBlockedAt", { x: YARD_TREE.x + dx * 16, y: YARD_TREE.y })) blockedTiles++;
+  }
+  expect(blockedTiles).toBe(1);
 });
 
 test("a tree felled earlier is already a stump when the farm opens", async ({ context, page }) => {

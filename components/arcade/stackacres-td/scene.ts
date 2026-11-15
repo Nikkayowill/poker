@@ -253,6 +253,9 @@ export const AREA_NAMES: Record<TopdownArea, string> = {
 };
 /** Walking through a door or a gate: the old view pushes in (or pulls back on the way out) and dissolves. */
 const TRAVEL_MS = 320;
+/** How far off, in world pixels, someone else's footsteps can still be heard, and how loud the nearest are next to the farmer's own. */
+const NPC_STEP_HEARD_PX = 140;
+const NPC_STEP_LOUDNESS = 0.4;
 /** One fence frame (common/fence.png): a map square wide, two tall, with the post's foot this far down its own square. */
 const FENCE_FRAME = { width: 16, height: 32, foot: 12 } as const;
 /** How far past each edge of an outdoor map the forest backdrop runs, in map units. */
@@ -1317,7 +1320,7 @@ export class TopdownScene extends Phaser.Scene {
     const spawnNpc = (name: string, x: number, y: number, driven: boolean) => {
       const sprite = this.keep(this.add.sprite(x, y, name, STANDING.down).setOrigin(0.5, 44 / 48).setDepth(y));
       this.anims.createFromAseprite(name, undefined, sprite);
-      this.bindFootsteps(sprite, stepSound);
+      this.bindFootsteps(sprite, stepSound, false);
       this.people.addNpc(name, sprite, driven);
       const shadow = this.keep(this.add.ellipse(x + 1, y + 1, 13, 4, 0x140c1c, 0.28).setDepth(-1));
       this.npcSprites.set(name, { sprite, shadow });
@@ -1333,7 +1336,7 @@ export class TopdownScene extends Phaser.Scene {
     this.player.on(Phaser.Animations.Events.ANIMATION_UPDATE, (anim: Phaser.Animations.Animation, frame: Phaser.Animations.AnimationFrame) => {
       if (anim.key.startsWith("water_") && frame.index === POUR_FRAME_INDEX) this.pour();
     });
-    this.bindFootsteps(this.player, stepSound);
+    this.bindFootsteps(this.player, stepSound, true);
     this.playerShadow = this.keep(this.add.ellipse(spawn.x + 1, spawn.y + 1, 13, 4, 0x140c1c, 0.28).setDepth(-1));
     this.setPlayerAt(spawn);
     this.resetCamera();
@@ -1366,7 +1369,12 @@ export class TopdownScene extends Phaser.Scene {
     return object;
   }
 
-  private bindFootsteps(sprite: Phaser.GameObjects.Sprite, stepSound: (step: number) => void): void {
+  /**
+   * The farmer's steps always sound. Anyone else's are heard only when they are
+   * close, and softer the further off: every walker on the map at full volume
+   * was too much to listen to.
+   */
+  private bindFootsteps(sprite: Phaser.GameObjects.Sprite, stepSound: (step: number, loudness?: number) => void, own: boolean): void {
     let step = 0;
     sprite.on(Phaser.Animations.Events.ANIMATION_UPDATE, (anim: Phaser.Animations.Animation, frame: Phaser.Animations.AnimationFrame) => {
       if (!anim.key.startsWith("walk_")) return;
@@ -1374,7 +1382,14 @@ export class TopdownScene extends Phaser.Scene {
       const contactFrame = anim.frames.length >= 8
         ? localFrame === 1 || localFrame === 5
         : localFrame === 1 || localFrame === 3;
-      if (contactFrame) stepSound(step++);
+      if (!contactFrame) return;
+      if (own) {
+        stepSound(step++);
+        return;
+      }
+      if (!sprite.visible) return;
+      const near = 1 - Phaser.Math.Distance.Between(sprite.x, sprite.y, this.player.x, this.player.y) / NPC_STEP_HEARD_PX;
+      if (near > 0) stepSound(step++, near * NPC_STEP_LOUDNESS);
     });
   }
 

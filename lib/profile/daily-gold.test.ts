@@ -19,6 +19,7 @@ function profileWith(overrides: Partial<PlayerProfile>): PlayerProfile {
     lastBackstopAt: null,
     isRegistered: true,
     stackacresAccess: false,
+    stackstrikeAccess: false,
     adminBadge: false,
     onboardingTourCompletedAt: null,
     ...overrides,

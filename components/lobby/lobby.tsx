@@ -516,6 +516,24 @@ export function Lobby({
               </button>
             </div>
           </form>
+
+          {/* A private prototype: the tile exists only for a profile an admin
+              has opened it for, and sits last so it cannot move the panel's
+              2x2 block. */}
+          {profile.stackstrikeAccess && (
+            <Link
+              className="hub-tile hub-tile-private"
+              href="/stackstrike"
+              style={tileIndexStyle(9)}
+              onClick={tapSound}
+              prefetch={false}
+            >
+              <span className="hub-tile-body">
+                <strong>StackStrike</strong>
+                <small>Stealth shooter · Private preview</small>
+              </span>
+            </Link>
+          )}
         </div>
       </section>
 

@@ -22,6 +22,8 @@ interface StoredProfile extends Omit<PlayerProfile, "isRegistered"> {
   lastSeenIp: string | null;
   /** Admin-granted access to the StackAcres while it is unreleased. */
   stackacresAccess: boolean;
+  /** Admin-granted access to the StackStrike prototype. */
+  stackstrikeAccess: boolean;
   /** Shows "Admin" above this player's seat at the table. Dashboard-granted. */
   adminBadge: boolean;
 }
@@ -105,6 +107,7 @@ function publicProfile(profile: StoredProfile): PlayerProfile {
     lastBackstopAt: profile.lastBackstopAt,
     isRegistered: profile.userId !== null,
     stackacresAccess: profile.stackacresAccess,
+    stackstrikeAccess: profile.stackstrikeAccess,
     adminBadge: profile.adminBadge,
     onboardingTourCompletedAt: profile.onboardingTourCompletedAt,
   };
@@ -143,6 +146,7 @@ function defaultProfile(displayName = "Player"): StoredProfile {
     banned: false,
     lastSeenIp: null,
     stackacresAccess: false,
+    stackstrikeAccess: false,
     adminBadge: false,
     lastBackstopAt: null,
     onboardingTourCompletedAt: null,
@@ -168,6 +172,7 @@ function fromRow(row: Record<string, unknown>): StoredProfile {
     banned: Boolean(row.banned),
     lastSeenIp: row.last_seen_ip ? String(row.last_seen_ip) : null,
     stackacresAccess: Boolean(row.homestead_access),
+    stackstrikeAccess: Boolean(row.stackstrike_access),
     adminBadge: Boolean(row.admin_badge),
     lastBackstopAt: row.last_backstop_at ? String(row.last_backstop_at) : null,
     onboardingTourCompletedAt: row.onboarding_tour_completed_at
@@ -883,6 +888,28 @@ export async function hasStackAcresAccess(token: string): Promise<boolean> {
 /** Lets a specific profile into (or back out of) the StackAcres while it is unreleased. */
 export async function setStackAcresAccess(profileId: string, allowed: boolean): Promise<void> {
   return setProfileFlag(profileId, "stackacresAccess", allowed, "homestead_access", "StackAcres access");
+}
+
+/**
+ * Whether this session's profile has been let into the StackStrike prototype.
+ * Same shape as hasStackAcresAccess: read by session token, and a token with
+ * no profile behind it is simply not on the list.
+ */
+export async function hasStackStrikeAccess(token: string): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) return memoryProfiles.get(token)?.stackstrikeAccess ?? false;
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("stackstrike_access")
+    .eq("session_token", token)
+    .maybeSingle();
+  if (error) throw new Error(`Could not check StackStrike access: ${error.message}`);
+  return Boolean(data?.stackstrike_access);
+}
+
+/** Lets a specific profile into (or back out of) the StackStrike prototype. */
+export async function setStackStrikeAccess(profileId: string, allowed: boolean): Promise<void> {
+  return setProfileFlag(profileId, "stackstrikeAccess", allowed, "stackstrike_access", "StackStrike access");
 }
 
 /** Puts the "Admin" tag above a profile's seat at the table, or takes it off. */

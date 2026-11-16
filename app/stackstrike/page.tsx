@@ -1,11 +1,19 @@
 import type { Metadata } from "next";
-import { StackStrikeGate } from "@/components/stackstrike/stackstrike-gate";
+import { cookies } from "next/headers";
+import { notFound } from "next/navigation";
+import { StackStrikeGame } from "@/components/stackstrike/stackstrike-game";
+import { tokenHasStackStrikeAccess } from "@/lib/server/stackstrike-access";
+import { readSessionTokenFromCookies } from "@/lib/server/session";
 
 /**
- * StackStrike is not public yet. In production only a signed-in admin gets
- * past components/stackstrike/stackstrike-gate.tsx; everyone else sees a 404
- * message. Local dev always opens it. Nothing links here, it is not in the
- * arcade catalogue, and robots.ts keeps crawlers out.
+ * StackStrike is a private prototype. Only a profile an admin has opened it
+ * for (the dashboard's "Open StackStrike") gets in; everyone else gets a 404,
+ * because nothing advertises it. Local dev always opens it so the game runs
+ * without an admin grant. The Play tiles in components/lobby show only for the
+ * same profiles. Nothing else links here and robots.ts keeps crawlers out.
+ *
+ * Reading the cookie makes this page dynamic, which it must be: a cached 404
+ * served to someone who was just granted access would shut them out.
  */
 export const dynamic = "force-dynamic";
 
@@ -14,6 +22,11 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function StackStrikePage() {
-  return <StackStrikeGate requireAdmin={process.env.NODE_ENV === "production"} />;
+export default async function StackStrikePage() {
+  if (process.env.NODE_ENV === "production") {
+    const store = await cookies();
+    const token = readSessionTokenFromCookies((name) => store.get(name)?.value);
+    if (!(await tokenHasStackStrikeAccess(token))) notFound();
+  }
+  return <StackStrikeGame />;
 }

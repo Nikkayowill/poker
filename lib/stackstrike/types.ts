@@ -43,9 +43,9 @@ export interface EnemyDefinition {
   health: number;
   moveSpeed: number;
   radius: number;
-  /** Sees the player only inside this distance and with a clear line. */
+  /** How far the enemy's flashlight reaches. It sees the player only inside the beam, with a clear line. */
   detectionRange: number;
-  /** Half the width of the view cone, in radians. Alert enemies ignore it. */
+  /** Half the width of the flashlight beam, in radians. Alert enemies ignore it. */
   fieldOfView: number;
   attackRange: number;
   attack: "ranged" | "melee";
@@ -78,6 +78,10 @@ export interface DifficultyDefinition {
   grace: number;
   /** Seconds between one enemy stepping in and the next. */
   spawnGap: number;
+  /** Multiplier on how many enemies a wave brings. */
+  enemyCount: number;
+  /** Multiplier on how fast enemies walk. */
+  enemySpeed: number;
 }
 
 /** A door enemies come in through. */
@@ -94,8 +98,8 @@ export interface Arena {
   width: number;
   height: number;
   walls: Rect[];
-  /** Dark nooks. The player can duck into one and hide. */
-  hides: Rect[];
+  /** The darkest corners. Not marked on the floor: enemies check them once a wave drags on or after losing you. */
+  corners: Vec[];
   /** Spots enemies sweep between when they have nothing to chase. */
   patrol: Vec[];
   playerSpawn: Vec;
@@ -112,10 +116,6 @@ export interface PlayerInput {
   reload: boolean;
   /** Weapon slot to switch to, or null. */
   selectWeapon: number | null;
-  /** True only on the step the flashlight button went down. */
-  toggleLight: boolean;
-  /** True only on the step the hide button went down: duck in, or step out. */
-  hide: boolean;
 }
 
 export interface PlayerState {
@@ -133,15 +133,14 @@ export interface PlayerState {
   cooldown: number;
   /** Seconds of hit flash left, for rendering only. */
   hurt: number;
-  lightOn: boolean;
-  /** Ducked into a nook: still, light off, and hard to notice. */
+  /** Pressed into a dark corner: hard to notice. Recomputed every step. */
   hidden: boolean;
-  /** Close enough to a nook to duck into it. Recomputed every step. */
-  nearHide: boolean;
+  /** How boxed in the player is by walls, 0 in the open to 1 all round. Recomputed every step. */
+  cover: number;
+  /** Seconds left of being easy to see after a shot, however dark the corner. */
+  exposedLeft: number;
   /** Walking this step. Standing still is harder to notice. */
   moving: boolean;
-  /** The light's state before hiding, restored when stepping out. */
-  lightWasOn: boolean;
 }
 
 /**
@@ -205,7 +204,6 @@ export type SimEvent =
   | { type: "wall"; pos: Vec }
   | { type: "kill"; pos: Vec; defId: string }
   | { type: "reload" }
-  | { type: "light"; on: boolean }
   | { type: "spotted"; pos: Vec }
   | { type: "hide"; on: boolean }
   | { type: "wave"; wave: number }
@@ -223,7 +221,7 @@ export interface SimState {
   incoming: string[];
   /** Enemies still to step in through their door. */
   spawnQueue: SpawnTicket[];
-  /** When each sweep point was last looked at: patrol points, then hide centres. */
+  /** When each sweep point was last looked at: patrol points, then corners. */
   sweepAt: number[];
   player: PlayerState;
   enemies: EnemyState[];

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { ARENA, ENEMIES, OPERATORS, WEAPONS, waveComposition } from "./content";
-import { segmentRectHit } from "./geometry";
+import { ARENA, ENEMIES, OPERATORS, SHADOW, WEAPONS, waveComposition } from "./content";
 import { buildNavGrid, findPath } from "./pathfinding";
 import type { Rect, Vec } from "./types";
+import { coverAt } from "./vision";
 
 function touchesWall(point: Vec, radius: number): boolean {
   return ARENA.walls.some(
@@ -15,10 +15,10 @@ function touchesWall(point: Vec, radius: number): boolean {
 }
 
 describe("arena", () => {
-  it("is small enough for a phone and has plenty of places to hide", () => {
+  it("is small enough for a phone and has plenty of dark corners", () => {
     expect(ARENA.width).toBeLessThanOrEqual(1300);
     expect(ARENA.height).toBeLessThanOrEqual(900);
-    expect(ARENA.hides.length).toBeGreaterThanOrEqual(8);
+    expect(ARENA.corners.length).toBeGreaterThanOrEqual(8);
   });
 
   it("keeps spawns, patrol points and the player start out of the walls", () => {
@@ -34,30 +34,35 @@ describe("arena", () => {
     }
   });
 
-  it("keeps hides on open floor, clear of every wall", () => {
-    for (const hide of ARENA.hides) {
-      for (const wall of ARENA.walls) {
-        const overlap =
-          hide.x < wall.x + wall.w && hide.x + hide.w > wall.x && hide.y < wall.y + wall.h && hide.y + hide.h > wall.y;
-        expect(overlap, `hide ${hide.x},${hide.y} against wall ${wall.x},${wall.y}`).toBe(false);
-      }
+  it("keeps the dark corners on open floor, clear of every wall", () => {
+    for (const corner of ARENA.corners) {
+      expect(touchesWall(corner, 8), `corner ${corner.x},${corner.y}`).toBe(false);
     }
   });
 
-  it("puts every hide, spawn and patrol point within reach of the player start", () => {
+  it("puts every corner, spawn and patrol point within reach of the player start", () => {
     const grid = buildNavGrid(ARENA);
-    const centres = ARENA.hides.map((hide) => ({ x: hide.x + hide.w / 2, y: hide.y + hide.h / 2 }));
-    for (const goal of [...centres, ...ARENA.entries.map((entry) => entry.pos), ...ARENA.patrol]) {
+    for (const goal of [...ARENA.corners, ...ARENA.entries.map((entry) => entry.pos), ...ARENA.patrol]) {
       expect(findPath(grid, ARENA.walls, ARENA.playerSpawn, goal, 14), `${goal.x},${goal.y}`).not.toBeNull();
     }
   });
 
-  it("has no hide a bullet can cross in a straight line from outside the booth", () => {
-    // A booth's back wall means a shot from behind it is stopped.
-    const booth = ARENA.hides[0];
-    const behind = { x: booth.x + booth.w / 2, y: 20 };
-    const inside = { x: booth.x + booth.w / 2, y: booth.y + 20 };
-    expect(ARENA.walls.some((wall) => segmentRectHit(behind, inside, wall) !== null)).toBe(true);
+  it("has a real dark corner in every booth", () => {
+    // The back corner of each booth, where a 14-radius player can stand: boxed in on three sides.
+    const backCorners = [
+      { x: 148, y: 138 },
+      { x: 998, y: 138 },
+      { x: 148, y: 662 },
+      { x: 998, y: 662 },
+    ];
+    for (const corner of backCorners) {
+      expect(touchesWall(corner, 13), `${corner.x},${corner.y} is inside a wall`).toBe(false);
+      expect(coverAt(corner, ARENA.walls), `booth ${corner.x},${corner.y}`).toBeGreaterThanOrEqual(SHADOW.hiddenAt);
+    }
+  });
+
+  it("the open middle of the room hides nobody", () => {
+    expect(coverAt(ARENA.playerSpawn, ARENA.walls)).toBeLessThan(SHADOW.hiddenAt);
   });
 });
 

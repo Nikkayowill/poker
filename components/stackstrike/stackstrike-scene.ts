@@ -1,5 +1,5 @@
 import * as Phaser from "phaser";
-import { ARENA, FLASHLIGHT, STEALTH } from "@/lib/stackstrike/content";
+import { ARENA, PLAYER_GLOW } from "@/lib/stackstrike/content";
 import { segmentRectHit } from "@/lib/stackstrike/geometry";
 import {
   accuracy,
@@ -10,7 +10,7 @@ import {
   step,
 } from "@/lib/stackstrike/sim";
 import type { DifficultyId, EnemyState, PlayerInput, SimEvent, SimState } from "@/lib/stackstrike/types";
-import { beamPolygon, DOOR_GLOW, glowPolygon, isLit, nearDoor } from "@/lib/stackstrike/vision";
+import { beamPolygon, DOOR_GLOW, glowPolygon } from "@/lib/stackstrike/vision";
 
 /**
  * The Phaser side of StackStrike: reads input, runs lib/stackstrike/sim.ts at
@@ -20,13 +20,17 @@ import { beamPolygon, DOOR_GLOW, glowPolygon, isLit, nearDoor } from "@/lib/stac
  *
  * Built for a phone held sideways, laid out like StackAcres: fixed controls in
  * the bottom corners. Left thumb: a move stick. Right thumb: an aim pad that
- * points the gun and the flashlight together; dragging only aims, a tap fires,
- * and holding still keeps firing. HIDE, LIGHT, RELOAD and the weapon button sit
- * around it. Desktop is the same game with WASD, mouse, E, F, R and 1-3.
+ * points the gun and its red laser sight; dragging only aims, a tap anywhere
+ * on the pad aims there and fires, and holding still keeps firing. RELOAD and
+ * the weapon button sit around it. There is no hide button: pressing into a
+ * corner is hiding. Desktop is the same game with WASD, mouse, R and 1-3.
  *
- * The world is black. A darkness layer covers the screen and the flashlight
- * beam, cut short by walls, is erased out of it; enemies are only drawn where
- * lib/stackstrike/vision.ts says the player can see them.
+ * The player carries no light. The world is black, lit only by a small glow
+ * round the player and by the enemies' flashlights: each beam, cut short by
+ * walls, is erased out of the dark, and being inside one is what fills that
+ * enemy's spotted meter. The laser is draw-only, so enemies never see it.
+ * Enemies are drawn on top of the dark, glowing red, so the player always
+ * knows where they are. A small map in the corner shows them too.
  *
  * The canvas is drawn at device resolution, so every screen size below is in
  * device pixels: `u` is one CSS pixel's worth.
@@ -55,8 +59,7 @@ const COLORS = {
   grid: 0x30333a,
   wall: 0x4a4e57,
   wallEdge: 0xa3a9b4,
-  hide: 0x15332c,
-  hideEdge: 0x3fae8c,
+  shadow: 0x3fae8c,
   player: 0xe6edf3,
   playerHurt: 0xff5d5d,
   playerShot: 0xffe066,
@@ -69,6 +72,7 @@ const COLORS = {
 };
 
 const ENEMY_COLORS: Record<string, number> = { grunt: 0xe5484d, runner: 0xf59f00 };
+const ENEMY_GLOW = 0xff2a2a;
 
 const DARKNESS = 0.95;
 /** The dark is drawn at this share of screen resolution and stretched back up: light is soft anyway, and it is a full-screen fill. */
@@ -81,6 +85,8 @@ const KNOB_RADIUS = 24;
 const PAD_GRAB = 1.5;
 const AIM_DEADZONE = 0.3;
 const BUTTON_RADIUS = 30;
+/** A thumb has to move this far (CSS pixels) from where it landed before it counts as a drag. */
+const DRAG_SLOP = 10;
 /** A touch on the aim pad this short, with no drag, is a tap: one shot. */
 const TAP_MS = 260;
 /** Held still on the aim pad past this, with no drag, it keeps firing. */
@@ -94,6 +100,8 @@ const PHONE_VIEW_HEIGHT = 330;
 const CAMERA_FOLLOW_RATE = 12;
 /** How far the laser sight reaches, in world units. */
 const LASER_RANGE = 520;
+/** The corner map, in CSS pixels wide; its height follows the arena. */
+const MAP_WIDTH = 120;
 
 interface Particle {
   x: number;
@@ -114,7 +122,10 @@ interface Pad {
   x: number;
   y: number;
   downAt: number;
-  /** Moved past the dead zone at some point: it is aiming, not tapping. */
+  /** Where the thumb first landed. A tap is judged from here, not from the pad's centre. */
+  downX: number;
+  downY: number;
+  /** Moved well away from where it landed: it is aiming, not tapping. */
   dragged: boolean;
   /** Started on the pad's fixed base, rather than floating from where it landed. */
   fixed: boolean;
@@ -125,8 +136,8 @@ interface Point {
   y: number;
 }
 
-export type ButtonName = "hide" | "light" | "reload" | "swap";
-const BUTTON_NAMES: readonly ButtonName[] = ["hide", "light", "reload", "swap"];
+export type ButtonName = "reload" | "swap";
+const BUTTON_NAMES: readonly ButtonName[] = ["reload", "swap"];
 
 interface Layout {
   u: number;
@@ -168,7 +179,7 @@ export class StackStrikeScene extends Phaser.Scene {
     insets: { top: 0, right: 0, bottom: 0, left: 0 },
     moveHome: { x: 0, y: 0 },
     aimHome: { x: 0, y: 0 },
-    buttons: { hide: { x: 0, y: 0 }, light: { x: 0, y: 0 }, reload: { x: 0, y: 0 }, swap: { x: 0, y: 0 } },
+    buttons: { reload: { x: 0, y: 0 }, swap: { x: 0, y: 0 } },
   };
 
   /** Where the camera looks, in world units. Smoothed, and shared by the world and the dark. */
@@ -180,6 +191,8 @@ export class StackStrikeScene extends Phaser.Scene {
   private world!: Phaser.GameObjects.Graphics;
   private dark!: Phaser.GameObjects.RenderTexture;
   private lightBrush!: Phaser.GameObjects.Graphics;
+  /** Enemies, drawn over the dark in world coordinates (it is moved and scaled to match the camera). */
+  private enemyGfx!: Phaser.GameObjects.Graphics;
   private tint!: Phaser.GameObjects.Graphics;
   private hud!: Phaser.GameObjects.Graphics;
   private healthText!: Phaser.GameObjects.Text;
@@ -191,14 +204,15 @@ export class StackStrikeScene extends Phaser.Scene {
   private moveCaption!: Phaser.GameObjects.Text;
   private aimCaption!: Phaser.GameObjects.Text;
 
+  /** Each enemy's flashlight beam this frame, by enemy id. Shared by the dark and the enemy drawing. */
+  private beams = new Map<number, Point[]>();
+
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private reloadQueued = false;
-  private lightQueued = false;
-  private hideQueued = false;
   private selectQueued: number | null = null;
   private moveStick: Pad | null = null;
   private aimPad: Pad | null = null;
-  /** Where the gun and the light point. Stays where the thumb left it. */
+  /** Where the gun and the laser point. Stays where the thumb left it. */
   private aimAngle = 0;
   /** Seconds a tap on the aim pad still asks to fire. */
   private fireBuffer = 0;
@@ -234,6 +248,7 @@ export class StackStrikeScene extends Phaser.Scene {
       .setOrigin(0, 0)
       .setScale(1 / DARK_SCALE);
     this.lightBrush = this.make.graphics({ x: 0, y: 0 }, false);
+    this.enemyGfx = this.add.graphics();
     this.tint = this.add.graphics();
     this.hud = this.add.graphics();
     const text = (): Phaser.GameObjects.Text =>
@@ -244,8 +259,6 @@ export class StackStrikeScene extends Phaser.Scene {
     this.waveText = text().setOrigin(1, 0).setAlign("right");
     this.bannerText = text().setOrigin(0.5).setAlign("center");
     this.buttonLabels = {
-      hide: text().setOrigin(0.5).setText("HIDE"),
-      light: text().setOrigin(0.5).setText("LIGHT"),
       reload: text().setOrigin(0.5).setText("RELOAD"),
       swap: text().setOrigin(0.5),
     };
@@ -253,6 +266,7 @@ export class StackStrikeScene extends Phaser.Scene {
     this.aimCaption = text().setOrigin(0.5).setText("TAP TO FIRE");
     this.hudLayer.add([
       this.dark,
+      this.enemyGfx,
       this.tint,
       this.hud,
       this.healthText,
@@ -315,8 +329,6 @@ export class StackStrikeScene extends Phaser.Scene {
       this.accumulator -= STEP_SECONDS;
       const input = this.readInput();
       this.reloadQueued = false;
-      this.lightQueued = false;
-      this.hideQueued = false;
       this.selectQueued = null;
       const wasPlaying = this.sim.status === "playing";
       step(this.sim, input);
@@ -329,7 +341,9 @@ export class StackStrikeScene extends Phaser.Scene {
     this.updateParticles(frame);
     this.updateCamera(frame);
     this.drawWorld();
+    this.updateBeams();
     this.drawDark();
+    this.drawEnemies();
     this.drawHud();
     if (this.banner.left > 0) this.banner.left -= frame;
   }
@@ -347,9 +361,6 @@ export class StackStrikeScene extends Phaser.Scene {
         if (this.sim.status === "dead") this.restart();
         else this.reloadQueued = true;
       });
-      keyboard.on("keydown-F", () => (this.lightQueued = true));
-      keyboard.on("keydown-E", () => (this.hideQueued = true));
-      keyboard.on("keydown-SPACE", () => (this.hideQueued = true));
       keyboard.on("keydown-ONE", () => (this.selectQueued = 0));
       keyboard.on("keydown-TWO", () => (this.selectQueued = 1));
       keyboard.on("keydown-THREE", () => (this.selectQueued = 2));
@@ -386,6 +397,8 @@ export class StackStrikeScene extends Phaser.Scene {
         x: pointer.x,
         y: pointer.y,
         downAt: this.time.now,
+        downX: pointer.x,
+        downY: pointer.y,
         dragged: false,
         fixed: near,
       };
@@ -393,6 +406,8 @@ export class StackStrikeScene extends Phaser.Scene {
         if (!this.moveStick) this.moveStick = pad;
       } else if (!this.aimPad) {
         this.aimPad = pad;
+        // A tap on the pad aims where it landed, so a tap off-centre shoots that way.
+        this.aimFromPad(pad);
       }
     });
 
@@ -421,18 +436,6 @@ export class StackStrikeScene extends Phaser.Scene {
 
   private pressButton(name: ButtonName): void {
     switch (name) {
-      case "hide": {
-        const { player } = this.sim;
-        if (!player.hidden && !player.nearHide) {
-          this.hint = { text: "Get into a green nook to hide", left: 2 };
-          return;
-        }
-        this.hideQueued = true;
-        return;
-      }
-      case "light":
-        this.lightQueued = true;
-        return;
       case "reload":
         this.reloadQueued = true;
         return;
@@ -461,14 +464,14 @@ export class StackStrikeScene extends Phaser.Scene {
     let fire = this.fireBuffer > 0;
 
     if (this.aimPad) {
-      const vector = this.padVector(this.aimPad);
-      if (Math.hypot(vector.x, vector.y) > AIM_DEADZONE) {
-        // Dragging only aims: the gun and the light follow the thumb, and nothing fires.
-        this.aimAngle = Math.atan2(vector.y, vector.x);
+      // The gun and the laser follow the thumb wherever it is on the pad.
+      this.aimFromPad(this.aimPad);
+      const slop = DRAG_SLOP * this.layoutNow.u;
+      if (Math.hypot(this.aimPad.x - this.aimPad.downX, this.aimPad.y - this.aimPad.downY) > slop) {
         this.aimPad.dragged = true;
-      } else if (!this.aimPad.dragged && this.time.now - this.aimPad.downAt > HOLD_FIRE_MS) {
-        fire = true;
       }
+      // Dragging only aims. A thumb held still keeps firing, wherever it landed.
+      if (!this.aimPad.dragged && this.time.now - this.aimPad.downAt > HOLD_FIRE_MS) fire = true;
     } else if (!this.touch) {
       const pointer = this.input.mousePointer;
       const world = this.screenToWorld(pointer.x, pointer.y);
@@ -482,9 +485,13 @@ export class StackStrikeScene extends Phaser.Scene {
       fire,
       reload: this.reloadQueued,
       selectWeapon: this.selectQueued,
-      toggleLight: this.lightQueued,
-      hide: this.hideQueued,
     };
+  }
+
+  /** Points the gun where the thumb is, unless it is on the pad's centre. */
+  private aimFromPad(pad: Pad): void {
+    const vector = this.padVector(pad);
+    if (Math.hypot(vector.x, vector.y) > AIM_DEADZONE) this.aimAngle = Math.atan2(vector.y, vector.x);
   }
 
   private cycleWeapon(direction: number): void {
@@ -583,7 +590,6 @@ export class StackStrikeScene extends Phaser.Scene {
         this.cameras.main.shake(300, 0.012);
         break;
       case "reload":
-      case "light":
       case "hide":
         break;
     }
@@ -639,10 +645,8 @@ export class StackStrikeScene extends Phaser.Scene {
       moveHome: { x: insets.left + 100 * u, y: padY },
       aimHome: { x: right - 100 * u, y: padY },
       buttons: {
-        hide: { x: right - 46 * u, y: padY - (STICK_RADIUS + 52) * u },
-        light: { x: right - 122 * u, y: padY - (STICK_RADIUS + 58) * u },
-        reload: { x: right - 214 * u, y: bottom - 50 * u },
-        swap: { x: right - 214 * u, y: bottom - 120 * u },
+        reload: { x: right - 46 * u, y: padY - (STICK_RADIUS + 52) * u },
+        swap: { x: right - 122 * u, y: padY - (STICK_RADIUS + 58) * u },
       },
     };
 
@@ -681,25 +685,6 @@ export class StackStrikeScene extends Phaser.Scene {
     g.lineStyle(1, COLORS.grid, 0.8);
     for (let x = 0; x <= arena.width; x += 64) g.lineBetween(x, 0, x, arena.height);
     for (let y = 0; y <= arena.height; y += 64) g.lineBetween(0, y, arena.width, y);
-
-    // Hides: darker green ground, stripes and corner brackets so they read at a glance.
-    for (const hide of arena.hides) {
-      g.fillStyle(COLORS.hide, 1);
-      g.fillRect(hide.x, hide.y, hide.w, hide.h);
-      g.lineStyle(1, COLORS.hideEdge, 0.35);
-      for (let y = hide.y + 8; y < hide.y + hide.h; y += 10) g.lineBetween(hide.x + 3, y, hide.x + hide.w - 3, y);
-      g.lineStyle(3, COLORS.hideEdge, 1);
-      const arm = Math.min(14, hide.w / 3, hide.h / 3);
-      const { x, y, w, h } = hide;
-      g.lineBetween(x, y, x + arm, y);
-      g.lineBetween(x, y, x, y + arm);
-      g.lineBetween(x + w, y, x + w - arm, y);
-      g.lineBetween(x + w, y, x + w, y + arm);
-      g.lineBetween(x, y + h, x + arm, y + h);
-      g.lineBetween(x, y + h, x, y + h - arm);
-      g.lineBetween(x + w, y + h, x + w - arm, y + h);
-      g.lineBetween(x + w, y + h, x + w, y + h - arm);
-    }
 
     for (const wall of arena.walls) {
       g.fillStyle(COLORS.wall, 1);
@@ -753,77 +738,6 @@ export class StackStrikeScene extends Phaser.Scene {
       }
     }
 
-    // A nook within reach lights up, so it is clear where HIDE will work.
-    if (player.nearHide && !player.hidden) {
-      for (const hide of arena.hides) {
-        const slack = STEALTH.hideZoneSlack;
-        const within =
-          player.pos.x >= hide.x - slack &&
-          player.pos.x <= hide.x + hide.w + slack &&
-          player.pos.y >= hide.y - slack &&
-          player.pos.y <= hide.y + hide.h + slack;
-        if (!within) continue;
-        g.lineStyle(3, COLORS.hideEdge, 0.5 + 0.5 * pulse);
-        g.strokeRect(hide.x - 2, hide.y - 2, hide.w + 4, hide.h + 4);
-      }
-    }
-
-    for (const enemy of enemies) {
-      // Only what the flashlight, the glow around you or a lit doorway reaches is drawn.
-      const seen =
-        isLit(player.pos, player.aim, player.lightOn, enemy.pos, arena.walls) || nearDoor(enemy.pos, arena.entries);
-      if (!seen) continue;
-      const def = enemyDef(enemy.defId);
-      const base = ENEMY_COLORS[enemy.defId] ?? 0xff00ff;
-      const alert = enemy.mode === "chase" || enemy.mode === "attack";
-
-      // What this one can see, so a sneak has something to read.
-      if (!alert) {
-        const reach = def.detectionRange * (player.lightOn ? 1 : STEALTH.darkMultiplier);
-        g.fillStyle(alertColor(enemy.awareness), 0.07 + 0.13 * enemy.awareness);
-        g.slice(enemy.pos.x, enemy.pos.y, reach, enemy.facing - def.fieldOfView, enemy.facing + def.fieldOfView, false);
-        g.fillPath();
-      }
-
-      g.fillStyle(enemy.hurt > 0 ? 0xffffff : base, 1);
-      g.fillCircle(enemy.pos.x, enemy.pos.y, def.radius);
-      if (alert || enemy.mode === "search" || enemy.mode === "suspicious") {
-        g.lineStyle(3, alert ? 0xff3030 : 0xffd23f, 1);
-        g.strokeCircle(enemy.pos.x, enemy.pos.y, def.radius + 5);
-      }
-      g.lineStyle(4, 0x0b0b0d, 1);
-      g.lineBetween(
-        enemy.pos.x,
-        enemy.pos.y,
-        enemy.pos.x + Math.cos(enemy.facing) * (def.radius + 8),
-        enemy.pos.y + Math.sin(enemy.facing) * (def.radius + 8),
-      );
-
-      // The detection meter over its head: it fills as it works out you are there.
-      const meterWidth = def.radius * 2 + 6;
-      const meterLeft = enemy.pos.x - meterWidth / 2;
-      const meterTop = enemy.pos.y - def.radius - 20;
-      if (alert) {
-        g.fillStyle(0xff3030, 1);
-        g.fillRect(enemy.pos.x - 1.5, meterTop - 6, 3, 7);
-        g.fillRect(enemy.pos.x - 1.5, meterTop + 3, 3, 3);
-      } else if (enemy.awareness > 0.02) {
-        g.fillStyle(0x000000, 0.7);
-        g.fillRect(meterLeft - 1, meterTop - 1, meterWidth + 2, 6);
-        g.fillStyle(alertColor(enemy.awareness), 1);
-        g.fillRect(meterLeft, meterTop, meterWidth * enemy.awareness, 4);
-      }
-      if (enemy.health < enemy.maxHealth) {
-        const width = def.radius * 2;
-        const left = enemy.pos.x - def.radius;
-        const top = enemy.pos.y - def.radius - 12;
-        g.fillStyle(0x000000, 0.6);
-        g.fillRect(left, top, width, 4);
-        g.fillStyle(0x7ee787, 1);
-        g.fillRect(left, top, width * (enemy.health / enemy.maxHealth), 4);
-      }
-    }
-
     g.fillStyle(player.hurt > 0 ? COLORS.playerHurt : COLORS.player, player.hidden ? 0.6 : 1);
     g.fillCircle(player.pos.x, player.pos.y, player.radius);
     g.lineStyle(5, 0x14161a, 1);
@@ -845,6 +759,93 @@ export class StackStrikeScene extends Phaser.Scene {
     for (const particle of this.particles) {
       g.fillStyle(particle.color, particle.life / particle.max);
       g.fillRect(particle.x - particle.size / 2, particle.y - particle.size / 2, particle.size, particle.size);
+    }
+  }
+
+  /**
+   * Every enemy, all the time, glowing red over the dark so the player is never
+   * guessing where they are. Each carries a flashlight and the beam is its line
+   * of sight: stand in it and its spotted meter fills, stay out and it cannot
+   * see you. The beam goes from yellow toward red as that meter fills.
+   */
+  private drawEnemies(): void {
+    const g = this.enemyGfx;
+    const { enemies } = this.sim;
+    const { width, height } = this.layoutNow;
+    const zoom = this.zoom;
+    g.setPosition(width / 2 - this.cam.x * zoom, height / 2 - this.cam.y * zoom).setScale(zoom);
+    g.clear();
+    const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 220);
+
+    for (const enemy of enemies) {
+      const def = enemyDef(enemy.defId);
+      const base = ENEMY_COLORS[enemy.defId] ?? 0xff00ff;
+      const alert = enemy.mode === "chase" || enemy.mode === "attack";
+      const { x, y } = enemy.pos;
+
+      // Its flashlight: a wide soft beam with a brighter core near the lamp.
+      const beam = this.beams.get(enemy.id);
+      if (beam) {
+        const tint = alertColor(alert ? 1 : enemy.awareness);
+        g.fillStyle(tint, 0.1 + 0.14 * (alert ? 1 : enemy.awareness));
+        g.fillPoints(beam, true);
+        g.fillStyle(tint, 0.1 + 0.1 * (alert ? 1 : enemy.awareness));
+        g.fillPoints(
+          beam.map((p) => ({ x: x + (p.x - x) * 0.55, y: y + (p.y - y) * 0.55 })),
+          true,
+        );
+      }
+
+      // The glow: three soft rings, brighter when it is hunting.
+      const strength = alert ? 1.4 + 0.3 * pulse : 1;
+      for (const [scale, alpha] of [
+        [3.4, 0.07],
+        [2.4, 0.12],
+        [1.65, 0.2],
+      ] as const) {
+        g.fillStyle(ENEMY_GLOW, Math.min(1, alpha * strength));
+        g.fillCircle(x, y, def.radius * scale);
+      }
+
+      g.fillStyle(enemy.hurt > 0 ? 0xffffff : base, 1);
+      g.fillCircle(x, y, def.radius);
+      g.lineStyle(2, ENEMY_GLOW, 0.9);
+      g.strokeCircle(x, y, def.radius + 1);
+      if (alert || enemy.mode === "search" || enemy.mode === "suspicious") {
+        g.lineStyle(3, alert ? 0xff3030 : 0xffd23f, 1);
+        g.strokeCircle(x, y, def.radius + 5);
+      }
+      g.lineStyle(4, 0x0b0b0d, 1);
+      g.lineBetween(
+        x,
+        y,
+        x + Math.cos(enemy.facing) * (def.radius + 8),
+        y + Math.sin(enemy.facing) * (def.radius + 8),
+      );
+
+      // The detection meter over its head: it fills as it works out you are there.
+      const meterWidth = def.radius * 2 + 6;
+      const meterLeft = x - meterWidth / 2;
+      const meterTop = y - def.radius - 20;
+      if (alert) {
+        g.fillStyle(0xff3030, 1);
+        g.fillRect(x - 1.5, meterTop - 6, 3, 7);
+        g.fillRect(x - 1.5, meterTop + 3, 3, 3);
+      } else if (enemy.awareness > 0.02) {
+        g.fillStyle(0x000000, 0.7);
+        g.fillRect(meterLeft - 1, meterTop - 1, meterWidth + 2, 6);
+        g.fillStyle(alertColor(enemy.awareness), 1);
+        g.fillRect(meterLeft, meterTop, meterWidth * enemy.awareness, 4);
+      }
+      if (enemy.health < enemy.maxHealth) {
+        const barWidth = def.radius * 2;
+        const left = x - def.radius;
+        const top = y - def.radius - 12;
+        g.fillStyle(0x000000, 0.6);
+        g.fillRect(left, top, barWidth, 4);
+        g.fillStyle(0x7ee787, 1);
+        g.fillRect(left, top, barWidth * (enemy.health / enemy.maxHealth), 4);
+      }
     }
   }
 
@@ -896,7 +897,15 @@ export class StackStrikeScene extends Phaser.Scene {
     );
   }
 
-  /** Blacks the screen out, then erases the flashlight beam, the glow around the player and the lit doorways. */
+  private updateBeams(): void {
+    this.beams.clear();
+    for (const enemy of this.sim.enemies) {
+      const def = enemyDef(enemy.defId);
+      this.beams.set(enemy.id, beamPolygon(enemy.pos, enemy.facing, this.sim.arena.walls, def.detectionRange, def.fieldOfView, 28));
+    }
+  }
+
+  /** Blacks the screen out, then erases the enemies' flashlight beams, the glow around the player and the lit doorways. */
   private drawDark(): void {
     const { player, arena } = this.sim;
     const dark = this.dark;
@@ -922,28 +931,19 @@ export class StackStrikeScene extends Phaser.Scene {
       erase(circlePoints(entry.pos.x, entry.pos.y, DOOR_GLOW * (active ? 1 : 0.7)), active ? 0.8 : 0.3);
     }
 
-    if (player.lightOn) {
-      // Layered beams, each shorter and narrower, so the light falls off toward the edge.
-      const layers: [number, number, number][] = [
-        [1, 1, 0.5],
-        [0.72, 0.85, 0.55],
-        [0.45, 0.65, 0.7],
-      ];
-      for (const [range, spread, alpha] of layers) {
-        erase(beamPolygon(player.pos, player.aim, arena.walls, FLASHLIGHT.range * range, FLASHLIGHT.halfAngle * spread), alpha);
-      }
-      const core = beamPolygon(player.pos, player.aim, arena.walls, FLASHLIGHT.range * 0.8, FLASHLIGHT.halfAngle * 0.9);
-      this.tint.fillStyle(COLORS.beamTint, 0.07);
-      this.tint.fillPoints(
-        core.map((p) => this.worldToScreen(p.x, p.y)),
-        true,
-      );
+    // Each enemy's flashlight lights the floor it sweeps, brightest near the lamp.
+    for (const enemy of this.sim.enemies) {
+      const def = enemyDef(enemy.defId);
+      const poly = this.beams.get(enemy.id);
+      if (!poly) continue;
+      erase(poly, 0.3);
+      erase(beamPolygon(enemy.pos, enemy.facing, arena.walls, def.detectionRange * 0.6, def.fieldOfView * 0.75, 20), 0.3);
     }
 
-    // The glow keeps the area right around the player readable, light on or off.
+    // The glow keeps the area right around the player readable.
     const glow = glowPolygon(player.pos, arena.walls);
     erase(glow, 0.85);
-    erase(glowPolygon(player.pos, arena.walls, FLASHLIGHT.ambient * 0.5), 0.9);
+    erase(glowPolygon(player.pos, arena.walls, PLAYER_GLOW.radius * 0.5), 0.9);
 
     this.drawLaser();
   }
@@ -989,7 +989,6 @@ export class StackStrikeScene extends Phaser.Scene {
     const { player, status } = this.sim;
     const weapon = currentWeapon(this.sim);
     const { u, width, height, insets, buttons } = this.layoutNow;
-    const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 180);
     g.clear();
 
     // Health.
@@ -1021,7 +1020,6 @@ export class StackStrikeScene extends Phaser.Scene {
     const parts: string[] = [];
     if (hunted) parts.push("SPOTTED");
     if (player.hidden) parts.push("HIDDEN");
-    if (!player.lightOn && !player.hidden) parts.push("LIGHT OFF");
     if (this.hint.left > 0) parts.push(this.hint.text);
     this.statusText.setText(parts.join("  ·  "));
     this.statusText.setColor(hunted ? "#ff6b6b" : player.hidden ? "#4fd1a5" : "#ffd23f");
@@ -1054,6 +1052,8 @@ export class StackStrikeScene extends Phaser.Scene {
     }
     this.bannerText.setAlpha(status === "dead" || planning ? 1 : Math.min(1, this.banner.left * 2));
 
+    this.drawMap(g);
+
     // Touch controls.
     const playing = status === "playing";
     const showControls = this.touch && playing;
@@ -1073,44 +1073,69 @@ export class StackStrikeScene extends Phaser.Scene {
     }
 
     this.buttonLabels.swap.setText(weapon.name.toUpperCase());
-    this.buttonLabels.hide.setText(player.hidden ? "LEAVE" : "HIDE");
     for (const name of BUTTON_NAMES) {
       const at = buttons[name];
-      let fill = 0xffffff;
-      let fillAlpha = 0.12;
-      let line = 0xffffff;
-      let lineAlpha = 0.45;
-      let label = 1;
-      if (name === "light" && player.lightOn) {
-        fill = COLORS.beamTint;
-        fillAlpha = 0.28;
-        line = COLORS.beamTint;
-        lineAlpha = 0.9;
-      }
-      if (name === "hide") {
-        if (player.hidden) {
-          fill = COLORS.hideEdge;
-          fillAlpha = 0.45;
-          line = COLORS.hideEdge;
-          lineAlpha = 1;
-        } else if (player.nearHide) {
-          fill = COLORS.hideEdge;
-          fillAlpha = 0.15 + 0.25 * pulse;
-          line = COLORS.hideEdge;
-          lineAlpha = 0.6 + 0.4 * pulse;
-        } else {
-          fillAlpha = 0.05;
-          lineAlpha = 0.25;
-          label = 0.45;
-        }
-      }
-      if (name === "light" && player.hidden) label = 0.45;
-      this.buttonLabels[name].setAlpha(label);
-      g.fillStyle(fill, fillAlpha);
+      g.fillStyle(0xffffff, 0.12);
       g.fillCircle(at.x, at.y, BUTTON_RADIUS * u);
-      g.lineStyle(2 * u, line, lineAlpha);
+      g.lineStyle(2 * u, 0xffffff, 0.45);
       g.strokeCircle(at.x, at.y, BUTTON_RADIUS * u);
     }
+  }
+
+  /**
+   * A small map in the top-right corner: the walls, the doors, you, and every
+   * enemy as a red dot, so the whole floor can be read at a glance.
+   */
+  private drawMap(g: Phaser.GameObjects.Graphics): void {
+    const { u, width, insets } = this.layoutNow;
+    const { arena, player, enemies } = this.sim;
+    const w = MAP_WIDTH * u;
+    const scale = w / arena.width;
+    const h = arena.height * scale;
+    const left = width - insets.right - 16 * u - w;
+    const top = insets.top + 50 * u;
+    const at = (x: number, y: number): Point => ({ x: left + x * scale, y: top + y * scale });
+
+    g.fillStyle(0x000000, 0.55);
+    g.fillRect(left - 2 * u, top - 2 * u, w + 4 * u, h + 4 * u);
+    g.lineStyle(1 * u, 0xffffff, 0.3);
+    g.strokeRect(left - 2 * u, top - 2 * u, w + 4 * u, h + 4 * u);
+
+    g.fillStyle(COLORS.wallEdge, 0.55);
+    for (const wall of arena.walls) g.fillRect(left + wall.x * scale, top + wall.y * scale, Math.max(1, wall.w * scale), Math.max(1, wall.h * scale));
+
+    for (const entry of arena.entries) {
+      const door = entry.door;
+      const incoming = this.sim.incoming.includes(entry.id);
+      g.fillStyle(incoming ? 0xff4d4d : COLORS.doorEdge, incoming ? 1 : 0.8);
+      g.fillRect(left + door.x * scale, top + door.y * scale, Math.max(2 * u, door.w * scale), Math.max(2 * u, door.h * scale));
+    }
+
+    // Where the screen is looking.
+    const halfW = this.layoutNow.width / (2 * this.zoom);
+    const halfH = this.layoutNow.height / (2 * this.zoom);
+    const view = at(this.cam.x - halfW, this.cam.y - halfH);
+    g.lineStyle(1 * u, 0xffffff, 0.35);
+    g.strokeRect(view.x, view.y, halfW * 2 * scale, halfH * 2 * scale);
+
+    for (const enemy of enemies) {
+      const dot = at(enemy.pos.x, enemy.pos.y);
+      const alert = enemy.mode === "chase" || enemy.mode === "attack";
+      g.fillStyle(ENEMY_GLOW, 0.3);
+      g.fillCircle(dot.x, dot.y, 5 * u);
+      g.fillStyle(alert ? 0xffffff : ENEMY_GLOW, 1);
+      g.fillCircle(dot.x, dot.y, 2.6 * u);
+      if (alert) {
+        g.lineStyle(1.2 * u, ENEMY_GLOW, 1);
+        g.strokeCircle(dot.x, dot.y, 4.2 * u);
+      }
+    }
+
+    const me = at(player.pos.x, player.pos.y);
+    g.fillStyle(player.hidden ? COLORS.shadow : COLORS.player, 1);
+    g.fillCircle(me.x, me.y, 3 * u);
+    g.lineStyle(1.5 * u, COLORS.player, 0.9);
+    g.lineBetween(me.x, me.y, me.x + Math.cos(player.aim) * 8 * u, me.y + Math.sin(player.aim) * 8 * u);
   }
 
   /** A pad's base ring and knob. Idle, the aim knob rests toward where the gun points. */

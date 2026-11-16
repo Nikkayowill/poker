@@ -26,16 +26,14 @@ interface Handle {
       pos: Point;
       health: number;
       maxHealth: number;
-      lightOn: boolean;
       aim: number;
       hidden: boolean;
-      nearHide: boolean;
+      cover: number;
     };
-    arena: { hides: { x: number; y: number; w: number; h: number }[] };
   };
   scene: {
     readInput: () => { aim: number; fire: boolean };
-    buttonCentre: (name: "hide" | "light" | "reload" | "swap") => Point;
+    buttonCentre: (name: "reload" | "swap") => Point;
     padCentre: (which: "move" | "aim") => Point;
   };
 }
@@ -48,7 +46,7 @@ const centre = (page: Page, kind: "button" | "pad", name: string) =>
     ([k, n]) => {
       const { scene } = (window as unknown as { __stackstrike: Handle }).__stackstrike;
       return k === "button"
-        ? scene.buttonCentre(n as "hide" | "light" | "reload" | "swap")
+        ? scene.buttonCentre(n as "reload" | "swap")
         : scene.padCentre(n as "move" | "aim");
     },
     [kind, name] as const,
@@ -94,9 +92,6 @@ test("desktop: start screen, then boots, moves, shoots and spawns a wave", async
   await page.mouse.down();
   await expect.poll(async () => (await read(page)).shotsFired, { timeout: 10_000 }).toBeGreaterThan(0);
   await page.mouse.up();
-
-  await page.keyboard.press("f");
-  await expect.poll(async () => (await read(page)).player.lightOn, { timeout: 10_000 }).toBe(false);
 
   await expect(page.getByTestId("stackstrike-host").locator("canvas")).toHaveCount(1);
 });
@@ -144,7 +139,7 @@ test("phone landscape: the controls sit where the thumbs are, and the planning t
   expect(move.x).toBeLessThan(844 / 2);
   expect(aim.x).toBeGreaterThan(844 / 2);
   expect(move.y).toBeGreaterThan(390 / 2);
-  const names = ["hide", "light", "reload", "swap"] as const;
+  const names = ["reload", "swap"] as const;
   const buttons = await Promise.all(names.map((name) => centre(page, "button", name)));
   for (const [index, at] of buttons.entries()) {
     expect(at.x, names[index]).toBeGreaterThan(844 / 2);
@@ -165,7 +160,7 @@ test("phone landscape: the right pad aims without firing, a tap fires", async ({
   const aim = await centre(page, "pad", "aim");
   const cdp = await context.newCDPSession(page);
 
-  // Drag up and to the right: the gun and light turn, and nothing is fired.
+  // Drag up and to the right: the gun and laser turn, and nothing is fired.
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: aim.x, y: aim.y, id: 2 }] });
   await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: aim.x + 40, y: aim.y - 20, id: 2 }] });
   await expect.poll(async () => (await read(page)).player.aim, { timeout: 20_000 }).toBeCloseTo(Math.atan2(-20, 40), 1);
@@ -183,7 +178,20 @@ test("phone landscape: the right pad aims without firing, a tap fires", async ({
   await context.close();
 });
 
-test("phone landscape: the left stick walks, and LIGHT toggles the flashlight", async ({ browser }) => {
+test("phone landscape: a tap off the middle of the aim pad fires, and fires that way", async ({ browser }) => {
+  const context = await browser.newContext(PHONE);
+  const page = await context.newPage();
+  await openOnPhone(page);
+  const aim = await centre(page, "pad", "aim");
+
+  // Down and to the left of the pad's middle: the knob does not have to be centred to shoot.
+  await page.touchscreen.tap(aim.x - 30, aim.y + 30);
+  await expect.poll(async () => (await read(page)).shotsFired, { timeout: 20_000 }).toBeGreaterThan(0);
+  expect((await read(page)).player.aim).toBeCloseTo(Math.atan2(30, -30), 1);
+  await context.close();
+});
+
+test("phone landscape: the left stick walks", async ({ browser }) => {
   const context = await browser.newContext(PHONE);
   const page = await context.newPage();
   await openOnPhone(page);
@@ -195,38 +203,31 @@ test("phone landscape: the left stick walks, and LIGHT toggles the flashlight", 
   await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: move.x + 50, y: move.y, id: 1 }] });
   await expect.poll(async () => (await read(page)).player.pos.x, { timeout: 20_000 }).toBeGreaterThan(start.x + 20);
   await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-
-  const light = await centre(page, "button", "light");
-  await page.touchscreen.tap(light.x, light.y);
-  await expect.poll(async () => (await read(page)).player.lightOn, { timeout: 10_000 }).toBe(false);
   await context.close();
 });
 
-test("phone landscape: HIDE only works at a nook, then hides and leaves", async ({ browser }) => {
+test("phone landscape: a dark corner hides you, and walking out does not", async ({ browser }) => {
   const context = await browser.newContext(PHONE);
   const page = await context.newPage();
   await openOnPhone(page);
-  const hide = await centre(page, "button", "hide");
 
-  // Out in the open the button does nothing.
-  await page.touchscreen.tap(hide.x, hide.y);
-  await page.waitForTimeout(400);
+  // Out in the open there is nothing to hide behind.
   expect((await read(page)).player.hidden).toBe(false);
 
-  // Put the player in a nook and press it.
+  // Press into the back corner of the north-west booth.
   await page.evaluate(() => {
-    const { state } = (window as unknown as { __stackstrike: Handle }).__stackstrike;
-    const s = state();
-    const nook = s.arena.hides[0];
-    s.player.pos.x = nook.x + nook.w / 2;
-    s.player.pos.y = nook.y + nook.h / 2;
+    const s = (window as unknown as { __stackstrike: Handle }).__stackstrike.state();
+    s.player.pos.x = 148;
+    s.player.pos.y = 138;
   });
-  await expect.poll(async () => (await read(page)).player.nearHide, { timeout: 10_000 }).toBe(true);
-  await page.touchscreen.tap(hide.x, hide.y);
   await expect.poll(async () => (await read(page)).player.hidden, { timeout: 10_000 }).toBe(true);
-  expect((await read(page)).player.lightOn).toBe(false);
 
-  await page.touchscreen.tap(hide.x, hide.y);
+  // Back to the middle of the room: seen again.
+  await page.evaluate(() => {
+    const s = (window as unknown as { __stackstrike: Handle }).__stackstrike.state();
+    s.player.pos.x = 520;
+    s.player.pos.y = 400;
+  });
   await expect.poll(async () => (await read(page)).player.hidden, { timeout: 10_000 }).toBe(false);
   await context.close();
 });

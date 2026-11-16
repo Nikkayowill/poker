@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { DIFFICULTIES, ENEMIES, STEALTH, WAVE_TUNING, WEAPONS, waveComposition } from "./content";
+import { DIFFICULTIES, ENEMIES, SHADOW, STEALTH, WAVE_TUNING, WEAPONS, waveComposition } from "./content";
 import { createState, currentWeapon, enemyDef, NO_INPUT, perceive, STEP_SECONDS, step } from "./sim";
 import type { Arena, DifficultyId, EnemyState, PlayerInput, SimState } from "./types";
 
 /** An open room with no walls unless a test adds some. */
-function room(walls: Arena["walls"] = [], hides: Arena["hides"] = [], patrol: Arena["patrol"] = []): Arena {
+function room(walls: Arena["walls"] = [], corners: Arena["corners"] = [], patrol: Arena["patrol"] = []): Arena {
   return {
     width: 1000,
     height: 1000,
     walls,
-    hides,
+    corners,
     patrol,
     playerSpawn: { x: 500, y: 500 },
     entries: [{ id: "door", label: "Door", door: { x: 0, y: 0, w: 10, h: 10 }, pos: { x: 100, y: 100 } }],
@@ -350,27 +350,6 @@ describe("stealth", () => {
     expect(perception(walker, b)).toBeGreaterThan(perception(still, a));
   });
 
-  it("the flashlight off halves how far an enemy can notice you", () => {
-    const lit = quiet();
-    const gruntLit = addEnemy(lit, "grunt", 700, 500);
-    expect(perception(lit, gruntLit)).toBeGreaterThan(0);
-
-    const dark = quiet();
-    dark.player.lightOn = false;
-    const gruntDark = addEnemy(dark, "grunt", 700, 500);
-    expect(perception(dark, gruntDark)).toBe(0);
-  });
-
-  it("toggling the light is an edge, not a hold", () => {
-    const state = quiet();
-    step(state, input({ toggleLight: true }));
-    expect(state.player.lightOn).toBe(false);
-    step(state, input());
-    expect(state.player.lightOn).toBe(false);
-    step(state, input({ toggleLight: true }));
-    expect(state.player.lightOn).toBe(true);
-  });
-
   it("an enemy facing away does not see you, and one facing you does", () => {
     const away = quiet();
     const awayGrunt = addEnemy(away, "grunt", 750, 500);
@@ -380,6 +359,18 @@ describe("stealth", () => {
     const toward = quiet();
     const towardGrunt = addEnemy(toward, "grunt", 750, 500);
     expect(perception(toward, towardGrunt)).toBeGreaterThan(0);
+  });
+
+  it("only the enemy's own flashlight beam counts: just outside the cone you are not seen", () => {
+    const def = ENEMIES.grunt;
+    const make = (offset: number): number => {
+      const state = quiet();
+      const grunt = addEnemy(state, "grunt", 750, 500);
+      grunt.facing = Math.PI + offset;
+      return perception(state, grunt);
+    };
+    expect(make(def.fieldOfView - 0.1)).toBeGreaterThan(0);
+    expect(make(def.fieldOfView + 0.1)).toBe(0);
   });
 
   it("but anything right behind you is noticed whatever way it faces", () => {
@@ -398,71 +389,89 @@ describe("stealth", () => {
     expect(Math.hypot(grunt.pos.x - there.x, grunt.pos.y - there.y)).toBeLessThan(1);
   });
 
-  describe("hiding", () => {
-    const nook = { x: 450, y: 450, w: 100, h: 100 };
+  describe("hiding in the shadows", () => {
+    /** A player jammed into the north-west corner of a room: walls to the west and north. */
+    const bay = (): SimState => {
+      const state = quiet(
+        room([
+          { x: 400, y: 300, w: 30, h: 400 },
+          { x: 400, y: 300, w: 400, h: 30 },
+        ]),
+      );
+      state.player.pos = { x: 430 + state.player.radius, y: 330 + state.player.radius };
+      return state;
+    };
 
-    it("the hide button ducks you into a nearby nook: still, light off", () => {
-      const state = quiet(room([], [nook]));
+    it("pressed into a corner, you are hidden", () => {
+      const state = bay();
       step(state, input());
-      expect(state.player.nearHide).toBe(true);
-      step(state, input({ hide: true }));
+      expect(state.player.cover).toBeGreaterThanOrEqual(0.5);
       expect(state.player.hidden).toBe(true);
-      expect(state.player.lightOn).toBe(false);
-      expect(state.events.some((event) => event.type === "hide" && event.on)).toBe(true);
     });
 
-    it("does nothing away from a nook", () => {
-      const state = quiet(room([], [{ x: 100, y: 100, w: 60, h: 60 }]));
-      step(state, input({ hide: true }));
+    it("open floor does not hide you", () => {
+      const state = quiet();
+      step(state, input());
+      expect(state.player.cover).toBe(0);
       expect(state.player.hidden).toBe(false);
-      expect(state.player.nearHide).toBe(false);
     });
 
-    it("pressing it again steps out and gives the light back", () => {
-      const state = quiet(room([], [nook]));
-      step(state, input({ hide: true }));
+    it("hugging a single flat wall is not enough", () => {
+      const state = quiet(room([{ x: 400, y: 300, w: 30, h: 400 }]));
+      state.player.pos = { x: 430 + state.player.radius, y: 500 };
+      step(state, input());
+      expect(state.player.hidden).toBe(false);
+    });
+
+    it("walking out of the corner un-hides you, and you can still walk and shoot while hidden", () => {
+      const state = bay();
+      step(state, input());
       expect(state.player.hidden).toBe(true);
-      step(state, input({ hide: true }));
-      expect(state.player.hidden).toBe(false);
-      expect(state.player.lightOn).toBe(true);
-    });
-
-    it("a hidden player cannot walk, shoot, or switch the light on", () => {
-      const state = quiet(room([], [nook]));
-      step(state, input({ hide: true }));
       const at = { ...state.player.pos };
-      run(state, 0.5, () => input({ move: { x: 1, y: 0 }, fire: true, toggleLight: false }));
-      expect(state.player.pos).toEqual(at);
-      expect(state.shotsFired).toBe(0);
-      step(state, input({ toggleLight: true }));
-      expect(state.player.lightOn).toBe(false);
+      run(state, 0.1, () => input({ move: { x: 1, y: 1 } }));
+      expect(state.player.pos.y).toBeGreaterThan(at.y);
+      run(state, 1.5, () => input({ move: { x: 1, y: 1 } }));
+      expect(state.player.hidden).toBe(false);
+    });
+
+    it("a shot gives you away for a moment, then the shadow takes you back", () => {
+      const state = bay();
+      step(state, input());
+      expect(state.player.hidden).toBe(true);
+      step(state, input({ fire: true }));
+      expect(state.shotsFired).toBe(1);
+      expect(state.player.hidden).toBe(false);
+      run(state, 0.5);
+      expect(state.player.hidden).toBe(false);
+      run(state, SHADOW.exposedSeconds);
+      expect(state.player.hidden).toBe(true);
     });
 
     it("far enemies cannot see a hidden player, and near ones notice slowly", () => {
-      const far = quiet(room([], [nook]));
-      step(far, input({ hide: true }));
-      const farGrunt = addEnemy(far, "grunt", 750, 500);
+      const far = bay();
+      step(far, input());
+      const farGrunt = addEnemy(far, "grunt", far.player.pos.x + 250, far.player.pos.y);
       expect(perception(far, farGrunt)).toBe(0);
 
-      const visible = quiet();
-      const exposed = addEnemy(visible, "grunt", 570, 500);
-      const hiddenState = quiet(room([], [nook]));
-      step(hiddenState, input({ hide: true }));
-      const hiddenGrunt = addEnemy(hiddenState, "grunt", 570, 500);
+      const open = quiet();
+      const exposed = addEnemy(open, "grunt", 570, 500);
+      const hiddenState = bay();
+      step(hiddenState, input());
+      const hiddenGrunt = addEnemy(hiddenState, "grunt", hiddenState.player.pos.x + 70, hiddenState.player.pos.y);
       expect(perception(hiddenState, hiddenGrunt)).toBeGreaterThan(0);
-      expect(perception(hiddenState, hiddenGrunt)).toBeLessThan(perception(visible, exposed) / 3);
+      expect(perception(hiddenState, hiddenGrunt)).toBeLessThan(perception(open, exposed) / 3);
     });
 
-    it("an enemy passing by does not find you, but one checking the nook does", () => {
-      const passing = quiet(room([], [nook]));
-      step(passing, input({ hide: true }));
-      const passer = addEnemy(passing, "grunt", 570, 500);
+    it("an enemy passing by does not find you, but one that walks right up does", () => {
+      const passing = bay();
+      step(passing, input());
+      const passer = addEnemy(passing, "grunt", passing.player.pos.x + 70, passing.player.pos.y);
       run(passing, 1.2);
       expect(isAlert(passer)).toBe(false);
 
-      const checking = quiet(room([], [nook]));
-      step(checking, input({ hide: true }));
-      const checker = addEnemy(checking, "grunt", 500 + STEALTH.hideCheckRange - 10, 500);
+      const checking = bay();
+      step(checking, input());
+      const checker = addEnemy(checking, "grunt", checking.player.pos.x + STEALTH.hideCheckRange - 10, checking.player.pos.y);
       run(checking, 2);
       expect(isAlert(checker)).toBe(true);
     });
@@ -502,9 +511,8 @@ describe("stealth", () => {
     expect(grunt.patrolTarget).not.toBeNull();
   });
 
-  it("after losing you an enemy checks the nooks nearby", () => {
-    const nook = { x: 300, y: 150, w: 60, h: 60 };
-    const state = quiet(room([], [nook], [{ x: 900, y: 900 }]));
+  it("after losing you an enemy checks the dark corners nearby", () => {
+    const state = quiet(room([], [{ x: 330, y: 180 }], [{ x: 900, y: 900 }]));
     state.player.pos = { x: 900, y: 100 };
     const grunt = addEnemy(state, "grunt", 200, 100);
     grunt.facing = Math.PI;
@@ -553,8 +561,8 @@ describe("stealth", () => {
     expect(grunt.patrolTarget).toEqual(points[1]);
   });
 
-  it("once a wave drags on the sweep starts checking the nooks too", () => {
-    const state = quiet(room([], [{ x: 800, y: 800, w: 60, h: 60 }], []));
+  it("once a wave drags on the sweep starts checking the dark corners too", () => {
+    const state = quiet(room([], [{ x: 830, y: 830 }], []));
     state.player.pos = { x: 80, y: 80 };
     const grunt = addEnemy(state, "grunt", 200, 500);
     run(state, 0.2);
@@ -584,10 +592,42 @@ describe("stealth", () => {
     friend.facing = 0;
     const far = addEnemy(state, "grunt", 100, 100);
     far.facing = 0;
-    run(state, 4);
+    let friendPeak = 0;
+    for (let n = 0; n < 240; n += 1) {
+      step(state, input());
+      friendPeak = Math.max(friendPeak, friend.awareness);
+    }
     expect(isAlert(spotter)).toBe(true);
-    expect(friend.awareness).toBeGreaterThanOrEqual(STEALTH.calloutAwareness - 0.01);
+    expect(friendPeak).toBeGreaterThanOrEqual(STEALTH.calloutAwareness - 0.01);
     expect(far.awareness).toBe(0);
+  });
+});
+
+describe("pace", () => {
+  it("the player can outwalk a grunt, so retreating works", () => {
+    const state = quiet();
+    expect(state.player.moveSpeed).toBeGreaterThan(ENEMIES.grunt.moveSpeed * 1.5);
+  });
+
+  it("enemies walk slower on easy than on hard", () => {
+    const travelled = (difficulty: DifficultyId): number => {
+      const state = quiet(room([], [], [{ x: 900, y: 900 }]), difficulty);
+      state.player.pos = { x: 100, y: 80 };
+      const grunt = addEnemy(state, "grunt", 200, 500);
+      grunt.facing = 0;
+      const start = { ...grunt.pos };
+      run(state, 1);
+      return Math.hypot(grunt.pos.x - start.x, grunt.pos.y - start.y);
+    };
+    expect(travelled("easy")).toBeLessThan(travelled("normal"));
+    expect(travelled("normal")).toBeLessThan(travelled("hard"));
+  });
+
+  it("easy brings fewer enemies to a wave than hard", () => {
+    const total = (difficulty: DifficultyId): number =>
+      waveComposition(3, DIFFICULTIES[difficulty].enemyCount).reduce((sum, row) => sum + row.count, 0);
+    expect(total("easy")).toBeLessThan(total("normal"));
+    expect(total("normal")).toBeLessThan(total("hard"));
   });
 });
 

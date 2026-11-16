@@ -23,6 +23,7 @@ describe("profile appearance", () => {
       lastBackstopAt: null,
       isRegistered: false,
       stackacresAccess: false,
+      stackstrikeAccess: false,
       adminBadge: false,
       onboardingTourCompletedAt: null,
     };

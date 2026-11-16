@@ -28,6 +28,9 @@ const HOLDEM_FIGURE_ID = "character25";
  * link, everyone else gets the info modal, since there is no checkout yet.
  * prefetch={false} because the row is on screen on mount and a default link
  * would prefetch the heaviest route.
+ *
+ * StackStrike is a private prototype: its card shows only for a player with
+ * stackstrikeAccess, and for everyone else there is nothing on the row.
  */
 export function PlayRail({
   profile,
@@ -95,6 +98,18 @@ export function PlayRail({
             <StackAcresLogo variant="badge" className="mshell-play-art" alt="" />
             <strong>StackAcres</strong>
             <small>Raise crops and livestock</small>
+          </Link>
+        )}
+
+        {profile.stackstrikeAccess && (
+          <Link
+            className="mshell-card mshell-play-card mshell-play-mid"
+            href="/stackstrike"
+            onClick={tapSound}
+            prefetch={false}
+          >
+            <strong>StackStrike</strong>
+            <small>Stealth shooter · Private preview</small>
           </Link>
         )}
 

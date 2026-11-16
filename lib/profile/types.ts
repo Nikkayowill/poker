@@ -63,6 +63,13 @@ export interface PlayerProfile {
    */
   stackacresAccess: boolean;
   /**
+   * Admin-granted access to the StackStrike prototype -- see
+   * lib/server/stackstrike-access.ts. Like stackacresAccess it says nothing
+   * about anyone but the profile it belongs to, and it is what lets the Play
+   * tiles show for exactly the players who have it.
+   */
+  stackstrikeAccess: boolean;
+  /**
    * Whether this player's seat carries an "Admin" tag at the poker table,
    * styled like the dealer's own label. Granted from the admin dashboard,
    * same as stackacresAccess; it changes nothing about what the account can

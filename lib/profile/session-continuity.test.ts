@@ -62,6 +62,7 @@ const profile: PlayerProfile = {
   lastBackstopAt: null,
   isRegistered: true,
   stackacresAccess: false,
+  stackstrikeAccess: false,
   adminBadge: false,
   onboardingTourCompletedAt: null,
 };

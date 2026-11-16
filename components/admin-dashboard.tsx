@@ -272,6 +272,27 @@ export function AdminDashboard() {
     }
   };
 
+  const toggleStackStrike = async (profile: AdminProfileSummary) => {
+    setPendingId(profile.id);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/stackstrike-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: profile.id, allowed: !profile.stackstrikeAccess }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not update that profile's StackStrike access.");
+      setProfiles((current) => current?.map((entry) => (
+        entry.id === profile.id ? { ...entry, stackstrikeAccess: !profile.stackstrikeAccess } : entry
+      )) ?? null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update that profile's StackStrike access.");
+    } finally {
+      setPendingId(null);
+    }
+  };
+
   const sendTestPush = async (profile: AdminProfileSummary) => {
     setPendingId(profile.id);
     setError(null);
@@ -705,6 +726,7 @@ export function AdminDashboard() {
               <th>Adjust Gold</th>
               <th>Banned</th>
               <th>StackAcres</th>
+              <th>StackStrike</th>
               <th>Admin tag</th>
               <th />
               <th>Push</th>
@@ -757,6 +779,7 @@ export function AdminDashboard() {
                   </td>
                   <td>{profile.banned ? "Yes" : "No"}</td>
                   <td>{profile.stackacresAccess ? "Yes" : "No"}</td>
+                  <td>{profile.stackstrikeAccess ? "Yes" : "No"}</td>
                   <td>{profile.adminBadge ? "Yes" : "No"}</td>
                   <td>
                     <button
@@ -775,6 +798,15 @@ export function AdminDashboard() {
                       title="Lets this player into StackAcres (the farm game, formerly labeled 'StackAcres' here) while it is unreleased. It is the whole guest list -- there is no code."
                     >
                       {profile.stackacresAccess ? "Close StackAcres" : "Open StackAcres"}
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-toggle"
+                      disabled={bulkPending || pendingId === profile.id}
+                      onClick={() => void toggleStackStrike(profile)}
+                      title="Shows the StackStrike prototype under Play for this player and lets them open it. Private: nobody else sees it."
+                    >
+                      {profile.stackstrikeAccess ? "Close StackStrike" : "Open StackStrike"}
                     </button>
                     <button
                       type="button"
@@ -827,7 +859,7 @@ export function AdminDashboard() {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={13} className="admin-empty">No players match &ldquo;{query}&rdquo;.</td>
+                <td colSpan={14} className="admin-empty">No players match &ldquo;{query}&rdquo;.</td>
               </tr>
             )}
 

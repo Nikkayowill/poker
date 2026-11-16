@@ -1,4 +1,12 @@
-import type { Arena, DifficultyDefinition, DifficultyId, EnemyDefinition, OperatorDefinition, WeaponDefinition } from "./types";
+import type {
+  Arena,
+  DifficultyDefinition,
+  DifficultyId,
+  EnemyDefinition,
+  OperatorDefinition,
+  Rect,
+  WeaponDefinition,
+} from "./types";
 
 /**
  * All tuning lives here. The sim reads these tables and never names a weapon
@@ -49,7 +57,7 @@ export const OPERATORS: Record<string, OperatorDefinition> = {
     id: "vanguard",
     name: "Vanguard",
     maxHealth: 100,
-    moveSpeed: 190,
+    moveSpeed: 120,
     radius: 14,
     startingWeapons: ["pistol", "smg", "shotgun"],
   },
@@ -60,10 +68,10 @@ export const ENEMIES: Record<string, EnemyDefinition> = {
     id: "grunt",
     name: "Grunt",
     health: 60,
-    moveSpeed: 95,
+    moveSpeed: 62,
     radius: 14,
     detectionRange: 300,
-    fieldOfView: 1.1,
+    fieldOfView: 0.5,
     attackRange: 300,
     attack: "ranged",
     damage: 8,
@@ -77,10 +85,10 @@ export const ENEMIES: Record<string, EnemyDefinition> = {
     id: "runner",
     name: "Runner",
     health: 35,
-    moveSpeed: 210,
+    moveSpeed: 118,
     radius: 12,
     detectionRange: 340,
-    fieldOfView: 1.3,
+    fieldOfView: 0.6,
     attackRange: 30,
     attack: "melee",
     damage: 12,
@@ -118,6 +126,8 @@ export const DIFFICULTIES: Record<DifficultyId, DifficultyDefinition> = {
     graceFirst: 10,
     grace: 8,
     spawnGap: 1.8,
+    enemyCount: 0.6,
+    enemySpeed: 0.8,
   },
   normal: {
     id: "normal",
@@ -130,6 +140,8 @@ export const DIFFICULTIES: Record<DifficultyId, DifficultyDefinition> = {
     graceFirst: 7,
     grace: 5,
     spawnGap: 1.2,
+    enemyCount: 1,
+    enemySpeed: 1,
   },
   hard: {
     id: "hard",
@@ -142,6 +154,8 @@ export const DIFFICULTIES: Record<DifficultyId, DifficultyDefinition> = {
     graceFirst: 4,
     grace: 3,
     spawnGap: 0.7,
+    enemyCount: 1.2,
+    enemySpeed: 1.15,
   },
 };
 
@@ -153,24 +167,20 @@ export const DEFAULT_DIFFICULTY: DifficultyId = "normal";
  * the multipliers below shape that, and at 1 it has spotted them.
  */
 export const STEALTH = {
-  /** A ducked-in player is only in view this close. */
+  /** A player in the shadows is only in view this close. */
   hideRange: 80,
-  /** Inside this an enemy checking the nook finds a hidden player fast. */
+  /** Inside this an enemy walking up to a hiding player finds them fast. */
   hideCheckRange: 45,
   hideCheckFill: 1.2,
   /** Fill multiplier when hidden and not being checked up close. */
   hideFill: 0.3,
-  /** Detection range multiplier with the flashlight off. */
-  darkMultiplier: 0.5,
-  /** Fill multiplier with the flashlight off. */
-  darkFill: 0.7,
   /** Fill multiplier when not moving. */
   stillFill: 0.75,
   /** Fill multiplier up close, fading to farFill at the edge of an enemy's range. */
   closeFill: 1.6,
   farFill: 0.45,
-  /** Anything this close is in view whatever the facing. */
-  closeNotice: 90,
+  /** Bumping into someone is noticed whatever way they face. Everything else has to be in their beam. */
+  closeNotice: 36,
   /** A gunshot is heard this far, through walls. */
   hearRange: 420,
   /** Awareness a heard gunshot adds. It points the enemy at the sound, not at the player. */
@@ -196,23 +206,37 @@ export const STEALTH = {
   sweepSeen: 100,
   /** After this long a wave starts checking the nooks too, so hiding in one forever fails. */
   thoroughAfter: 35,
-  /** Nooks this near the spot an enemy lost the player are checked. */
+  /** Corners this near the spot an enemy lost the player are checked. */
   nookCheckRadius: 220,
-  /** The player can duck into a nook from this far outside it. */
-  hideZoneSlack: 12,
 };
 
-export const FLASHLIGHT = {
-  range: 380,
-  /** Half the beam width in radians. */
-  halfAngle: 0.5,
-  /** Everything this close is seen even outside the beam. */
-  ambient: 62,
+/**
+ * There is no hide button. A player pressed into a corner or alcove is lost in
+ * the shadow. "Pressed in" is measured by casting rays
+ * round the player: the share that hit a wall within `reach` is the cover.
+ * Against a flat wall that is 3 of 8, in a corner 5 of 8.
+ */
+export const SHADOW = {
+  reach: 44,
+  /** Cover at or above this counts as a dark corner. */
+  hiddenAt: 0.5,
+  /** A shot lights you up for this long, so you cannot snipe from the dark for free. */
+  exposedSeconds: 1.2,
 };
 
-export function waveComposition(wave: number): { defId: string; count: number }[] {
-  const grunts = Math.min(2 + wave, 10);
-  const runners = wave >= 2 ? Math.min(wave - 1, 6) : 0;
+/**
+ * The player carries no light, only a laser for aiming that enemies cannot
+ * see. The floor is lit by the enemies' flashlights, plus this small glow so
+ * the ground right around the player stays readable.
+ */
+export const PLAYER_GLOW = {
+  radius: 62,
+};
+
+export function waveComposition(wave: number, countScale = 1): { defId: string; count: number }[] {
+  const scaled = (count: number): number => Math.max(1, Math.round(count * countScale));
+  const grunts = scaled(Math.min(2 + wave, 10));
+  const runners = wave >= 2 ? scaled(Math.min(wave - 1, 6)) : 0;
   return runners > 0
     ? [
         { defId: "grunt", count: grunts },
@@ -221,8 +245,12 @@ export function waveComposition(wave: number): { defId: string; count: number }[
     : [{ defId: "grunt", count: grunts }];
 }
 
+function centre(rect: { x: number; y: number; w: number; h: number }): { x: number; y: number } {
+  return { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
+}
+
 /** A booth: three walls and a hide inside, open on one side. */
-function booth(x: number, y: number, opens: "up" | "down"): { walls: Arena["walls"]; hide: Arena["hides"][number] } {
+function booth(x: number, y: number, opens: "up" | "down"): { walls: Arena["walls"]; hide: Rect } {
   const w = 130;
   const h = 100;
   const t = 24;
@@ -248,7 +276,7 @@ function booth(x: number, y: number, opens: "up" | "down"): { walls: Arena["wall
 
 const BOOTHS = [booth(110, 100, "down"), booth(960, 100, "down"), booth(110, 600, "up"), booth(960, 600, "up")];
 
-/** 1200x800 warehouse floor: four booths, cover in the middle, hides behind most of it. */
+/** 1200x800 warehouse floor: four booths and cover in the middle. The booths and the gaps behind cover are where a player hides in the shadows. */
 export const ARENA: Arena = {
   width: 1200,
   height: 800,
@@ -270,15 +298,17 @@ export const ARENA: Arena = {
     { x: 440, y: 590, w: 140, h: 24 },
     { x: 620, y: 186, w: 140, h: 24 },
   ],
-  hides: [
-    ...BOOTHS.map((b) => b.hide),
-    // Dark ground behind the cover.
-    { x: 300, y: 590, w: 70, h: 50 },
-    { x: 830, y: 140, w: 70, h: 70 },
-    { x: 440, y: 614, w: 140, h: 46 },
-    { x: 620, y: 140, w: 140, h: 46 },
-    { x: 332, y: 250, w: 48, h: 140 },
-    { x: 820, y: 410, w: 48, h: 140 },
+  corners: [
+    ...BOOTHS.map(({ hide }) => centre(hide)),
+    // Behind the cover.
+    ...[
+      { x: 300, y: 590, w: 70, h: 50 },
+      { x: 830, y: 140, w: 70, h: 70 },
+      { x: 440, y: 614, w: 140, h: 46 },
+      { x: 620, y: 140, w: 140, h: 46 },
+      { x: 332, y: 250, w: 48, h: 140 },
+      { x: 820, y: 410, w: 48, h: 140 },
+    ].map(centre),
   ],
   patrol: [
     { x: 200, y: 330 },

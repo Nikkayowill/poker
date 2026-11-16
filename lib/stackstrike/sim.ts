@@ -5,6 +5,7 @@ import {
   DIFFICULTIES,
   ENEMIES,
   OPERATORS,
+  SHADOW,
   STEALTH,
   WAVE_TUNING,
   WEAPONS,
@@ -26,12 +27,11 @@ import type {
   EnemyDefinition,
   EnemyState,
   PlayerInput,
-  Rect,
   SimState,
   Vec,
   WeaponDefinition,
 } from "./types";
-import { angleDiff } from "./vision";
+import { angleDiff, coverAt } from "./vision";
 
 /**
  * The whole fight, with no Phaser in it, so it can be tested and later
@@ -62,8 +62,6 @@ export const NO_INPUT: PlayerInput = {
   fire: false,
   reload: false,
   selectWeapon: null,
-  toggleLight: false,
-  hide: false,
 };
 
 export function createState(
@@ -84,7 +82,7 @@ export function createState(
     intermission: difficultyDef(difficulty).graceFirst,
     incoming: [],
     spawnQueue: [],
-    sweepAt: new Array<number>(arena.patrol.length + arena.hides.length).fill(0),
+    sweepAt: new Array<number>(arena.patrol.length + arena.corners.length).fill(0),
     player: {
       pos: { ...arena.playerSpawn },
       aim: 0,
@@ -98,11 +96,10 @@ export function createState(
       reloadLeft: 0,
       cooldown: 0,
       hurt: 0,
-      lightOn: true,
       hidden: false,
-      nearHide: false,
+      cover: 0,
+      exposedLeft: 0,
       moving: false,
-      lightWasOn: true,
     },
     enemies: [],
     projectiles: [],
@@ -169,15 +166,7 @@ function updatePlayer(state: SimState, input: PlayerInput, dt: number): void {
   player.hurt = Math.max(0, player.hurt - dt);
   player.cooldown = Math.max(0, player.cooldown - dt);
 
-  player.nearHide = state.arena.hides.some((hide) => insideWithSlack(player.pos, hide, STEALTH.hideZoneSlack));
-  if (input.hide) toggleHide(state);
-  // Pushed out of reach of the nook some other way: no longer hiding.
-  if (player.hidden && !player.nearHide) stepOutOfHide(state);
-
-  if (input.toggleLight && !player.hidden) {
-    player.lightOn = !player.lightOn;
-    state.events.push({ type: "light", on: player.lightOn });
-  }
+  player.exposedLeft = Math.max(0, player.exposedLeft - dt);
 
   const wanted = input.selectWeapon;
   if (wanted !== null && wanted >= 0 && wanted < player.weaponIds.length && wanted !== player.weaponIndex) {
@@ -188,8 +177,8 @@ function updatePlayer(state: SimState, input: PlayerInput, dt: number): void {
 
   // Diagonals are normalised so they are no faster than straight lines; a
   // half-tilted stick keeps its partial speed.
-  let mx = player.hidden ? 0 : input.move.x;
-  let my = player.hidden ? 0 : input.move.y;
+  let mx = input.move.x;
+  let my = input.move.y;
   const length = Math.hypot(mx, my);
   if (length > 1) {
     mx /= length;
@@ -199,6 +188,7 @@ function updatePlayer(state: SimState, input: PlayerInput, dt: number): void {
   player.pos.x += mx * player.moveSpeed * dt;
   player.pos.y += my * player.moveSpeed * dt;
   resolveCircleAgainstRects(player.pos, radius, state.arena.walls);
+  updateShadow(state);
 
   const weapon = currentWeapon(state);
   const index = player.weaponIndex;
@@ -217,7 +207,7 @@ function updatePlayer(state: SimState, input: PlayerInput, dt: number): void {
     return;
   }
 
-  if (input.fire && !player.hidden && player.cooldown <= 0) {
+  if (input.fire && player.cooldown <= 0) {
     if (player.ammo[index] <= 0) {
       startReload(state, weapon);
       return;
@@ -226,38 +216,15 @@ function updatePlayer(state: SimState, input: PlayerInput, dt: number): void {
   }
 }
 
-function insideWithSlack(point: Vec, rect: Rect, slack: number): boolean {
-  return (
-    point.x >= rect.x - slack &&
-    point.x <= rect.x + rect.w + slack &&
-    point.y >= rect.y - slack &&
-    point.y <= rect.y + rect.h + slack
-  );
-}
-
-function toggleHide(state: SimState): void {
+/** Hidden means pressed into a dark corner and not just fired a shot. */
+function updateShadow(state: SimState): void {
   const player = state.player;
-  if (player.hidden) {
-    stepOutOfHide(state);
-    return;
+  player.cover = coverAt(player.pos, state.arena.walls);
+  const hidden = player.exposedLeft <= 0 && player.cover >= SHADOW.hiddenAt;
+  if (hidden !== player.hidden) {
+    player.hidden = hidden;
+    state.events.push({ type: "hide", on: hidden });
   }
-  const nook = state.arena.hides.find((hide) => insideWithSlack(player.pos, hide, STEALTH.hideZoneSlack));
-  if (!nook) return;
-  // Tuck fully inside the nook.
-  const r = player.radius;
-  if (nook.w > r * 2) player.pos.x = Math.min(Math.max(player.pos.x, nook.x + r), nook.x + nook.w - r);
-  if (nook.h > r * 2) player.pos.y = Math.min(Math.max(player.pos.y, nook.y + r), nook.y + nook.h - r);
-  player.hidden = true;
-  player.lightWasOn = player.lightOn;
-  player.lightOn = false;
-  state.events.push({ type: "hide", on: true });
-}
-
-function stepOutOfHide(state: SimState): void {
-  const player = state.player;
-  player.hidden = false;
-  player.lightOn = player.lightWasOn;
-  state.events.push({ type: "hide", on: false });
 }
 
 function startReload(state: SimState, weapon: WeaponDefinition): void {
@@ -281,6 +248,8 @@ function fireWeapon(state: SimState, weapon: WeaponDefinition): void {
   }
   state.shotsFired += weapon.pellets;
   hearShot(state);
+  player.exposedLeft = SHADOW.exposedSeconds;
+  player.hidden = false;
   player.ammo[player.weaponIndex] -= 1;
   player.cooldown = 1 / weapon.fireRate;
   state.events.push({ type: "shot", from: "player", pos: { x: player.pos.x, y: player.pos.y } });
@@ -308,12 +277,12 @@ function isAlert(enemy: EnemyState): boolean {
 
 /**
  * How fast this enemy's awareness fills right now, as a multiplier on
- * 1 / detectSeconds. Zero means it cannot see the player at all. Distance, a
- * clear line, the flashlight, a nook and where the enemy is facing all count,
- * so the player can play the dark: light off halves the range, a ducked-in
- * player is nearly invisible unless someone walks up to the nook, and
- * walking up behind a sweep works. Enemies already in the fight track
- * farther and ignore facing.
+ * 1 / detectSeconds. Zero means it cannot see the player at all. The enemy's
+ * flashlight is its eyes: the player has to be inside the beam (in range, in
+ * the cone, nothing in the way) for the meter to move. A player in a dark
+ * corner is nearly invisible unless someone walks up to them, and creeping up
+ * behind a sweep works. Enemies already in the fight track farther and ignore
+ * facing.
  */
 export function perceive(state: SimState, enemy: EnemyState, def: EnemyDefinition): number {
   const player = state.player;
@@ -321,7 +290,6 @@ export function perceive(state: SimState, enemy: EnemyState, def: EnemyDefinitio
   const dist = distance(enemy.pos, player.pos);
 
   let range = def.detectionRange * (alert ? STEALTH.alertRangeBonus : 1);
-  if (!player.lightOn) range *= STEALTH.darkMultiplier;
   if (player.hidden) range = Math.min(range, STEALTH.hideRange);
   if (dist > range) return 0;
   if (!lineOfSight(enemy.pos, player.pos, state.arena.walls)) return 0;
@@ -331,13 +299,12 @@ export function perceive(state: SimState, enemy: EnemyState, def: EnemyDefinitio
     if (Math.abs(angleDiff(enemy.facing, toPlayer)) > def.fieldOfView) return 0;
   }
 
-  // Someone standing over a nook finds whoever is in it.
+  // Someone walking right up to a hiding player finds them.
   if (player.hidden && dist <= STEALTH.hideCheckRange) return STEALTH.hideCheckFill;
 
   const span = Math.max(1, range - STEALTH.closeNotice);
   const far = Math.min(1, Math.max(0, (dist - STEALTH.closeNotice) / span));
   let fill = STEALTH.closeFill + (STEALTH.farFill - STEALTH.closeFill) * far;
-  if (!player.lightOn) fill *= STEALTH.darkFill;
   if (!player.moving) fill *= STEALTH.stillFill;
   if (player.hidden) fill *= STEALTH.hideFill;
   return fill;
@@ -398,14 +365,9 @@ function hearShot(state: SimState): void {
   }
 }
 
-function hideCentre(hide: Rect): Vec {
-  return { x: hide.x + hide.w / 2, y: hide.y + hide.h / 2 };
-}
-
-/** The nooks an enemy that just lost the player should look in, nearest first. */
+/** The dark corners an enemy that just lost the player should look in, nearest first. */
 function nooksNear(state: SimState, at: Vec): Vec[] {
-  return state.arena.hides
-    .map(hideCentre)
+  return state.arena.corners
     .filter((centre) => distance(centre, at) <= STEALTH.nookCheckRadius)
     .sort((a, b) => distance(a, at) - distance(b, at))
     .slice(0, 2);
@@ -524,8 +486,9 @@ function updateEnemies(state: SimState, dt: number): void {
 
     if (target && !holdPosition) {
       const angle = headingFor(state, enemy, def, target, dt);
-      enemy.pos.x += Math.cos(angle) * def.moveSpeed * pace * dt;
-      enemy.pos.y += Math.sin(angle) * def.moveSpeed * pace * dt;
+      const speed = def.moveSpeed * difficulty.enemySpeed * pace;
+      enemy.pos.x += Math.cos(angle) * speed * dt;
+      enemy.pos.y += Math.sin(angle) * speed * dt;
       if (!facingSet) turnToward(enemy, angle, STEALTH.turnRate, dt);
     }
     resolveCircleAgainstRects(enemy.pos, def.radius, walls);
@@ -534,15 +497,15 @@ function updateEnemies(state: SimState, dt: number): void {
   separateEnemies(state);
 }
 
-/** The point a sweep index stands for: patrol points first, then nook centres. */
+/** The point a sweep index stands for: patrol points first, then dark corners. */
 function sweepPoint(arena: Arena, index: number): Vec {
-  return index < arena.patrol.length ? arena.patrol[index] : hideCentre(arena.hides[index - arena.patrol.length]);
+  return index < arena.patrol.length ? arena.patrol[index] : arena.corners[index - arena.patrol.length];
 }
 
-/** How many sweep points are in play. Nooks only count once a wave has dragged on. */
+/** How many sweep points are in play. Corners only count once a wave has dragged on. */
 function sweepCount(state: SimState): number {
   const thorough = state.time - state.waveStartedAt >= STEALTH.thoroughAfter;
-  return state.arena.patrol.length + (thorough ? state.arena.hides.length : 0);
+  return state.arena.patrol.length + (thorough ? state.arena.corners.length : 0);
 }
 
 /** Anything a sweeping enemy can see up close counts as looked at. */
@@ -791,7 +754,7 @@ function startWave(state: SimState): void {
   if (state.incoming.length === 0) chooseIncoming(state, state.wave);
 
   let index = 0;
-  for (const { defId, count } of waveComposition(state.wave)) {
+  for (const { defId, count } of waveComposition(state.wave, difficulty.enemyCount)) {
     for (let n = 0; n < count; n += 1) {
       state.spawnQueue.push({
         at: state.time + index * difficulty.spawnGap,

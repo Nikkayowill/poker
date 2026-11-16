@@ -273,8 +273,8 @@ export function StackStrikeGame() {
           <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: 4 }}>STACKSTRIKE</div>
           <div style={{ fontSize: 14, color: "#9aa3af", maxWidth: 520, lineHeight: 1.5 }}>
             {touch
-              ? "Left stick moves. Drag the right pad to aim the gun and your light, tap it to fire. HIDE tucks you into a green nook. They come through the red doors, and they don't know you're there until the meter fills."
-              : "WASD moves. The mouse aims, click fires. E hides in a green nook, F toggles your light, R reloads. They come through the red doors, and they don't know you're there until the meter fills."}
+              ? "Left stick moves. Drag the right pad to aim the gun and its red laser (they can't see it), tap it anywhere to fire. Red glows are the enemy, and the map shows them all. Each carries a flashlight: stay out of the beam and they can't see you, step into it and their meter fills. Press into a dark corner to disappear. They come through the red doors."
+              : "WASD moves. The mouse aims, click fires, R reloads. Red glows are the enemy, and the map shows them all. Each carries a flashlight: stay out of the beam and they can't see you, step into it and their meter fills. Press into a dark corner to disappear. They come through the red doors."}
           </div>
           <div role="group" aria-label="Difficulty" style={{ display: "flex", gap: 8, marginTop: 4 }}>
             {DIFFICULTY_IDS.map((id) => (

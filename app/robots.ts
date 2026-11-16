@@ -12,7 +12,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: "*",
       allow: "/",
-      disallow: ["/api/", "/auth/", "/admin"],
+      disallow: ["/api/", "/auth/", "/admin", "/stackstrike"],
     },
     sitemap: "https://stackchips.app/sitemap.xml",
   };

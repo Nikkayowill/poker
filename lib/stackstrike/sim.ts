@@ -337,31 +337,60 @@ function spot(state: SimState, enemy: EnemyState): void {
   enemy.reaction = def.reactionTime;
   state.events.push({ type: "spotted", pos: { x: enemy.pos.x, y: enemy.pos.y } });
 
+  // The squad standing near sees it too and knows at once. Everyone else has to be told by radio.
   for (const other of state.enemies) {
     if (other === enemy || isAlert(other)) continue;
-    if (distance(other.pos, enemy.pos) > STEALTH.calloutRange) continue;
-    other.awareness = Math.max(other.awareness, STEALTH.calloutAwareness);
-    other.investigate = jitter(state, player.pos, STEALTH.noiseScatter / 2);
-    other.queue = [];
-    other.patrolTarget = null;
-    other.searchLeft = 0;
+    if (distance(other.pos, enemy.pos) > STEALTH.squadRange) continue;
+    alarm(state, other, STEALTH.calloutAwareness, player.pos, STEALTH.noiseScatter / 2);
   }
+  enemy.radio = { left: STEALTH.radioSeconds, pos: { x: player.pos.x, y: player.pos.y } };
+}
+
+/** Sends an enemy to look at a spot, without telling it where the player really is. */
+function alarm(state: SimState, enemy: EnemyState, awareness: number, at: Vec, scatter: number): void {
+  enemy.awareness = Math.max(enemy.awareness, awareness);
+  enemy.investigate = jitter(state, at, scatter);
+  enemy.queue = [];
+  enemy.patrolTarget = null;
+  enemy.searchLeft = 0;
+}
+
+/** Counts a radio call down. If the spotter is still alive when it ends, every calm enemy is sent to the spot. */
+function updateRadio(state: SimState, enemy: EnemyState, dt: number): void {
+  const call = enemy.radio;
+  if (!call) return;
+  call.left -= dt;
+  if (call.left > 0) return;
+  enemy.radio = null;
+  const at = enemy.lastKnown ?? call.pos;
+  for (const other of state.enemies) {
+    if (other === enemy || isAlert(other)) continue;
+    alarm(state, other, STEALTH.radioAwareness, at, STEALTH.radioScatter);
+  }
+  state.events.push({ type: "radio", pos: { x: enemy.pos.x, y: enemy.pos.y } });
 }
 
 function jitter(state: SimState, at: Vec, scatter: number): Vec {
   return { x: at.x + (random(state) - 0.5) * scatter, y: at.y + (random(state) - 0.5) * scatter };
 }
 
-/** A gunshot carries through walls: enemies in earshot go and look, but are not told where the player is. */
+/** The guns are silenced, so only enemies close by hear a shot, and less through a wall. They go and look, but are not told where the player is. */
 function hearShot(state: SimState): void {
   for (const enemy of state.enemies) {
     if (isAlert(enemy)) continue;
-    if (distance(enemy.pos, state.player.pos) > STEALTH.hearRange) continue;
-    enemy.awareness = Math.max(enemy.awareness, STEALTH.noiseAwareness);
-    enemy.investigate = jitter(state, state.player.pos, STEALTH.noiseScatter);
-    enemy.queue = [];
-    enemy.patrolTarget = null;
-    enemy.searchLeft = 0;
+    const walled = !lineOfSight(enemy.pos, state.player.pos, state.arena.walls);
+    if (distance(enemy.pos, state.player.pos) > STEALTH.hearRange * (walled ? 0.5 : 1)) continue;
+    alarm(state, enemy, STEALTH.noiseAwareness, state.player.pos, STEALTH.noiseScatter);
+  }
+}
+
+/** A bullet that flies past an enemy without hitting it puts that enemy on alert. */
+function whizzPast(state: SimState, from: Vec, to: Vec, except: EnemyState | null): void {
+  for (const enemy of state.enemies) {
+    if (enemy === except || enemy.health <= 0 || isAlert(enemy)) continue;
+    const reach = enemyDef(enemy.defId).radius + STEALTH.nearMissRange;
+    if (segmentCircleHit(from, to, enemy.pos, reach) === null) continue;
+    alarm(state, enemy, STEALTH.nearMissAwareness, state.player.pos, STEALTH.nearMissScatter);
   }
 }
 
@@ -383,6 +412,7 @@ function updateEnemies(state: SimState, dt: number): void {
     const def = enemyDef(enemy.defId);
     enemy.hurt = Math.max(0, enemy.hurt - dt);
     enemy.cooldown = Math.max(0, enemy.cooldown - dt);
+    updateRadio(state, enemy, dt);
 
     const dist = distance(enemy.pos, player.pos);
     const seen = perceive(state, enemy, def);
@@ -684,18 +714,19 @@ function updateProjectiles(state: SimState, dt: number): void {
     }
 
     if (wallT <= targetT && wallT !== Infinity) {
-      state.events.push({
-        type: "wall",
-        pos: { x: from.x + (to.x - from.x) * wallT, y: from.y + (to.y - from.y) * wallT },
-      });
+      const at = { x: from.x + (to.x - from.x) * wallT, y: from.y + (to.y - from.y) * wallT };
+      if (shot.from === "player") whizzPast(state, from, at, null);
+      state.events.push({ type: "wall", pos: at });
       continue;
     }
     if (targetT !== Infinity) {
       const at = { x: from.x + (to.x - from.x) * targetT, y: from.y + (to.y - from.y) * targetT };
+      if (shot.from === "player") whizzPast(state, from, at, hitEnemy);
       if (hitEnemy) damageEnemy(state, hitEnemy, shot.damage, at);
       else damagePlayer(state, shot.damage, at);
       continue;
     }
+    if (shot.from === "player") whizzPast(state, from, to, null);
 
     shot.pos = to;
     shot.travelled += stepLength;
@@ -772,7 +803,6 @@ function spawnEnemy(state: SimState, defId: string, entryId: string): void {
   const entry = state.arena.entries.find((candidate) => candidate.id === entryId) ?? state.arena.entries[0];
   const def = enemyDef(defId);
   const wave = state.wave;
-  const healthScale = Math.min(WAVE_TUNING.maxScale, 1 + WAVE_TUNING.healthScalePerWave * (wave - 1));
   const damageScale = Math.min(WAVE_TUNING.maxScale, 1 + WAVE_TUNING.damageScalePerWave * (wave - 1));
 
   const pos = jitter(state, entry.pos, 16);
@@ -784,8 +814,8 @@ function spawnEnemy(state: SimState, defId: string, entryId: string): void {
     defId,
     pos,
     facing,
-    health: def.health * healthScale,
-    maxHealth: def.health * healthScale,
+    health: def.health,
+    maxHealth: def.health,
     mode: "patrol",
     awareness: 0,
     investigate: null,
@@ -798,6 +828,7 @@ function spawnEnemy(state: SimState, defId: string, entryId: string): void {
     pathAge: 0,
     pathGoal: null,
     reaction: def.reactionTime,
+    radio: null,
     damageScale,
     hurt: 0,
   });

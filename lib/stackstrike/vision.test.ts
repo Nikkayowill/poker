@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PLAYER_GLOW } from "./content";
-import { angleDiff, beamPolygon, coverAt, glowPolygon } from "./vision";
+import type { Arena, EnemyState } from "./types";
+import { angleDiff, assistAim, beamPolygon, coverAt, glowPolygon, roomAt, visibleEnemies } from "./vision";
 
 const origin = { x: 500, y: 500 };
 
@@ -45,5 +46,88 @@ describe("coverAt", () => {
       { x: 400, y: 300, w: 400, h: 100 },
     ];
     expect(coverAt({ x: 514, y: 414 }, corner)).toBeGreaterThanOrEqual(0.5);
+  });
+});
+
+const twoRooms: Arena = {
+  width: 1000,
+  height: 400,
+  walls: [{ x: 490, y: 0, w: 20, h: 400 }],
+  rooms: [
+    { id: "left", rect: { x: 0, y: 0, w: 490, h: 400 } },
+    { id: "right", rect: { x: 510, y: 0, w: 490, h: 400 } },
+  ],
+  corners: [],
+  patrol: [],
+  playerSpawn: { x: 100, y: 200 },
+  entries: [],
+};
+
+function enemyAt(x: number, y: number): EnemyState {
+  return { pos: { x, y } } as EnemyState;
+}
+
+describe("roomAt", () => {
+  it("names the room a point is in, and the nearest one from a doorway", () => {
+    expect(roomAt(twoRooms, { x: 100, y: 100 })?.id).toBe("left");
+    expect(roomAt(twoRooms, { x: 800, y: 100 })?.id).toBe("right");
+    expect(roomAt(twoRooms, { x: 497, y: 100 })?.id).toBe("left");
+    expect(roomAt(twoRooms, { x: 506, y: 100 })?.id).toBe("right");
+  });
+});
+
+describe("visibleEnemies", () => {
+  it("shows everyone in the player's room, even behind cover", () => {
+    const arena: Arena = { ...twoRooms, walls: [...twoRooms.walls, { x: 200, y: 0, w: 20, h: 300 }] };
+    const behind = enemyAt(300, 100);
+    expect(visibleEnemies(arena, { x: 100, y: 100 }, [behind])).toEqual([behind]);
+  });
+
+  it("hides enemies in the next room, through the wall", () => {
+    expect(visibleEnemies(twoRooms, { x: 400, y: 200 }, [enemyAt(600, 200)])).toEqual([]);
+  });
+
+  it("shows an enemy in another room when there is a clear line to it through a doorway", () => {
+    const withDoor: Arena = { ...twoRooms, walls: [{ x: 490, y: 0, w: 20, h: 150 }, { x: 490, y: 250, w: 20, h: 150 }] };
+    const seen = enemyAt(600, 200);
+    expect(visibleEnemies(withDoor, { x: 400, y: 200 }, [seen])).toEqual([seen]);
+  });
+
+  it("does not show a far enemy down a long clear line", () => {
+    const open: Arena = { ...twoRooms, walls: [], rooms: [{ id: "a", rect: { x: 0, y: 0, w: 200, h: 400 } }, { id: "b", rect: { x: 800, y: 0, w: 200, h: 400 } }] };
+    expect(visibleEnemies(open, { x: 100, y: 200 }, [enemyAt(900, 200)])).toEqual([]);
+  });
+});
+
+describe("assistAim", () => {
+  const from = { x: 0, y: 0 };
+  const target = { pos: { x: 200, y: 0 }, radius: 14 };
+
+  it("leaves the aim alone when nothing is near the sights", () => {
+    expect(assistAim(0.5, from, [target], [], 500)).toBe(0.5);
+  });
+
+  it("pulls a near miss toward the enemy but never past it", () => {
+    const aim = 0.05;
+    const helped = assistAim(aim, from, [target], [], 500);
+    expect(helped).toBeLessThan(aim);
+    expect(helped).toBeGreaterThanOrEqual(0);
+  });
+
+  it("pulls harder the closer to dead on", () => {
+    const near = 0.02 - assistAim(0.02, from, [target], [], 500);
+    const edge = 0.09 - assistAim(0.09, from, [target], [], 500);
+    expect(near / 0.02).toBeGreaterThan(edge / 0.09);
+  });
+
+  it("ignores an enemy behind a wall or out of range", () => {
+    expect(assistAim(0.05, from, [target], [{ x: 100, y: -50, w: 10, h: 100 }], 500)).toBe(0.05);
+    expect(assistAim(0.05, from, [target], [], 150)).toBe(0.05);
+  });
+
+  it("helps less at long range, where the enemy looks smaller", () => {
+    const far = { pos: { x: 480, y: 0 }, radius: 14 };
+    expect(assistAim(0.05, from, [far], [], 500)).toBe(0.05);
+    expect(assistAim(0.05, from, [target], [], 500)).not.toBe(0.05);
   });
 });

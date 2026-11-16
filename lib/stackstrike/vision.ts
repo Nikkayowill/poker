@@ -1,6 +1,6 @@
-import { PLAYER_GLOW, SHADOW } from "./content";
-import { segmentRectHit } from "./geometry";
-import type { Rect, Vec } from "./types";
+import { AIM_ASSIST, PLAYER_GLOW, SHADOW } from "./content";
+import { distance, lineOfSight, segmentRectHit } from "./geometry";
+import type { Arena, EnemyState, Rect, Room, Vec } from "./types";
 
 /**
  * Light and sight shapes. The scene draws the dark and the enemies' flashlight
@@ -69,4 +69,65 @@ export function coverAt(point: Vec, walls: readonly Rect[], reach: number = SHAD
     if (walls.some((wall) => segmentRectHit(point, end, wall) !== null)) blocked += 1;
   }
   return blocked / rays;
+}
+
+/** The room a point is in, or the nearest one when it stands in a doorway. */
+export function roomAt(arena: Arena, point: Vec): Room | null {
+  let best: Room | null = null;
+  let bestDistance = Infinity;
+  for (const room of arena.rooms) {
+    const { x, y, w, h } = room.rect;
+    const dx = Math.max(x - point.x, 0, point.x - (x + w));
+    const dy = Math.max(y - point.y, 0, point.y - (y + h));
+    const dist = Math.hypot(dx, dy);
+    if (dist < bestDistance) {
+      best = room;
+      bestDistance = dist;
+    }
+  }
+  return best;
+}
+
+/** How far down a passage the player can see an enemy that is not in their room. */
+export const SIGHT_RANGE = 460;
+
+/**
+ * The enemies the player can see: everyone in the same room, plus anyone they
+ * have a clear line to. Nobody through a wall in another room.
+ */
+export function visibleEnemies(arena: Arena, player: Vec, enemies: readonly EnemyState[]): EnemyState[] {
+  const here = roomAt(arena, player);
+  return enemies.filter((enemy) => {
+    if (here && roomAt(arena, enemy.pos) === here) return true;
+    return distance(player, enemy.pos) <= SIGHT_RANGE && lineOfSight(player, enemy.pos, arena.walls);
+  });
+}
+
+/**
+ * Nudges an aim angle toward a visible enemy that is almost in the sights, so a
+ * thumb on a small screen does not have to be perfect. The pull is strongest
+ * dead on and fades to nothing at the edge of the cone.
+ */
+export function assistAim(
+  aim: number,
+  from: Vec,
+  targets: readonly { pos: Vec; radius: number }[],
+  walls: readonly Rect[],
+  range: number,
+): number {
+  let best = aim;
+  let bestOff = Infinity;
+  for (const target of targets) {
+    const dist = distance(from, target.pos);
+    if (dist > range || dist < 1) continue;
+    // A farther enemy covers fewer degrees, so the cone shrinks with distance.
+    const cone = Math.min(AIM_ASSIST.maxCone, Math.atan2(target.radius + AIM_ASSIST.slack, dist));
+    const angle = Math.atan2(target.pos.y - from.y, target.pos.x - from.x);
+    const off = Math.abs(angleDiff(aim, angle));
+    if (off > cone || off >= bestOff) continue;
+    if (!lineOfSight(from, target.pos, walls)) continue;
+    bestOff = off;
+    best = aim + angleDiff(aim, angle) * AIM_ASSIST.pull * (1 - off / cone);
+  }
+  return best;
 }

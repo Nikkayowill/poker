@@ -32,7 +32,7 @@ function distanceToRect(x: number, y: number, rect: Rect): number {
   return Math.hypot(x - nx, y - ny);
 }
 
-export function buildNavGrid(arena: Arena, cell = 40, clearance = 18): NavGrid {
+export function buildNavGrid(arena: Arena, cell = 20, clearance = 18): NavGrid {
   const cols = Math.ceil(arena.width / cell);
   const rows = Math.ceil(arena.height / cell);
   const blocked = new Uint8Array(cols * rows);

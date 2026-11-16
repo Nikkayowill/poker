@@ -9,6 +9,7 @@ function room(walls: Arena["walls"] = [], corners: Arena["corners"] = [], patrol
     width: 1000,
     height: 1000,
     walls,
+    rooms: [],
     corners,
     patrol,
     playerSpawn: { x: 500, y: 500 },
@@ -53,6 +54,7 @@ function addEnemy(state: SimState, defId: string, x: number, y: number): EnemySt
     pathAge: 0,
     pathGoal: null,
     reaction: def.reactionTime,
+    radio: null,
     damageScale: 1,
     hurt: 0,
   };
@@ -261,14 +263,30 @@ describe("combat", () => {
     expect(enemy.mode).toBe("chase");
   });
 
-  it("getting shot makes an unaware enemy hunt you", () => {
+  it("every weapon kills with a single bullet", () => {
+    const toughest = Math.max(...Object.values(ENEMIES).map((def) => def.health));
+    for (const weapon of Object.values(WEAPONS)) expect(weapon.damage, weapon.id).toBeGreaterThanOrEqual(toughest);
+  });
+
+  it("one shot takes down an unaware enemy, and it never gets the chance to hunt you", () => {
     const state = quiet();
     const enemy = addEnemy(state, "grunt", 700, 500);
     enemy.facing = 0;
     step(state, input({ fire: true, aim: 0 }));
     run(state, 0.3, () => input({ aim: 0 }));
-    expect(enemy.health).toBeLessThan(ENEMIES.grunt.health);
-    expect(isAlert(enemy)).toBe(true);
+    expect(state.enemies).not.toContain(enemy);
+    expect(state.kills).toBe(1);
+    expect(enemy.radio).toBeNull();
+  });
+
+  it("late waves are no tougher to kill: one shot always does it", () => {
+    const state = quiet();
+    state.wave = 40;
+    const enemy = addEnemy(state, "grunt", 700, 500);
+    enemy.facing = 0;
+    step(state, input({ fire: true, aim: 0 }));
+    run(state, 0.3, () => input({ aim: 0 }));
+    expect(state.enemies).not.toContain(enemy);
   });
 });
 
@@ -477,9 +495,10 @@ describe("stealth", () => {
     });
   });
 
-  it("a gunshot is heard through a wall and sends an enemy to look, without telling it where you are", () => {
-    const state = quiet(room([{ x: 600, y: 300, w: 40, h: 400 }]));
-    const grunt = addEnemy(state, "grunt", 800, 500);
+  it("a silenced shot heard close by, even through a thin wall, sends an enemy to look without telling it where you are", () => {
+    const state = quiet(room([{ x: 530, y: 300, w: 20, h: 400 }]));
+    const grunt = addEnemy(state, "grunt", 575, 500);
+    grunt.facing = 0;
     step(state, input({ fire: true }));
     expect(grunt.investigate).not.toBeNull();
     expect(grunt.lastKnown).toBeNull();
@@ -488,11 +507,42 @@ describe("stealth", () => {
     expect(grunt.mode).toBe("suspicious");
   });
 
-  it("a gunshot beyond hearing range goes unnoticed", () => {
-    const state = quiet(room([{ x: 100, y: 300, w: 40, h: 400 }]));
-    const grunt = addEnemy(state, "grunt", 20, 500);
-    state.player.pos = { x: 20 + STEALTH.hearRange + 200, y: 500 };
-    step(state, input({ fire: true }));
+  it("a silenced shot is not heard across the room", () => {
+    const state = quiet();
+    const grunt = addEnemy(state, "grunt", 500 + STEALTH.hearRange + 60, 500);
+    grunt.facing = 0;
+    step(state, input({ fire: true, aim: Math.PI }));
+    expect(grunt.investigate).toBeNull();
+    expect(grunt.awareness).toBe(0);
+  });
+
+  it("through a wall a shot carries only half as far", () => {
+    const state = quiet(room([{ x: 530, y: 300, w: 20, h: 400 }]));
+    const grunt = addEnemy(state, "grunt", 500 + STEALTH.hearRange * 0.5 + 40, 500);
+    grunt.facing = 0;
+    step(state, input({ fire: true, aim: Math.PI }));
+    expect(grunt.investigate).toBeNull();
+  });
+
+  it("a miss that whizzes past an enemy puts it on alert, though it still does not know where you are", () => {
+    const state = quiet();
+    const grunt = addEnemy(state, "grunt", 760, 528);
+    grunt.facing = 0;
+    step(state, input({ fire: true, aim: 0 }));
+    run(state, 0.5, () => input({ aim: 0 }));
+    expect(state.enemies).toContain(grunt);
+    expect(grunt.mode).toBe("suspicious");
+    expect(grunt.awareness).toBeGreaterThan(0.3);
+    expect(isAlert(grunt)).toBe(false);
+    expect(grunt.lastKnown).toBeNull();
+  });
+
+  it("a miss that flies well clear of an enemy goes unnoticed", () => {
+    const state = quiet();
+    const grunt = addEnemy(state, "grunt", 760, 560);
+    grunt.facing = 0;
+    step(state, input({ fire: true, aim: 0 }));
+    run(state, 0.5, () => input({ aim: 0 }));
     expect(grunt.investigate).toBeNull();
   });
 
@@ -585,21 +635,85 @@ describe("stealth", () => {
     expect(travelled).toBeGreaterThan(10);
   });
 
-  it("a spotted enemy tells friends nearby, who come to look rather than know", () => {
+  /** Runs until the spotter has noticed the player, so its radio call is running. */
+  function spotted(state: SimState, spotter: EnemyState): void {
+    for (let n = 0; n < 600 && !isAlert(spotter); n += 1) step(state, input());
+    expect(isAlert(spotter)).toBe(true);
+  }
+
+  it("a spotted enemy tells its squad at once, but they come to look rather than know", () => {
     const state = quiet();
     const spotter = addEnemy(state, "grunt", 700, 500);
-    const friend = addEnemy(state, "grunt", 760, 700);
-    friend.facing = 0;
-    const far = addEnemy(state, "grunt", 100, 100);
-    far.facing = 0;
-    let friendPeak = 0;
+    const mate = addEnemy(state, "grunt", 760, 560);
+    mate.facing = 0;
+    let matePeak = 0;
     for (let n = 0; n < 240; n += 1) {
       step(state, input());
-      friendPeak = Math.max(friendPeak, friend.awareness);
+      matePeak = Math.max(matePeak, mate.awareness);
     }
     expect(isAlert(spotter)).toBe(true);
-    expect(friendPeak).toBeGreaterThanOrEqual(STEALTH.calloutAwareness - 0.01);
+    expect(matePeak).toBeGreaterThanOrEqual(STEALTH.calloutAwareness - 0.01);
+  });
+
+  it("an enemy out of the squad only learns by radio, after the call has had time to go out", () => {
+    const state = quiet();
+    const spotter = addEnemy(state, "grunt", 700, 500);
+    const far = addEnemy(state, "grunt", 600, 900);
+    far.facing = Math.PI / 2;
+    spotted(state, spotter);
+    expect(spotter.radio).not.toBeNull();
     expect(far.awareness).toBe(0);
+    expect(far.investigate).toBeNull();
+    let peak = 0;
+    for (let n = 0; n < Math.round((STEALTH.radioSeconds + 0.2) / STEP_SECONDS); n += 1) {
+      step(state, input());
+      peak = Math.max(peak, far.awareness);
+    }
+    expect(spotter.radio).toBeNull();
+    expect(peak).toBeGreaterThanOrEqual(STEALTH.radioAwareness - 0.01);
+    expect(far.investigate).not.toBeNull();
+    expect(isAlert(far)).toBe(false);
+    expect(far.lastKnown).toBeNull();
+  });
+
+  it("the radio call announces itself with an event", () => {
+    const state = quiet();
+    const spotter = addEnemy(state, "grunt", 700, 500);
+    addEnemy(state, "grunt", 600, 900).facing = Math.PI / 2;
+    spotted(state, spotter);
+    let called = false;
+    for (let n = 0; n < 300; n += 1) {
+      step(state, input());
+      if (state.events.some((event) => event.type === "radio")) called = true;
+    }
+    expect(called).toBe(true);
+  });
+
+  it("killing the spotter before its call goes out keeps everyone else in the dark", () => {
+    const state = quiet();
+    state.player.health = state.player.maxHealth = 1e9;
+    const spotter = addEnemy(state, "grunt", 700, 500);
+    const far = addEnemy(state, "grunt", 600, 900);
+    far.facing = Math.PI / 2;
+    spotted(state, spotter);
+    const aim = Math.atan2(spotter.pos.y - state.player.pos.y, spotter.pos.x - state.player.pos.x);
+    step(state, input({ fire: true, aim }));
+    run(state, STEALTH.radioSeconds + 1, () => input({ aim }));
+    expect(state.enemies).not.toContain(spotter);
+    expect(far.awareness).toBe(0);
+    expect(far.investigate).toBeNull();
+  });
+
+  it("radioed enemies get a fuzzy position, not the exact spot", () => {
+    const state = quiet();
+    const spotter = addEnemy(state, "grunt", 700, 500);
+    const far = addEnemy(state, "grunt", 600, 900);
+    far.facing = Math.PI / 2;
+    spotted(state, spotter);
+    run(state, STEALTH.radioSeconds + 0.1);
+    const spot = far.investigate;
+    expect(spot).not.toBeNull();
+    expect(Math.hypot((spot?.x ?? 0) - state.player.pos.x, (spot?.y ?? 0) - state.player.pos.y)).toBeLessThanOrEqual(STEALTH.radioScatter);
   });
 });
 
@@ -725,13 +839,13 @@ describe("waves", () => {
     expect(state.enemies.length).toBeGreaterThan(0);
   });
 
-  it("caps stat scaling so late waves add enemies, not sponges", () => {
+  it("caps damage scaling and never adds health, so late waves add enemies, not sponges", () => {
     const state = createState(7);
     state.wave = 99;
     state.intermission = 0.01;
     run(state, 0.3);
     const grunt = state.enemies.find((enemy) => enemy.defId === "grunt");
-    expect(grunt?.maxHealth).toBe(ENEMIES.grunt.health * WAVE_TUNING.maxScale);
+    expect(grunt?.maxHealth).toBe(ENEMIES.grunt.health);
     expect(grunt?.damageScale).toBe(WAVE_TUNING.maxScale);
   });
 });

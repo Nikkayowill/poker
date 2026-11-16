@@ -94,10 +94,17 @@ export interface Entry {
   pos: Vec;
 }
 
+/** A walled room, for lighting it as the player enters and for deciding which enemies the player can see. */
+export interface Room {
+  id: string;
+  rect: Rect;
+}
+
 export interface Arena {
   width: number;
   height: number;
   walls: Rect[];
+  rooms: Room[];
   /** The darkest corners. Not marked on the floor: enemies check them once a wave drags on or after losing you. */
   corners: Vec[];
   /** Spots enemies sweep between when they have nothing to chase. */
@@ -178,6 +185,8 @@ export interface EnemyState {
   pathGoal: Vec | null;
   /** Counts down from reactionTime while the player is in view. */
   reaction: number;
+  /** A radio call to the rest of the team, counting down. Dies with the spotter. */
+  radio: { left: number; pos: Vec } | null;
   damageScale: number;
   hurt: number;
 }
@@ -205,6 +214,7 @@ export type SimEvent =
   | { type: "kill"; pos: Vec; defId: string }
   | { type: "reload" }
   | { type: "spotted"; pos: Vec }
+  | { type: "radio"; pos: Vec }
   | { type: "hide"; on: boolean }
   | { type: "wave"; wave: number }
   | { type: "dead" };

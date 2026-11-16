@@ -83,10 +83,10 @@ test("desktop: start screen, then boots, moves, shoots and spawns a wave", async
   await expect.poll(async () => (await read(page)).enemies.length, { timeout: 20_000 }).toBeGreaterThan(0);
 
   const before = (await read(page)).player.pos;
-  // Left: the start is right beside the centre pillar, so right is a wall.
-  await page.keyboard.down("a");
-  await expect.poll(async () => (await read(page)).player.pos.x, { timeout: 30_000 }).toBeLessThan(before.x - 40);
-  await page.keyboard.up("a");
+  // Down: the start is in a server-rack aisle that opens to the south.
+  await page.keyboard.down("s");
+  await expect.poll(async () => (await read(page)).player.pos.y, { timeout: 30_000 }).toBeGreaterThan(before.y + 40);
+  await page.keyboard.up("s");
 
   await page.mouse.move(900, 360);
   await page.mouse.down();
@@ -103,10 +103,20 @@ test("desktop: the mouse aims at the right place on a high-density screen", asyn
   await page.getByRole("button", { name: "Play" }).click();
   await readyToPlay(page);
 
+  // The camera centres on the player except near the arena's edge, so stand mid-arena and let it settle.
+  await page.evaluate(() => {
+    const s = (window as unknown as { __stackstrike: Handle }).__stackstrike.state();
+    s.player.pos.x = 750;
+    s.player.pos.y = 450;
+  });
   await page.mouse.move(640, 360 - 100);
-  // The camera centres on the player, so a point straight above the screen centre is straight up.
-  const aim = await page.evaluate(() => (window as unknown as { __stackstrike: Handle }).__stackstrike.scene.readInput().aim);
-  expect(aim).toBeCloseTo(-Math.PI / 2, 1);
+  // A point straight above the screen centre is then straight up.
+  await expect
+    .poll(
+      async () => page.evaluate(() => (window as unknown as { __stackstrike: Handle }).__stackstrike.scene.readInput().aim),
+      { timeout: 20_000 },
+    )
+    .toBeCloseTo(-Math.PI / 2, 1);
   await context.close();
 });
 
@@ -145,7 +155,7 @@ test("phone landscape: the controls sit where the thumbs are, and the planning t
     expect(at.x, names[index]).toBeGreaterThan(844 / 2);
     expect(at.y, names[index]).toBeGreaterThan(60);
     expect(at.y, names[index]).toBeLessThan(390 - 20);
-    expect(Math.hypot(at.x - aim.x, at.y - aim.y), names[index]).toBeGreaterThan(54 + 30 - 2);
+    expect(Math.hypot(at.x - aim.x, at.y - aim.y), names[index]).toBeGreaterThan(70 + 30 - 2);
     for (const other of buttons.slice(index + 1)) {
       expect(Math.hypot(at.x - other.x, at.y - other.y)).toBeGreaterThan(60);
     }
@@ -214,19 +224,19 @@ test("phone landscape: a dark corner hides you, and walking out does not", async
   // Out in the open there is nothing to hide behind.
   expect((await read(page)).player.hidden).toBe(false);
 
-  // Press into the back corner of the north-west booth.
+  // Press into the north-west corner of the office.
   await page.evaluate(() => {
     const s = (window as unknown as { __stackstrike: Handle }).__stackstrike.state();
-    s.player.pos.x = 148;
-    s.player.pos.y = 138;
+    s.player.pos.x = 62;
+    s.player.pos.y = 62;
   });
   await expect.poll(async () => (await read(page)).player.hidden, { timeout: 10_000 }).toBe(true);
 
-  // Back to the middle of the room: seen again.
+  // Out of the corner: seen again.
   await page.evaluate(() => {
     const s = (window as unknown as { __stackstrike: Handle }).__stackstrike.state();
-    s.player.pos.x = 520;
-    s.player.pos.y = 400;
+    s.player.pos.x = 250;
+    s.player.pos.y = 200;
   });
   await expect.poll(async () => (await read(page)).player.hidden, { timeout: 10_000 }).toBe(false);
   await context.close();

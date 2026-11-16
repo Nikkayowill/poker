@@ -1,5 +1,5 @@
 import * as Phaser from "phaser";
-import { ARENA, PLAYER_GLOW } from "@/lib/stackstrike/content";
+import { ARENA, PLAYER_GLOW, STEALTH } from "@/lib/stackstrike/content";
 import { segmentRectHit } from "@/lib/stackstrike/geometry";
 import {
   accuracy,
@@ -10,7 +10,7 @@ import {
   step,
 } from "@/lib/stackstrike/sim";
 import type { DifficultyId, EnemyState, PlayerInput, SimEvent, SimState } from "@/lib/stackstrike/types";
-import { beamPolygon, DOOR_GLOW, glowPolygon } from "@/lib/stackstrike/vision";
+import { angleDiff, assistAim, beamPolygon, DOOR_GLOW, glowPolygon, roomAt, visibleEnemies } from "@/lib/stackstrike/vision";
 
 /**
  * The Phaser side of StackStrike: reads input, runs lib/stackstrike/sim.ts at
@@ -29,8 +29,10 @@ import { beamPolygon, DOOR_GLOW, glowPolygon } from "@/lib/stackstrike/vision";
  * round the player and by the enemies' flashlights: each beam, cut short by
  * walls, is erased out of the dark, and being inside one is what fills that
  * enemy's spotted meter. The laser is draw-only, so enemies never see it.
- * Enemies are drawn on top of the dark, glowing red, so the player always
- * knows where they are. A small map in the corner shows them too.
+ * Walking into a room lights it dimly, and every enemy in the same room (or
+ * down a clear line of sight) is drawn glowing red on top of the dark, so
+ * there is no minimap: look at the screen. An enemy that has spotted the player
+ * shows a radio ring until its call goes out; shoot it first and the call dies.
  *
  * The canvas is drawn at device resolution, so every screen size below is in
  * device pixels: `u` is one CSS pixel's worth.
@@ -73,6 +75,7 @@ const COLORS = {
 
 const ENEMY_COLORS: Record<string, number> = { grunt: 0xe5484d, runner: 0xf59f00 };
 const ENEMY_GLOW = 0xff2a2a;
+const STEALTH_RADIO_SECONDS = STEALTH.radioSeconds;
 
 const DARKNESS = 0.95;
 /** The dark is drawn at this share of screen resolution and stretched back up: light is soft anyway, and it is a full-screen fill. */
@@ -81,9 +84,16 @@ const DARK_SCALE = 0.5;
 /** Sizes below are CSS pixels; multiply by `u` for the canvas. */
 const STICK_RADIUS = 54;
 const KNOB_RADIUS = 24;
+/** The aim pad is a little bigger than the move stick: the same thumb travel turns the gun through a smaller angle. */
+const AIM_RADIUS = 70;
 /** A thumb landing within this many pad radii of a pad uses the pad; farther out it floats from where it landed. */
 const PAD_GRAB = 1.5;
-const AIM_DEADZONE = 0.3;
+/** Thumb offsets inside this share of the pad radius are ignored, so a resting thumb does not wobble the gun. */
+const AIM_DEADZONE = 0.16;
+/** How quickly the gun settles on where the thumb points, per second. Higher is snappier, lower is smoother. */
+const AIM_SMOOTHING = 26;
+/** The thumb's own jitter is averaged out: this share of the way to the new position each step. */
+const THUMB_FILTER = 0.55;
 const BUTTON_RADIUS = 30;
 /** A thumb has to move this far (CSS pixels) from where it landed before it counts as a drag. */
 const DRAG_SLOP = 10;
@@ -95,13 +105,13 @@ const HOLD_FIRE_MS = 320;
 const FIRE_BUFFER_SECONDS = 0.1;
 const MAX_FRAME_SECONDS = 0.1;
 const RESTART_LOCKOUT_MS = 700;
-/** World units the phone view fits top to bottom. Small, so figures read on a small screen. */
-const PHONE_VIEW_HEIGHT = 330;
+/** World units the phone view fits top to bottom: a whole room, so everyone in it is on screen. */
+const PHONE_VIEW_HEIGHT = 500;
 const CAMERA_FOLLOW_RATE = 12;
 /** How far the laser sight reaches, in world units. */
 const LASER_RANGE = 520;
-/** The corner map, in CSS pixels wide; its height follows the arena. */
-const MAP_WIDTH = 120;
+/** Floor of the room the player is in is lit this much, so the layout can be read. */
+const ROOM_LIGHT = 0.4;
 
 interface Particle {
   x: number;
@@ -121,6 +131,9 @@ interface Pad {
   originY: number;
   x: number;
   y: number;
+  /** The thumb's position with its jitter averaged out. This is what aims. */
+  fx: number;
+  fy: number;
   downAt: number;
   /** Where the thumb first landed. A tap is judged from here, not from the pad's centre. */
   downX: number;
@@ -389,13 +402,15 @@ export class StackStrikeScene extends Phaser.Scene {
       const { moveHome, aimHome, u } = this.layoutNow;
       const left = pointer.x < this.scale.width / 2;
       const home = left ? moveHome : aimHome;
-      const near = Math.hypot(pointer.x - home.x, pointer.y - home.y) <= STICK_RADIUS * PAD_GRAB * u;
+      const near = Math.hypot(pointer.x - home.x, pointer.y - home.y) <= (left ? STICK_RADIUS : AIM_RADIUS) * PAD_GRAB * u;
       const pad: Pad = {
         id: pointer.id,
         originX: near ? home.x : pointer.x,
         originY: near ? home.y : pointer.y,
         x: pointer.x,
         y: pointer.y,
+        fx: pointer.x,
+        fy: pointer.y,
         downAt: this.time.now,
         downX: pointer.x,
         downY: pointer.y,
@@ -445,11 +460,11 @@ export class StackStrikeScene extends Phaser.Scene {
     }
   }
 
-  private padVector(pad: Pad | null): Point {
+  private padVector(pad: Pad | null, radiusCss: number = STICK_RADIUS, filtered = false): Point {
     if (!pad) return { x: 0, y: 0 };
-    const radius = STICK_RADIUS * this.layoutNow.u;
-    const dx = (pad.x - pad.originX) / radius;
-    const dy = (pad.y - pad.originY) / radius;
+    const radius = radiusCss * this.layoutNow.u;
+    const dx = ((filtered ? pad.fx : pad.x) - pad.originX) / radius;
+    const dy = ((filtered ? pad.fy : pad.y) - pad.originY) / radius;
     const length = Math.hypot(dx, dy);
     return length > 1 ? { x: dx / length, y: dy / length } : { x: dx, y: dy };
   }
@@ -464,8 +479,10 @@ export class StackStrikeScene extends Phaser.Scene {
     let fire = this.fireBuffer > 0;
 
     if (this.aimPad) {
-      // The gun and the laser follow the thumb wherever it is on the pad.
-      this.aimFromPad(this.aimPad);
+      // The gun and the laser follow the thumb wherever it is on the pad, eased so a shaky thumb does not shake the gun.
+      this.aimPad.fx += (this.aimPad.x - this.aimPad.fx) * THUMB_FILTER;
+      this.aimPad.fy += (this.aimPad.y - this.aimPad.fy) * THUMB_FILTER;
+      this.aimFromPad(this.aimPad, false);
       const slop = DRAG_SLOP * this.layoutNow.u;
       if (Math.hypot(this.aimPad.x - this.aimPad.downX, this.aimPad.y - this.aimPad.downY) > slop) {
         this.aimPad.dragged = true;
@@ -479,19 +496,42 @@ export class StackStrikeScene extends Phaser.Scene {
       fire = fire || pointer.leftButtonDown();
     }
 
+    // A thumb that is nearly right is helped the rest of the way. The laser and the shot both use it.
+    const aim = this.assistedAim();
     return {
       move,
-      aim: this.aimAngle,
+      aim,
       fire,
       reload: this.reloadQueued,
       selectWeapon: this.selectQueued,
     };
   }
 
-  /** Points the gun where the thumb is, unless it is on the pad's centre. */
-  private aimFromPad(pad: Pad): void {
-    const vector = this.padVector(pad);
-    if (Math.hypot(vector.x, vector.y) > AIM_DEADZONE) this.aimAngle = Math.atan2(vector.y, vector.x);
+  /**
+   * Turns the gun toward where the thumb is, unless it is on the pad's centre.
+   * `snap` jumps straight there (a tap), otherwise the gun eases round.
+   */
+  private aimFromPad(pad: Pad, snap = true): void {
+    const vector = this.padVector(pad, AIM_RADIUS, !snap);
+    if (Math.hypot(vector.x, vector.y) <= AIM_DEADZONE) return;
+    const wanted = Math.atan2(vector.y, vector.x);
+    if (snap) {
+      this.aimAngle = wanted;
+      return;
+    }
+    const blend = 1 - Math.exp(-AIM_SMOOTHING * STEP_SECONDS);
+    this.aimAngle += angleDiff(this.aimAngle, wanted) * blend;
+  }
+
+  /** The thumb's aim, pulled onto a visible enemy that is nearly in the sights. */
+  private assistedAim(): number {
+    if (!this.touch) return this.aimAngle;
+    const { player, arena, enemies } = this.sim;
+    const targets = visibleEnemies(arena, player.pos, enemies).map((enemy) => ({
+      pos: enemy.pos,
+      radius: enemyDef(enemy.defId).radius,
+    }));
+    return assistAim(this.aimAngle, player.pos, targets, arena.walls, Math.min(currentWeapon(this.sim).range, LASER_RANGE));
   }
 
   private cycleWeapon(direction: number): void {
@@ -586,6 +626,9 @@ export class StackStrikeScene extends Phaser.Scene {
       case "spotted":
         this.cameras.main.shake(140, 0.003);
         break;
+      case "radio":
+        this.hint = { text: "THEY CALLED IT IN", left: 2.4 };
+        break;
       case "dead":
         this.cameras.main.shake(300, 0.012);
         break;
@@ -643,21 +686,20 @@ export class StackStrikeScene extends Phaser.Scene {
       height,
       insets,
       moveHome: { x: insets.left + 100 * u, y: padY },
-      aimHome: { x: right - 100 * u, y: padY },
+      aimHome: { x: right - 104 * u, y: padY },
       buttons: {
-        reload: { x: right - 46 * u, y: padY - (STICK_RADIUS + 52) * u },
-        swap: { x: right - 122 * u, y: padY - (STICK_RADIUS + 58) * u },
+        reload: { x: right - 46 * u, y: padY - (AIM_RADIUS + 46) * u },
+        swap: { x: right - 130 * u, y: padY - (AIM_RADIUS + 50) * u },
       },
     };
 
     this.hudCamera.setSize(width, height);
     this.dark.resize(Math.ceil(width * DARK_SCALE), Math.ceil(height * DARK_SCALE));
 
-    // A phone shows a small slice of the arena so figures are big enough to
-    // read; a desktop window shows more.
+    // A phone shows about one room, so everyone in it is on screen; a desktop window shows more.
     const zoom = this.touch
-      ? Phaser.Math.Clamp(height / PHONE_VIEW_HEIGHT, 0.8 * u, 3 * u)
-      : Phaser.Math.Clamp(Math.min(width / 900, height / 560), 0.55 * u, 2 * u);
+      ? Phaser.Math.Clamp(height / PHONE_VIEW_HEIGHT, 0.6 * u, 3 * u)
+      : Phaser.Math.Clamp(Math.min(width / 1200, height / 700), 0.45 * u, 2 * u);
     this.cameras.main.setZoom(zoom);
 
     const small = Math.round(15 * u);
@@ -671,9 +713,8 @@ export class StackStrikeScene extends Phaser.Scene {
       this.buttonLabels[name].setFontSize(Math.round(11 * u)).setPosition(this.layoutNow.buttons[name].x, this.layoutNow.buttons[name].y);
     }
     const caption = Math.round(9 * u);
-    const captionY = STICK_RADIUS * 0.66 * u;
-    this.moveCaption.setFontSize(caption).setPosition(this.layoutNow.moveHome.x, this.layoutNow.moveHome.y + captionY);
-    this.aimCaption.setFontSize(caption).setPosition(this.layoutNow.aimHome.x, this.layoutNow.aimHome.y + captionY);
+    this.moveCaption.setFontSize(caption).setPosition(this.layoutNow.moveHome.x, this.layoutNow.moveHome.y + STICK_RADIUS * 0.66 * u);
+    this.aimCaption.setFontSize(caption).setPosition(this.layoutNow.aimHome.x, this.layoutNow.aimHome.y + AIM_RADIUS * 0.66 * u);
   }
 
   /* ------------------------------------------------------------------ draw */
@@ -777,7 +818,7 @@ export class StackStrikeScene extends Phaser.Scene {
     g.clear();
     const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 220);
 
-    for (const enemy of enemies) {
+    for (const enemy of visibleEnemies(this.sim.arena, this.sim.player.pos, enemies)) {
       const def = enemyDef(enemy.defId);
       const base = ENEMY_COLORS[enemy.defId] ?? 0xff00ff;
       const alert = enemy.mode === "chase" || enemy.mode === "attack";
@@ -837,14 +878,13 @@ export class StackStrikeScene extends Phaser.Scene {
         g.fillStyle(alertColor(enemy.awareness), 1);
         g.fillRect(meterLeft, meterTop, meterWidth * enemy.awareness, 4);
       }
-      if (enemy.health < enemy.maxHealth) {
-        const barWidth = def.radius * 2;
-        const left = x - def.radius;
-        const top = y - def.radius - 12;
-        g.fillStyle(0x000000, 0.6);
-        g.fillRect(left, top, barWidth, 4);
-        g.fillStyle(0x7ee787, 1);
-        g.fillRect(left, top, barWidth * (enemy.health / enemy.maxHealth), 4);
+      if (enemy.radio) {
+        // Mid radio call: a ring closing in. Kill it before it ends and nobody else hears.
+        const left = enemy.radio.left / STEALTH_RADIO_SECONDS;
+        g.lineStyle(2, 0x63e6ff, 0.9);
+        g.strokeCircle(x, y, def.radius + 9 + 14 * left);
+        g.fillStyle(0x63e6ff, 1);
+        g.fillRect(x + def.radius * 0.5, y - def.radius - 12, 3, 8);
       }
     }
   }
@@ -925,14 +965,29 @@ export class StackStrikeScene extends Phaser.Scene {
 
     this.tint.clear();
 
+    // The room you are standing in is dimly lit, so you can read the layout. Rooms you are not in stay black.
+    const here = roomAt(arena, player.pos);
+    if (here) {
+      const { x, y, w, h } = here.rect;
+      erase(
+        [
+          { x, y },
+          { x: x + w, y },
+          { x: x + w, y: y + h },
+          { x, y: y + h },
+        ],
+        ROOM_LIGHT,
+      );
+    }
+
     // Doors are always faintly lit; the ones about to be used are bright. That is how you watch them come in.
     for (const entry of arena.entries) {
       const active = this.sim.incoming.includes(entry.id);
       erase(circlePoints(entry.pos.x, entry.pos.y, DOOR_GLOW * (active ? 1 : 0.7)), active ? 0.8 : 0.3);
     }
 
-    // Each enemy's flashlight lights the floor it sweeps, brightest near the lamp.
-    for (const enemy of this.sim.enemies) {
+    // Each enemy's flashlight lights the floor it sweeps, brightest near the lamp. Only the ones you can see.
+    for (const enemy of visibleEnemies(arena, player.pos, this.sim.enemies)) {
       const def = enemyDef(enemy.defId);
       const poly = this.beams.get(enemy.id);
       if (!poly) continue;
@@ -1052,8 +1107,6 @@ export class StackStrikeScene extends Phaser.Scene {
     }
     this.bannerText.setAlpha(status === "dead" || planning ? 1 : Math.min(1, this.banner.left * 2));
 
-    this.drawMap(g);
-
     // Touch controls.
     const playing = status === "playing";
     const showControls = this.touch && playing;
@@ -1082,75 +1135,20 @@ export class StackStrikeScene extends Phaser.Scene {
     }
   }
 
-  /**
-   * A small map in the top-right corner: the walls, the doors, you, and every
-   * enemy as a red dot, so the whole floor can be read at a glance.
-   */
-  private drawMap(g: Phaser.GameObjects.Graphics): void {
-    const { u, width, insets } = this.layoutNow;
-    const { arena, player, enemies } = this.sim;
-    const w = MAP_WIDTH * u;
-    const scale = w / arena.width;
-    const h = arena.height * scale;
-    const left = width - insets.right - 16 * u - w;
-    const top = insets.top + 50 * u;
-    const at = (x: number, y: number): Point => ({ x: left + x * scale, y: top + y * scale });
-
-    g.fillStyle(0x000000, 0.55);
-    g.fillRect(left - 2 * u, top - 2 * u, w + 4 * u, h + 4 * u);
-    g.lineStyle(1 * u, 0xffffff, 0.3);
-    g.strokeRect(left - 2 * u, top - 2 * u, w + 4 * u, h + 4 * u);
-
-    g.fillStyle(COLORS.wallEdge, 0.55);
-    for (const wall of arena.walls) g.fillRect(left + wall.x * scale, top + wall.y * scale, Math.max(1, wall.w * scale), Math.max(1, wall.h * scale));
-
-    for (const entry of arena.entries) {
-      const door = entry.door;
-      const incoming = this.sim.incoming.includes(entry.id);
-      g.fillStyle(incoming ? 0xff4d4d : COLORS.doorEdge, incoming ? 1 : 0.8);
-      g.fillRect(left + door.x * scale, top + door.y * scale, Math.max(2 * u, door.w * scale), Math.max(2 * u, door.h * scale));
-    }
-
-    // Where the screen is looking.
-    const halfW = this.layoutNow.width / (2 * this.zoom);
-    const halfH = this.layoutNow.height / (2 * this.zoom);
-    const view = at(this.cam.x - halfW, this.cam.y - halfH);
-    g.lineStyle(1 * u, 0xffffff, 0.35);
-    g.strokeRect(view.x, view.y, halfW * 2 * scale, halfH * 2 * scale);
-
-    for (const enemy of enemies) {
-      const dot = at(enemy.pos.x, enemy.pos.y);
-      const alert = enemy.mode === "chase" || enemy.mode === "attack";
-      g.fillStyle(ENEMY_GLOW, 0.3);
-      g.fillCircle(dot.x, dot.y, 5 * u);
-      g.fillStyle(alert ? 0xffffff : ENEMY_GLOW, 1);
-      g.fillCircle(dot.x, dot.y, 2.6 * u);
-      if (alert) {
-        g.lineStyle(1.2 * u, ENEMY_GLOW, 1);
-        g.strokeCircle(dot.x, dot.y, 4.2 * u);
-      }
-    }
-
-    const me = at(player.pos.x, player.pos.y);
-    g.fillStyle(player.hidden ? COLORS.shadow : COLORS.player, 1);
-    g.fillCircle(me.x, me.y, 3 * u);
-    g.lineStyle(1.5 * u, COLORS.player, 0.9);
-    g.lineBetween(me.x, me.y, me.x + Math.cos(player.aim) * 8 * u, me.y + Math.sin(player.aim) * 8 * u);
-  }
-
   /** A pad's base ring and knob. Idle, the aim knob rests toward where the gun points. */
   private drawPad(g: Phaser.GameObjects.Graphics, home: Point, pad: Pad | null, kind: "move" | "aim"): void {
     const { u } = this.layoutNow;
     const held = pad !== null;
+    const radius = kind === "aim" ? AIM_RADIUS : STICK_RADIUS;
     const rest = kind === "aim" ? { x: Math.cos(this.aimAngle) * 0.42, y: Math.sin(this.aimAngle) * 0.42 } : { x: 0, y: 0 };
-    const vector = held ? this.padVector(pad) : rest;
+    const vector = held ? this.padVector(pad, radius) : rest;
     g.fillStyle(0xffffff, held ? 0.14 : 0.09);
-    g.fillCircle(home.x, home.y, STICK_RADIUS * u);
+    g.fillCircle(home.x, home.y, radius * u);
     g.lineStyle(2 * u, 0xffffff, held ? 0.7 : 0.4);
-    g.strokeCircle(home.x, home.y, STICK_RADIUS * u);
+    g.strokeCircle(home.x, home.y, radius * u);
 
-    const kx = home.x + vector.x * STICK_RADIUS * u;
-    const ky = home.y + vector.y * STICK_RADIUS * u;
+    const kx = home.x + vector.x * radius * u;
+    const ky = home.y + vector.y * radius * u;
     g.fillStyle(kind === "aim" ? COLORS.beamTint : 0xffffff, held ? 0.55 : 0.3);
     g.fillCircle(kx, ky, KNOB_RADIUS * u);
     g.lineStyle(2 * u, 0xffffff, held ? 0.8 : 0.55);

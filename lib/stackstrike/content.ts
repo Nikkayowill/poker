@@ -3,6 +3,8 @@ import type {
   DifficultyDefinition,
   DifficultyId,
   EnemyDefinition,
+  Guard,
+  LootSpot,
   OperatorDefinition,
   Rect,
   Room,
@@ -105,13 +107,25 @@ export const ENEMIES: Record<string, EnemyDefinition> = {
   },
 };
 
-export const WAVE_TUNING = {
-  /** Health restored when a wave is cleared. */
-  clearHeal: 20,
-  damageScalePerWave: 0.05,
-  /** Damage scaling stops here. Enemies never get tougher: one shot always kills. */
-  maxScale: 2,
-  waveClearScore: 50,
+/**
+ * How far away the player can make out a guard, through walls. Inside
+ * `clearRange` they are drawn in full; out to `range` they fade to `farStrength`.
+ */
+export const SENSE = {
+  range: 560,
+  clearRange: 380,
+  farStrength: 0.4,
+};
+
+/** The heist: what the player is paid for and how close they must be to pick something up. */
+export const MISSION = {
+  pickupRadius: 26,
+  /** Paid for walking out with the gold. */
+  escapeBonus: 500,
+  /** Extra for leaving without a single guard ever spotting you. */
+  unseenBonus: 500,
+  /** Extra again for leaving without firing a shot that killed anyone. */
+  ghostBonus: 500,
 };
 
 /**
@@ -122,43 +136,28 @@ export const DIFFICULTIES: Record<DifficultyId, DifficultyDefinition> = {
   easy: {
     id: "easy",
     label: "Easy",
-    blurb: "Slow to notice you. One door. Lots of time.",
+    blurb: "Slow to notice you. Few guards.",
     detectSeconds: 2.6,
     decaySeconds: 2.5,
-    entries: 1,
-    moreEntriesFromWave: 5,
-    graceFirst: 10,
-    grace: 8,
-    spawnGap: 1.8,
-    enemyCount: 0.6,
+    tier: 1,
     enemySpeed: 0.8,
   },
   normal: {
     id: "normal",
     label: "Normal",
-    blurb: "Two doors. Keep out of sight.",
+    blurb: "More guards. Keep out of sight.",
     detectSeconds: 1.5,
     decaySeconds: 2,
-    entries: 2,
-    moreEntriesFromWave: 5,
-    graceFirst: 7,
-    grace: 5,
-    spawnGap: 1.2,
-    enemyCount: 1,
+    tier: 2,
     enemySpeed: 1,
   },
   hard: {
     id: "hard",
     label: "Hard",
-    blurb: "Quick to spot you. Three doors, then four.",
+    blurb: "Every guard on duty, quick to spot you.",
     detectSeconds: 0.8,
     decaySeconds: 1.5,
-    entries: 3,
-    moreEntriesFromWave: 4,
-    graceFirst: 4,
-    grace: 3,
-    spawnGap: 0.7,
-    enemyCount: 1.2,
+    tier: 3,
     enemySpeed: 1.15,
   },
 };
@@ -208,17 +207,17 @@ export const STEALTH = {
   /** Alert enemies keep tracking a little farther out than they first notice. */
   alertRangeBonus: 1.25,
   searchSeconds: 3,
-  /** Looking around where a sweep stops. */
+  /** Looking around where a patrol leg ends. */
   lookSeconds: 1.2,
   /** Walking pace as a share of full speed. */
   patrolSpeed: 0.55,
+  /** A posted guard turns this fast and sweeps this far either side of the way it faces. */
+  postTurnRate: 1.3,
+  postSweep: 0.8,
+  postSweepRate: 0.6,
   investigateSpeed: 0.7,
   turnRate: 7,
   lookTurnRate: 1.6,
-  /** Sweep points this close, in view, count as checked. */
-  sweepSeen: 100,
-  /** After this long a wave starts checking the nooks too, so hiding in one forever fails. */
-  thoroughAfter: 35,
   /** Corners this near the spot an enemy lost the player are checked. */
   nookCheckRadius: 220,
 };
@@ -245,18 +244,6 @@ export const SHADOW = {
 export const PLAYER_GLOW = {
   radius: 62,
 };
-
-export function waveComposition(wave: number, countScale = 1): { defId: string; count: number }[] {
-  const scaled = (count: number): number => Math.max(1, Math.round(count * countScale));
-  const grunts = scaled(Math.min(2 + wave, 10));
-  const runners = wave >= 2 ? scaled(Math.min(wave - 1, 6)) : 0;
-  return runners > 0
-    ? [
-        { defId: "grunt", count: grunts },
-        { defId: "runner", count: runners },
-      ]
-    : [{ defId: "grunt", count: grunts }];
-}
 
 /**
  * Aim assist for a thumb on a glass screen. An enemy that is nearly in the
@@ -289,18 +276,19 @@ function wallLine(axis: "h" | "v", fixed: number, from: number, to: number, gaps
 /**
  * The compound, drawn as a floor plan (x across, y down, 1500 x 900):
  *
- *   NW office      | north lobby  | NE server room
- *   ---------------+--north door  +---------------
- *   SW storeroom   |==checkpoint==| east control room
- *   west door      | south lobby  +---------------
- *                  |  south door  | SE workshop
+ *   NW office      | north lobby  | NE server room (the gold)
+ *   ---------------+==checkpoint==+---------------
+ *   SW storeroom   | south lobby  | east control room
+ *   west door (in  |              +---------------
+ *   and out)       |              | SE workshop
  *
  * It is built for creeping. Rooms are joined by doorways just wide enough for
  * one body, so every doorway is a place to wait beside. The two lobbies are
  * linked by one narrow gap at the checkpoint, and the west and east wings
  * loop back on themselves, so there is always a second way round. Each room
  * has cover to break sight lines and a dark nook to hide in; the player starts
- * in the server room, the farthest corner from every way in.
+ * in through the west door; the gold case is in the server room, the far
+ * corner of the building.
  */
 const ROOMS: Room[] = [
   { id: "office", rect: { x: 32, y: 32, w: 464, h: 398 } },
@@ -346,7 +334,7 @@ const COVER: Rect[] = [
 ];
 
 const WALLS: Rect[] = [
-  // Outer shell. The doors are drawn on it; enemies step in just inside.
+  // Outer shell. The west door is drawn on it: the way in and out.
   { x: 0, y: 0, w: 1500, h: SHELL },
   { x: 0, y: 868, w: 1500, h: SHELL },
   { x: 0, y: 0, w: SHELL, h: 900 },
@@ -386,6 +374,46 @@ function cornerSpots(): Vec[] {
   return spots;
 }
 
+/**
+ * Who is on duty. Roamers walk their loop forever, posts stand and watch. Most
+ * of them are not looking for anyone: they only become dangerous once they
+ * notice you. Tier 1 is on every difficulty, tier 3 only on hard.
+ */
+const GUARDS: Guard[] = [
+  // Tier 1: enough to make the vault a real choice on easy.
+  { defId: "grunt", tier: 1, route: [{ x: 1400, y: 240 }], watch: Math.PI },
+  {
+    defId: "grunt",
+    tier: 1,
+    route: [{ x: 620, y: 100 }, { x: 900, y: 100 }, { x: 900, y: 380 }, { x: 620, y: 380 }],
+  },
+  {
+    defId: "grunt",
+    tier: 1,
+    route: [{ x: 600, y: 780 }, { x: 900, y: 780 }, { x: 900, y: 500 }, { x: 600, y: 500 }],
+  },
+  { defId: "grunt", tier: 1, route: [{ x: 440, y: 120 }], watch: Math.PI * 0.75 },
+  // Tier 2.
+  {
+    defId: "grunt",
+    tier: 2,
+    route: [{ x: 1100, y: 540 }, { x: 1420, y: 540 }, { x: 1420, y: 360 }, { x: 1100, y: 360 }],
+  },
+  { defId: "grunt", tier: 2, route: [{ x: 1400, y: 660 }], watch: Math.PI },
+  { defId: "grunt", tier: 2, route: [{ x: 612, y: 500 }], watch: -Math.PI / 2 },
+  // Tier 3: the whole building on its toes.
+  { defId: "grunt", tier: 3, route: [{ x: 420, y: 520 }, { x: 420, y: 820 }, { x: 240, y: 840 }, { x: 240, y: 650 }] },
+  { defId: "grunt", tier: 3, route: [{ x: 1150, y: 250 }, { x: 1400, y: 250 }] },
+  { defId: "runner", tier: 3, route: [{ x: 420, y: 360 }, { x: 140, y: 380 }, { x: 140, y: 200 }, { x: 420, y: 200 }] },
+];
+
+const LOOT: LootSpot[] = [
+  { id: "gold", label: "GOLD CASE", pos: { x: 1267, y: 130 }, value: 1000, main: true },
+  { id: "watch", label: "Watch", pos: { x: 225, y: 170 }, value: 150, main: false },
+  { id: "ledger", label: "Ledger", pos: { x: 1120, y: 470 }, value: 200, main: false },
+  { id: "ingots", label: "Ingots", pos: { x: 1160, y: 790 }, value: 250, main: false },
+];
+
 export const ARENA: Arena = {
   width: 1500,
   height: 900,
@@ -399,31 +427,9 @@ export const ARENA: Arena = {
     { x: 1155, y: 150 },
     { x: 1267, y: 150 },
   ],
-  patrol: [
-    { x: 230, y: 330 },
-    { x: 420, y: 90 },
-    { x: 230, y: 700 },
-    { x: 430, y: 560 },
-    { x: 620, y: 100 },
-    { x: 880, y: 260 },
-    { x: 600, y: 380 },
-    { x: 900, y: 380 },
-    { x: 600, y: 780 },
-    { x: 900, y: 720 },
-    { x: 730, y: 640 },
-    { x: 1150, y: 250 },
-    { x: 1400, y: 160 },
-    { x: 1100, y: 430 },
-    { x: 1380, y: 420 },
-    { x: 1150, y: 780 },
-    { x: 1400, y: 660 },
-  ],
-  // Out of range of every door, so nobody steps in already looking at you.
-  playerSpawn: { x: 1255, y: 200 },
-  entries: [
-    { id: "north", label: "NORTH DOOR", door: { x: 690, y: 0, w: 120, h: SHELL }, pos: { x: 750, y: 56 } },
-    { id: "east", label: "EAST DOOR", door: { x: 1468, y: 430, w: SHELL, h: 120 }, pos: { x: 1444, y: 490 } },
-    { id: "south", label: "SOUTH DOOR", door: { x: 690, y: 868, w: 120, h: SHELL }, pos: { x: 750, y: 844 } },
-    { id: "west", label: "WEST DOOR", door: { x: 0, y: 520, w: SHELL, h: 120 }, pos: { x: 56, y: 580 } },
-  ],
+  guards: GUARDS,
+  loot: LOOT,
+  // In through the west door and back out the same way: the gold is on the far side of the building.
+  exit: { door: { x: 0, y: 520, w: SHELL, h: 120 }, zone: { x: SHELL, y: 520, w: 70, h: 120 } },
+  playerSpawn: { x: 90, y: 580 },
 };

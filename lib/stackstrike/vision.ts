@@ -1,4 +1,4 @@
-import { AIM_ASSIST, PLAYER_GLOW, SHADOW } from "./content";
+import { AIM_ASSIST, PLAYER_GLOW, SENSE, SHADOW } from "./content";
 import { distance, lineOfSight, segmentRectHit } from "./geometry";
 import type { Arena, EnemyState, Rect, Room, Vec } from "./types";
 
@@ -52,9 +52,6 @@ export function glowPolygon(origin: Vec, walls: readonly Rect[], radius: number 
   return points;
 }
 
-/** How far a lit doorway reaches. Enemies stepping in are seen inside it, so the player can watch them come. */
-export const DOOR_GLOW = 78;
-
 /**
  * How boxed in a point is: rays are cast all round it and the share that hit a
  * wall within `reach` is returned. A corner or an alcove scores high, a flat
@@ -88,21 +85,6 @@ export function roomAt(arena: Arena, point: Vec): Room | null {
   return best;
 }
 
-/** How far down a passage the player can see an enemy that is not in their room. */
-export const SIGHT_RANGE = 460;
-
-/**
- * The enemies the player can see: everyone in the same room, plus anyone they
- * have a clear line to. Nobody through a wall in another room.
- */
-export function visibleEnemies(arena: Arena, player: Vec, enemies: readonly EnemyState[]): EnemyState[] {
-  const here = roomAt(arena, player);
-  return enemies.filter((enemy) => {
-    if (here && roomAt(arena, enemy.pos) === here) return true;
-    return distance(player, enemy.pos) <= SIGHT_RANGE && lineOfSight(player, enemy.pos, arena.walls);
-  });
-}
-
 /**
  * Nudges an aim angle toward a visible enemy that is almost in the sights, so a
  * thumb on a small screen does not have to be perfect. The pull is strongest
@@ -130,4 +112,20 @@ export function assistAim(
     best = aim + angleDiff(aim, angle) * AIM_ASSIST.pull * (1 - off / cone);
   }
   return best;
+}
+
+/**
+ * The guards the player can make out: everyone within `SENSE.range`, walls or
+ * no walls. They are fully clear when close and fade toward the edge of the
+ * range, and anyone farther off is not shown at all until the player gets closer.
+ */
+export function sensedEnemies(player: Vec, enemies: readonly EnemyState[]): { enemy: EnemyState; strength: number }[] {
+  const out: { enemy: EnemyState; strength: number }[] = [];
+  for (const enemy of enemies) {
+    const dist = distance(player, enemy.pos);
+    if (dist > SENSE.range) continue;
+    const fade = dist <= SENSE.clearRange ? 1 : 1 - (dist - SENSE.clearRange) / (SENSE.range - SENSE.clearRange);
+    out.push({ enemy, strength: SENSE.farStrength + (1 - SENSE.farStrength) * fade });
+  }
+  return out;
 }

@@ -4,12 +4,11 @@ import {
   DEFAULT_DIFFICULTY,
   DIFFICULTIES,
   ENEMIES,
+  MISSION,
   OPERATORS,
   SHADOW,
   STEALTH,
-  WAVE_TUNING,
   WEAPONS,
-  waveComposition,
 } from "./content";
 import {
   distance,
@@ -26,6 +25,7 @@ import type {
   DifficultyId,
   EnemyDefinition,
   EnemyState,
+  Guard,
   PlayerInput,
   SimState,
   Vec,
@@ -47,10 +47,6 @@ const PLAYER_HURT_FLASH = 0.15;
 const ENEMY_HURT_FLASH = 0.1;
 /** Enemies stop walking to a spot this close to it. */
 const ARRIVE_DISTANCE = 14;
-/** Rough walking pace used to weigh distance against staleness when picking a sweep point. */
-const SWEEP_PACE = 60;
-/** A sweep point another enemy is already heading for loses this much appeal. */
-const CLAIM_PENALTY = 60;
 /** Faster than the usual turn, for an enemy that has just glimpsed something. */
 const STARE_TURN_RATE = 10;
 /** Movement input above this counts as walking, for stealth. */
@@ -77,12 +73,9 @@ export function createState(
     arena,
     time: 0,
     status: "playing",
-    wave: 0,
     difficulty,
-    intermission: difficultyDef(difficulty).graceFirst,
-    incoming: [],
-    spawnQueue: [],
-    sweepAt: new Array<number>(arena.patrol.length + arena.corners.length).fill(0),
+    loot: arena.loot.map((spot) => ({ spot, taken: false })),
+    hasGold: false,
     player: {
       pos: { ...arena.playerSpawn },
       aim: 0,
@@ -106,14 +99,18 @@ export function createState(
     events: [],
     score: 0,
     kills: 0,
+    timesSpotted: 0,
     shotsFired: 0,
     shotsHit: 0,
     damageTaken: 0,
-    waveStartedAt: 0,
+    endedAt: null,
     rng: seed >>> 0,
     nextId: 1,
   };
-  chooseIncoming(state, 1);
+  const tier = difficultyDef(difficulty).tier;
+  for (const guard of arena.guards) {
+    if (guard.tier <= tier) state.enemies.push(guardState(state, guard));
+  }
   return state;
 }
 
@@ -147,13 +144,13 @@ function random(state: SimState): number {
 
 export function step(state: SimState, input: PlayerInput, dt: number = STEP_SECONDS): void {
   state.events.length = 0;
-  if (state.status === "dead") return;
+  if (state.status !== "playing") return;
   state.time += dt;
 
   updatePlayer(state, input, dt);
   updateEnemies(state, dt);
   updateProjectiles(state, dt);
-  updateWaves(state, dt);
+  updateMission(state);
 }
 
 /* ----------------------------------------------------------------- player */
@@ -265,6 +262,7 @@ function damagePlayer(state: SimState, amount: number, at: Vec): void {
   if (player.health <= 0) {
     player.health = 0;
     state.status = "dead";
+    state.endedAt = state.time;
     state.events.push({ type: "dead" });
   }
 }
@@ -335,6 +333,7 @@ function spot(state: SimState, enemy: EnemyState): void {
   enemy.mode = "chase";
   if (wasAlert) return;
   enemy.reaction = def.reactionTime;
+  state.timesSpotted += 1;
   state.events.push({ type: "spotted", pos: { x: enemy.pos.x, y: enemy.pos.y } });
 
   // The squad standing near sees it too and knows at once. Everyone else has to be told by radio.
@@ -440,7 +439,7 @@ function updateEnemies(state: SimState, dt: number): void {
           holdPosition = dist <= reach;
           if (holdPosition && enemy.reaction <= 0 && enemy.cooldown <= 0) {
             enemy.cooldown = 1 / def.fireRate;
-            damagePlayer(state, def.damage * enemy.damageScale, player.pos);
+            damagePlayer(state, def.damage, player.pos);
           }
         }
         enemy.mode = holdPosition ? "attack" : "chase";
@@ -499,18 +498,10 @@ function updateEnemies(state: SimState, dt: number): void {
         enemy.searchLeft -= dt;
         enemy.facing += STEALTH.lookTurnRate * dt;
       } else {
-        enemy.mode = "patrol";
-        markSwept(state, enemy);
-        if (enemy.patrolTarget && distance(enemy.pos, enemy.patrolTarget) < ARRIVE_DISTANCE) {
-          // Arrived: pause and look around before the next leg.
-          enemy.patrolTarget = null;
-          enemy.searchLeft = STEALTH.lookSeconds;
-          enemy.mode = "search";
-        } else {
-          if (!enemy.patrolTarget) enemy.patrolTarget = pickSweepTarget(state, enemy);
-          target = enemy.patrolTarget;
-          pace = STEALTH.patrolSpeed;
-        }
+        const stop = patrol(enemy, dt);
+        target = stop.target;
+        pace = stop.pace;
+        facingSet = stop.facingSet;
       }
     }
 
@@ -527,50 +518,33 @@ function updateEnemies(state: SimState, dt: number): void {
   separateEnemies(state);
 }
 
-/** The point a sweep index stands for: patrol points first, then dark corners. */
-function sweepPoint(arena: Arena, index: number): Vec {
-  return index < arena.patrol.length ? arena.patrol[index] : arena.corners[index - arena.patrol.length];
-}
-
-/** How many sweep points are in play. Corners only count once a wave has dragged on. */
-function sweepCount(state: SimState): number {
-  const thorough = state.time - state.waveStartedAt >= STEALTH.thoroughAfter;
-  return state.arena.patrol.length + (thorough ? state.arena.corners.length : 0);
-}
-
-/** Anything a sweeping enemy can see up close counts as looked at. */
-function markSwept(state: SimState, enemy: EnemyState): void {
-  const count = sweepCount(state);
-  for (let i = 0; i < count; i += 1) {
-    const point = sweepPoint(state.arena, i);
-    if (distance(point, enemy.pos) > STEALTH.sweepSeen) continue;
-    if (lineOfSight(enemy.pos, point, state.arena.walls)) state.sweepAt[i] = state.time;
-  }
-}
-
 /**
- * The enemies work as a team clearing the map: each heads for the point
- * that has gone longest unchecked, weighing how far it is, and skips points a
- * teammate is already walking to. So they spread out and cover the map
- * instead of orbiting the player.
+ * What a guard does when nothing has caught its eye: walk its loop, looking
+ * around at each stop, or stand at its post and sweep its gaze either side.
+ * It is not hunting anyone.
  */
-function pickSweepTarget(state: SimState, enemy: EnemyState): Vec | null {
-  const count = sweepCount(state);
-  let best = -Infinity;
-  let pick: Vec | null = null;
-  for (let i = 0; i < count; i += 1) {
-    const point = sweepPoint(state.arena, i);
-    const claimed = state.enemies.some(
-      (other) => other !== enemy && other.patrolTarget && distance(other.patrolTarget, point) < 1,
-    );
-    const score =
-      state.time - state.sweepAt[i] - distance(point, enemy.pos) / SWEEP_PACE - (claimed ? CLAIM_PENALTY : 0);
-    if (score > best) {
-      best = score;
-      pick = point;
-    }
+function patrol(enemy: EnemyState, dt: number): { target: Vec | null; pace: number; facingSet: boolean } {
+  enemy.mode = "patrol";
+  const waypoint = enemy.route[enemy.routeIndex];
+  const arrived = distance(enemy.pos, waypoint) < ARRIVE_DISTANCE;
+
+  if (enemy.watch !== null && arrived) {
+    // On post: hold the spot and let the gaze drift either side of the way it faces.
+    const sweep = Math.sin(enemy.sweepClock) * STEALTH.postSweep;
+    enemy.sweepClock += dt * STEALTH.postSweepRate * Math.PI * 2;
+    turnToward(enemy, enemy.watch + sweep, STEALTH.postTurnRate, dt);
+    return { target: null, pace: 0, facingSet: true };
   }
-  return pick ? { x: pick.x, y: pick.y } : null;
+  if (arrived) {
+    // A stop on the loop: look around, then move on to the next waypoint.
+    enemy.routeIndex = (enemy.routeIndex + 1) % enemy.route.length;
+    enemy.patrolTarget = null;
+    enemy.searchLeft = STEALTH.lookSeconds;
+    enemy.mode = "search";
+    return { target: null, pace: 0, facingSet: false };
+  }
+  enemy.patrolTarget = waypoint;
+  return { target: waypoint, pace: STEALTH.patrolSpeed, facingSet: false };
 }
 
 function enemyShoot(state: SimState, enemy: EnemyState, def: EnemyDefinition): void {
@@ -579,7 +553,7 @@ function enemyShoot(state: SimState, enemy: EnemyState, def: EnemyDefinition): v
     id: state.nextId++,
     pos: { x: enemy.pos.x, y: enemy.pos.y },
     vel: { x: Math.cos(angle) * def.projectileSpeed, y: Math.sin(angle) * def.projectileSpeed },
-    damage: def.damage * enemy.damageScale,
+    damage: def.damage,
     from: "enemy",
     travelled: 0,
     maxRange: def.attackRange * 1.4,
@@ -737,83 +711,49 @@ function updateProjectiles(state: SimState, dt: number): void {
   state.enemies = state.enemies.filter((enemy) => enemy.health > 0);
 }
 
-/* ------------------------------------------------------------------ waves */
+/* ---------------------------------------------------------------- mission */
 
-function updateWaves(state: SimState, dt: number): void {
-  if (state.status !== "playing") return;
-
-  // Enemies step in through their door one after another.
-  while (state.spawnQueue.length > 0 && state.spawnQueue[0].at <= state.time) {
-    const ticket = state.spawnQueue.shift();
-    if (ticket) spawnEnemy(state, ticket.defId, ticket.entryId);
+/** Picking things up, and walking out with the gold. */
+function updateMission(state: SimState): void {
+  const player = state.player;
+  for (const entry of state.loot) {
+    if (entry.taken || distance(entry.spot.pos, player.pos) > MISSION.pickupRadius) continue;
+    entry.taken = true;
+    state.score += entry.spot.value;
+    if (entry.spot.main) state.hasGold = true;
+    state.events.push({ type: "pickup", pos: { ...entry.spot.pos }, main: entry.spot.main, value: entry.spot.value });
   }
 
-  if (state.enemies.length > 0 || state.spawnQueue.length > 0) return;
-
-  if (state.intermission <= 0 && state.wave > 0) {
-    state.score += WAVE_TUNING.waveClearScore * state.wave;
-    state.player.health = Math.min(state.player.maxHealth, state.player.health + WAVE_TUNING.clearHeal);
-    state.intermission = difficultyDef(state.difficulty).grace;
-    chooseIncoming(state, state.wave + 1);
-    return;
-  }
-
-  state.intermission -= dt;
-  if (state.intermission <= 0) {
-    state.intermission = 0;
-    startWave(state);
+  const zone = state.arena.exit.zone;
+  const inside =
+    player.pos.x >= zone.x && player.pos.x <= zone.x + zone.w && player.pos.y >= zone.y && player.pos.y <= zone.y + zone.h;
+  if (state.hasGold && inside) {
+    state.status = "escaped";
+    state.endedAt = state.time;
+    state.score += MISSION.escapeBonus;
+    if (state.timesSpotted === 0) state.score += MISSION.unseenBonus;
+    if (state.timesSpotted === 0 && state.kills === 0) state.score += MISSION.ghostBonus;
+    state.events.push({ type: "escaped" });
   }
 }
 
-/** Picks which doors the coming wave uses. Shown to the player during the planning time. */
-function chooseIncoming(state: SimState, wave: number): void {
-  const difficulty = difficultyDef(state.difficulty);
-  const all = state.arena.entries.map((entry) => entry.id);
-  const want = difficulty.entries + (wave >= difficulty.moreEntriesFromWave ? 1 : 0);
-  const count = Math.min(all.length, want);
-  // Shuffle with the sim's own rng so a seed gives the same doors.
-  for (let i = all.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(random(state) * (i + 1));
-    [all[i], all[j]] = [all[j], all[i]];
-  }
-  state.incoming = all.slice(0, count);
+/** How the run is remembered: unseen and unbloodied is the best there is. */
+export function rating(state: SimState): "GHOST" | "SHADOW" | "SEEN" {
+  if (state.timesSpotted > 0) return "SEEN";
+  return state.kills === 0 ? "GHOST" : "SHADOW";
 }
 
-function startWave(state: SimState): void {
-  state.wave += 1;
-  const difficulty = difficultyDef(state.difficulty);
-  if (state.incoming.length === 0) chooseIncoming(state, state.wave);
-
-  let index = 0;
-  for (const { defId, count } of waveComposition(state.wave, difficulty.enemyCount)) {
-    for (let n = 0; n < count; n += 1) {
-      state.spawnQueue.push({
-        at: state.time + index * difficulty.spawnGap,
-        defId,
-        entryId: state.incoming[index % state.incoming.length],
-      });
-      index += 1;
-    }
-  }
-  state.waveStartedAt = state.time;
-  state.events.push({ type: "wave", wave: state.wave });
-}
-
-function spawnEnemy(state: SimState, defId: string, entryId: string): void {
-  const entry = state.arena.entries.find((candidate) => candidate.id === entryId) ?? state.arena.entries[0];
-  const def = enemyDef(defId);
-  const wave = state.wave;
-  const damageScale = Math.min(WAVE_TUNING.maxScale, 1 + WAVE_TUNING.damageScalePerWave * (wave - 1));
-
-  const pos = jitter(state, entry.pos, 16);
-  resolveCircleAgainstRects(pos, def.radius, state.arena.walls);
-  // Walk in facing the middle of the room.
-  const facing = Math.atan2(state.arena.height / 2 - pos.y, state.arena.width / 2 - pos.x);
-  state.enemies.push({
+function guardState(state: SimState, guard: Guard): EnemyState {
+  const def = enemyDef(guard.defId);
+  const start = guard.route[0];
+  const pos = { x: start.x, y: start.y };
+  const watch = guard.watch ?? null;
+  const next = guard.route[Math.min(1, guard.route.length - 1)];
+  return {
     id: state.nextId++,
-    defId,
+    defId: guard.defId,
     pos,
-    facing,
+    facing: watch ?? Math.atan2(next.y - start.y, next.x - start.x),
     health: def.health,
     maxHealth: def.health,
     mode: "patrol",
@@ -823,15 +763,19 @@ function spawnEnemy(state: SimState, defId: string, entryId: string): void {
     lastKnown: null,
     cooldown: 0,
     searchLeft: 0,
+    route: guard.route.map((point) => ({ x: point.x, y: point.y })),
+    // A roamer starts on its way to the second waypoint; a post is already there.
+    routeIndex: guard.route.length > 1 ? 1 : 0,
+    watch,
+    sweepClock: random(state) * Math.PI * 2,
     patrolTarget: null,
     path: [],
     pathAge: 0,
     pathGoal: null,
     reaction: def.reactionTime,
     radio: null,
-    damageScale,
     hurt: 0,
-  });
+  };
 }
 
 export function accuracy(state: SimState): number {

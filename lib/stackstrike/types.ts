@@ -69,35 +69,36 @@ export interface DifficultyDefinition {
   detectSeconds: number;
   /** Seconds a half-spotted player takes to fade from an enemy's mind. */
   decaySeconds: number;
-  /** Doors a wave comes through. */
-  entries: number;
-  /** From this wave on a wave uses one more door. */
-  moreEntriesFromWave: number;
-  /** Seconds to plan before the first wave, and before each later one. */
-  graceFirst: number;
-  grace: number;
-  /** Seconds between one enemy stepping in and the next. */
-  spawnGap: number;
-  /** Multiplier on how many enemies a wave brings. */
-  enemyCount: number;
-  /** Multiplier on how fast enemies walk. */
+  /** Guards posted on this difficulty: every guard whose tier is this or lower. */
+  tier: 1 | 2 | 3;
+  /** Multiplier on how fast guards walk. */
   enemySpeed: number;
 }
 
-/** A door enemies come in through. */
-export interface Entry {
-  id: string;
-  label: string;
-  /** The door itself, set into the outer wall, for drawing. */
-  door: Rect;
-  /** Where an enemy steps in, just inside the door. */
-  pos: Vec;
-}
-
-/** A walled room, for lighting it as the player enters and for deciding which enemies the player can see. */
+/** A walled room, for lighting it as the player enters. */
 export interface Room {
   id: string;
   rect: Rect;
+}
+
+/** A guard the map starts with: either a roamer walking a loop, or a sentry posted in one spot watching one way. */
+export interface Guard {
+  defId: string;
+  /** The easiest difficulty this guard is on. 1 is on every difficulty, 3 only on hard. */
+  tier: 1 | 2 | 3;
+  /** Waypoints walked in a loop. A single point is a post. */
+  route: Vec[];
+  /** For a post: the way the guard faces, swept a little either side. */
+  watch?: number;
+}
+
+/** Something worth taking. The main one is what the mission is for. */
+export interface LootSpot {
+  id: string;
+  label: string;
+  pos: Vec;
+  value: number;
+  main: boolean;
 }
 
 export interface Arena {
@@ -105,12 +106,13 @@ export interface Arena {
   height: number;
   walls: Rect[];
   rooms: Room[];
-  /** The darkest corners. Not marked on the floor: enemies check them once a wave drags on or after losing you. */
+  /** The darkest corners. Not marked on the floor: guards check them after losing you. */
   corners: Vec[];
-  /** Spots enemies sweep between when they have nothing to chase. */
-  patrol: Vec[];
+  guards: Guard[];
+  loot: LootSpot[];
+  /** The way out. The door is drawn on the outer wall; standing in the zone with the gold ends the mission. */
+  exit: { door: Rect; zone: Rect };
   playerSpawn: Vec;
-  entries: Entry[];
 }
 
 export interface PlayerInput {
@@ -176,6 +178,14 @@ export interface EnemyState {
   cooldown: number;
   /** Seconds left looking around before going back on patrol. */
   searchLeft: number;
+  /** The loop this guard walks, or a single post. */
+  route: Vec[];
+  /** Which waypoint it is walking to. */
+  routeIndex: number;
+  /** For a post: the way it faces. It sweeps a little either side. */
+  watch: number | null;
+  /** Phase of a post's gaze sweep. */
+  sweepClock: number;
   patrolTarget: Vec | null;
   /** Waypoints still to walk when a wall is in the way. Empty when the way is clear. */
   path: Vec[];
@@ -187,14 +197,7 @@ export interface EnemyState {
   reaction: number;
   /** A radio call to the rest of the team, counting down. Dies with the spotter. */
   radio: { left: number; pos: Vec } | null;
-  damageScale: number;
   hurt: number;
-}
-
-export interface SpawnTicket {
-  at: number;
-  defId: string;
-  entryId: string;
 }
 
 export interface ProjectileState {
@@ -216,23 +219,23 @@ export type SimEvent =
   | { type: "spotted"; pos: Vec }
   | { type: "radio"; pos: Vec }
   | { type: "hide"; on: boolean }
-  | { type: "wave"; wave: number }
+  | { type: "pickup"; pos: Vec; main: boolean; value: number }
+  | { type: "escaped" }
   | { type: "dead" };
+
+export interface LootState {
+  spot: LootSpot;
+  taken: boolean;
+}
 
 export interface SimState {
   arena: Arena;
   time: number;
-  status: "playing" | "dead";
-  wave: number;
+  status: "playing" | "dead" | "escaped";
   difficulty: DifficultyId;
-  /** Counts down between waves. Zero while a wave is live. */
-  intermission: number;
-  /** Doors the coming (or current) wave uses, so the player can plan for them. */
-  incoming: string[];
-  /** Enemies still to step in through their door. */
-  spawnQueue: SpawnTicket[];
-  /** When each sweep point was last looked at: patrol points, then corners. */
-  sweepAt: number[];
+  loot: LootState[];
+  /** The main prize is in the player's hands: now get out. */
+  hasGold: boolean;
   player: PlayerState;
   enemies: EnemyState[];
   projectiles: ProjectileState[];
@@ -240,10 +243,13 @@ export interface SimState {
   events: SimEvent[];
   score: number;
   kills: number;
+  /** How many times a guard has spotted the player. */
+  timesSpotted: number;
   shotsFired: number;
   shotsHit: number;
   damageTaken: number;
-  waveStartedAt: number;
+  /** When the mission ended, if it has. */
+  endedAt: number | null;
   rng: number;
   nextId: number;
 }

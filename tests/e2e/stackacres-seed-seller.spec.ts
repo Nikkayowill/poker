@@ -42,16 +42,12 @@ async function start(page: Page) {
   await page.waitForFunction(() => "__stackacres" in window, null, { timeout: 60_000 });
 }
 
-test("Ray's welcome gives three carrot seeds for the first watering loop", async ({ context, page }) => {
+test("the opening hands over three carrot seeds for the first watering loop, once", async ({ context, page }) => {
   await admit(context);
-  await start(page);
-
-  const welcome = page.getByRole("dialog", { name: "Ray" });
-  await expect(welcome).toContainText("old bed by the porch");
-  await expect(welcome).toContainText("If the can runs dry");
-  await expect(welcome).toContainText("the well");
-  await expect(welcome).not.toContainText("Dale");
-  await welcome.getByRole("button", { name: "Thanks, Ray" }).click();
+  // The opening is off for every fresh farm in this suite; ask for it and skip to the end of it.
+  await page.goto("/games/stackacres?opening=1");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await page.getByRole("button", { name: "Skip" }).click();
 
   await expect.poll(async () => (await farm(context)).seedStock.carrot, { timeout: 10_000 }).toBe(3);
 

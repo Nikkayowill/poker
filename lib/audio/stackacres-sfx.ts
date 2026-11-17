@@ -136,6 +136,16 @@ export function travelSound() {
   playFarmVoice("travel-steps", 0.7);
 }
 
+/** The opening's bus coming up the lane and settling at its stop. */
+export function busPullInSound() {
+  playFarmVoice("bus-pull-in", 1);
+}
+
+/** The bus door, opening or closing. */
+export function busDoorSound() {
+  playFarmVoice("bus-door", 0.9);
+}
+
 /**
  * A refused action, usually "you cannot afford that yet". A short soft blip
  * rather than a buzzer: it is frequent and ordinary, and a harsh error tone

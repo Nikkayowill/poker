@@ -228,7 +228,10 @@ export type SynthVoice =
   | "post-hammer"
   | "travel-steps"
   | "tool-tap"
-  | "leaf-snip";
+  | "leaf-snip"
+  // The opening's bus (lib/stackacres/opening.ts)
+  | "bus-pull-in"
+  | "bus-door";
 
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
 
@@ -275,6 +278,12 @@ const VOICE_TRIM: Record<SynthVoice, number> = {
   // by ear against the other noise-burst action cues rather than rendered and
   // read off a meter. Re-measure properly if it turns out wrong once heard.
   "leaf-snip": 3.4,
+  // The opening's bus, rendered through an OfflineAudioContext and read off the way the block above
+  // describes (eight renders each, the same harness reproduced `travel-steps` at -14.3dBFS). `bus-door`
+  // is an action, brought to -14dBFS. `bus-pull-in` runs four seconds, so at the action level it would
+  // sit far above every footfall around it; it is brought to -18, the ambience level.
+  "bus-pull-in": 0.85,
+  "bus-door": 0.86,
 };
 
 /**
@@ -557,6 +566,26 @@ export function playVoice(
         parts.push(tone(ctx, t, { freq: rand(90, 130), env: { attack: 0.002, decay: 0.06, peak: 0.07 } }));
         t += rand(0.15, 0.23);
       }
+      break;
+    }
+    case "bus-pull-in": {
+      // A diesel coming up the lane and settling at the stop. The body is a low triangle and a rumble of
+      // lowpassed noise that both swell in and then die away as it slows, with a little gravel under the
+      // tyres, and the air brake lets go as it stops. A phone speaker cannot make the bottom octave, so a
+      // thin saw an octave up carries the engine there.
+      const run = 4.2;
+      parts.push(tone(ctx, at, { type: "triangle", freq: 66, sweepTo: 44, vibrato: { depth: 28, rate: 12 }, env: { attack: 1.2, decay: run - 1.2, peak: 0.1 } }));
+      parts.push(tone(ctx, at, { type: "sawtooth", freq: 132, sweepTo: 88, vibrato: { depth: 40, rate: 12 }, env: { attack: 1.3, decay: run - 1.3, peak: 0.022 } }));
+      parts.push(noiseBurst(ctx, at, { freq: 150, sweepTo: 70, q: 0.7, type: "lowpass", env: { attack: 1.2, decay: run - 1.2, peak: 0.2 } }));
+      parts.push(noiseBurst(ctx, at + 0.2, { freq: 900, sweepTo: 350, q: 0.8, env: { attack: 1.4, decay: 2.6, peak: 0.045 } }));
+      parts.push(noiseBurst(ctx, at + run - 0.45, { freq: 5200, q: 0.6, type: "highpass", env: { attack: 0.05, decay: 0.8, peak: 0.1 } }));
+      break;
+    }
+    case "bus-door": {
+      // The pneumatic door: a hiss, the panel swinging with a low thump and a clack at the end of its travel.
+      parts.push(noiseBurst(ctx, at, { freq: 4200, q: 0.6, type: "highpass", env: { attack: 0.02, decay: 0.38, peak: 0.12 } }));
+      parts.push(tone(ctx, at + 0.05, { freq: 120, sweepTo: 70, env: { attack: 0.004, decay: 0.16, peak: 0.16 } }));
+      parts.push(noiseBurst(ctx, at + 0.3, { freq: 1900, q: 2.2, env: { attack: 0.001, decay: 0.035, peak: 0.14 } }));
       break;
     }
     case "tool-tap": {

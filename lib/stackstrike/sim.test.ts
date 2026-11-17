@@ -1,19 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { DIFFICULTIES, ENEMIES, SHADOW, STEALTH, WAVE_TUNING, WEAPONS, waveComposition } from "./content";
-import { createState, currentWeapon, enemyDef, NO_INPUT, perceive, STEP_SECONDS, step } from "./sim";
+import { DIFFICULTIES, ENEMIES, MISSION, SHADOW, STEALTH, WEAPONS } from "./content";
+import { createState, currentWeapon, enemyDef, NO_INPUT, perceive, rating, STEP_SECONDS, step } from "./sim";
 import type { Arena, DifficultyId, EnemyState, PlayerInput, SimState } from "./types";
 
-/** An open room with no walls unless a test adds some. */
-function room(walls: Arena["walls"] = [], corners: Arena["corners"] = [], patrol: Arena["patrol"] = []): Arena {
+/** An open room with no walls and no guards unless a test adds them. */
+function room(walls: Arena["walls"] = [], corners: Arena["corners"] = [], loot: Arena["loot"] = [], guards: Arena["guards"] = []): Arena {
   return {
     width: 1000,
     height: 1000,
     walls,
     rooms: [],
     corners,
-    patrol,
+    guards,
+    loot,
+    exit: { door: { x: 0, y: 450, w: 10, h: 100 }, zone: { x: 0, y: 450, w: 60, h: 100 } },
     playerSpawn: { x: 500, y: 500 },
-    entries: [{ id: "door", label: "Door", door: { x: 0, y: 0, w: 10, h: 10 }, pos: { x: 100, y: 100 } }],
   };
 }
 
@@ -26,11 +27,9 @@ function run(state: SimState, seconds: number, make: () => PlayerInput = () => i
   for (let n = 0; n < steps; n += 1) step(state, make());
 }
 
-/** A fresh state with the wave director parked, so tests place enemies by hand. */
+/** A fresh state with no guards unless the arena names some, so tests place enemies by hand. */
 function quiet(arena: Arena = room(), difficulty: DifficultyId = "normal"): SimState {
-  const state = createState(1, "vanguard", arena, difficulty);
-  state.intermission = 1e9;
-  return state;
+  return createState(1, "vanguard", arena, difficulty);
 }
 
 function addEnemy(state: SimState, defId: string, x: number, y: number): EnemyState {
@@ -49,13 +48,16 @@ function addEnemy(state: SimState, defId: string, x: number, y: number): EnemySt
     lastKnown: null,
     cooldown: 0,
     searchLeft: 0,
+    route: [{ x, y }],
+    routeIndex: 0,
+    watch: null,
+    sweepClock: 0,
     patrolTarget: null,
     path: [],
     pathAge: 0,
     pathGoal: null,
     reaction: def.reactionTime,
     radio: null,
-    damageScale: 1,
     hurt: 0,
   };
   state.enemies.push(enemy);
@@ -181,7 +183,6 @@ describe("combat", () => {
     addEnemy(state, "runner", 700, 500);
     run(state, 1, () => input({ fire: true, aim: 0 }));
     expect(state.kills).toBe(1);
-    expect(state.score).toBe(ENEMIES.runner.score);
     expect(state.enemies).toHaveLength(0);
     expect(state.shotsHit).toBeGreaterThan(0);
   });
@@ -279,15 +280,6 @@ describe("combat", () => {
     expect(enemy.radio).toBeNull();
   });
 
-  it("late waves are no tougher to kill: one shot always does it", () => {
-    const state = quiet();
-    state.wave = 40;
-    const enemy = addEnemy(state, "grunt", 700, 500);
-    enemy.facing = 0;
-    step(state, input({ fire: true, aim: 0 }));
-    run(state, 0.3, () => input({ aim: 0 }));
-    expect(state.enemies).not.toContain(enemy);
-  });
 });
 
 describe("getting around walls", () => {
@@ -546,10 +538,12 @@ describe("stealth", () => {
     expect(grunt.investigate).toBeNull();
   });
 
-  it("an enemy that reaches where it last saw you looks around, then goes back to sweeping", () => {
-    const state = quiet(room([], [], [{ x: 100, y: 900 }, { x: 900, y: 900 }]));
+  it("an enemy that reaches where it last saw you looks around, then goes back to its route", () => {
+    const state = quiet();
     state.player.pos = { x: 900, y: 100 };
     const grunt = addEnemy(state, "grunt", 200, 100);
+    grunt.route = [{ x: 100, y: 900 }, { x: 200, y: 900 }];
+    grunt.routeIndex = 1;
     grunt.facing = Math.PI;
     grunt.mode = "chase";
     grunt.awareness = 1;
@@ -558,11 +552,11 @@ describe("stealth", () => {
     expect(grunt.mode).toBe("search");
     run(state, STEALTH.searchSeconds + 0.5);
     expect(grunt.mode).toBe("patrol");
-    expect(grunt.patrolTarget).not.toBeNull();
+    expect(grunt.patrolTarget).toEqual({ x: 200, y: 900 });
   });
 
   it("after losing you an enemy checks the dark corners nearby", () => {
-    const state = quiet(room([], [{ x: 330, y: 180 }], [{ x: 900, y: 900 }]));
+    const state = quiet(room([], [{ x: 330, y: 180 }]));
     state.player.pos = { x: 900, y: 100 };
     const grunt = addEnemy(state, "grunt", 200, 100);
     grunt.facing = Math.PI;
@@ -575,64 +569,82 @@ describe("stealth", () => {
     expect(grunt.mode).toBe("suspicious");
   });
 
-  it("with nothing to chase an enemy walks between sweep points", () => {
-    const state = quiet(
-      room([], [], [{ x: 100, y: 900 }, { x: 900, y: 900 }, { x: 500, y: 900 }]),
-    );
-    state.player.pos = { x: 900, y: 80 };
-    const grunt = addEnemy(state, "grunt", 200, 100);
-    grunt.facing = Math.PI;
-    const start = { ...grunt.pos };
-    run(state, 4);
-    expect(Math.hypot(grunt.pos.x - start.x, grunt.pos.y - start.y)).toBeGreaterThan(40);
-    expect(["patrol", "search"]).toContain(grunt.mode);
-  });
+  describe("guard duty", () => {
+    const loop = [{ x: 200, y: 500 }, { x: 600, y: 500 }, { x: 600, y: 700 }];
 
-  it("enemies sweeping together head for different places", () => {
-    const points = [{ x: 100, y: 900 }, { x: 900, y: 900 }, { x: 500, y: 900 }, { x: 900, y: 500 }];
-    const state = quiet(room([], [], points));
-    state.player.pos = { x: 80, y: 80 };
-    const a = addEnemy(state, "grunt", 400, 800);
-    const b = addEnemy(state, "grunt", 420, 800);
-    const c = addEnemy(state, "grunt", 440, 800);
-    run(state, 0.2);
-    const targets = [a, b, c].map((enemy) => `${enemy.patrolTarget?.x},${enemy.patrolTarget?.y}`);
-    expect(new Set(targets).size).toBe(3);
-  });
+    it("a roamer walks its loop, one waypoint after another, and looks around at each stop", () => {
+      const state = quiet(room([], [], [], [{ defId: "grunt", tier: 1, route: loop }]));
+      state.player.pos = { x: 900, y: 50 };
+      const guard = state.enemies[0];
+      const visited = new Set<number>();
+      let looked = false;
+      for (let n = 0; n < 60 * 40; n += 1) {
+        step(state, input());
+        visited.add(guard.routeIndex);
+        if (guard.mode === "search") looked = true;
+      }
+      expect(visited.size).toBe(loop.length);
+      expect(looked).toBe(true);
+      expect(isAlert(guard)).toBe(false);
+    });
 
-  it("a point nobody has looked at in a while gets picked over one just checked", () => {
-    const points = [{ x: 100, y: 900 }, { x: 900, y: 900 }];
-    const state = quiet(room([], [], points));
-    state.player.pos = { x: 80, y: 80 };
-    state.time = 100;
-    state.sweepAt = [100, 0];
-    const grunt = addEnemy(state, "grunt", 500, 900);
-    run(state, 0.1);
-    expect(grunt.patrolTarget).toEqual(points[1]);
-  });
+    it("a roamer is not hunting anyone: left alone it never goes after the player", () => {
+      const state = quiet(room([], [], [], [{ defId: "grunt", tier: 1, route: loop }]));
+      state.player.pos = { x: 900, y: 50 };
+      run(state, 30);
+      expect(state.timesSpotted).toBe(0);
+      expect(state.enemies[0].lastKnown).toBeNull();
+    });
 
-  it("once a wave drags on the sweep starts checking the dark corners too", () => {
-    const state = quiet(room([], [{ x: 830, y: 830 }], []));
-    state.player.pos = { x: 80, y: 80 };
-    const grunt = addEnemy(state, "grunt", 200, 500);
-    run(state, 0.2);
-    expect(grunt.patrolTarget).toBeNull();
+    it("a posted guard stays put and sweeps its gaze either side of the way it faces", () => {
+      const post = { x: 300, y: 300 };
+      const state = quiet(room([], [], [], [{ defId: "grunt", tier: 1, route: [post], watch: 0 }]));
+      state.player.pos = { x: 900, y: 900 };
+      const guard = state.enemies[0];
+      let low = Infinity;
+      let high = -Infinity;
+      for (let n = 0; n < 60 * 12; n += 1) {
+        step(state, input());
+        low = Math.min(low, guard.facing);
+        high = Math.max(high, guard.facing);
+      }
+      expect(Math.hypot(guard.pos.x - post.x, guard.pos.y - post.y)).toBeLessThan(1);
+      expect(low).toBeLessThan(-0.3);
+      expect(high).toBeGreaterThan(0.3);
+      expect(high).toBeLessThanOrEqual(STEALTH.postSweep + 0.05);
+    });
 
-    state.waveStartedAt = state.time - STEALTH.thoroughAfter - 1;
-    run(state, 0.2);
-    expect(grunt.patrolTarget).toEqual({ x: 830, y: 830 });
-  });
+    it("a posted guard that was drawn off by a noise walks back to its post", () => {
+      const post = { x: 300, y: 300 };
+      const state = quiet(room([], [], [], [{ defId: "grunt", tier: 1, route: [post], watch: 0 }]));
+      state.player.pos = { x: 900, y: 900 };
+      const guard = state.enemies[0];
+      guard.pos = { x: 300, y: 600 };
+      run(state, 12);
+      expect(Math.hypot(guard.pos.x - post.x, guard.pos.y - post.y)).toBeLessThan(30);
+    });
 
-  it("sweeping enemies walk, they do not run", () => {
-    const state = quiet(room([], [], [{ x: 900, y: 900 }]));
-    state.player.pos = { x: 100, y: 80 };
-    const grunt = addEnemy(state, "grunt", 200, 500);
-    grunt.facing = 0;
-    const start = { ...grunt.pos };
-    run(state, 1);
-    const travelled = Math.hypot(grunt.pos.x - start.x, grunt.pos.y - start.y);
-    expect(travelled).toBeLessThan(ENEMIES.grunt.moveSpeed * 0.8);
-    expect(travelled).toBeGreaterThan(10);
+    it("walking guards walk, they do not run", () => {
+      const state = quiet(room([], [], [], [{ defId: "grunt", tier: 1, route: loop }]));
+      state.player.pos = { x: 900, y: 50 };
+      const guard = state.enemies[0];
+      const start = { ...guard.pos };
+      run(state, 1);
+      const travelled = Math.hypot(guard.pos.x - start.x, guard.pos.y - start.y);
+      expect(travelled).toBeLessThan(ENEMIES.grunt.moveSpeed * 0.8);
+      expect(travelled).toBeGreaterThan(10);
+    });
+
+    it("the difficulty decides who is on duty", () => {
+      const arena = room([], [], [], [
+        { defId: "grunt", tier: 1, route: [{ x: 100, y: 100 }] },
+        { defId: "grunt", tier: 2, route: [{ x: 200, y: 100 }] },
+        { defId: "grunt", tier: 3, route: [{ x: 300, y: 100 }] },
+      ]);
+      expect(createState(1, "vanguard", arena, "easy").enemies).toHaveLength(1);
+      expect(createState(1, "vanguard", arena, "normal").enemies).toHaveLength(2);
+      expect(createState(1, "vanguard", arena, "hard").enemies).toHaveLength(3);
+    });
   });
 
   /** Runs until the spotter has noticed the player, so its radio call is running. */
@@ -723,130 +735,109 @@ describe("pace", () => {
     expect(state.player.moveSpeed).toBeGreaterThan(ENEMIES.grunt.moveSpeed * 1.5);
   });
 
-  it("enemies walk slower on easy than on hard", () => {
+  it("guards walk slower on easy than on hard", () => {
     const travelled = (difficulty: DifficultyId): number => {
-      const state = quiet(room([], [], [{ x: 900, y: 900 }]), difficulty);
+      const state = quiet(room([], [], [], [{ defId: "grunt", tier: 1, route: [{ x: 200, y: 500 }, { x: 900, y: 500 }] }]), difficulty);
       state.player.pos = { x: 100, y: 80 };
-      const grunt = addEnemy(state, "grunt", 200, 500);
-      grunt.facing = 0;
-      const start = { ...grunt.pos };
+      const guard = state.enemies[0];
+      const start = { ...guard.pos };
       run(state, 1);
-      return Math.hypot(grunt.pos.x - start.x, grunt.pos.y - start.y);
+      return Math.hypot(guard.pos.x - start.x, guard.pos.y - start.y);
     };
     expect(travelled("easy")).toBeLessThan(travelled("normal"));
     expect(travelled("normal")).toBeLessThan(travelled("hard"));
   });
-
-  it("easy brings fewer enemies to a wave than hard", () => {
-    const total = (difficulty: DifficultyId): number =>
-      waveComposition(3, DIFFICULTIES[difficulty].enemyCount).reduce((sum, row) => sum + row.count, 0);
-    expect(total("easy")).toBeLessThan(total("normal"));
-    expect(total("normal")).toBeLessThan(total("hard"));
-  });
 });
 
-describe("waves", () => {
-  const grace = (difficulty: DifficultyId) => DIFFICULTIES[difficulty].graceFirst;
+describe("the heist", () => {
+  const gold = { id: "gold", label: "Gold", pos: { x: 600, y: 500 }, value: 1000, main: true };
+  const trinket = { id: "trinket", label: "Trinket", pos: { x: 500, y: 600 }, value: 150, main: false };
+  const heist = (): SimState => quiet(room([], [], [gold, trinket]));
+  const walkTo = (state: SimState, to: { x: number; y: number }): void => {
+    state.player.pos = { x: to.x - 40, y: to.y };
+    run(state, 1, () => input({ move: { x: 1, y: 0 } }));
+  };
 
-  it("gives planning time before the first wave, and announces the doors", () => {
-    const state = createState(7);
-    expect(state.intermission).toBe(grace("normal"));
-    expect(state.incoming).toHaveLength(DIFFICULTIES.normal.entries);
-    run(state, grace("normal") - 0.5);
-    expect(state.wave).toBe(0);
-    expect(state.enemies).toHaveLength(0);
-    expect(state.spawnQueue).toHaveLength(0);
+  it("starts with the mission still to do", () => {
+    const state = heist();
+    expect(state.status).toBe("playing");
+    expect(state.hasGold).toBe(false);
+    expect(state.loot.every((entry) => !entry.taken)).toBe(true);
   });
 
-  it("uses more doors on harder settings", () => {
-    const doors = (difficulty: DifficultyId): number => createState(7, "vanguard", undefined, difficulty).incoming.length;
-    expect(doors("easy")).toBe(1);
-    expect(doors("normal")).toBe(2);
-    expect(doors("hard")).toBe(3);
+  it("picking up the gold case pays and marks it carried", () => {
+    const state = heist();
+    walkTo(state, gold.pos);
+    expect(state.hasGold).toBe(true);
+    expect(state.score).toBe(gold.value);
+    expect(state.loot[0].taken).toBe(true);
   });
 
-  it("hard adds a door later on", () => {
-    const state = createState(7, "vanguard", undefined, "hard");
-    state.wave = DIFFICULTIES.hard.moreEntriesFromWave - 1;
-    state.enemies = [];
-    state.intermission = 0;
+  it("a side valuable pays but is not the mission", () => {
+    const state = heist();
+    walkTo(state, trinket.pos);
+    expect(state.hasGold).toBe(false);
+    expect(state.score).toBe(trinket.value);
+  });
+
+  it("loot is only taken once", () => {
+    const state = heist();
+    walkTo(state, gold.pos);
+    run(state, 1);
+    expect(state.score).toBe(gold.value);
+  });
+
+  it("the exit does nothing without the gold", () => {
+    const state = heist();
+    state.player.pos = { x: 30, y: 500 };
+    run(state, 0.5);
+    expect(state.status).toBe("playing");
+  });
+
+  it("walking into the exit with the gold ends the mission and pays for the escape", () => {
+    const state = heist();
+    walkTo(state, gold.pos);
+    state.player.pos = { x: 30, y: 500 };
     step(state, input());
-    expect(state.incoming).toHaveLength(4);
+    expect(state.status).toBe("escaped");
+    expect(state.events.some((event) => event.type === "escaped")).toBe(true);
+    expect(state.score).toBe(gold.value + MISSION.escapeBonus + MISSION.unseenBonus + MISSION.ghostBonus);
+    expect(rating(state)).toBe("GHOST");
   });
 
-  it("every announced door exists", () => {
-    const state = createState(11);
-    const ids = state.arena.entries.map((entry) => entry.id);
-    for (const id of state.incoming) expect(ids).toContain(id);
+  it("being spotted costs the unseen bonus, and a kill costs the ghost bonus", () => {
+    const seen = heist();
+    seen.timesSpotted = 1;
+    walkTo(seen, gold.pos);
+    seen.player.pos = { x: 30, y: 500 };
+    step(seen, input());
+    expect(seen.score).toBe(gold.value + MISSION.escapeBonus);
+    expect(rating(seen)).toBe("SEEN");
+
+    const quietKill = heist();
+    quietKill.kills = 1;
+    walkTo(quietKill, gold.pos);
+    quietKill.player.pos = { x: 30, y: 500 };
+    step(quietKill, input());
+    expect(quietKill.score).toBe(gold.value + MISSION.escapeBonus + MISSION.unseenBonus);
+    expect(rating(quietKill)).toBe("SHADOW");
   });
 
-  it("starts wave 1 after the planning time with the planned composition", () => {
-    const state = createState(7);
-    state.player.health = state.player.maxHealth = 1e9;
-    run(state, grace("normal") + 12);
-    expect(state.wave).toBe(1);
-    const planned = waveComposition(1).reduce((sum, row) => sum + row.count, 0);
-    expect(state.enemies).toHaveLength(planned);
+  it("counts every time a guard spots you", () => {
+    const state = quiet();
+    addEnemy(state, "grunt", 700, 500);
+    run(state, 4);
+    expect(state.timesSpotted).toBe(1);
   });
 
-  it("enemies step in one at a time, just inside the announced doors", () => {
-    const state = createState(7);
-    state.player.health = state.player.maxHealth = 1e9;
-    const doors = state.arena.entries.filter((entry) => state.incoming.includes(entry.id));
-    state.intermission = 0.01;
-    let guard = 0;
-    while (state.enemies.length === 0 && guard++ < 600) step(state, input());
-    expect(state.enemies).toHaveLength(1);
-    const first = state.enemies[0];
-    expect(doors.some((door) => Math.hypot(first.pos.x - door.pos.x, first.pos.y - door.pos.y) < 40)).toBe(true);
-
-    // Not all at once.
-    expect(state.spawnQueue.length).toBeGreaterThan(0);
-  });
-
-  it("a new wave starts sweeping, knowing nothing about you", () => {
-    const state = createState(7, "vanguard", room());
-    state.player.health = state.player.maxHealth = 1e9;
-    run(state, grace("normal") + 1);
-    expect(state.enemies.length).toBeGreaterThan(0);
-    for (const enemy of state.enemies) {
-      expect(enemy.mode).toBe("patrol");
-      expect(enemy.awareness).toBe(0);
-      expect(enemy.lastKnown).toBeNull();
-      expect(enemy.investigate).toBeNull();
-    }
-  });
-
-  it("clearing a wave pays a bonus, heals, and announces the next doors", () => {
-    const state = createState(7);
-    state.player.health = 50;
-    state.intermission = 0.01;
-    run(state, 0.1);
-    state.enemies = [];
-    state.spawnQueue = [];
-    const scoreBefore = state.score;
-    const healthBefore = state.player.health;
-
+  it("freezes the world once you are out", () => {
+    const state = heist();
+    walkTo(state, gold.pos);
+    state.player.pos = { x: 30, y: 500 };
     step(state, input());
-    expect(state.score).toBe(scoreBefore + WAVE_TUNING.waveClearScore);
-    expect(state.player.health).toBe(healthBefore + WAVE_TUNING.clearHeal);
-    expect(state.intermission).toBe(DIFFICULTIES.normal.grace);
-    expect(state.incoming.length).toBeGreaterThan(0);
-
-    state.player.health = state.player.maxHealth = 1e9;
-    run(state, DIFFICULTIES.normal.grace + 2);
-    expect(state.wave).toBe(2);
-    expect(state.enemies.length).toBeGreaterThan(0);
-  });
-
-  it("caps damage scaling and never adds health, so late waves add enemies, not sponges", () => {
-    const state = createState(7);
-    state.wave = 99;
-    state.intermission = 0.01;
-    run(state, 0.3);
-    const grunt = state.enemies.find((enemy) => enemy.defId === "grunt");
-    expect(grunt?.maxHealth).toBe(ENEMIES.grunt.health);
-    expect(grunt?.damageScale).toBe(WAVE_TUNING.maxScale);
+    const time = state.time;
+    step(state, input({ move: { x: 1, y: 0 } }));
+    expect(state.time).toBe(time);
   });
 });
 
@@ -855,7 +846,7 @@ describe("determinism", () => {
     const play = (): string => {
       const state = createState(42);
       run(state, 14, () => input({ fire: true, aim: 1, move: { x: 0.3, y: -0.2 } }));
-      return JSON.stringify({ score: state.score, p: state.player, e: state.enemies.length, rng: state.rng });
+      return JSON.stringify({ score: state.score, p: state.player, e: state.enemies.map((enemy) => enemy.pos), rng: state.rng });
     };
     expect(play()).toBe(play());
   });

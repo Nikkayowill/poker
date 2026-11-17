@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ARENA, ENEMIES, OPERATORS, SHADOW, WEAPONS, waveComposition } from "./content";
+import { ARENA, DIFFICULTIES, ENEMIES, OPERATORS, SHADOW, WEAPONS } from "./content";
 import { lineOfSight } from "./geometry";
 import { buildNavGrid, findPath } from "./pathfinding";
 import type { Rect, Vec } from "./types";
@@ -29,22 +29,56 @@ describe("arena", () => {
     }
   });
 
-  it("keeps spawns, patrol points and the player start out of the walls", () => {
-    for (const point of [ARENA.playerSpawn, ...ARENA.entries.map((entry) => entry.pos), ...ARENA.patrol]) {
-      expect(touchesWall(point, 16), `${point.x},${point.y}`).toBe(false);
+  const spots = (): { x: number; y: number }[] => [
+    ARENA.playerSpawn,
+    ...ARENA.guards.flatMap((guard) => guard.route),
+    ...ARENA.loot.map((spot) => spot.pos),
+  ];
+
+  it("keeps guard routes, loot and the player start out of the walls", () => {
+    for (const point of spots()) expect(touchesWall(point, 16), `${point.x},${point.y}`).toBe(false);
+  });
+
+  it("starts the player where no guard can see them", () => {
+    const range = Math.max(...Object.values(ENEMIES).map((def) => def.detectionRange));
+    for (const guard of ARENA.guards) {
+      const start = guard.route[0];
+      const near = Math.hypot(start.x - ARENA.playerSpawn.x, start.y - ARENA.playerSpawn.y) < range;
+      expect(near && lineOfSight(start, ARENA.playerSpawn, ARENA.walls), `${start.x},${start.y}`).toBe(false);
     }
   });
 
-  it("starts the player out of range of every door, so nobody steps in already watching them", () => {
-    for (const entry of ARENA.entries) {
-      const dist = Math.hypot(entry.pos.x - ARENA.playerSpawn.x, entry.pos.y - ARENA.playerSpawn.y);
-      expect(dist, entry.id).toBeGreaterThan(Math.max(...Object.values(ENEMIES).map((def) => def.detectionRange)) - 30);
+  it("puts the gold case a long way from the way out", () => {
+    const gold = ARENA.loot.find((spot) => spot.main);
+    expect(gold).toBeDefined();
+    const zone = ARENA.exit.zone;
+    const dist = Math.hypot((gold?.pos.x ?? 0) - (zone.x + zone.w / 2), (gold?.pos.y ?? 0) - (zone.y + zone.h / 2));
+    expect(dist).toBeGreaterThan(900);
+    expect(ARENA.loot.filter((spot) => spot.main)).toHaveLength(1);
+  });
+
+  it("has guards on every difficulty, more of them the harder it is", () => {
+    const count = (tier: number): number => ARENA.guards.filter((guard) => guard.tier <= tier).length;
+    expect(count(1)).toBeGreaterThanOrEqual(3);
+    expect(count(2)).toBeGreaterThan(count(1));
+    expect(count(3)).toBeGreaterThan(count(2));
+    for (const difficulty of Object.values(DIFFICULTIES)) expect(count(difficulty.tier)).toBeGreaterThan(0);
+  });
+
+  it("gives every post a way to face, and every roamer a loop of at least two stops", () => {
+    for (const guard of ARENA.guards) {
+      if (guard.route.length === 1) expect(guard.watch, "post").toBeDefined();
+      else expect(guard.watch, "roamer").toBeUndefined();
+      expect(ENEMIES[guard.defId]).toBeDefined();
     }
   });
 
-  it("gives no door a clear view of the player start", () => {
-    for (const entry of ARENA.entries) {
-      expect(lineOfSight(entry.pos, ARENA.playerSpawn, ARENA.walls), entry.id).toBe(false);
+  it("covers every room with at least one guard on hard", () => {
+    for (const { id, rect } of ARENA.rooms) {
+      const inside = ARENA.guards.some((guard) =>
+        guard.route.some((point) => point.x > rect.x && point.x < rect.x + rect.w && point.y > rect.y && point.y < rect.y + rect.h),
+      );
+      expect(inside, id).toBe(true);
     }
   });
 
@@ -54,9 +88,9 @@ describe("arena", () => {
     }
   });
 
-  it("puts every corner, spawn and patrol point within reach of the player start", () => {
+  it("puts every corner, guard stop, loot and the exit within reach of the player start", () => {
     const grid = buildNavGrid(ARENA);
-    for (const goal of [...ARENA.corners, ...ARENA.entries.map((entry) => entry.pos), ...ARENA.patrol]) {
+    for (const goal of [...ARENA.corners, ...spots(), { x: ARENA.exit.zone.x + 30, y: ARENA.exit.zone.y + 60 }]) {
       expect(findPath(grid, ARENA.walls, ARENA.playerSpawn, goal, 14), `${goal.x},${goal.y}`).not.toBeNull();
     }
   });
@@ -91,12 +125,6 @@ describe("content tables", () => {
   it("every operator weapon exists", () => {
     for (const operator of Object.values(OPERATORS)) {
       for (const id of operator.startingWeapons) expect(WEAPONS[id]).toBeDefined();
-    }
-  });
-
-  it("every wave names enemies that exist", () => {
-    for (let wave = 1; wave <= 30; wave += 1) {
-      for (const row of waveComposition(wave)) expect(ENEMIES[row.defId]).toBeDefined();
     }
   });
 });

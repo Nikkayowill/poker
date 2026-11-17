@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { PLAYER_GLOW } from "./content";
+import { PLAYER_GLOW, SENSE } from "./content";
 import type { Arena, EnemyState } from "./types";
-import { angleDiff, assistAim, beamPolygon, coverAt, glowPolygon, roomAt, visibleEnemies } from "./vision";
+import { angleDiff, assistAim, beamPolygon, coverAt, glowPolygon, roomAt, sensedEnemies } from "./vision";
 
 const origin = { x: 500, y: 500 };
 
@@ -58,9 +58,10 @@ const twoRooms: Arena = {
     { id: "right", rect: { x: 510, y: 0, w: 490, h: 400 } },
   ],
   corners: [],
-  patrol: [],
+  guards: [],
+  loot: [],
+  exit: { door: { x: 0, y: 0, w: 1, h: 1 }, zone: { x: 0, y: 0, w: 1, h: 1 } },
   playerSpawn: { x: 100, y: 200 },
-  entries: [],
 };
 
 function enemyAt(x: number, y: number): EnemyState {
@@ -76,26 +77,35 @@ describe("roomAt", () => {
   });
 });
 
-describe("visibleEnemies", () => {
-  it("shows everyone in the player's room, even behind cover", () => {
-    const arena: Arena = { ...twoRooms, walls: [...twoRooms.walls, { x: 200, y: 0, w: 20, h: 300 }] };
-    const behind = enemyAt(300, 100);
-    expect(visibleEnemies(arena, { x: 100, y: 100 }, [behind])).toEqual([behind]);
+describe("sensedEnemies", () => {
+  const me = { x: 100, y: 200 };
+
+  it("shows a guard that is close, wall or no wall", () => {
+    const near = enemyAt(300, 200);
+    const sensed = sensedEnemies(me, [near]);
+    expect(sensed).toHaveLength(1);
+    expect(sensed[0].strength).toBe(1);
   });
 
-  it("hides enemies in the next room, through the wall", () => {
-    expect(visibleEnemies(twoRooms, { x: 400, y: 200 }, [enemyAt(600, 200)])).toEqual([]);
+  it("shows a guard in the next room right through the wall", () => {
+    const next = enemyAt(600, 200);
+    expect(sensedEnemies({ x: 400, y: 200 }, [next]).map((entry) => entry.enemy)).toEqual([next]);
   });
 
-  it("shows an enemy in another room when there is a clear line to it through a doorway", () => {
-    const withDoor: Arena = { ...twoRooms, walls: [{ x: 490, y: 0, w: 20, h: 150 }, { x: 490, y: 250, w: 20, h: 150 }] };
-    const seen = enemyAt(600, 200);
-    expect(visibleEnemies(withDoor, { x: 400, y: 200 }, [seen])).toEqual([seen]);
+  it("does not show a guard that is far away until the player gets closer", () => {
+    const far = enemyAt(100 + SENSE.range + 20, 200);
+    expect(sensedEnemies(me, [far])).toEqual([]);
+    expect(sensedEnemies({ x: me.x + 100, y: me.y }, [far])).toHaveLength(1);
   });
 
-  it("does not show a far enemy down a long clear line", () => {
-    const open: Arena = { ...twoRooms, walls: [], rooms: [{ id: "a", rect: { x: 0, y: 0, w: 200, h: 400 } }, { id: "b", rect: { x: 800, y: 0, w: 200, h: 400 } }] };
-    expect(visibleEnemies(open, { x: 100, y: 200 }, [enemyAt(900, 200)])).toEqual([]);
+  it("fades with distance: full when close, dimmer toward the edge, never fully gone inside the range", () => {
+    const close = sensedEnemies(me, [enemyAt(100 + SENSE.clearRange - 10, 200)])[0].strength;
+    const mid = sensedEnemies(me, [enemyAt(100 + (SENSE.clearRange + SENSE.range) / 2, 200)])[0].strength;
+    const edge = sensedEnemies(me, [enemyAt(100 + SENSE.range - 1, 200)])[0].strength;
+    expect(close).toBe(1);
+    expect(mid).toBeLessThan(close);
+    expect(edge).toBeLessThan(mid);
+    expect(edge).toBeGreaterThanOrEqual(SENSE.farStrength - 0.01);
   });
 });
 

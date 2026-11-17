@@ -6,11 +6,12 @@ import {
   createState,
   currentWeapon,
   enemyDef,
+  rating,
   STEP_SECONDS,
   step,
 } from "@/lib/stackstrike/sim";
 import type { DifficultyId, EnemyState, PlayerInput, SimEvent, SimState } from "@/lib/stackstrike/types";
-import { angleDiff, assistAim, beamPolygon, DOOR_GLOW, glowPolygon, roomAt, visibleEnemies } from "@/lib/stackstrike/vision";
+import { angleDiff, assistAim, beamPolygon, glowPolygon, roomAt, sensedEnemies } from "@/lib/stackstrike/vision";
 
 /**
  * The Phaser side of StackStrike: reads input, runs lib/stackstrike/sim.ts at
@@ -29,10 +30,13 @@ import { angleDiff, assistAim, beamPolygon, DOOR_GLOW, glowPolygon, roomAt, visi
  * round the player and by the enemies' flashlights: each beam, cut short by
  * walls, is erased out of the dark, and being inside one is what fills that
  * enemy's spotted meter. The laser is draw-only, so enemies never see it.
- * Walking into a room lights it dimly, and every enemy in the same room (or
- * down a clear line of sight) is drawn glowing red on top of the dark, so
- * there is no minimap: look at the screen. An enemy that has spotted the player
- * shows a radio ring until its call goes out; shoot it first and the call dies.
+ * It is a heist, not a wave shooter: guards are placed on the map (roamers
+ * and posts), the gold case is on the far side, and the way out is the door you
+ * came in. Guards within sensing range are drawn glowing red over the dark,
+ * through walls, fading toward the edge of the range; far ones stay hidden until
+ * you get closer, and near ones just off screen get an arrow on the edge. The
+ * room you stand in is dimly lit. A spotter shows a radio ring until its call
+ * goes out; shoot it first and the call dies.
  *
  * The canvas is drawn at device resolution, so every screen size below is in
  * device pixels: `u` is one CSS pixel's worth.
@@ -211,7 +215,7 @@ export class StackStrikeScene extends Phaser.Scene {
   private healthText!: Phaser.GameObjects.Text;
   private statusText!: Phaser.GameObjects.Text;
   private weaponText!: Phaser.GameObjects.Text;
-  private waveText!: Phaser.GameObjects.Text;
+  private objectiveText!: Phaser.GameObjects.Text;
   private bannerText!: Phaser.GameObjects.Text;
   private buttonLabels!: Record<ButtonName, Phaser.GameObjects.Text>;
   private moveCaption!: Phaser.GameObjects.Text;
@@ -269,7 +273,7 @@ export class StackStrikeScene extends Phaser.Scene {
     this.healthText = text();
     this.statusText = text();
     this.weaponText = text().setOrigin(0.5, 1);
-    this.waveText = text().setOrigin(1, 0).setAlign("right");
+    this.objectiveText = text().setOrigin(1, 0).setAlign("right");
     this.bannerText = text().setOrigin(0.5).setAlign("center");
     this.buttonLabels = {
       reload: text().setOrigin(0.5).setText("RELOAD"),
@@ -285,7 +289,7 @@ export class StackStrikeScene extends Phaser.Scene {
       this.healthText,
       this.statusText,
       this.weaponText,
-      this.waveText,
+      this.objectiveText,
       this.bannerText,
       this.moveCaption,
       this.aimCaption,
@@ -346,7 +350,7 @@ export class StackStrikeScene extends Phaser.Scene {
       const wasPlaying = this.sim.status === "playing";
       step(this.sim, input);
       for (const event of this.sim.events) this.react(event);
-      if (wasPlaying && this.sim.status === "dead") this.diedAt = this.time.now;
+      if (wasPlaying && this.sim.status !== "playing") this.diedAt = this.time.now;
     }
 
     this.fireBuffer = Math.max(0, this.fireBuffer - frame);
@@ -371,7 +375,7 @@ export class StackStrikeScene extends Phaser.Scene {
     if (keyboard) {
       this.keys = keyboard.addKeys("W,A,S,D,UP,DOWN,LEFT,RIGHT") as Record<string, Phaser.Input.Keyboard.Key>;
       keyboard.on("keydown-R", () => {
-        if (this.sim.status === "dead") this.restart();
+        if (this.sim.status !== "playing") this.restart();
         else this.reloadQueued = true;
       });
       keyboard.on("keydown-ONE", () => (this.selectQueued = 0));
@@ -385,7 +389,7 @@ export class StackStrikeScene extends Phaser.Scene {
 
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
       if (this.paused) return;
-      if (this.sim.status === "dead") {
+      if (this.sim.status !== "playing") {
         if (this.time.now - this.diedAt > RESTART_LOCKOUT_MS) this.restart();
         return;
       }
@@ -527,10 +531,7 @@ export class StackStrikeScene extends Phaser.Scene {
   private assistedAim(): number {
     if (!this.touch) return this.aimAngle;
     const { player, arena, enemies } = this.sim;
-    const targets = visibleEnemies(arena, player.pos, enemies).map((enemy) => ({
-      pos: enemy.pos,
-      radius: enemyDef(enemy.defId).radius,
-    }));
+    const targets = enemies.map((enemy) => ({ pos: enemy.pos, radius: enemyDef(enemy.defId).radius }));
     return assistAim(this.aimAngle, player.pos, targets, arena.walls, Math.min(currentWeapon(this.sim).range, LASER_RANGE));
   }
 
@@ -620,8 +621,11 @@ export class StackStrikeScene extends Phaser.Scene {
       case "kill":
         this.burst(event.pos.x, event.pos.y, 14, ENEMY_COLORS[event.defId] ?? 0xffffff, 200, 0.5);
         break;
-      case "wave":
-        this.banner = { text: `WAVE ${event.wave}`, left: 1.6 };
+      case "pickup":
+        this.burst(event.pos.x, event.pos.y, event.main ? 18 : 8, 0xffd23f, 150, 0.6);
+        this.banner = event.main ? { text: "GOLD SECURED\nGET OUT", left: 2.4 } : { text: `+${event.value}`, left: 1.1 };
+        break;
+      case "escaped":
         break;
       case "spotted":
         this.cameras.main.shake(140, 0.003);
@@ -707,7 +711,7 @@ export class StackStrikeScene extends Phaser.Scene {
     this.healthText.setFontSize(small).setPosition(left, insets.top + 12 * u);
     this.weaponText.setFontSize(Math.round(13 * u)).setOrigin(0, 0).setPosition(left, insets.top + 54 * u);
     this.statusText.setFontSize(Math.round(12 * u)).setPosition(left, insets.top + 76 * u);
-    this.waveText.setFontSize(small).setPosition(width - insets.right - 16 * u, insets.top + 12 * u);
+    this.objectiveText.setFontSize(small).setPosition(width - insets.right - 16 * u, insets.top + 12 * u);
     this.bannerText.setPosition(width / 2, height * 0.3);
     for (const name of BUTTON_NAMES) {
       this.buttonLabels[name].setFontSize(Math.round(11 * u)).setPosition(this.layoutNow.buttons[name].x, this.layoutNow.buttons[name].y);
@@ -734,50 +738,19 @@ export class StackStrikeScene extends Phaser.Scene {
       g.strokeRect(wall.x, wall.y, wall.w, wall.h);
     }
 
-    // Doors, set into the outer wall: where the enemy comes in.
-    for (const entry of arena.entries) {
-      const { x, y, w, h } = entry.door;
-      g.fillStyle(COLORS.door, 1);
-      g.fillRect(x, y, w, h);
-      g.lineStyle(2, COLORS.doorEdge, 1);
-      g.strokeRect(x, y, w, h);
-      g.lineStyle(1.5, COLORS.doorEdge, 0.6);
-      if (w > h) for (let dx = x + 12; dx < x + w - 6; dx += 14) g.lineBetween(dx, y + 4, dx, y + h - 4);
-      else for (let dy = y + 12; dy < y + h - 6; dy += 14) g.lineBetween(x + 4, dy, x + w - 4, dy);
-    }
+    // The way in and out, set into the outer wall.
+    const { x, y, w, h } = arena.exit.door;
+    g.fillStyle(0x1f4d36, 1);
+    g.fillRect(x, y, w, h);
+    g.lineStyle(2, 0x5ee0a0, 1);
+    g.strokeRect(x, y, w, h);
   }
 
   private drawWorld(): void {
     const g = this.world;
-    const { player, enemies, projectiles, arena } = this.sim;
+    const { player, enemies, projectiles } = this.sim;
     const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 180);
     g.clear();
-
-    // The doors the next wave (or this one) comes through, so the player can plan for them.
-    for (const entry of arena.entries) {
-      if (!this.sim.incoming.includes(entry.id)) continue;
-      const { x, y, w, h } = entry.door;
-      g.fillStyle(0xff4d4d, 0.22 + 0.3 * pulse);
-      g.fillRect(x, y, w, h);
-      const nx = entry.pos.x - (x + w / 2);
-      const ny = entry.pos.y - (y + h / 2);
-      const length = Math.hypot(nx, ny) || 1;
-      const dx = nx / length;
-      const dy = ny / length;
-      for (let k = 0; k < 2; k += 1) {
-        const tipX = entry.pos.x + dx * (12 + k * 18);
-        const tipY = entry.pos.y + dy * (12 + k * 18);
-        g.fillStyle(0xff4d4d, 0.35 + 0.4 * pulse);
-        g.fillTriangle(
-          tipX,
-          tipY,
-          tipX - dx * 11 + -dy * 11,
-          tipY - dy * 11 + dx * 11,
-          tipX - dx * 11 - -dy * 11,
-          tipY - dy * 11 - dx * 11,
-        );
-      }
-    }
 
     g.fillStyle(player.hurt > 0 ? COLORS.playerHurt : COLORS.player, player.hidden ? 0.6 : 1);
     g.fillCircle(player.pos.x, player.pos.y, player.radius);
@@ -818,7 +791,9 @@ export class StackStrikeScene extends Phaser.Scene {
     g.clear();
     const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 220);
 
-    for (const enemy of visibleEnemies(this.sim.arena, this.sim.player.pos, enemies)) {
+    this.drawObjectives(g, pulse);
+
+    for (const { enemy, strength: fade } of sensedEnemies(this.sim.player.pos, enemies)) {
       const def = enemyDef(enemy.defId);
       const base = ENEMY_COLORS[enemy.defId] ?? 0xff00ff;
       const alert = enemy.mode === "chase" || enemy.mode === "attack";
@@ -828,9 +803,9 @@ export class StackStrikeScene extends Phaser.Scene {
       const beam = this.beams.get(enemy.id);
       if (beam) {
         const tint = alertColor(alert ? 1 : enemy.awareness);
-        g.fillStyle(tint, 0.1 + 0.14 * (alert ? 1 : enemy.awareness));
+        g.fillStyle(tint, (0.1 + 0.14 * (alert ? 1 : enemy.awareness)) * fade);
         g.fillPoints(beam, true);
-        g.fillStyle(tint, 0.1 + 0.1 * (alert ? 1 : enemy.awareness));
+        g.fillStyle(tint, (0.1 + 0.1 * (alert ? 1 : enemy.awareness)) * fade);
         g.fillPoints(
           beam.map((p) => ({ x: x + (p.x - x) * 0.55, y: y + (p.y - y) * 0.55 })),
           true,
@@ -844,19 +819,19 @@ export class StackStrikeScene extends Phaser.Scene {
         [2.4, 0.12],
         [1.65, 0.2],
       ] as const) {
-        g.fillStyle(ENEMY_GLOW, Math.min(1, alpha * strength));
+        g.fillStyle(ENEMY_GLOW, Math.min(1, alpha * strength) * fade);
         g.fillCircle(x, y, def.radius * scale);
       }
 
-      g.fillStyle(enemy.hurt > 0 ? 0xffffff : base, 1);
+      g.fillStyle(enemy.hurt > 0 ? 0xffffff : base, fade);
       g.fillCircle(x, y, def.radius);
-      g.lineStyle(2, ENEMY_GLOW, 0.9);
+      g.lineStyle(2, ENEMY_GLOW, 0.9 * fade);
       g.strokeCircle(x, y, def.radius + 1);
       if (alert || enemy.mode === "search" || enemy.mode === "suspicious") {
-        g.lineStyle(3, alert ? 0xff3030 : 0xffd23f, 1);
+        g.lineStyle(3, alert ? 0xff3030 : 0xffd23f, fade);
         g.strokeCircle(x, y, def.radius + 5);
       }
-      g.lineStyle(4, 0x0b0b0d, 1);
+      g.lineStyle(4, 0x0b0b0d, fade);
       g.lineBetween(
         x,
         y,
@@ -887,6 +862,32 @@ export class StackStrikeScene extends Phaser.Scene {
         g.fillRect(x + def.radius * 0.5, y - def.radius - 12, 3, 8);
       }
     }
+  }
+
+  /**
+   * The gold case and the other valuables glow gold over the dark so you can
+   * find them, and the way out glows green once the case is in your hands.
+   */
+  private drawObjectives(g: Phaser.GameObjects.Graphics, pulse: number): void {
+    const { loot, hasGold, arena } = this.sim;
+    for (const { spot, taken } of loot) {
+      if (taken) continue;
+      const main = spot.main;
+      const radius = main ? 11 : 6;
+      g.fillStyle(0xffd23f, (main ? 0.12 : 0.07) + 0.08 * pulse);
+      g.fillCircle(spot.pos.x, spot.pos.y, radius * 3);
+      g.fillStyle(0xffd23f, 1);
+      if (main) g.fillRect(spot.pos.x - radius, spot.pos.y - radius * 0.7, radius * 2, radius * 1.4);
+      else g.fillCircle(spot.pos.x, spot.pos.y, radius);
+      g.lineStyle(2, 0x6b4a00, 1);
+      if (main) g.strokeRect(spot.pos.x - radius, spot.pos.y - radius * 0.7, radius * 2, radius * 1.4);
+      else g.strokeCircle(spot.pos.x, spot.pos.y, radius);
+    }
+    const zone = arena.exit.zone;
+    g.fillStyle(0x5ee0a0, (hasGold ? 0.22 : 0.07) + (hasGold ? 0.14 * pulse : 0));
+    g.fillRect(zone.x, zone.y, zone.w, zone.h);
+    g.lineStyle(2, 0x5ee0a0, hasGold ? 0.9 : 0.35);
+    g.strokeRect(zone.x, zone.y, zone.w, zone.h);
   }
 
   /**
@@ -939,7 +940,7 @@ export class StackStrikeScene extends Phaser.Scene {
 
   private updateBeams(): void {
     this.beams.clear();
-    for (const enemy of this.sim.enemies) {
+    for (const { enemy } of sensedEnemies(this.sim.player.pos, this.sim.enemies)) {
       const def = enemyDef(enemy.defId);
       this.beams.set(enemy.id, beamPolygon(enemy.pos, enemy.facing, this.sim.arena.walls, def.detectionRange, def.fieldOfView, 28));
     }
@@ -980,14 +981,12 @@ export class StackStrikeScene extends Phaser.Scene {
       );
     }
 
-    // Doors are always faintly lit; the ones about to be used are bright. That is how you watch them come in.
-    for (const entry of arena.entries) {
-      const active = this.sim.incoming.includes(entry.id);
-      erase(circlePoints(entry.pos.x, entry.pos.y, DOOR_GLOW * (active ? 1 : 0.7)), active ? 0.8 : 0.3);
-    }
+    // The way out is always faintly lit, so you can find your way back.
+    const door = arena.exit.door;
+    erase(circlePoints(door.x + door.w / 2 + 30, door.y + door.h / 2, 90), 0.4);
 
-    // Each enemy's flashlight lights the floor it sweeps, brightest near the lamp. Only the ones you can see.
-    for (const enemy of visibleEnemies(arena, player.pos, this.sim.enemies)) {
+    // Each guard's flashlight lights the floor it sweeps, brightest near the lamp. Only the ones you can make out.
+    for (const { enemy } of sensedEnemies(player.pos, this.sim.enemies)) {
       const def = enemyDef(enemy.defId);
       const poly = this.beams.get(enemy.id);
       if (!poly) continue;
@@ -1079,33 +1078,33 @@ export class StackStrikeScene extends Phaser.Scene {
     this.statusText.setText(parts.join("  ·  "));
     this.statusText.setColor(hunted ? "#ff6b6b" : player.hidden ? "#4fd1a5" : "#ffd23f");
 
-    // Wave and score.
-    const alive = this.sim.enemies.length + this.sim.spawnQueue.length;
-    this.waveText.setText(
-      `Wave ${this.sim.wave}  ·  ${this.sim.score} pts\n${alive > 0 ? `${alive} hostile${alive === 1 ? "" : "s"}` : "Clear"}`,
-    );
+    // Objective and score, top right.
+    const remaining = this.sim.loot.filter((entry) => !entry.taken && !entry.spot.main).length;
+    const goal = this.sim.hasGold ? "Gold secured: get out the west door" : "Find the gold case";
+    this.objectiveText.setText(`${this.sim.score} pts\n${goal}\n${remaining} valuable${remaining === 1 ? "" : "s"} left`);
 
-    // Banner: planning time announces the doors; a death screen says how it went.
-    const planning = status === "playing" && this.sim.intermission > 0;
+    // Banner: the end screens say how it went; a pickup flashes briefly.
+    const ended = status !== "playing";
     if (status === "dead") {
       this.bannerText.setText(
-        `ELIMINATED\nWave ${this.sim.wave}  ·  ${this.sim.score} pts  ·  ${Math.round(accuracy(this.sim) * 100)}% accuracy\n${this.touch ? "Tap" : "Press R or click"} to restart`,
+        `ELIMINATED\n${this.sim.score} pts  ·  ${Math.round(accuracy(this.sim) * 100)}% accuracy\n${this.touch ? "Tap" : "Press R or click"} to try again`,
       );
-      this.bannerText.setFontSize(Math.round(22 * u));
-      g.fillStyle(0x000000, 0.5);
-      g.fillRect(0, 0, width, height);
-    } else if (planning) {
-      const labels = this.sim.arena.entries
-        .filter((entry) => this.sim.incoming.includes(entry.id))
-        .map((entry) => entry.label)
-        .join("  +  ");
-      this.bannerText.setText(`WAVE ${this.sim.wave + 1} INCOMING\n${labels}\nin ${Math.ceil(this.sim.intermission)}`);
-      this.bannerText.setFontSize(Math.round(17 * u));
+    } else if (status === "escaped") {
+      const taken = this.sim.loot.filter((entry) => entry.taken).length;
+      this.bannerText.setText(
+        `${rating(this.sim)}\nGold escaped  ·  ${this.sim.score} pts\n${this.sim.kills} down  ·  spotted ${this.sim.timesSpotted}x  ·  ${taken}/${this.sim.loot.length} loot  ·  ${Math.round(this.sim.endedAt ?? this.sim.time)}s\n${this.touch ? "Tap" : "Press R or click"} to go again`,
+      );
     } else {
-      this.bannerText.setFontSize(Math.round(30 * u));
       this.bannerText.setText(this.banner.left > 0 ? this.banner.text : "");
     }
-    this.bannerText.setAlpha(status === "dead" || planning ? 1 : Math.min(1, this.banner.left * 2));
+    this.bannerText.setFontSize(Math.round((ended ? 22 : 28) * u));
+    if (ended) {
+      g.fillStyle(0x000000, 0.5);
+      g.fillRect(0, 0, width, height);
+    }
+    this.bannerText.setAlpha(ended ? 1 : Math.min(1, this.banner.left * 2));
+
+    this.drawPointers(g);
 
     // Touch controls.
     const playing = status === "playing";
@@ -1132,6 +1131,55 @@ export class StackStrikeScene extends Phaser.Scene {
       g.fillCircle(at.x, at.y, BUTTON_RADIUS * u);
       g.lineStyle(2 * u, 0xffffff, 0.45);
       g.strokeCircle(at.x, at.y, BUTTON_RADIUS * u);
+    }
+  }
+
+  /**
+   * Arrows on the screen edge for what is just out of view: guards close enough
+   * to make out, the gold case until it is taken, and the way out once it is.
+   */
+  private drawPointers(g: Phaser.GameObjects.Graphics): void {
+    if (this.sim.status !== "playing") return;
+    const { u, width, height, insets } = this.layoutNow;
+    const margin = 22 * u;
+    const left = insets.left + margin;
+    const right = width - insets.right - margin;
+    const top = insets.top + margin;
+    const bottom = height - insets.bottom - margin;
+    const cx = width / 2;
+    const cy = height / 2;
+
+    const point = (world: Point, color: number, alpha: number): void => {
+      const at = this.worldToScreen(world.x, world.y);
+      if (at.x >= left && at.x <= right && at.y >= top && at.y <= bottom) return;
+      const dx = at.x - cx;
+      const dy = at.y - cy;
+      const scale = Math.min((dx >= 0 ? right - cx : cx - left) / Math.max(1, Math.abs(dx)), (dy >= 0 ? bottom - cy : cy - top) / Math.max(1, Math.abs(dy)));
+      const x = cx + dx * scale;
+      const y = cy + dy * scale;
+      const length = Math.hypot(dx, dy) || 1;
+      const ux = dx / length;
+      const uy = dy / length;
+      g.fillStyle(color, alpha);
+      g.fillTriangle(
+        x + ux * 9 * u,
+        y + uy * 9 * u,
+        x - ux * 5 * u - uy * 7 * u,
+        y - uy * 5 * u + ux * 7 * u,
+        x - ux * 5 * u + uy * 7 * u,
+        y - uy * 5 * u - ux * 7 * u,
+      );
+    };
+
+    for (const { enemy, strength } of sensedEnemies(this.sim.player.pos, this.sim.enemies)) {
+      const alert = enemy.mode === "chase" || enemy.mode === "attack";
+      point(enemy.pos, alert ? 0xff3030 : ENEMY_GLOW, 0.9 * strength);
+    }
+    const main = this.sim.loot.find((entry) => entry.spot.main && !entry.taken);
+    if (main) point(main.spot.pos, 0xffd23f, 0.9);
+    if (this.sim.hasGold) {
+      const zone = this.sim.arena.exit.zone;
+      point({ x: zone.x + zone.w / 2, y: zone.y + zone.h / 2 }, 0x5ee0a0, 0.95);
     }
   }
 

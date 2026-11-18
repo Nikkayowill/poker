@@ -92,6 +92,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
     rodHeld,
     tractorOwned,
     handHired,
+    greenhouseBuilt,
     api,
   } = props;
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -261,6 +262,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       scene.setRodHeld(p().rodHeld);
       scene.setTractorOwned(p().tractorOwned);
       scene.setHandHired(p().handHired);
+      scene.setGreenhouseBuilt(p().greenhouseBuilt);
       scene.setClockSource(() => p().clockHour());
       scene.setDaySource(() => p().clockDay());
 
@@ -481,6 +483,9 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   useEffect(() => {
     sceneRef.current?.setHandHired(handHired);
   }, [handHired]);
+  useEffect(() => {
+    sceneRef.current?.setGreenhouseBuilt(greenhouseBuilt);
+  }, [greenhouseBuilt]);
 
   useEffect(() => {
     sceneRef.current?.setBuildGhost(buildGhost);

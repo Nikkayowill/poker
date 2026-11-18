@@ -3213,12 +3213,9 @@ export function StackAcresFarm() {
   );
 
   /**
-   * A finger landed on the Greenhouse's own footprint, from outside it
+   * A finger landed on the Greenhouse, or on the stone footing it goes up on
    * (lib/stackacres/greenhouse.ts). Opens the same panel either way -- built
-   * or not is what decides which of its two screens shows -- and, when it is
-   * already built, also eases the camera inside it. An unbuilt Greenhouse has
-   * no interior worth stepping into yet, so the camera stays put and the
-   * panel's own build screen is the whole story.
+   * or not is what decides which of its two screens shows.
    */
   const onWorldGreenhouseTap = useCallback(() => {
     panelSound();
@@ -3252,6 +3249,17 @@ export function StackAcresFarm() {
       const unit = unitsRef.current.find((candidate) => candidate.id === unitId);
       if (unit) collectSound(unit.stock);
       tapBatched("collect", unitId);
+    },
+    [tapBatched],
+  );
+
+  /** Waters one housed crop from the can. The map does not draw what grows
+   *  under glass, so the panel's Water button is the only way to it. Batched
+   *  like the can on the map, so a run down the slots is one request. */
+  const onWaterGreenhouse = useCallback(
+    (unitId: string) => {
+      waterSound();
+      tapBatched("water", unitId);
     },
     [tapBatched],
   );
@@ -4348,6 +4356,7 @@ export function StackAcresFarm() {
               onStaffTap={onStaffTap}
               tractorOwned={equipment.includes("tractor")}
               handHired={hand !== null}
+              greenhouseBuilt={greenhouseBuilt}
               onDrivingChanged={setDriving}
               onUseSquare={onUseSquare}
               useKeyLabel={belt === "rod" ? "Cast" : BELT_TOOL_DEFS[belt].label}
@@ -5168,9 +5177,12 @@ export function StackAcresFarm() {
           built={greenhouseBuilt}
           inventory={processing.inventory}
           units={liveUnits}
+          seedStock={seedStock}
+          water={water}
           busy={isPending("build-greenhouse") || pendingByPrefix("stock")}
           onBuild={onBuildGreenhouse}
           onSow={onSowGreenhouse}
+          onWater={onWaterGreenhouse}
           onCollect={onCollectGreenhouse}
           onClose={closeGreenhouse}
         />

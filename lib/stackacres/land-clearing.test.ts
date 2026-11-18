@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { cropFieldObstaclePlacements } from "./crop-field-obstacles";
 import {
   CLEARABLE_SECTORS,
+  CLEARING_GROUNDS,
   LAND_OBSTACLES,
   LAND_OBSTACLE_DEFS,
   freshLandObstacleState,
   isClearableSector,
+  isLandObstacleOnAMap,
   landClearingProgress,
   landObstacle,
   landObstacleSnapshot,
@@ -13,7 +16,9 @@ import {
   swingAtLandObstacle,
   withLandObstacleState,
   type LandObstacleKind,
+  type LandObstacleState,
   landOreForSwing,
+  stoneLeftToBreak,
 } from "./land-clearing";
 
 const NOW = new Date("2026-09-22T12:00:00.000Z");
@@ -193,5 +198,43 @@ describe("landOreForSwing", () => {
   it("pays nothing for trees and scrub", () => {
     expect(landOreForSwing("tree", true)).toBe(0);
     expect(landOreForSwing("scrub", true)).toBe(0);
+  });
+});
+
+describe("what stands on a map", () => {
+  const all = CLEARING_GROUNDS.flatMap((ground) => LAND_OBSTACLES[ground]);
+
+  it("is exactly what the scene deals round the Homestead's yard", () => {
+    const dealt = cropFieldObstaclePlacements().map((placement) => placement.id).sort();
+    expect(all.filter(isLandObstacleOnAMap).map((obstacle) => obstacle.id).sort()).toEqual(dealt);
+  });
+
+  it("leaves the Fold's and the Pasture's obstacles off every map", () => {
+    for (const sector of CLEARABLE_SECTORS) {
+      for (const obstacle of LAND_OBSTACLES[sector]) expect(isLandObstacleOnAMap(obstacle), obstacle.id).toBe(false);
+    }
+  });
+});
+
+describe("stoneLeftToBreak", () => {
+  const boulders = LAND_OBSTACLES.cropfields.filter((obstacle) => obstacle.kind === "boulder");
+  const whole = workToClear("boulder").gained;
+
+  it("counts every boulder in the Crop Fields on a new farm, and nothing off the map", () => {
+    expect(stoneLeftToBreak({})).toBe(boulders.length * whole);
+    const fold = LAND_OBSTACLES.wallow.find((obstacle) => obstacle.kind === "boulder")!;
+    expect(stoneLeftToBreak({ [fold.id]: { hitsRemaining: 0, clearedAt: NOW.toISOString() } })).toBe(boulders.length * whole);
+  });
+
+  it("goes down by exactly what a swing paid, and by the whole boulder once it is down", () => {
+    const swing = swingAtLandObstacle("boulder", freshLandObstacleState("boulder"), NOW)!;
+    expect(stoneLeftToBreak({ [boulders[0].id]: swing.nextState })).toBe(boulders.length * whole - swing.quantity);
+    expect(stoneLeftToBreak({ [boulders[0].id]: workToClear("boulder").state })).toBe((boulders.length - 1) * whole);
+  });
+
+  it("is nothing once every boulder is down", () => {
+    const down: Record<string, LandObstacleState> = {};
+    for (const boulder of boulders) down[boulder.id] = workToClear("boulder").state;
+    expect(stoneLeftToBreak(down)).toBe(0);
   });
 });

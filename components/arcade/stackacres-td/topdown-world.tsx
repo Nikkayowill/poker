@@ -10,6 +10,7 @@ import type { FishingGaugeScene } from "../stackacres/fishing-gauge-scene";
 import type { HuntScopeScene } from "./hunt-scope-scene";
 import type { StackAcresSceneUnit } from "../stackacres/world-contract";
 import type { StackAcresWorldProps } from "../stackacres/world-contract";
+import { reportFatalError } from "@/lib/monitoring/monitor";
 import { StackAcresJoystick } from "./joystick";
 import { StackAcresUseKey } from "./use-key";
 import type { TopdownScene } from "./scene";
@@ -318,6 +319,22 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       zoomBy: (factor) => sceneRef.current?.zoomBy(factor),
       recenter: () => sceneRef.current?.recenter(),
       farmerAction: (action, impact) => sceneRef.current?.farmerAction(action, impact),
+      startOpening: (hooks) => {
+        const scene = sceneRef.current;
+        // The map went away under the shell: there is nothing to play it on, so it is over.
+        if (!scene) {
+          hooks.onStaged();
+          hooks.onDone();
+          return;
+        }
+        // The scene hands the farmer back before it throws, so these two are for a throw before it got that far.
+        scene.startOpening(hooks).catch((error: unknown) => {
+          reportFatalError(error);
+          hooks.onStaged();
+          hooks.onDone();
+        });
+      },
+      skipOpening: () => sceneRef.current?.skipOpening(),
       emote: (who, kind) => sceneRef.current?.emote(who, kind),
       getOffTractor: () => sceneRef.current?.getOffTractor(),
       sleep: async (whileDark) => {

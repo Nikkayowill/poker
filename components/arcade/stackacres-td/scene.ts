@@ -73,6 +73,8 @@ import { SOIL_TILE, createSoilMap, soilNeighborMask, soilTileAt, soilTileKey, ty
 import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import {
   axeSound,
+  busDoorSound,
+  busPullInSound,
   doorSound,
   toolSound,
   floorStepSound,
@@ -127,6 +129,10 @@ import { isWildMapTile, mapToSoilTile, soilToMapTile } from "@/lib/stackacres/ho
 import { cropFieldObstaclePlacements } from "@/lib/stackacres/crop-field-obstacles";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import { STACKACRES_HOUR_MS } from "@/lib/stackacres/clock";
+import { OPENING_PORCH_FARMER, OPENING_PORCH_RAY, OPENING_RAY_WAIT } from "@/lib/stackacres/opening";
+import { directOpening, OpeningSkipped } from "@/lib/stackacres-td/opening-director";
+import { SceneOpeningStage } from "@/lib/stackacres-td/opening-stage";
+import { reportFatalError } from "@/lib/monitoring/monitor";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { QuestPlaceId } from "@/lib/stackacres/story/places";
 import { isTravelerId, type TravelerId } from "@/lib/stackacres/story/travelers";
@@ -324,6 +330,12 @@ const PENS: Partial<Record<ZoneId, { area: TopdownArea; spots: string; cols: num
 const WALK_SPEED = 72; // px/s
 /** The farmer's 8-frame walk (art/stackacres-td/pixellab) is timed for full walking speed, so it plays at 1x there. */
 const WALK_TIMED_FOR = 72;
+/** The people on their rounds were drawn to walk at this pace (npc-walkers.ts), a slower step than the farmer's. */
+const NPC_WALK_TIMED_FOR = 40;
+/** After the opening Ray walks back to his round if it is no further than this, at this pace, and for no longer than this. */
+const RAY_HANDBACK_REACH = 700;
+const RAY_HANDBACK_SPEED = 38;
+const RAY_HANDBACK_MS = 25_000;
 const WATER_FRAME_MS = 170;
 const REACH = 26; // how close the farmer stands before the shell's menu opens
 const TAP_SLOP = 14; // css px a finger may drift and still count as a tap
@@ -665,6 +677,8 @@ export class TopdownScene extends Phaser.Scene {
   private farmerSquash: Phaser.Tweens.Tween | null = null;
   /** Set from the step through a door until its dissolve ends; taps and the stick wait meanwhile. */
   private travelling = false;
+  /** The opening scene while it plays, and for Ray's walk back to his round after it: the player is only watching. */
+  private opening: { stage: SceneOpeningStage; directing: boolean } | null = null;
 
   // What the shell last said, kept so an area rebuild can redraw it.
   private units: StackAcresSceneUnit[] = [];
@@ -747,6 +761,10 @@ export class TopdownScene extends Phaser.Scene {
     this.load.atlas("buildings", `${ASSETS}/common/buildings.png`, `${ASSETS}/common/buildings.json`);
     this.load.atlas("tractor", `${ASSETS}/common/tractor.png`, `${ASSETS}/common/tractor.json`);
     this.load.image("forest", `${ASSETS}/common/forest.png`);
+    this.load.image("bus", `${ASSETS}/common/bus.png`);
+    this.load.image("bus-open", `${ASSETS}/common/bus-open.png`);
+    this.load.image("bus-stop-sign", `${ASSETS}/common/bus-stop-sign.png`);
+    this.load.spritesheet("bus-dust", `${ASSETS}/common/bus-dust.png`, { frameWidth: 40, frameHeight: 32 });
     this.load.spritesheet("fence", `${ASSETS}/common/fence.png`, { frameWidth: FENCE_FRAME.width, frameHeight: FENCE_FRAME.height });
     this.load.image("waterfall", `${ASSETS}/common/waterfall.png`);
     this.load.image("water-film", `${ASSETS}/common/water-film.png`);
@@ -838,6 +856,7 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
+    this.tickOpening(delta);
     if (this.travelling) {
       // Nothing to walk: the farmer is between two places.
     } else if (this.stick) this.walkByStick(delta);
@@ -884,12 +903,15 @@ export class TopdownScene extends Phaser.Scene {
     this.speech.update(time);
     // A cast holds its poses as still frames (the rod out, a fish held up), so
     // it counts as busy: the idle fidget would otherwise take him over mid-cast.
-    this.people.update(
-      time,
-      { sprite: this.player, x: this.pos.x, y: this.pos.y, facing: this.facing, walking: this.isWalking() || this.cast !== null },
-      this.daylight.hour(),
-      this.reducedMotion,
-    );
+    // The opening poses the two of them itself, frame by frame.
+    if (!this.opening) {
+      this.people.update(
+        time,
+        { sprite: this.player, x: this.pos.x, y: this.pos.y, facing: this.facing, walking: this.isWalking() || this.cast !== null },
+        this.daylight.hour(),
+        this.reducedMotion,
+      );
+    }
     this.seeThrough.update(this.pos, delta, this.reducedMotion);
     this.worksite?.update(delta, this.reducedMotion);
   }
@@ -1763,6 +1785,8 @@ export class TopdownScene extends Phaser.Scene {
   // ------------------------------------------------------------------ input
 
   private onPointerDown = (event: PointerEvent): void => {
+    // The opening is watched, not played: no tap, pan or pinch reaches the map.
+    if (this.opening?.directing) return;
     // Captured so a drag that leaves the canvas keeps panning instead of sticking mid-gesture.
     try {
       this.host.setPointerCapture(event.pointerId);
@@ -2015,7 +2039,7 @@ export class TopdownScene extends Phaser.Scene {
 
   /** A tap at a viewport point: find what it landed on, walk there, and hand it to the shell on arrival. */
   tapAt(clientX: number, clientY: number): void {
-    if (!this.booted || this.travelling) return;
+    if (!this.booted || this.travelling || this.opening?.directing) return;
     // Somebody else's farm. The pan and the pinch that got the visitor here
     // have already happened by now; this is where every tap stops.
     if (this.visitor) return;
@@ -2768,7 +2792,7 @@ export class TopdownScene extends Phaser.Scene {
    * reaches it, which is how a row gets watered or hoed in one walk.
    */
   setUseHeld(down: boolean): void {
-    if (!this.booted || this.travelling) return;
+    if (!this.booted || this.travelling || this.opening?.directing) return;
     // Same as a tap during a cast: it backs out of a line that has not been
     // taken yet, does nothing once the fight has started, and puts a catch
     // he is holding up away.
@@ -2954,7 +2978,7 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   setStick(push: Point | null): void {
-    if (!this.booted) return;
+    if (!this.booted || this.opening?.directing) return;
     // Visitor Mode hides the stick outright (topdown-world.tsx), so this is
     // the belt to that suspenders: nothing walks somebody else's farmer.
     if (this.visitor) return;
@@ -4308,6 +4332,146 @@ export class TopdownScene extends Phaser.Scene {
     // The shell hands this over as soon as the game exists, before `create` has built the daylight layer.
     this.clockSource = source;
     this.daylight?.setSource(source);
+  }
+
+  /**
+   * The opening a new farm gets once (lib/stackacres/opening.ts): the bus, Ray at the stop, the walk up to
+   * the house. Taps, the stick and every gesture are refused until Ray says he is free to go. `onStaged`
+   * fires once the first frame is set, so the shell can lift its black cover onto the finished picture, and
+   * `onDone` when the player has the farmer back, whether it played out, was skipped or broke. A break is
+   * reported after the farmer is handed back, so a fault in the scene never leaves a player on black.
+   */
+  async startOpening(hooks: { onLine: (text: string | null) => void; onStaged: () => void; onDone: () => void }): Promise<void> {
+    if (!this.booted) throw new Error("The opening was asked for before the map was up.");
+    if (this.opening) return;
+    if (this.areaName !== "homestead") throw new Error(`The opening plays on the Homestead, not the ${this.areaName}.`);
+    const ray = this.npcSprites.get("ray");
+    if (!ray) throw new Error("Ray is not on the Homestead.");
+    const stage = new SceneOpeningStage({
+      scene: this,
+      grid: () => this.grid,
+      body: (who) => (who === "farmer" ? { sprite: this.player, shadow: this.playerShadow } : ray),
+      place: (who, at) => {
+        if (who === "farmer") this.setPlayerAt(at);
+        else {
+          const x = Math.round(at.x);
+          const y = Math.round(at.y);
+          ray.sprite.setPosition(x, y).setDepth(y);
+          ray.shadow.setPosition(x + 1, y + 1);
+        }
+      },
+      at: (who) => (who === "farmer" ? { ...this.pos } : { x: ray.sprite.x, y: ray.sprite.y }),
+      standingFrame: (facing) => STANDING[facing],
+      idle: (who, facing) => {
+        const sprite = who === "farmer" ? this.player : ray.sprite;
+        const key = `idle_${facing}`;
+        if (sprite.anims.currentAnim?.key !== key || !sprite.anims.isPlaying) sprite.play({ key, repeat: -1 });
+      },
+      sound: (cue) => (cue === "bus-pull-in" ? busPullInSound() : busDoorSound()),
+      timedFor: (who) => (who === "farmer" ? WALK_TIMED_FOR : NPC_WALK_TIMED_FOR),
+      lookAt: (point) => {
+        this.following = false;
+        this.returning = false;
+        this.centre = { ...point };
+      },
+      reducedMotion: () => this.reducedMotion,
+    });
+    stage.onLine(hooks.onLine);
+    this.opening = { stage, directing: true };
+    let played = true;
+    let failure: unknown = null;
+    try {
+      this.path = [];
+      this.pending = null;
+      this.stick = null;
+      this.stickWalking = false;
+      this.useDown = false;
+      this.clearMarker();
+      this.stand();
+      this.walkers.hold("ray");
+      ray.sprite.setVisible(true).setAlpha(1);
+      ray.shadow.setVisible(true).setAlpha(1);
+      stage.place("ray", OPENING_RAY_WAIT);
+      // The director's first step stages the picture, so it is set by the time it first waits.
+      const run = directOpening(stage);
+      hooks.onStaged();
+      await run;
+    } catch (error) {
+      played = false;
+      if (!(error instanceof OpeningSkipped)) failure = error;
+    }
+    this.finishOpening(stage, played);
+    hooks.onLine(null);
+    hooks.onDone();
+    if (failure) throw failure;
+  }
+
+  /** The player skipped: the scene jumps to where it would have ended. */
+  skipOpening(): void {
+    this.opening?.stage.abort();
+  }
+
+  /** One frame of the opening's own movement. A fault in it ends the opening and is reported; it never reaches the render loop. */
+  private tickOpening(delta: number): void {
+    const opening = this.opening;
+    if (!opening) return;
+    try {
+      opening.stage.tick(delta);
+    } catch (error) {
+      reportFatalError(error);
+      opening.stage.abort();
+    }
+  }
+
+  /**
+   * Gives the farmer back at the porch, with Ray back on his round. A scene that played out leaves them where
+   * they stand and eases the camera back to him; one that was cut short jumps to the porch, which the shell
+   * has covered in black.
+   */
+  private finishOpening(stage: SceneOpeningStage, played: boolean): void {
+    if (this.opening) this.opening.directing = false;
+    stage.tidy();
+    const ray = this.npcSprites.get("ray");
+    if (!played) {
+      stage.place("farmer", OPENING_PORCH_FARMER);
+      if (ray) stage.place("ray", OPENING_PORCH_RAY);
+    }
+    this.facing = "left";
+    this.stand();
+    if (ray) {
+      ray.sprite.anims.stop();
+      ray.sprite.setFrame(STANDING.right);
+    }
+    if (played) this.homeCamera();
+    else {
+      this.following = true;
+      this.returning = false;
+    }
+    this.callbacks.onViewMoved();
+    const handBack = () => {
+      this.walkers.release("ray");
+      this.opening = null;
+    };
+    // Ray goes back to where his round has him by walking there, so he does not blink from the porch to the well.
+    const there = this.walkers.scheduledAt("ray", this.routineDay(), this.routineHour());
+    const walkable = played && there !== null && there.area === this.areaName && Math.hypot(there.x - OPENING_PORCH_RAY.x, there.y - OPENING_PORCH_RAY.y) < RAY_HANDBACK_REACH;
+    if (!walkable || !there) {
+      handBack();
+      return;
+    }
+    // Walking back is the stage's too, so it stays alive for that. A hard stop keeps a stuck walk from holding Ray forever.
+    const hardStop = this.time.delayedCall(RAY_HANDBACK_MS, handBack);
+    stage.walk("ray", there, RAY_HANDBACK_SPEED).then(
+      () => {
+        hardStop.remove(false);
+        handBack();
+      },
+      (error: unknown) => {
+        hardStop.remove(false);
+        if (!(error instanceof OpeningSkipped)) reportFatalError(error);
+        handBack();
+      },
+    );
   }
 
   /**

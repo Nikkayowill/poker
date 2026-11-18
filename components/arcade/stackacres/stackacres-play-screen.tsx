@@ -16,6 +16,8 @@ import { StackAcresPixelIcon } from "./stackacres-pixel-icon";
 
 interface StackAcresPlayScreenProps {
   onStart: () => void;
+  /** Asked as Play is pressed: true when the opening follows, so the screen fades to black for it instead of to the farm. */
+  willOpen: () => boolean;
   /** Loads in the background under this screen; null until it arrives. */
   profile: PlayerProfile | null;
   onProfileSaved: (profile: PlayerProfile) => void;
@@ -23,13 +25,17 @@ interface StackAcresPlayScreenProps {
 
 type MenuView = "root" | "settings" | "profile" | "credits";
 
+/** How long the title screen takes to go to black for the opening. */
+const PLAY_TO_BLACK_MS = 520;
+
 /**
  * The title screen: Play, Settings, Credits and Leave over the Homestead at
  * golden hour. Settings and Credits open over this screen; Leave goes back to
  * the arcade the same way the farm's back link does.
  */
-export function StackAcresPlayScreen({ onStart, profile, onProfileSaved }: StackAcresPlayScreenProps) {
+export function StackAcresPlayScreen({ onStart, willOpen, profile, onProfileSaved }: StackAcresPlayScreenProps) {
   const [isActive, setIsActive] = useState(true);
+  const [toBlack, setToBlack] = useState(false);
   const [menu, setMenu] = useState<MenuView>("root");
   const { soundEnabled, toggleSound: toggleAppSound, musicEnabled, toggleMenuMusic } = useAppShell();
   const leave = useFloorBack();
@@ -43,9 +49,13 @@ export function StackAcresPlayScreen({ onStart, profile, onProfileSaved }: Stack
     // still owns stopping it; its own start call is a no-op after this one.
     startAmbience();
     await playStackAcresMusic();
+    // The opening starts on black, so this screen goes to black too: fading to clear would show the app
+    // behind it for a moment before the cards.
+    const opening = willOpen();
+    setToBlack(opening);
     setIsActive(false);
     // Let the fade finish before the farm takes over.
-    setTimeout(onStart, 300);
+    setTimeout(onStart, opening ? PLAY_TO_BLACK_MS : 300);
   };
 
   const open = (view: MenuView) => {
@@ -54,7 +64,7 @@ export function StackAcresPlayScreen({ onStart, profile, onProfileSaved }: Stack
   };
 
   return (
-    <div className={clsx("sa-play-screen", { "is-fading": !isActive })}>
+    <div className={clsx("sa-play-screen", { "is-fading": !isActive && !toBlack, "is-fading-dark": !isActive && toBlack })}>
       <div className="sa-play-content">
         <h1 className="sr-only">StackAcres</h1>
         <StackAcresLogo variant="stacked" className="sa-play-logo" aria-hidden="true" alt="" />

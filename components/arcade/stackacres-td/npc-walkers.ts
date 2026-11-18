@@ -68,6 +68,8 @@ export class NpcWalkers {
   private keys = new Map<string, string>();
   private hooked = new WeakSet<Phaser.GameObjects.Sprite>();
   private live: { area: string; grid: Grid } | null = null;
+  /** People someone else is moving for now (the opening's choreography): left where they stand. */
+  private held = new Set<string>();
   private msPerHour = 3_600_000;
   private varied = true;
   /** Real ms per hour of the clock their day is read from: the farm's own, or a pinned dev clock's. */
@@ -120,6 +122,24 @@ export class NpcWalkers {
     if (this.varied === (realMsPerHour === null)) return;
     this.varied = realMsPerHour === null;
     this.stale = true;
+  }
+
+  /** Leaves someone exactly where the caller puts them until `release`. */
+  hold(name: string): void {
+    this.held.add(name);
+  }
+
+  /** Gives someone back to their day: they are placed by the clock again from the next frame. */
+  release(name: string): void {
+    if (!this.held.delete(name)) return;
+    this.minds.get(name)?.reset();
+    this.keys.delete(name);
+  }
+
+  /** Where someone's day has them at an hour, for handing them back without a jump. */
+  scheduledAt(name: string, day: number, hour: number): { area: string; x: number; y: number } | null {
+    const pose = this.pose(name, day, hour, true);
+    return pose ? { area: pose.area, x: pose.x, y: pose.y } : null;
   }
 
   /** On entering an area: everyone is placed afresh, not walked in from where they stood on the last map. */
@@ -220,6 +240,7 @@ export class NpcWalkers {
     for (const name of this.names()) {
       const node = nodes.get(name);
       if (!node) continue;
+      if (this.held.has(name)) continue;
       const mind = this.mind(name, day);
       const at = (lagMs: number) => this.scheduled(name, gameHours - lagMs / (this.clockMsPerHour ?? this.msPerHour), reducedMotion);
       const here = at(mind.behind()).area === area && allowed(name);

@@ -161,7 +161,8 @@ import { STOCK_ICON } from "./stock-icon";
 import { StackAcresSleepDialogue } from "./stackacres-sleep-dialogue";
 import { StackAcresFriendshipDialogue } from "./stackacres-friendship-dialogue";
 import { StackAcresSectorModal } from "./stackacres-sector-modal";
-import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
+import { StackAcresOpening } from "./stackacres-opening";
+import { useStackAcresOpening } from "./use-stackacres-opening";
 import { StackAcresMillCard } from "./stackacres-mill-card";
 import { StackAcresAwayReport } from "./stackacres-away-report";
 import { buildAwayReport, type AwayReport } from "@/lib/stackacres/away-report";
@@ -618,6 +619,9 @@ interface StackAcresResponse {
   /** Whether the Crop Fields (lib/stackacres/crop-fields.ts) have been
    *  unlocked. Same "absent means not yet" posture as `greenhouseBuilt`. */
   cropFieldsUnlocked?: boolean;
+  /** Whether this farm has already seen the opening (lib/stackacres/opening.ts). Only a live answer is
+   *  trusted for it: the offline copy of the farm leaves it out. */
+  openingSeen?: boolean;
   /** Purchased soil beds (lib/stackacres/soil.ts). Absent only from a
    *  response old enough to predate the feature, which `applyResponse` reads
    *  as "no purchased tiles yet" -- starter tiles are never carried here, see
@@ -809,6 +813,9 @@ function withLocalClock(units: StackAcresUnitSnapshot[], nowMs: number): StackAc
 }
 
 const NO_CLAIMS: ReadonlySet<ClaimKey> = new Set();
+
+/** The specs turn the opening off for every fresh farm; the one that tests it asks for it with `?opening=1`. */
+const OPENING_OFF = process.env.NEXT_PUBLIC_STACKACRES_SKIP_OPENING === "1";
 
 const STACKACRES_OFFLINE_CACHE_PREFIX = "stackacres-view:";
 const STACKACRES_LAST_PROFILE_KEY = "stackacres-last-profile";
@@ -1046,6 +1053,8 @@ export function StackAcresFarm() {
   const [loadFailed, setLoadFailed] = useState(false);
   const hasLoadedOnce = useRef(false);
   const [worldReady, setWorldReady] = useState(false);
+  // How many maps have come up: the opening has to know if the one it was playing on was replaced.
+  const [worldEpoch, setWorldEpoch] = useState(0);
   /**
    * The intents with a request in the air right now, mirrored into render so
    * a button can grey out ITS OWN action while it settles -- and only its
@@ -1224,42 +1233,29 @@ export function StackAcresFarm() {
   // real gesture, which also doubles as the autoplay-policy unlock every
   // browser requires before it will let audio start on its own.
   const [hasStarted, setHasStarted] = useState(false);
-  // Ray's one-time hello, first visit only -- a plain localStorage
-  // flag rather than a profile field, since this is a hello, not a fact about
-  // the farm. Read only once `hasStarted` flips true, so it never flashes
-  // behind the tap-to-play splash.
-  const [showWelcome, setShowWelcome] = useState(false);
-  // True once the localStorage check below has actually run, whichever way it
-  // came out. Needed as its own flag rather than trusting "!showWelcome" alone:
-  // showWelcome starts false and is only set true a tick later (see the effect
-  // below), so a naive "!showWelcome" reads as "no welcome needed" for that one
-  // tick even on a fresh profile, which raced the spotlight tour onto the
-  // screen underneath Ray's own card the first time this shipped.
-  const [rayCheckDone, setRayCheckDone] = useState(false);
-  useEffect(() => {
-    if (!hasStarted) return;
-    // Deferred a tick, same reason install-prompt.tsx defers its own
-    // localStorage read -- react-hooks/set-state-in-effect rejects a
-    // synchronous setState in the effect body.
-    const timer = window.setTimeout(() => {
-      try {
-        if (!window.localStorage.getItem("sa-ray-welcomed")) setShowWelcome(true);
-      } catch {
-        // Private browsing or blocked storage: skip the intro rather than error.
-      }
-      setRayCheckDone(true);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [hasStarted]);
-  const dismissWelcome = useCallback(() => {
-    panelSound();
-    setShowWelcome(false);
-    try {
-      window.localStorage.setItem("sa-ray-welcomed", "1");
-    } catch {
-      // Nothing to persist if storage is blocked; it just re-offers next visit.
-    }
+  // The opening a new farm gets once (use-stackacres-opening.ts). `openingSeen` is the server's answer to
+  // whether Ray's seed pouch has been claimed. A cached copy of the farm never says, so offline is never owed it.
+  const [openingSeen, setOpeningSeen] = useState<boolean | null>(null);
+  const actForOpening = useRef<((request: Action) => Promise<ContractActionResult>) | null>(null);
+  const claimStarterSeeds = useCallback(async () => {
+    const result = await actForOpening.current?.({ action: "claim-starter-seeds" });
+    return result?.ok === true;
   }, []);
+  const markOpeningSeen = useCallback(() => setOpeningSeen(true), []);
+  const world = useRef<StackAcresWorldApi | null>(null);
+  const opening = useStackAcresOpening({
+    hasStarted,
+    loaded,
+    worldReady,
+    worldEpoch,
+    seen: openingSeen,
+    claimSeeds: claimStarterSeeds,
+    onClaimed: markOpeningSeen,
+    world,
+    off: OPENING_OFF,
+  });
+  const openingOn = opening.active;
+  const rayCheckDone = opening.checked;
 
   // "While you were away": read once per visit, after the welcome and the world
   // are out of the way. `sa-last-seen` is bumped while the farm is open, so the
@@ -1293,7 +1289,7 @@ export function StackAcresFarm() {
     };
   }, [hasStarted]);
   useEffect(() => {
-    if (!hasStarted || !loaded || !rayCheckDone || showWelcome || awayChecked.current) return;
+    if (!hasStarted || !loaded || !rayCheckDone || openingOn || awayChecked.current) return;
     const timer = window.setTimeout(() => {
       awayChecked.current = true;
       const lastSeenMs = previousSeenMs.current;
@@ -1302,14 +1298,14 @@ export function StackAcresFarm() {
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [hasStarted, loaded, rayCheckDone, showWelcome, units, processing.machines]);
+  }, [hasStarted, loaded, rayCheckDone, openingOn, units, processing.machines]);
 
   // The spotlight tour, same mechanism as the lobby and table halves
   // (lib/onboarding/use-onboarding-tour.ts): fires once per profile, server
   // side, across all three screens. Gated on the world actually being loaded
   // and Ray's hello either dismissed or never owed, so it never races either
   // splash for the player's attention.
-  useOnboardingTour(profile, STACKACRES_TOUR_STEPS, hasStarted && loaded && rayCheckDone && !showWelcome);
+  useOnboardingTour(profile, STACKACRES_TOUR_STEPS, hasStarted && loaded && rayCheckDone && !openingOn);
 
   useStackAcresMusic(hasStarted, gameHourNow);
 
@@ -1380,7 +1376,6 @@ export function StackAcresFarm() {
    * shell, which is always mounted, so nothing is left for the hook to do.
    */
   const mounted = useRef(true);
-  const world = useRef<StackAcresWorldApi | null>(null);
   /**
    * The district the camera was last SENT to, which is not the same as the
    * one it is currently over: the map is unbounded and the player can pan
@@ -1880,6 +1875,8 @@ export function StackAcresFarm() {
       if (!mounted.current) return;
       if (response.ok) {
         applyResponse(data);
+        const seen = data.openingSeen;
+        if (typeof seen === "boolean") setOpeningSeen((prev) => prev ?? seen);
         cacheStackAcresView(data);
         setOffline(false);
         ok = true;
@@ -4088,10 +4085,20 @@ export function StackAcresFarm() {
   // painted that frame to the canvas. Waiting two rAF ticks closes that gap
   // so the loading overlay doesn't drop a beat before the world.
   const onWorldReady = useCallback(() => {
-    requestAnimationFrame(() => requestAnimationFrame(() => setWorldReady(true)));
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        setWorldReady(true);
+        setWorldEpoch((epoch) => epoch + 1);
+      }),
+    );
   }, []);
 
   const bootPhase = useMinHoldFade(!loaded || !worldReady, { minMs: 500, fadeMs: 320 });
+
+  // The opening reaches the server through whatever `act` is now, not what it was at mount.
+  useEffect(() => {
+    actForOpening.current = act;
+  }, [act]);
 
   // Today's land upkeep comes out of Gold once the farm is on screen (past Play
   // and the loading board, so the line saying so is seen), instead of standing
@@ -4165,6 +4172,7 @@ export function StackAcresFarm() {
     return (
       <StackAcresPlayScreen
         onStart={() => setHasStarted(true)}
+        willOpen={opening.willPlay}
         profile={profile}
         onProfileSaved={setProfile}
       />
@@ -4240,7 +4248,7 @@ export function StackAcresFarm() {
   );
 
   return (
-    <main className="duel-shell ante-shell sa-shell">
+    <main className={clsx("duel-shell ante-shell sa-shell", opening.hidesHud && "sa-opening-on", opening.revealing && "sa-opening-reveal")}>
       {placeTag && (
         <div key={placeTag.n} className="sa-place-tag" role="status">
           {placeTag.name}
@@ -5188,15 +5196,17 @@ export function StackAcresFarm() {
         />
       )}
 
-      {showWelcome && (
-        <StackAcresRayWelcome
-          onClose={() => {
-            dismissWelcome();
-            void act({ action: "claim-starter-seeds" });
-          }}
+      {opening.phase !== "off" && (
+        <StackAcresOpening
+          phase={opening.phase}
+          line={opening.line}
+          covered={opening.covered}
+          ending={opening.ending}
+          onCardsDone={opening.finishCards}
+          onSkip={opening.skip}
         />
       )}
-      {awayReport && !showWelcome && <StackAcresAwayReport report={awayReport} onClose={() => setAwayReport(null)} />}
+      {awayReport && !openingOn && <StackAcresAwayReport report={awayReport} onClose={() => setAwayReport(null)} />}
       {showGreenhouse && (
         <StackAcresGreenhousePanel
           built={greenhouseBuilt}

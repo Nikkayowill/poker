@@ -2585,7 +2585,7 @@
 
 /* ---- Ray ------------------------------------------------------------- */
 
-/* The one-time welcome (stackacres-ray-welcome.tsx): his portrait, centred and
+/* Ray's portrait on the chapter card (stackacres-chapters.tsx): centred and
    a good deal bigger than the byline above, since this is the one place he is
    the whole point of the screen rather than a small attribution. */
 .sa-ray-welcome-portrait {
@@ -3034,6 +3034,20 @@
   pointer-events: none;
   opacity: 0;
 }
+
+/* Into the opening: the screen stays and black comes down over it, so the cards start on a black the
+   player has already watched arrive. */
+.sa-play-screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  transition: opacity 480ms ease-in;
+  pointer-events: none;
+}
+.sa-play-screen.is-fading-dark { pointer-events: none; }
+.sa-play-screen.is-fading-dark::after { opacity: 1; }
 
 .sa-play-content {
   display: flex;
@@ -5566,3 +5580,166 @@
   transform: translateX(-50%);
 }
 .sa-harvest-all:not(:disabled):active { transform: translate(-50%, 2px); }
+
+/* ---- the opening (stackacres-opening.tsx) ------------------------------ */
+
+/* While it plays, only the map shows: the header, belt, stick and every pinned panel step aside. */
+.sa-opening-on > :not(.sa-main):not(.sa-opening) { display: none !important; }
+.sa-opening-on .sa-field > :not(.sa-world):not(.sa-loading) { display: none !important; }
+
+.sa-opening {
+  --sa-opening-bar: max(9vh, 28px);
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+  transition: opacity 500ms ease;
+}
+.sa-opening:focus { outline: none; }
+.sa-opening.is-ending { opacity: 0; }
+.sa-opening.is-ending * { pointer-events: none; }
+.sa-opening-cards {
+  pointer-events: auto;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 max(8vw, var(--safe-right)) 0 max(8vw, var(--safe-left));
+  cursor: pointer;
+}
+.sa-opening-card {
+  max-width: 28em;
+  text-align: center;
+  font-family: var(--sa-font-pixel);
+  font-size: clamp(16px, 4.2vh, 26px);
+  line-height: 1.5;
+  color: #f4ead2;
+  opacity: 0;
+  animation: sa-opening-card both ease-in-out;
+}
+.sa-opening-card p { margin: 0; }
+/* Ray's letter, over the words of the cards that mention it. It fades up with the first of them and away after the last. */
+.sa-opening-letter {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(24vw, 28vh, 170px);
+  height: auto;
+  transform: translate(-50%, calc(-50% - min(19vh, 84px)));
+  image-rendering: pixelated;
+  opacity: 0;
+  transition: opacity 800ms ease;
+  pointer-events: none;
+}
+.sa-opening-letter.is-up { opacity: 1; }
+.sa-opening-logo { display: block; width: min(60vw, 46vh, 380px); height: auto; margin: 0 auto; }
+.sa-opening-rest { visibility: hidden; }
+@keyframes sa-opening-card {
+  0% { opacity: 0; }
+  18% { opacity: 1; }
+  82% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.sa-opening-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--sa-opening-bar);
+  background: #000;
+}
+.sa-opening-bar-top { top: 0; }
+.sa-opening-bar-bottom { bottom: 0; }
+
+.sa-opening-words {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--sa-opening-bar) + 10px);
+  display: flex;
+  justify-content: center;
+  padding: 0 max(16px, var(--safe-right)) 0 max(16px, var(--safe-left));
+}
+.sa-opening-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 34em;
+  padding: 8px 14px 8px 8px;
+  border: 2px solid var(--sa-paint-line);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paint-fill-open);
+  box-shadow: var(--sa-paint-rim), var(--sa-drop-lg);
+  color: var(--sa-ink);
+  animation: sa-radial-in 160ms var(--sa-bounce) backwards;
+}
+.sa-opening-line p {
+  margin: 0;
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.35;
+}
+.sa-opening-portrait {
+  display: block;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  image-rendering: pixelated;
+  object-fit: cover;
+  object-position: top center;
+}
+.sa-opening-who {
+  display: block;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+/* Black over the map until the first frame is set, and again for a skip. */
+.sa-opening-cover {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  transition: opacity 900ms ease;
+}
+.sa-opening-cover.is-covered { opacity: 1; transition-duration: 350ms; }
+.sa-opening-cards .sa-opening-cover { display: none; }
+
+.sa-opening-skip {
+  position: absolute;
+  top: 10px;
+  right: calc(12px + var(--safe-right));
+  z-index: 1;
+  pointer-events: auto;
+  min-height: 32px;
+  padding: 4px 14px;
+  border: 0;
+  border-radius: var(--sa-r-chip);
+  background: rgba(0, 0, 0, .55);
+  color: #f4ead2;
+  font: 700 12px/1 var(--sa-font);
+  cursor: pointer;
+}
+.sa-opening-skip:hover { background: rgba(0, 0, 0, .75); }
+
+/* The map's own controls fade back in once the opening's bars and words are gone. */
+@keyframes sa-opening-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.sa-opening-reveal > :not(.sa-main):not(.sa-opening),
+.sa-opening-reveal .sa-field > :not(.sa-world):not(.sa-loading) {
+  animation: sa-opening-reveal 500ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-opening-reveal > :not(.sa-main):not(.sa-opening),
+  .sa-opening-reveal .sa-field > :not(.sa-world):not(.sa-loading) { animation: none; }
+  .sa-play-screen::after { transition: none; }
+  .sa-opening-card { animation: none; opacity: 1; }
+  .sa-opening-line { animation: none; }
+  .sa-opening-cover { transition: none; }
+}

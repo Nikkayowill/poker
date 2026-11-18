@@ -15,6 +15,8 @@ import {
   type FarmBoardView,
   type StoredFarmBoard,
 } from "@/lib/stackacres/farm-board";
+import { isLivestock, isStackAcresCrop, type SeedStock, type StackAcresStock } from "@/lib/stackacres/catalogue";
+import type { MachineKind } from "@/lib/stackacres/machines";
 import type { StoryEvent } from "@/lib/stackacres/story/events";
 import {
   drawStackAcresFarmBoard,

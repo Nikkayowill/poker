@@ -67,6 +67,9 @@ export default defineConfig({
       // tested (lib/server/rate-limit.test.ts) and the flag cannot take
       // effect in a production build -- see limitsLifted in rate-limit.ts.
       RIVER_DISABLE_RATE_LIMITS: "1",
+      // A fresh farm would start with the opening and its black cards over the map. Only its own spec
+      // plays it, by asking for it in the address.
+      NEXT_PUBLIC_STACKACRES_SKIP_OPENING: "1",
     },
   },
 });

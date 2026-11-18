@@ -783,6 +783,10 @@ export interface StackAcresView {
   /** Whether this player has built the Greenhouse (lib/stackacres/greenhouse.ts).
    *  Permanent once true; gates the `inGreenhouse` option on `stock`. */
   greenhouseBuilt: boolean;
+  /** Whether this farm has seen the opening. It ends with Ray's seed pouch, which is claimed once per
+   *  farm (lib/stackacres/opening.ts), so a farm with no claim is owed it. Only the read route
+   *  (`readStackAcres`) sets it: the client asks once on load, so an action's answer skips the read. */
+  openingSeen?: boolean;
   /** Whether this player has unlocked the Crop Fields
    *  (lib/stackacres/crop-fields.ts). Permanent once true; gates sowing any
    *  crop and placing any soil bed. Used to be a `SectorId` ("meadow") in
@@ -1880,8 +1884,11 @@ export async function readStackAcres(token: string, now = new Date()): Promise<S
   // its view never saw. The client would paint it and then drop that
   // action's own answer as not newer.
   const revision = await readStackAcresRevision(profile.id);
-  const result = await view(profile, now);
-  return { ...result, revision };
+  const [result, starterClaimed] = await Promise.all([
+    view(profile, now),
+    readStackAcresSecretLedgerQty(profile.id, STARTER_SEEDS_LEDGER_KEY),
+  ]);
+  return { ...result, revision, openingSeen: starterClaimed >= 1 };
 }
 
 /**

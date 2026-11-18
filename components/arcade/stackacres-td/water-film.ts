@@ -36,7 +36,6 @@ export class WaterFilm {
   private shader: Phaser.GameObjects.Shader | null = null;
   /** The film mirrored above the map's top edge, over the ground's own mirror (see `mirror`). */
   private reflection: Phaser.GameObjects.Shader | null = null;
-  private base: Phaser.Display.BaseShader | null = null;
   private water: WaterSpec | null = null;
   private maskKey = "";
   private readonly webgl: boolean;
@@ -52,21 +51,12 @@ export class WaterFilm {
   build(water: WaterSpec | null | undefined, maskKey: string): void {
     this.shader = null;
     this.reflection = null;
-    this.base = null;
     this.water = water ?? null;
     this.maskKey = maskKey;
     if (!water || !this.webgl) return;
-    const sheet = filmSheetSize();
-    const base = new Phaser.Display.BaseShader(`water-film:${maskKey}`, FRAGMENT, undefined, {
-      maskSize: { type: "2f", value: { x: water.w * 2, y: water.h * 2 } },
-      sheetSize: { type: "2f", value: { x: sheet.width, y: sheet.height } },
-      origin: { type: "2f", value: { x: water.x * 2, y: water.y * 2 } },
-      frame: { type: "1f", value: 0 },
-      drift: { type: "1f", value: 0 },
-      foamSet: { type: "1f", value: 1 },
-    });
-    this.base = base;
-    this.shader = this.keep(this.quad(base, water, water.y).setDepth(WATER_FILM_DEPTH));
+    // The two pictures are read a pixel at a time, so neither is smoothed.
+    for (const key of [maskKey, "water-film"]) this.scene.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
+    this.shader = this.keep(this.quad(water, water.y).setDepth(WATER_FILM_DEPTH));
   }
 
   /**
@@ -76,19 +66,37 @@ export class WaterFilm {
    * the water it joins.
    */
   mirror(): void {
-    if (this.reflection || !this.base || !this.water) return;
+    if (this.reflection || !this.shader || !this.water) return;
     // Flipped about the top edge: the quad hangs from -y upward, drawn upside down.
-    this.reflection = this.keep(this.quad(this.base, this.water, -this.water.y).setScale(1, -1).setDepth(WATER_FILM_DEPTH));
+    this.reflection = this.keep(this.quad(this.water, -this.water.y).setScale(1, -1).setDepth(WATER_FILM_DEPTH));
   }
 
-  private quad(base: Phaser.Display.BaseShader, water: WaterSpec, y: number): Phaser.GameObjects.Shader {
+  private quad(water: WaterSpec, y: number): Phaser.GameObjects.Shader {
+    const sheet = filmSheetSize();
     return this.scene.add
-      .shader(base, water.x, y, water.w, water.h, [this.maskKey, "water-film"], {
-        minFilter: "nearest",
-        magFilter: "nearest",
-        wrapS: "clamp_to_edge",
-        wrapT: "clamp_to_edge",
-      })
+      .shader(
+        {
+          name: `water-film:${this.maskKey}`,
+          fragmentSource: FRAGMENT,
+          // The two pictures sit in texture units 0 and 1, in the order they are given below.
+          initialUniforms: {
+            iChannel0: 0,
+            iChannel1: 1,
+            quadSize: [water.w, water.h],
+            maskSize: [water.w * 2, water.h * 2],
+            sheetSize: [sheet.width, sheet.height],
+            origin: [water.x * 2, water.y * 2],
+            frame: 0,
+            drift: 0,
+            foamSet: 1,
+          },
+        },
+        water.x,
+        y,
+        water.w,
+        water.h,
+        [this.maskKey, "water-film"],
+      )
       .setOrigin(0, 0);
   }
 
@@ -96,9 +104,9 @@ export class WaterFilm {
     if (!this.shader) return;
     const ms = reducedMotion ? 0 : timeMs;
     for (const shader of this.reflection ? [this.shader, this.reflection] : [this.shader]) {
-      shader.setUniform("frame.value", filmFrame(ms));
-      shader.setUniform("drift.value", filmDrift(ms));
-      shader.setUniform("foamSet.value", foamSet(ms));
+      shader.setUniform("frame", filmFrame(ms));
+      shader.setUniform("drift", filmDrift(ms));
+      shader.setUniform("foamSet", foamSet(ms));
     }
   }
 }
@@ -112,7 +120,7 @@ precision highp float;
 precision mediump float;
 #endif
 
-uniform vec2 resolution;
+uniform vec2 quadSize;
 uniform sampler2D iChannel0;
 uniform sampler2D iChannel1;
 uniform vec2 maskSize;
@@ -122,7 +130,7 @@ uniform float frame;
 uniform float drift;
 uniform float foamSet;
 
-varying vec2 fragCoord;
+varying vec2 outTexCoord;
 
 const float SIZE = ${FILM_SIZE.toFixed(1)};
 const float COLUMNS = ${FILM_COLUMNS.toFixed(1)};
@@ -130,10 +138,15 @@ const float OPACITY = ${FILM_OPACITY.toFixed(3)};
 const vec3 FOAM = vec3(${FOAM_RGB.map((c) => c.toFixed(4)).join(", ")});
 const float FOAM_ALPHA = ${FOAM_ALPHA.toFixed(2)};
 
+// Phaser 4 puts a picture's bottom row at V=0, so a lookup by row counted from the top turns it over.
+vec2 uvFromTop(vec2 pxy, vec2 size) {
+  return vec2(pxy.x, size.y - pxy.y) / size;
+}
+
 void main() {
   // The ground picture's pixel under this fragment: two to a map unit, counted from the quad's top left.
-  vec2 px = floor(vec2(fragCoord.x, resolution.y - fragCoord.y) * 2.0);
-  vec4 mask = texture2D(iChannel0, (px + 0.5) / maskSize);
+  vec2 px = floor(vec2(outTexCoord.x, 1.0 - outTexCoord.y) * quadSize * 2.0);
+  vec4 mask = texture2D(iChannel0, uvFromTop(px + 0.5, maskSize));
   float filmed = step(0.5, mask.r);
   float dashes = mask.g > 0.75 ? 2.0 : (mask.g > 0.25 ? 1.0 : 0.0);
   float foam = dashes == foamSet ? 1.0 : 0.0;
@@ -141,7 +154,7 @@ void main() {
 
   vec2 p = mod(px + origin + vec2(0.0, drift), SIZE);
   vec2 cell = vec2(mod(frame, COLUMNS), floor(frame / COLUMNS)) * SIZE;
-  vec3 film = texture2D(iChannel1, (cell + p + 0.5) / sheetSize).rgb;
+  vec3 film = texture2D(iChannel1, uvFromTop(cell + p + 0.5, sheetSize)).rgb;
 
   // Premultiplied, as Phaser blends: the film, then the foam over it.
   float alpha = OPACITY * filmed;

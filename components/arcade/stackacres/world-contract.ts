@@ -197,6 +197,12 @@ export interface StackAcresWorldApi {
   handChores: (jobs: { unitId: string; kind: "water" | "harvest" }[]) => void;
   /** The farmer acts out a water, harvest, hoe or planting drop where he stands. */
   farmerAction: (action: FarmerAction, impact?: TapPoint) => void;
+  /** Plays the opening a new farm gets once (lib/stackacres/opening.ts). `onStaged` fires when the first
+   *  frame is set, `onLine` carries Ray's words (null clears them) and `onDone` fires when the player has
+   *  the farmer back, whether it played out or was skipped. */
+  startOpening: (hooks: { onLine: (text: string | null) => void; onStaged: () => void; onDone: () => void }) => void;
+  /** Cuts the opening short: the scene jumps to where it ends. */
+  skipOpening: () => void;
   /** A small emote bubble over someone's head for a moment: a heart when a gift lands, a note when a
    *  traveler's story moves on. Nothing happens when that person isn't on the map the player is looking at. */
   emote: (who: EmoteTarget, kind: EmoteKind) => void;

@@ -714,6 +714,15 @@ describe("claimStackAcresStarterSeeds, Ray's first pouch", () => {
 
     expect((await readStackAcres(token, T0)).seedStock.carrot).toBe(STARTER_SEED_COUNT);
   });
+
+  it("is what says a farm has seen the opening, on the read and nowhere else", async () => {
+    const { token } = await funded();
+    expect((await readStackAcres(token, T0)).openingSeen).toBe(false);
+
+    const claimed = await claimStackAcresStarterSeeds(token, T0);
+    expect(claimed.openingSeen).toBeUndefined();
+    expect((await readStackAcres(token, T0)).openingSeen).toBe(true);
+  });
 });
 
 describe("hunger", () => {

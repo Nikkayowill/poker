@@ -53,6 +53,13 @@ describe("every item has a guide entry", () => {
 
 describe("nothing is sellable but useless", () => {
 
+  it("offers no sale for what the farm builds with, since nobody in town buys it", () => {
+    for (const item of ["stone", "iron_ore", "metal"] as const) {
+      expect(resourceUses(item).some((use) => use.kind === "sell"), item).toBe(false);
+    }
+    expect(resourceUses("wood").some((use) => use.kind === "sell")).toBe(true);
+  });
+
   it("lists every recipe that takes an item among that item's uses", () => {
     for (const id of RECIPE_IDS) {
       for (const input of RECIPE_CATALOGUE[id].inputs) {

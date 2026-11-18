@@ -1,3 +1,5 @@
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   HITS_TO_BREAK,
@@ -5,12 +7,14 @@ import {
   REGROW_MS,
   STONE_PER_SWING,
   STONE_NODE_IDS,
+  STONE_NODES_ON_A_MAP,
   applyMiningSwing,
   effectiveNodeState,
   freshStoneNode,
   hasRegrown,
   isNodeMineable,
   isStoneNodeId,
+  isStoneNodeOnAMap,
   oreForSwing,
 } from "./stone-nodes";
 
@@ -24,6 +28,28 @@ describe("isStoneNodeId", () => {
   it("rejects an unknown id", () => {
     expect(isStoneNodeId("stone:mine-99")).toBe(false);
     expect(isStoneNodeId("tree:homestead-1")).toBe(false);
+  });
+});
+
+describe("which Mine boulders stand on a map", () => {
+  /** Every `stone:` tag the scene could draw, off every area it loads. */
+  function stoneTagsOnTheMaps(): string[] {
+    const dir = join(process.cwd(), "public/stackacres-td/areas");
+    const tags: string[] = [];
+    for (const area of readdirSync(dir)) {
+      const file = join(dir, area, "area.json");
+      if (!existsSync(file)) continue;
+      for (const match of readFileSync(file, "utf8").matchAll(/"tag":"(stone:[^"]+)"/g)) tags.push(match[1]);
+    }
+    return tags;
+  }
+
+  it("names exactly the boulders the maps draw", () => {
+    expect([...STONE_NODES_ON_A_MAP].sort()).toEqual(stoneTagsOnTheMaps().sort());
+  });
+
+  it("has no Mine boulder on a map now", () => {
+    for (const id of STONE_NODE_IDS) expect(isStoneNodeOnAMap(id), id).toBe(false);
   });
 });
 

@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { NOT_SLEEPY, STACKACRES_DAY_MS, STACKACRES_HOUR_MS, WAKE_HOUR, gameHourAt } from "@/lib/stackacres/clock";
 import { ensureProfile } from "./profile-store";
 import { __resetStackAcresClockForTest, writeStackAcresClockOffset } from "./stackacres-clock-store";
-import { readStackAcres, sleepStackAcres } from "./stackacres-service";
+import { insertStackAcresHiredHand } from "./stackacres-hired-hand-store";
+import { beginStackAcresDay, readStackAcres, sleepStackAcres } from "./stackacres-service";
 import { __resetStackAcresForTest } from "./stackacres-store";
 
 /** A real moment that is `hour` o'clock on a farm that has never slept. */
@@ -25,7 +26,7 @@ describe("sleeping in the farmhouse bed", () => {
     const token = await newFarm();
     const now = at(9);
     const view = await readStackAcres(token, now);
-    expect(view.clock).toEqual({ offsetMs: 0, serverNowMs: now.getTime() });
+    expect(view.clock).toEqual({ offsetMs: 0, serverNowMs: now.getTime(), fresh: true });
   });
 
   it("wakes at exactly 6 AM when slept at night", async () => {
@@ -76,5 +77,45 @@ describe("sleeping in the farmhouse bed", () => {
     expect(await writeStackAcresClockOffset(profile.id, 0, 100, at(20))).toBe(true);
     expect(await writeStackAcresClockOffset(profile.id, 0, 200, at(20))).toBe(false);
     expect(await writeStackAcresClockOffset(profile.id, 100, 200, at(20))).toBe(true);
+  });
+});
+
+describe("a new farm's first morning", () => {
+  beforeEach(() => {
+    __resetStackAcresForTest();
+    __resetStackAcresClockForTest();
+  });
+
+  it("starts at 6 AM whatever time of day the player arrives", async () => {
+    for (const hour of [0, 5.9, 6, 12, 18, 23.5]) {
+      const token = await newFarm();
+      const now = at(hour);
+      const view = await beginStackAcresDay(token, now);
+      expect(gameHourAt(view.clock.serverNowMs, view.clock.offsetMs)).toBeCloseTo(WAKE_HOUR, 5);
+      expect(view.clock.fresh).toBe(false);
+      expect((await readStackAcres(token, now)).clock.offsetMs).toBe(view.clock.offsetMs);
+    }
+  });
+
+  it("is written once, so a second call or another tab leaves the morning alone", async () => {
+    const token = await newFarm();
+    const first = await beginStackAcresDay(token, at(20));
+    const again = await beginStackAcresDay(token, at(21));
+    expect(again.clock.offsetMs).toBe(first.clock.offsetMs);
+  });
+
+  it("leaves a farm that has already slept as it is", async () => {
+    const token = await newFarm();
+    const slept = await sleepStackAcres(token, at(22));
+    const view = await beginStackAcresDay(token, at(23));
+    expect(view.clock.offsetMs).toBe(slept.clock.offsetMs);
+  });
+
+  it("never moves the clock under a hired hand, whose wage is paid by game day", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await insertStackAcresHiredHand(profile.id, "Earl", 2_000, at(10));
+    expect((await readStackAcres(token, at(20))).clock.fresh).toBe(false);
+    expect((await beginStackAcresDay(token, at(20))).clock.offsetMs).toBe(0);
   });
 });

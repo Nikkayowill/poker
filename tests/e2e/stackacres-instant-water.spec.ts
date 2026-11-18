@@ -28,16 +28,15 @@ interface TopdownHandle {
   };
 }
 
-// Out in the Crop Fields, the wild land south of the yard: BARE_BED is a square with no
-// overgrowth dealt onto it (lib/stackacres/crop-field-obstacles.ts), and the farmer starts just below it.
-const CROP_FIELDS_GATE = { x: 456, y: 536 };
-const BARE_BED = { x: 456, y: 504 };
+// In the yard, south of the house: BARE_BED is open grass the hoe can break, and the farmer starts below it on the road.
+const YARD_START = { x: 456, y: 504 };
+const BARE_BED = { x: 456, y: 472 };
 /** The bed tile BARE_BED sits on. */
-const BED_TILE = { tx: -4, ty: 9 };
+const BED_TILE = { tx: -4, ty: 7 };
 const ADMIN_SECRET = "playwright-admin-secret";
 const LANDSCAPE_PHONE = { width: 844, height: 390 };
 /** Longer than any press below is allowed to take to show up. */
-const SERVER_DELAY_MS = 4_000;
+const SERVER_DELAY_MS = 8_000;
 const INSTANT_MS = 600;
 
 async function admitFarmer(context: BrowserContext, admin: APIRequestContext) {
@@ -137,7 +136,7 @@ async function openSlowFarm(browser: Browser, before: (context: BrowserContext) 
 
   await page.evaluate(
     (gate) => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.placeFarmer("homestead", gate),
-    CROP_FIELDS_GATE,
+    YARD_START,
   );
   await page.waitForTimeout(300);
   const bedPoint = await page.evaluate(
@@ -219,10 +218,13 @@ test("a bed hoed, sown and watered on a slow server changes the moment each pres
 
     // Sow, while the hoe is still out.
     await slots.nth(3).click();
+    // The pouch already holds the farm's one seed, so the wheel only opens when none is picked yet.
     const wheel = page.locator(".sa-seed-wheel");
-    await expect(wheel).toBeVisible();
-    await wheel.locator(".sa-gel-token").first().click();
-    await expect(wheel).toHaveCount(0);
+    await page.waitForTimeout(300);
+    if (await wheel.isVisible()) {
+      await wheel.locator(".sa-gel-token").first().click();
+      await expect(wheel).toHaveCount(0);
+    }
     await useKey.click();
     await expectCarrotSoon(page, (unit) => unit.seed === true);
 

@@ -450,7 +450,7 @@ interface StackAcresResponse {
   energy?: StackAcresEnergyAnchor;
   /** The farm clock (lib/stackacres/clock.ts): this farm's offset and the
    *  server's own now for the read. */
-  clock?: { offsetMs: number; serverNowMs: number };
+  clock?: { offsetMs: number; serverNowMs: number; fresh?: boolean };
   /** The second map's own resource HUD -- see StackAcresView's own doc
    *  comment. Absent from a response older than it, which the HUD reads as
    *  all-zero, same posture as every other stub-until-built field here. */
@@ -1883,6 +1883,18 @@ export function StackAcresFarm() {
         cacheStackAcresView(data);
         setOffline(false);
         ok = true;
+        // A new farm's first morning is 6 AM. Asked for before the loading screen drops, so the old sky is never seen.
+        if (data.clock?.fresh) {
+          const begun = await fetch("/api/stackacres/actions", {
+            method: "POST",
+            cache: "no-store",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "begin-day" }),
+          })
+            .then((answer) => (answer.ok ? (answer.json() as Promise<Partial<StackAcresResponse>>) : null))
+            .catch(() => null);
+          if (begun && mounted.current) applyResponse(begun);
+        }
       }
     } catch {
       const cached = !hasLoadedOnce.current ? readCachedStackAcresView() : null;

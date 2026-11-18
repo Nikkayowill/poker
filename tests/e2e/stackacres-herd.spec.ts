@@ -163,7 +163,7 @@ test("the herd bar opens on its own and a tap on grass sets the sheep down", asy
 });
 
 test("a fed sheep gives Wool after its wait, and a second collect pays nothing", async ({ context }) => {
-  await admit(context);
+  const profileId = await admit(context);
   const adminCookies = (await context.cookies()).filter((cookie) => cookie.path === "/api/admin");
   await context.addCookies(adminCookies.map((cookie) => ({ ...cookie, path: "/api/dev" })));
   const status = await context.request.get("/api/dev/chrono-delorean");
@@ -173,6 +173,10 @@ test("a fed sheep gives Wool after its wait, and a second collect pays nothing",
   const sheep = bought.units.find((unit) => unit.stock === "pig")!;
   // Left unplaced on purpose. A sheep standing on open ground can be away for a night
   // (lib/stackacres/herd-risk.ts) and this test is about the Wool, not the layout.
+
+  // Each feeding of a sheep spends one Straw as bedding, and this one is fed twice.
+  const strawGrant = await context.request.post("/api/admin/stackacres-items", { data: { profileId, item: "straw", delta: 2 } });
+  expect(strawGrant.ok(), `grant straw: ${strawGrant.status()}`).toBe(true);
 
   const feedBought = await act(context, { action: "buy-feed", itemId: "feed_sack", quantity: 1 });
   expect(feedBought.ok(), `buy-feed: ${feedBought.status()} ${await feedBought.text()}`).toBe(true);

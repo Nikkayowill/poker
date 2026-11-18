@@ -26,11 +26,9 @@ interface TopdownHandle {
   };
 }
 
-/** The Old Fields' south gate, and a bare bed square just inside the fence above it. */
-// Out in the Crop Fields, the wild land south of the yard: BARE_BED is a square with no
-// overgrowth dealt onto it (lib/stackacres/crop-field-obstacles.ts), and the farmer starts just below it.
-const CROP_FIELDS_GATE = { x: 456, y: 536 };
-const BARE_BED = { x: 456, y: 504 };
+// In the yard, south of the house: BARE_BED is open grass the hoe can break, and the farmer starts below it on the road.
+const YARD_START = { x: 456, y: 504 };
+const BARE_BED = { x: 456, y: 472 };
 
 const ADMIN_SECRET = "playwright-admin-secret";
 /** A phone held sideways: short, wide, and the shape the farm is played in. */
@@ -311,7 +309,7 @@ test("the hoe breaks ground in front of the farmer from the Use key", async ({ b
     // Stand him on a bare bed square out in the Crop Fields.
     await page.evaluate(
       (gate) => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.placeFarmer("homestead", gate),
-      CROP_FIELDS_GATE,
+      YARD_START,
     );
     await page.waitForTimeout(300);
     const bedPoint = await page.evaluate(

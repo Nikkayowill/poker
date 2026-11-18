@@ -67,6 +67,7 @@ export default defineConfig({
       // tested (lib/server/rate-limit.test.ts) and the flag cannot take
       // effect in a production build -- see limitsLifted in rate-limit.ts.
       RIVER_DISABLE_RATE_LIMITS: "1",
+      E2E_NO_DEV_INDICATORS: "1",
     },
   },
 });

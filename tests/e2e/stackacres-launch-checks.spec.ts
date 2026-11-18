@@ -159,18 +159,8 @@ test("crops ripen and the Mill finishes while the player is away, and a contract
   const sown = await read(context);
   expect(sown.inventory.wheat ?? 0, "nothing is ripe the moment it is sown").toBe(0);
 
-  // A seed starts dry. Watering it starts the clock; the can is refilled when it runs out.
-  for (const unit of sown.units.filter((candidate) => candidate.stock === "wheat")) {
-    let watered = await act(context, { action: "water", unitId: unit.id });
-    if (!watered.ok()) {
-      await must(context, { action: "draw-water" });
-      watered = await act(context, { action: "water", unitId: unit.id });
-    }
-    expect(watered.ok(), `water -> ${watered.status()} ${await watered.text()}`).toBe(true);
-  }
-
-  // Close the tab, come back after the five-minute cycle.
-  expect((await advance(context, 6 * 60 * 1000)).ok()).toBe(true);
+  // Wheat needs no water and ripens in ten minutes. Close the tab and come back after that.
+  expect((await advance(context, 11 * 60 * 1000)).ok()).toBe(true);
   await must(context, { action: "collect" });
   const harvested = await read(context);
   expect(harvested.inventory.wheat ?? 0, "the crop ripened while away").toBeGreaterThanOrEqual(wheatNeeded);
@@ -241,8 +231,7 @@ test("double taps on sowing, harvesting and milling each land once", async ({ co
   const planted = (await read(context)).units.filter((unit) => unit.stock === "wheat");
   expect(planted).toHaveLength(1);
 
-  await must(context, { action: "water", unitId: planted[0].id });
-  expect((await advance(context, 6 * 60 * 1000)).ok()).toBe(true);
+  expect((await advance(context, 11 * 60 * 1000)).ok()).toBe(true);
   const picks = await Promise.all([
     act(context, { action: "collect", unitIds: [planted[0].id] }),
     act(context, { action: "collect", unitIds: [planted[0].id] }),

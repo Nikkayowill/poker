@@ -32,7 +32,9 @@ async function openFarm(context: BrowserContext, page: Page, lastSeenMsAgo: numb
   await page.route("**/api/stackacres", async (route) => {
     if (route.request().method() !== "GET") return route.continue();
     const response = await route.fetch();
-    const body = (await response.json()) as { machines?: unknown[] };
+    const body = (await response.json()) as { machines?: unknown[]; clock?: { fresh?: boolean } };
+    // A farm with a Mill already running is not a new one, so it gets no first morning to overwrite the Mill.
+    if (body.clock) body.clock.fresh = false;
     body.machines = [
       ...(body.machines ?? []),
       {

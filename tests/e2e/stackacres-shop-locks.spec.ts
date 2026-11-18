@@ -25,7 +25,7 @@ const ADMIN_SECRET = "playwright-admin-secret";
 /** The barn on the Homestead, and the shop counter inside it. Prop
  *  coordinates are centre-x, bottom-y. */
 const BARN_DOOR = { x: 640, y: 278 };
-const BARN_COUNTER = { x: 280, y: 75 };
+const BARN_COUNTER = { x: 296, y: 88 };
 const WALK_MS = 4_000;
 
 async function tapWorld(page: import("@playwright/test").Page, at: { x: number; y: number }) {
@@ -150,6 +150,11 @@ test("the supply store shows a locked row greyed, named and told what it wants",
     // the counter inside. See tests/e2e/stackacres-house.spec.ts.
     await page.waitForFunction(() => Boolean((window as unknown as { __stackacres?: unknown }).__stackacres));
     await page.waitForTimeout(1500);
+    // Stood in front of the door, so it is in the open middle of the screen and not under an HUD card.
+    await page.evaluate(() =>
+      (window as unknown as { __stackacres: { scene: { placeFarmer: (area: string, at: { x: number; y: number }) => void } } }).__stackacres.scene.placeFarmer("homestead", { x: 640, y: 330 }),
+    );
+    await page.waitForTimeout(800);
     await tapWorld(page, BARN_DOOR);
     await page.waitForTimeout(WALK_MS);
     await tapWorld(page, BARN_COUNTER);

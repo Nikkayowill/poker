@@ -860,8 +860,9 @@ export interface StackAcresView {
   hand: HiredHandView | null;
   /** The farm clock (lib/stackacres/clock.ts): this farm's offset, and the
    *  server's `now` for this read, so the client can correct for its own
-   *  clock being off. */
-  clock: { offsetMs: number; serverNowMs: number };
+   *  clock being off. `fresh` is a farm that has not had its first morning
+   *  yet: the client asks for it once (`begin-day`). */
+  clock: { offsetMs: number; serverNowMs: number; fresh: boolean };
   /** How fresh this snapshot is, per lib/server/stackacres-revision-store.ts:
    *  strictly higher than any response for an action that finished earlier,
    *  regardless of which one this browser's fetch happens to see first. The
@@ -1480,7 +1481,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     guardDogs,
     equipment,
     hand: storedHand ? handView(storedHand) : null,
-    clock: { offsetMs: clockOffset, serverNowMs: now.getTime() },
+    clock: { offsetMs: clockOffset, serverNowMs: now.getTime(), fresh: clockOffset === 0 && !storedHand },
     revision,
     // Wood and Metal are the shared inventory's, since that is what the Far
     // Field's buildings are paid from. Wheat and Workers stay zero until that
@@ -4179,6 +4180,22 @@ export async function sleepStackAcres(token: string, now = new Date()): Promise<
     }
   }
   throw new StackAcresRequestError("That moved on.", 409);
+}
+
+/**
+ * A new farm's first morning: its clock starts at 6 AM, so nobody's first
+ * minutes are spent in the dark. Written once, and only for a farm that has
+ * never slept and has no hired hand, since the hand's wage is paid by game
+ * day and moving the clock under one could shift a payday. A farm that is
+ * already started is returned as it is.
+ */
+export async function beginStackAcresDay(token: string, now = new Date()): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const offset = await readStackAcresClockOffset(profile.id);
+  if (offset === 0 && !(await readStackAcresHiredHand(profile.id))) {
+    await writeStackAcresClockOffset(profile.id, 0, offsetAfterSleep(now.getTime(), 0), now);
+  }
+  return view(profile, now);
 }
 
 /**

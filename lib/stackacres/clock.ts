@@ -1,9 +1,9 @@
 /**
  * The farm's clock: one game day every 13 real minutes, shared by the server and the browser.
  *
- * Game time is world time: (now + offset) mod one day, read as 0..24 hours. Every farm starts with
- * an offset of 0, so everyone shares the same sky until they sleep. Sleeping only moves that
- * farm's offset forward to the next 6 AM. It never touches crop, animal or machine timers, energy,
+ * Game time is world time: (now + offset) mod one day, read as 0..24 hours. A new farm's first open
+ * sets its offset so it is 6 AM right then (`begin-day`); after that only sleeping moves the
+ * offset, forward to the next 6 AM. It never touches crop, animal or machine timers, energy,
  * the UTC-day limits or Gold: the clock is how the farm looks, not what it earns.
  */
 

@@ -28,11 +28,11 @@ interface TopdownHandle {
   };
 }
 
-// Same squares as stackacres-instant-water.spec.ts: out in the Crop Fields,
+// Same squares as stackacres-instant-water.spec.ts: in the yard,
 // with the farmer starting just below BARE_BED.
-const CROP_FIELDS_GATE = { x: 456, y: 536 };
-const BARE_BED = { x: 456, y: 504 };
-const BED_TILE = { tx: -4, ty: 9 };
+const YARD_START = { x: 456, y: 504 };
+const BARE_BED = { x: 456, y: 472 };
+const BED_TILE = { tx: -4, ty: 7 };
 const ADMIN_SECRET = "playwright-admin-secret";
 const LANDSCAPE_PHONE = { width: 844, height: 390 };
 /** Long, because every step of this harness is slow on a busy machine and the
@@ -42,8 +42,8 @@ const SERVER_DELAY_MS = 9_000;
 /** A tap walks him the last step to the crop first, so a pick gets longer than a
  *  Use press, but still well inside the held answer. */
 const BEFORE_ANSWER_MS = 6_000;
-/** A carrot's cycle from its first water, plus slack for a slow harness. */
-const CARROT_RIPENS_MS = 15_000 + 3_000;
+/** Wheat ripens in ten minutes with no water; the clocks are moved past that rather than waited out. */
+const WHEAT_RIPENS_MS = 11 * 60 * 1000;
 
 const handle = (page: Page) =>
   page.evaluate(() => {
@@ -65,6 +65,7 @@ async function admitFarmer(context: BrowserContext, admin: APIRequestContext) {
     data: { profileId: profile.id, delta: 400_000 - profile.goldBalance },
   });
   expect(topped.ok()).toBe(true);
+  return profile.id;
 }
 
 async function dismissRay(page: Page) {
@@ -78,9 +79,9 @@ async function dismissRay(page: Page) {
 
 type Browser = Parameters<Parameters<typeof test>[2]>[0]["browser"];
 
-/** A farmer beside BARE_BED with a carrot seed sown on it, every farm action
+/** A farmer beside BARE_BED with a wheat seed sown on it, every farm action
  *  from the page held for SERVER_DELAY_MS. */
-async function openSlowFarmWithCarrot(browser: Browser) {
+async function openSlowFarmWithWheat(browser: Browser) {
   const adminContext = await browser.newContext();
   const farmerContext = await browser.newContext({
     viewport: LANDSCAPE_PHONE,
@@ -89,16 +90,29 @@ async function openSlowFarmWithCarrot(browser: Browser) {
     deviceScaleFactor: 3,
   });
   expect((await adminContext.request.post("/api/admin/session", { data: { secret: ADMIN_SECRET } })).ok()).toBe(true);
-  await admitFarmer(farmerContext, adminContext.request);
-  await farmAction(farmerContext, { action: "place-machine", kind: "stew_pot" });
-  await farmAction(farmerContext, { action: "buy-seed", crop: "carrot", quantity: 2 });
+  const profileId = await admitFarmer(farmerContext, adminContext.request);
+  // Wheat needs no water, so the crop's whole wait is the clock. The Mill is what opens its seed.
+  expect(
+    (await adminContext.request.post("/api/admin/stackacres-items", { data: { profileId, item: "wood", delta: 15 } })).ok(),
+  ).toBe(true);
+  await farmAction(farmerContext, { action: "place-machine", kind: "mill" });
+  await farmAction(farmerContext, { action: "buy-seed", crop: "wheat", quantity: 2 });
   await farmAction(farmerContext, { action: "place-soil-tile", tx: BED_TILE.tx, ty: BED_TILE.ty });
-  await farmAction(farmerContext, { action: "stock", stock: "carrot", tx: BED_TILE.tx, ty: BED_TILE.ty });
+  await farmAction(farmerContext, { action: "stock", stock: "wheat", tx: BED_TILE.tx, ty: BED_TILE.ty });
   const state = (await (await farmerContext.request.get("/api/stackacres")).json()) as { units: SceneUnit[] };
-  const carrot = state.units.find((u) => u.stock === "carrot");
-  expect(carrot, "setup carrot missing").toBeDefined();
+  const wheat = state.units.find((u) => u.stock === "wheat");
+  expect(wheat, "setup wheat missing").toBeDefined();
+
+  // The server's clock is shifted per session, through the dev route, which wants the admin cookie on its own path.
+  expect((await farmerContext.request.post("/api/admin/session", { data: { secret: ADMIN_SECRET } })).ok()).toBe(true);
+  const adminCookies = (await farmerContext.cookies()).filter((cookie) => cookie.path === "/api/admin");
+  await farmerContext.addCookies(adminCookies.map((cookie) => ({ ...cookie, path: "/api/dev" })));
+  const chrono = await farmerContext.request.get("/api/dev/chrono-delorean");
+  test.skip(!chrono.ok(), "Start the server with CHRONO_DELOREAN_MODE=1 to move its clock");
 
   const page = await farmerContext.newPage();
+  // Installed before the page loads so its own clock can be moved later.
+  await page.clock.install();
   await page.addInitScript(() => {
     HTMLMediaElement.prototype.play = () => Promise.resolve();
     HTMLMediaElement.prototype.pause = () => {};
@@ -122,7 +136,7 @@ async function openSlowFarmWithCarrot(browser: Browser) {
 
   await page.evaluate(
     (gate) => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.placeFarmer("homestead", gate),
-    CROP_FIELDS_GATE,
+    YARD_START,
   );
   await page.waitForTimeout(300);
   await dismissRay(page);
@@ -152,19 +166,19 @@ async function openSlowFarmWithCarrot(browser: Browser) {
     page,
     answered,
     close,
-    carrotId: carrot!.id,
+    cropId: wheat!.id,
     tap,
     tapAndArrive,
-    /** Waters the seed from the page, so the last answer the page holds was
-     *  written as the crop started growing and says "working", then waits for
-     *  it to ripen on the page's own clock. */
-    waterAndRipen: async () => {
-      await page.locator(".sa-belt-slot").nth(2).click();
-      await tapAndArrive(BARE_BED);
-      await expect.poll(() => answered.includes("water:200"), { timeout: SERVER_DELAY_MS * 3 }).toBe(true);
+    /** Moves the server's clock and the page's own past the wheat's cycle. The last answer the
+     *  page holds says "working", and by its own clock the crop is now ripe. */
+    ripen: async () => {
+      expect(
+        (await farmerContext.request.post("/api/dev/chrono-delorean", { data: { op: "advance", deltaMs: WHEAT_RIPENS_MS } })).ok(),
+      ).toBe(true);
+      await page.clock.fastForward(WHEAT_RIPENS_MS);
       await expect
-        .poll(async () => (await handle(page)).units.find((u) => u.id === carrot!.id)?.state, {
-          timeout: CARROT_RIPENS_MS,
+        .poll(async () => (await handle(page)).units.find((u) => u.id === wheat!.id)?.state, {
+          timeout: 10_000,
           intervals: [250],
         })
         .toBe("ready");
@@ -176,23 +190,23 @@ async function openSlowFarmWithCarrot(browser: Browser) {
 
 test("a crop that ripened on screen leaves the ground the moment it is picked", async ({ browser }) => {
   test.setTimeout(240_000);
-  const farm = await openSlowFarmWithCarrot(browser);
+  const farm = await openSlowFarmWithWheat(browser);
   try {
-    const { page, answered, slots, carrotId, tap, waterAndRipen } = farm;
+    const { page, answered, slots, cropId, tap, ripen } = farm;
     // Ripe by the page's own clock; the last answer the page had said "working".
-    await waterAndRipen();
+    await ripen();
 
     // The hand, then a tap on the crop: he is already beside it.
     await slots.nth(0).click();
     await tap(BARE_BED);
     await expect
-      .poll(async () => (await handle(page)).units.some((u) => u.id === carrotId), { timeout: BEFORE_ANSWER_MS, intervals: [50] })
+      .poll(async () => (await handle(page)).units.some((u) => u.id === cropId), { timeout: BEFORE_ANSWER_MS, intervals: [50] })
       .toBe(false);
     expect(answered).toEqual([]);
 
     await expect.poll(() => answered, { timeout: SERVER_DELAY_MS * 3 }).toEqual(["collect:200"]);
     await page.waitForTimeout(500);
-    expect((await handle(page)).units.some((u) => u.id === carrotId)).toBe(false);
+    expect((await handle(page)).units.some((u) => u.id === cropId)).toBe(false);
   } finally {
     await farm.close();
   }
@@ -200,12 +214,12 @@ test("a crop that ripened on screen leaves the ground the moment it is picked", 
 
 test("a bed hoed while an older answer is still out never flicks back to grass", async ({ browser }) => {
   test.setTimeout(240_000);
-  const farm = await openSlowFarmWithCarrot(browser);
+  const farm = await openSlowFarmWithWheat(browser);
   try {
-    const { page, answered, slots, tap, waterAndRipen } = farm;
-    await waterAndRipen();
+    const { page, answered, slots, tap, ripen } = farm;
+    await ripen();
 
-    // Pick the carrot: its answer is read on the server before the hoe below
+    // Pick the wheat: its answer is read on the server before the hoe below
     // is written, so it comes back without the new bed in it.
     const t0 = Date.now();
     const marks: string[] = [];

@@ -197,6 +197,26 @@ describe("Earl's chores", () => {
     expect(await gold(token)).toBe(1_000 - HIRED_HAND_DAILY_WAGE);
   });
 
+  it("skips a bed whose crop is out of seed and still sows the rest", async () => {
+    const { token, profileId, tiles } = await farm(1_000);
+    await adjustStackAcresSeedStock(profileId, "potato", 1);
+    // The potato ripens first, so it is the first bed he comes to.
+    await stockStackAcres(token, { stock: "potato", tile: tiles[0] }, T0);
+    await stockStackAcres(token, { stock: "wheat", tile: tiles[1] }, T0);
+    await stockStackAcres(token, { stock: "wheat", tile: tiles[2] }, T0);
+    await hireStackAcresHand(token, T0);
+    await runStackAcresHiredHand(token, at(PASS));
+    const wheatSeed = (await readStackAcresSeedStock(profileId)).wheat ?? 0;
+
+    const pass = await runStackAcresHiredHand(token, at(PASS + 10 * 60_000));
+    expect(pass.handChores.harvested).toHaveLength(3);
+    const resown = pass.units.filter((unit) => unit.state === "working");
+    expect(resown.map((unit) => unit.stock)).toEqual(["wheat", "wheat"]);
+    const seed = await readStackAcresSeedStock(profileId);
+    expect(seed.wheat ?? 0).toBe(wheatSeed - 2);
+    expect(seed.potato ?? 0).toBe(0);
+  });
+
   it("takes one pass per interval", async () => {
     const { token, tiles } = await farm(1_000);
     for (const tile of tiles) await stockStackAcres(token, { stock: "wheat", tile }, T0);

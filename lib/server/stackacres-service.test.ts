@@ -601,9 +601,10 @@ describe("stocking", () => {
     await adjustStackAcresSeedStock(id, "carrot", -1000);
     const before = await balance(token);
 
-    await expect(stockStackAcres(token, { stock: "carrot" }, T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
+    const refused = stockStackAcres(token, { stock: "carrot" }, T0);
+    await expect(refused).rejects.toBeInstanceOf(StackAcresRequestError);
+    // Seed comes from Cora in town now, not Ray's barn.
+    await expect(refused).rejects.toThrow("You have no Carrot seeds. Cora sells them at the market in town");
     expect(await balance(token)).toBe(before);
     expect((await readStackAcres(token, T0)).units).toEqual([]);
   });
@@ -3019,6 +3020,30 @@ describe("idempotency keys", () => {
     // And it credited exactly once, which is what the version guard was always
     // good for -- the key only fixes what the duplicate SOUNDS like.
     expect((await readStackAcres(token, HEN_READY)).inventory.eggs).toBe(creditedOnce);
+  });
+
+  it("hands a replayed sale, greeting, chop or stalk its own result, not a bare farm", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresInventory(id, "wheat", 10);
+    const viewKeys = new Set(Object.keys(await readStackAcres(token, T0)));
+    /** What a result says on top of the farm itself. */
+    const own = (result: StackAcresActionResult) =>
+      Object.fromEntries(Object.entries(result).filter(([key]) => !viewKeys.has(key)));
+    const twice = async (action: string, fn: () => Promise<StackAcresActionResult>) => {
+      const key = randomUUID();
+      const first = await run(token, key, action, fn);
+      const replay = await run(token, key, action, fn);
+      expect(Object.keys(own(first)), action).not.toHaveLength(0);
+      expect(own(replay), action).toEqual(own(first));
+    };
+
+    const goldBefore = await balance(token);
+    await twice("sell", () => sellStackAcresItem(token, { item: "wheat", quantity: 2, buyer: "grain-elevator" }, T0));
+    expect((await readStackAcresInventory(id)).wheat).toBe(8);
+    expect(await balance(token)).toBe(goldBefore + 2 * machineItemSellPrice("wheat"));
+    await twice("greet-npc", () => greetStackAcresNpc(token, "ray", T0));
+    await twice("chop-tree", () => chopStackAcresWoodTree(token, "homestead-1", T0));
+    await twice("bag-quarry", () => bagStackAcresQuarry(token, T0));
   });
 
   it("frees the key when the action refused, so the retry is a real attempt", async () => {

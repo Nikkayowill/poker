@@ -15,9 +15,9 @@ test.use({ viewport: { width: 932, height: 430 } });
  *  empty farm is told to sow or to see Cora instead (stackacres-seed-seller.spec.ts). */
 async function plantOneCrop(context: BrowserContext) {
   const act = (data: Record<string, unknown>) => context.request.post("/api/stackacres/actions", { data });
-  expect((await act({ action: "buy-seed", crop: "wheat", quantity: 1 })).ok()).toBe(true);
+  expect((await act({ action: "buy-seed", crop: "carrot", quantity: 1 })).ok()).toBe(true);
   expect((await act({ action: "place-soil-tile", tx: -6, ty: 2 })).ok()).toBe(true);
-  expect((await act({ action: "stock", stock: "wheat", tx: -6, ty: 2 })).ok()).toBe(true);
+  expect((await act({ action: "stock", stock: "carrot", tx: -6, ty: 2 })).ok()).toBe(true);
   // Ray is how a new player is first pointed at things, so meet him; a person waiting to be met would lead the panel.
   expect((await act({ action: "story-meet", traveler: "ray" })).ok()).toBe(true);
   // A seed starts dry, and a dry bed is its own cue, so water it.

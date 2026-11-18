@@ -19,7 +19,7 @@ interface Handle {
 const TREE_3 = { x: 566, y: 170 };
 /** Trunk tiles that only one tree stands on: tree 3's outer tile, and tree 4's middle one. */
 const TREE_3_OUTER = { x: 584, y: 168 };
-const TREE_4_MIDDLE = { x: 728, y: 232 };
+const TREE_4_MIDDLE = { x: 744, y: 232 };
 /** Bush 1 of the four berried ones, which are the forage nodes (lib/stackacres/forage.ts). */
 const BUSH = { x: 250, y: 300 };
 /** Bush 2, picked by the forage test below so the walk-through test above keeps its own. */
@@ -154,15 +154,18 @@ test("a bush is walked through, and a house wall still stops you", async ({ cont
   expect(await sceneCall(page, "isBlockedAt", BUSH)).toBe(false);
   expect(await sceneCall(page, "isBlockedAt", HOUSE_WALL)).toBe(true);
 
+  // A tap on the bush itself is a pick, from whichever side he is nearest. To cross it he is sent to bare ground past it.
   await sceneCall(page, "placeFarmer", "homestead", { x: BUSH.x - 40, y: BUSH.y + 10 });
   await page.waitForTimeout(500);
-  const point = await sceneCall(page, "clientPointFor", BUSH.x, BUSH.y - 4);
+  const beyond = { x: BUSH.x + 40, y: BUSH.y + 10 };
+  const point = await sceneCall(page, "clientPointFor", beyond.x, beyond.y);
   await page.mouse.click(point.x, point.y);
+  await page.waitForTimeout(300);
   await expect.poll(() => sceneCall(page, "isWalking"), { timeout: 10_000 }).toBe(false);
 
   const arrived = await sceneCall(page, "farmerPoint");
-  expect(Math.abs(arrived.x - BUSH.x)).toBeLessThan(10);
-  expect(Math.abs(arrived.y - BUSH.y)).toBeLessThan(14);
+  expect(Math.abs(arrived.x - beyond.x)).toBeLessThan(16);
+  expect(Math.abs(arrived.y - beyond.y)).toBeLessThan(16);
 });
 
 test("picking a bush gives crop seed and leaves it picked over", async ({ context, page }) => {

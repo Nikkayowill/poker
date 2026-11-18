@@ -52,7 +52,7 @@ async function admitFarmer(context: BrowserContext, admin: APIRequestContext) {
   if (delta !== 0) expect((await admin.post("/api/admin/gold/adjust", { data: { profileId: profile.id, delta } })).ok()).toBe(true);
   await farmAction(context, { action: "claim-starter-seeds" });
   for (const bed of BEDS) await farmAction(context, { action: "place-soil-tile", tx: bed.tx, ty: bed.ty });
-  await farmAction(context, { action: "stock", stock: "wheat", tx: BEDS[0].tx, ty: BEDS[0].ty });
+  await farmAction(context, { action: "stock", stock: "carrot", tx: BEDS[0].tx, ty: BEDS[0].ty });
 }
 
 test("hire Earl at Ray's, see him on the farm, and watch him water the seed", async ({ browser }) => {

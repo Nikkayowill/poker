@@ -95,6 +95,8 @@ const ogFiles = ["node_modules/**/next/dist/compiled/@vercel/og/**"];
 const nextConfig: NextConfig = {
   reactStrictMode: false,
   poweredByHeader: false,
+  // The dev "N" badge sits bottom-left, right on the farm's Use key, and Playwright's clicks land on it.
+  devIndicators: process.env.E2E_NO_DEV_INDICATORS === "1" ? false : undefined,
   // CRITICAL FIX: Unified allowedDevOrigins configuration into the primary NextConfig object structure.
   allowedDevOrigins: ["192.168.2.144:3000", "192.168.2.144"],
   outputFileTracingExcludes: {

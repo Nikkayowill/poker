@@ -2392,6 +2392,7 @@ describe("the currency wall", () => {
     // way".
     expect(actions).toEqual([
       "bag-quarry",
+      "begin-day",
       "build-greenhouse",
       // Spends Gold, Wood and Stone on an acre of the wild land, refunded if the deed can't be written.
       "buy-acre",

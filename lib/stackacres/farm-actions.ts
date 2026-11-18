@@ -190,6 +190,8 @@ export type Action =
   // The farmhouse bed: the farm clock jumps to 6 AM (./clock.ts). Only ever
   // sent from the bed's own "Sleep" button, and by night.
   | { action: "sleep" }
+  // A new farm's clock starts at 6 AM. Sent once by the client on a fresh farm's first load.
+  | { action: "begin-day" }
   // NPC friendship: a gift, from the friendship dialogue's own item picker.
   // See lib/stackacres/friendship.ts's own header.
   | { action: "give-gift"; npc: NpcId; item: MachineItemId }

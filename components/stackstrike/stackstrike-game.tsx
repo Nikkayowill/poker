@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { DEFAULT_DIFFICULTY, DIFFICULTIES } from "@/lib/stackstrike/content";
+import { loadProgress, NEW_PROGRESS, rankFor, unlocksBetween, type Progress } from "@/lib/stackstrike/progress";
 import type { DifficultyId } from "@/lib/stackstrike/types";
 import type { Insets, StackStrikeScene } from "./stackstrike-scene";
 
@@ -26,6 +27,16 @@ const MAX_PIXEL_RATIO = 2;
 
 const DIFFICULTY_KEY = "stackstrike:difficulty";
 const DIFFICULTY_IDS = Object.keys(DIFFICULTIES) as DifficultyId[];
+const MUTE_KEY = "stackstrike:muted";
+
+/** Whether sound was turned off last time, if the browser lets us remember. */
+function rememberedMuted(): boolean {
+  try {
+    return window.localStorage.getItem(MUTE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 /** The last difficulty picked, if the browser lets us remember it. A convenience only. */
 function rememberedDifficulty(): DifficultyId {
@@ -110,6 +121,11 @@ export function StackStrikeGame() {
     typeof window === "undefined" ? DEFAULT_DIFFICULTY : rememberedDifficulty(),
   );
   const started = begun;
+  // Only shown once play has started, which is on the client, so reading storage here is safe.
+  const [muted, setMuted] = useState<boolean>(() => (typeof window === "undefined" ? false : rememberedMuted()));
+  const mutedRef = useRef(muted);
+  // Read on the client only; the title screen does not render until the screen has been asked.
+  const [progress] = useState<Progress>(() => (typeof window === "undefined" ? NEW_PROGRESS : loadProgress()));
 
   useEffect(() => {
     const root = document.documentElement;
@@ -125,6 +141,16 @@ export function StackStrikeGame() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    mutedRef.current = muted;
+    sceneRef.current?.setMuted(muted);
+    try {
+      window.localStorage.setItem(MUTE_KEY, muted ? "1" : "0");
+    } catch {
+      // Not remembered; nothing is lost.
+    }
+  }, [muted]);
 
   const uprightPhone = touch === true && portrait;
 
@@ -162,6 +188,7 @@ export function StackStrikeGame() {
       const scene = new SceneClass({ touch, difficulty, pixelRatio, insets: readInsets });
       sceneRef.current = scene;
       scene.setPaused(heldUpright.current);
+      scene.setMuted(mutedRef.current);
 
       const size = () => {
         const ratio = pixelRatio();
@@ -177,7 +204,6 @@ export function StackStrikeGame() {
         backgroundColor: "#000000",
         // Drawn at device resolution; the canvas is then stretched back to the host in CSS.
         scale: { mode: Phaser.Scale.NONE, width: first.width, height: first.height },
-        audio: { noAudio: true },
         scene,
       });
       game = instance;
@@ -268,55 +294,37 @@ export function StackStrikeGame() {
         </Link>
       )}
 
+      {started && (
+        <button
+          type="button"
+          data-testid="stackstrike-sound"
+          aria-pressed={!muted}
+          onClick={() => setMuted((value) => !value)}
+          style={{
+            position: "absolute",
+            left: "calc(50% + 46px)",
+            top: "calc(8px + env(safe-area-inset-top))",
+            zIndex: 2,
+            background: "none",
+            border: 0,
+            color: muted ? "#5b626d" : "#7d8591",
+            font: "600 12px system-ui, sans-serif",
+            padding: "6px 10px",
+            cursor: "pointer",
+          }}
+        >
+          {muted ? "Sound off" : "Sound on"}
+        </button>
+      )}
+
       {touch !== null && !started && (
-        <div data-testid="stackstrike-gate" style={COVER}>
-          <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: 4 }}>STACKSTRIKE</div>
-          <div style={{ fontSize: 14, color: "#9aa3af", maxWidth: 520, lineHeight: 1.5 }}>
-            {touch
-              ? "Slip in, take the gold case from the far side of the building and get back out the west door. Left stick moves. Drag the right pad to aim the gun and its red laser (they can't see it), tap it to fire. Your guns are silenced and one shot kills, but a miss or a body in the open gets noticed. Red glows are the guards near you. Each carries a flashlight: stay out of the beam, step into it and their meter fills. Kill a spotter fast, before the radio call goes out. Press into a dark corner to disappear."
-              : "Slip in, take the gold case from the far side of the building and get back out the west door. WASD moves. The mouse aims, click fires, R reloads. Your guns are silenced and one shot kills, but a miss or a body in the open gets noticed. Red glows are the guards near you. Each carries a flashlight: stay out of the beam, step into it and their meter fills. Kill a spotter fast, before the radio call goes out. Press into a dark corner to disappear."}
-          </div>
-          <div role="group" aria-label="Difficulty" style={{ display: "flex", gap: 8, marginTop: 4 }}>
-            {DIFFICULTY_IDS.map((id) => (
-              <button
-                key={id}
-                type="button"
-                data-testid={`stackstrike-difficulty-${id}`}
-                aria-pressed={difficulty === id}
-                onClick={() => setDifficulty(id)}
-                style={{
-                  padding: "9px 20px",
-                  fontSize: 14,
-                  fontWeight: 700,
-                  borderRadius: 8,
-                  border: `2px solid ${difficulty === id ? "#ffd98a" : "#3a3f48"}`,
-                  background: difficulty === id ? "#3a2f15" : "#0d0e10",
-                  color: difficulty === id ? "#ffd98a" : "#9aa3af",
-                }}
-              >
-                {DIFFICULTIES[id].label}
-              </button>
-            ))}
-          </div>
-          <div style={{ fontSize: 12, color: "#8b93a1", minHeight: 16 }}>{DIFFICULTIES[difficulty].blurb}</div>
-          <button
-            type="button"
-            onClick={begin}
-            style={{
-              marginTop: 2,
-              padding: "14px 38px",
-              fontSize: 18,
-              fontWeight: 800,
-              color: "#1a1204",
-              background: "#ffd98a",
-              border: 0,
-              borderRadius: 10,
-            }}
-          >
-            {touch ? "Tap to play" : "Play"}
-          </button>
-          {touch && <div style={{ fontSize: 12, color: "#6b7280" }}>Plays in landscape.</div>}
-        </div>
+        <TitleScreen
+          touch={touch}
+          difficulty={difficulty}
+          progress={progress}
+          onDifficulty={setDifficulty}
+          onPlay={begin}
+        />
       )}
 
       {uprightPhone && (
@@ -326,6 +334,157 @@ export function StackStrikeGame() {
           <div style={{ fontSize: 13, color: "#9aa3af" }}>StackStrike plays in landscape.</div>
         </div>
       )}
+    </div>
+  );
+}
+
+const HOW_TO_TOUCH = [
+  "Left thumb moves.",
+  "Right thumb: drag to aim the red laser, let go to fire. Slide back to the middle first to cancel.",
+  "Guards can't see the laser. They carry flashlights: stay out of the beam.",
+  "Shots are silent and one kills, but a miss gets noticed, and so does a body left in the light. Drop a spotter before the radio call.",
+  "Every job is different: the gold case, the valuables and the guards move, and each job has a twist.",
+  "Take the gold case and get back out the west door. Press into a dark corner to disappear. Clean runs earn rank, and rank unlocks guns.",
+];
+const HOW_TO_DESKTOP = [
+  "WASD moves, the mouse aims the red laser, click fires, R reloads, 1-3 or the wheel swaps guns.",
+  "Guards can't see the laser. They carry flashlights: stay out of the beam.",
+  "Shots are silent and one kills, but a miss gets noticed, and so does a body left in the light. Drop a spotter before the radio call.",
+  "Every job is different: the gold case, the valuables and the guards move, and each job has a twist.",
+  "Take the gold case and get back out the west door. Press into a dark corner to disappear. Clean runs earn rank, and rank unlocks guns.",
+];
+
+const TITLE_CSS = `
+@keyframes ss-drift { from { transform: scale(1.04) translate3d(0,0,0); } to { transform: scale(1.14) translate3d(-2.2%, -1.4%, 0); } }
+@keyframes ss-glow { 0%,100% { box-shadow: 0 0 0 0 rgba(255,217,138,.0), 0 8px 26px rgba(0,0,0,.55); } 50% { box-shadow: 0 0 26px 2px rgba(255,217,138,.45), 0 8px 26px rgba(0,0,0,.55); } }
+@keyframes ss-rise { from { opacity: 0; transform: translate3d(0,14px,0); } to { opacity: 1; transform: none; } }
+.ss-title-bg { animation: ss-drift 22s ease-in-out infinite alternate; }
+.ss-rise { animation: ss-rise .6s ease-out both; }
+.ss-play { animation: ss-glow 2.4s ease-in-out infinite; }
+.ss-play:active { transform: scale(.97); }
+@media (prefers-reduced-motion: reduce) { .ss-title-bg, .ss-rise, .ss-play { animation: none; } }
+`;
+
+function TitleScreen({
+  touch,
+  difficulty,
+  progress,
+  onDifficulty,
+  onPlay,
+}: {
+  touch: boolean;
+  difficulty: DifficultyId;
+  progress: Progress;
+  onDifficulty: (id: DifficultyId) => void;
+  onPlay: () => void;
+}) {
+  const [help, setHelp] = useState(false);
+  const lines = touch ? HOW_TO_TOUCH : HOW_TO_DESKTOP;
+  const rank = rankFor(progress.xp);
+  const next = unlocksBetween(rank.level, rank.level + 1);
+  return (
+    <div data-testid="stackstrike-gate" style={{ ...COVER, alignItems: "stretch", justifyContent: "center", padding: 0, overflow: "hidden", textAlign: "left" }}>
+      <style>{TITLE_CSS}</style>
+      <div
+        className="ss-title-bg"
+        aria-hidden
+        style={{ position: "absolute", inset: 0, backgroundImage: "url(/stackstrike/keyart.svg)", backgroundSize: "cover", backgroundPosition: "62% 50%" }}
+      />
+      <div
+        aria-hidden
+        style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(5,5,6,.95) 0%, rgba(5,5,6,.9) 44%, rgba(5,5,6,.15) 76%, rgba(5,5,6,.35) 100%)" }}
+      />
+      <div
+        className="ss-rise"
+        style={{
+          position: "relative",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          gap: "clamp(8px, 2.2vh, 16px)",
+          width: "min(460px, 92vw)",
+          height: "100%",
+          boxSizing: "border-box",
+          padding: "max(16px, env(safe-area-inset-top)) 20px max(16px, env(safe-area-inset-bottom)) max(28px, env(safe-area-inset-left))",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: "clamp(34px, 11vh, 60px)", fontWeight: 900, letterSpacing: "0.04em", lineHeight: 1, color: "#f4f1ea", textShadow: "0 3px 0 #000, 0 0 24px rgba(0,0,0,.6)" }}>
+            STACK<span style={{ color: "#ffd98a" }}>STRIKE</span>
+          </div>
+          <div style={{ marginTop: 8, fontSize: "clamp(10px, 2.4vh, 13px)", fontWeight: 700, letterSpacing: "0.32em", color: "#9aa3af" }}>STAY QUIET. TAKE THE GOLD.</div>
+        </div>
+
+        <div data-testid="stackstrike-rank" style={{ display: "flex", alignItems: "center", gap: 10, maxWidth: 340 }}>
+          <div style={{ flex: "none", padding: "4px 10px", borderRadius: 6, background: "rgba(255,217,138,.14)", border: "1px solid rgba(255,217,138,.45)", color: "#ffd98a", fontSize: 12, fontWeight: 900, letterSpacing: "0.1em" }}>
+            RANK {rank.level}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ height: 5, borderRadius: 3, background: "rgba(255,255,255,.12)", overflow: "hidden" }}>
+              <div style={{ width: `${Math.round(rank.fraction * 100)}%`, height: "100%", background: "#ffd98a" }} />
+            </div>
+            <div style={{ marginTop: 4, fontSize: 11, color: "#8b93a1", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {rank.needed === 0 ? "Top rank" : next.length > 0 ? `Next: ${next.join(", ")}` : `${rank.needed - rank.into} XP to rank ${rank.level + 1}`}
+            </div>
+          </div>
+        </div>
+
+        <div role="group" aria-label="Difficulty" style={{ display: "flex", background: "rgba(255,255,255,.07)", borderRadius: 999, padding: 3, width: "fit-content", border: "1px solid rgba(255,255,255,.12)" }}>
+          {DIFFICULTY_IDS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              data-testid={`stackstrike-difficulty-${id}`}
+              aria-pressed={difficulty === id}
+              onClick={() => onDifficulty(id)}
+              style={{
+                padding: "9px 20px",
+                fontSize: 13,
+                fontWeight: 800,
+                letterSpacing: "0.04em",
+                border: 0,
+                borderRadius: 999,
+                background: difficulty === id ? "#ffd98a" : "transparent",
+                color: difficulty === id ? "#1a1204" : "#b6bdc8",
+              }}
+            >
+              {DIFFICULTIES[id].label}
+            </button>
+          ))}
+        </div>
+        <div style={{ fontSize: 12, color: "#9aa3af", minHeight: 16, marginTop: -4 }}>{DIFFICULTIES[difficulty].blurb}</div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <button
+            type="button"
+            className="ss-play"
+            data-testid="stackstrike-play"
+            onClick={onPlay}
+            style={{ padding: "clamp(11px, 3vh, 15px) 44px", fontSize: 19, fontWeight: 900, letterSpacing: "0.08em", color: "#1a1204", background: "linear-gradient(#ffe6a8, #ffc95e)", border: 0, borderRadius: 12 }}
+          >
+            PLAY
+          </button>
+          <button
+            type="button"
+            aria-expanded={help}
+            onClick={() => setHelp((open) => !open)}
+            style={{ background: "transparent", border: 0, color: "#b6bdc8", fontSize: 13, fontWeight: 700, padding: "10px 6px", textDecoration: "underline", textUnderlineOffset: 4 }}
+          >
+            {help ? "Hide" : "How to play"}
+          </button>
+        </div>
+        {touch && !help && <div style={{ fontSize: 11, color: "#6b7280" }}>Plays in landscape.</div>}
+
+        {help && (
+          <ul style={{ margin: 0, padding: "10px 14px 10px 28px", fontSize: 12, lineHeight: 1.45, color: "#cfd5de", background: "rgba(0,0,0,.55)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 10, maxHeight: "44vh", overflowY: "auto" }}>
+            {lines.map((line) => (
+              <li key={line} style={{ marginBottom: 4 }}>
+                {line}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,16 +1,24 @@
 import * as Phaser from "phaser";
-import { ARENA, PLAYER_GLOW, STEALTH } from "@/lib/stackstrike/content";
-import { segmentRectHit } from "@/lib/stackstrike/geometry";
+import { CONTRACTS, PLAYER_GLOW } from "@/lib/stackstrike/content";
+import { StackStrikeAudio } from "./stackstrike-audio";
+import { recordAim, releaseShot, type AimSample } from "@/lib/stackstrike/aim";
+import { GUARD_STRIDE, guardStep, PLAYER_STRIDE, playerStep, readThreat, StepCounter, cuesFor, type Cue, type CueContext } from "@/lib/stackstrike/audio";
+import { lineOfSight, segmentRectHit } from "@/lib/stackstrike/geometry";
+import { applyRun, loadoutFor, loadProgress, rankFor, saveProgress, type Progress, type RunResult } from "@/lib/stackstrike/progress";
+import { buildArena, pickContract } from "@/lib/stackstrike/run";
 import {
   accuracy,
+  beamRange,
   createState,
   currentWeapon,
   enemyDef,
+  radioDelay,
   rating,
   STEP_SECONDS,
   step,
 } from "@/lib/stackstrike/sim";
 import type { DifficultyId, EnemyState, PlayerInput, SimEvent, SimState } from "@/lib/stackstrike/types";
+import { ARM_PX, bodyToWorld, FISTS, GUN_ART, handOffset, handsOnGun, pixelScale, REST_HANDS, segmentBetween, SHOULDERS, solveArm, walkSway, type Pt as BodyPt } from "@/lib/stackstrike/sprites";
 import { angleDiff, assistAim, beamPolygon, glowPolygon, roomAt, sensedEnemies } from "@/lib/stackstrike/vision";
 
 /**
@@ -21,10 +29,12 @@ import { angleDiff, assistAim, beamPolygon, glowPolygon, roomAt, sensedEnemies }
  *
  * Built for a phone held sideways, laid out like StackAcres: fixed controls in
  * the bottom corners. Left thumb: a move stick. Right thumb: an aim pad that
- * points the gun and its red laser sight; dragging only aims, a tap anywhere
- * on the pad aims there and fires, and holding still keeps firing. RELOAD and
- * the weapon button sit around it. There is no hide button: pressing into a
- * corner is hiding. Desktop is the same game with WASD, mouse, R and 1-3.
+ * points the gun and its red laser sight. Drag to aim, let go to fire (along the
+ * aim from just before the lift, since a thumb rolls as it leaves the glass);
+ * slide back to the middle first to cancel. A tap aims where it lands and fires.
+ * Resting a thumb on the pad never fires. Reload and the weapon button sit around it.
+ * There is no hide button: pressing into a corner is hiding. Desktop is the
+ * same game with WASD, mouse, R and 1-3.
  *
  * The player carries no light. The world is black, lit only by a small glow
  * round the player and by the enemies' flashlights: each beam, cut short by
@@ -78,8 +88,28 @@ const COLORS = {
 };
 
 const ENEMY_COLORS: Record<string, number> = { grunt: 0xe5484d, runner: 0xf59f00 };
+
+const ART = "/stackstrike/art";
+/** The runner is the guard's drawing, tinted so it reads as a different kind of enemy. */
+const ENEMY_TINT: Record<string, number> = { runner: 0xffb070 };
+
+/** Leading upper arm, trigger upper arm, leading forearm, trigger forearm. Forearms end in a glove. */
+type ArmRig = Phaser.GameObjects.Image[];
+const ARM_TEXTURE_WIDTH = ARM_PX + 18;
+
+interface Corpse {
+  body: Phaser.GameObjects.Image;
+  arms: ArmRig;
+}
+
+interface EnemySprite {
+  body: Phaser.GameObjects.Image;
+  arms: ArmRig;
+  gun: Phaser.GameObjects.Image;
+  last: Point;
+  moving: boolean;
+}
 const ENEMY_GLOW = 0xff2a2a;
-const STEALTH_RADIO_SECONDS = STEALTH.radioSeconds;
 
 const DARKNESS = 0.95;
 /** The dark is drawn at this share of screen resolution and stretched back up: light is soft anyway, and it is a full-screen fill. */
@@ -87,7 +117,8 @@ const DARK_SCALE = 0.5;
 
 /** Sizes below are CSS pixels; multiply by `u` for the canvas. */
 const STICK_RADIUS = 54;
-const KNOB_RADIUS = 24;
+/** How big the knob is drawn. Small and faint: the thumb is the control, the glass only hints where. */
+const KNOB_RADIUS = 15;
 /** The aim pad is a little bigger than the move stick: the same thumb travel turns the gun through a smaller angle. */
 const AIM_RADIUS = 70;
 /** A thumb landing within this many pad radii of a pad uses the pad; farther out it floats from where it landed. */
@@ -99,12 +130,12 @@ const AIM_SMOOTHING = 26;
 /** The thumb's own jitter is averaged out: this share of the way to the new position each step. */
 const THUMB_FILTER = 0.55;
 const BUTTON_RADIUS = 30;
+/** Buttons are drawn smaller than they are to touch. */
+const BUTTON_DRAW_RADIUS = 18;
 /** A thumb has to move this far (CSS pixels) from where it landed before it counts as a drag. */
 const DRAG_SLOP = 10;
 /** A touch on the aim pad this short, with no drag, is a tap: one shot. */
 const TAP_MS = 260;
-/** Held still on the aim pad past this, with no drag, it keeps firing. */
-const HOLD_FIRE_MS = 320;
 /** A tap keeps asking to fire this long, so the weapon's cooldown cannot swallow it. */
 const FIRE_BUFFER_SECONDS = 0.1;
 const MAX_FRAME_SECONDS = 0.1;
@@ -146,6 +177,8 @@ interface Pad {
   dragged: boolean;
   /** Started on the pad's fixed base, rather than floating from where it landed. */
   fixed: boolean;
+  /** Where the gun pointed over the last few frames, so a lift can fire from before the thumb rolled off. */
+  history: AimSample[];
 }
 
 interface Point {
@@ -210,6 +243,22 @@ export class StackStrikeScene extends Phaser.Scene {
   private lightBrush!: Phaser.GameObjects.Graphics;
   /** Enemies, drawn over the dark in world coordinates (it is moved and scaled to match the camera). */
   private enemyGfx!: Phaser.GameObjects.Graphics;
+  /** Rings, meters and radio marks, drawn over the guards' sprites. */
+  private enemyTop!: Phaser.GameObjects.Graphics;
+  private playerSprite!: Phaser.GameObjects.Image;
+  private playerGun!: Phaser.GameObjects.Image;
+  private playerArms!: ArmRig;
+
+  private audio!: StackStrikeAudio;
+  private muted = false;
+  private playerSteps = new StepCounter(PLAYER_STRIDE);
+  private lastPlayerPos: Point | null = null;
+  private guardSteps = new Map<number, { last: Point; counter: StepCounter }>();
+  private lastWeapon = 0;
+  /** The names of the last sounds played, for tests. */
+  private heard: string[] = [];
+  private enemySprites = new Map<number, EnemySprite>();
+  private bodySprites = new Map<number, Corpse>();
   private tint!: Phaser.GameObjects.Graphics;
   private hud!: Phaser.GameObjects.Graphics;
   private healthText!: Phaser.GameObjects.Text;
@@ -218,8 +267,6 @@ export class StackStrikeScene extends Phaser.Scene {
   private objectiveText!: Phaser.GameObjects.Text;
   private bannerText!: Phaser.GameObjects.Text;
   private buttonLabels!: Record<ButtonName, Phaser.GameObjects.Text>;
-  private moveCaption!: Phaser.GameObjects.Text;
-  private aimCaption!: Phaser.GameObjects.Text;
 
   /** Each enemy's flashlight beam this frame, by enemy id. Shared by the dark and the enemy drawing. */
   private beams = new Map<number, Point[]>();
@@ -236,12 +283,41 @@ export class StackStrikeScene extends Phaser.Scene {
   private hint = { text: "", left: 0 };
 
   private particles: Particle[] = [];
-  private banner = { text: "", left: 0 };
+  private banner: { text: string; left: number; size?: number } = { text: "", left: 0 };
+  private progress: Progress;
+  /** What the run that just ended earned. Null while playing. */
+  private result: RunResult | null = null;
 
   constructor(private readonly options: SceneOptions) {
     super("stackstrike");
     this.touch = options.touch;
-    this.sim = createState(1, "vanguard", ARENA, options.difficulty);
+    this.progress = loadProgress();
+    this.sim = this.newRun();
+  }
+
+  /** A fresh building: its own gold, valuables, guards and twist, with the guns this rank has earned. */
+  private newRun(): SimState {
+    const seed = (Math.random() * 2 ** 31) >>> 0;
+    const level = rankFor(this.progress.xp).level;
+    const contract = pickContract(seed, level);
+    const arena = buildArena(seed, this.options.difficulty, contract);
+    return createState(seed, "vanguard", arena, this.options.difficulty, loadoutFor(level));
+  }
+
+  /** The contract is the headline of the opening seconds. */
+  private announceContract(): void {
+    const contract = CONTRACTS[this.sim.arena.contract ?? "standard"];
+    this.banner = { text: `${contract.name.toUpperCase()}\n${contract.blurb}`, left: 3.4, size: 17 };
+  }
+
+  preload(): void {
+    this.load.image("operative", `${ART}/operative.png`);
+    this.load.image("guard", `${ART}/guard.png`);
+    for (const kind of ["operative", "guard"]) {
+      for (const part of ["upper", "fore"]) this.load.image(`arm-${kind}-${part}`, `${ART}/arm-${kind}-${part}.png`);
+    }
+    for (const id of Object.keys(GUN_ART)) this.load.image(`gun-${id}`, `${ART}/gun-${id}.png`);
+    StackStrikeAudio.preload(this);
   }
 
   create(): void {
@@ -256,7 +332,10 @@ export class StackStrikeScene extends Phaser.Scene {
     const floor = this.add.graphics();
     this.drawArena(floor);
     this.world = this.add.graphics();
-    this.worldLayer.add([floor, this.world]);
+    this.playerSprite = this.add.image(0, 0, "operative");
+    this.playerArms = this.makeArms("operative");
+    this.playerGun = this.add.image(0, 0, "gun-pistol");
+    this.worldLayer.add([floor, this.world, this.playerSprite, ...this.playerArms, this.playerGun]);
 
     // Darkness first in the HUD layer so the controls draw on top of it.
     // Origin at the corner: a render texture otherwise centres on its position.
@@ -266,6 +345,7 @@ export class StackStrikeScene extends Phaser.Scene {
       .setScale(1 / DARK_SCALE);
     this.lightBrush = this.make.graphics({ x: 0, y: 0 }, false);
     this.enemyGfx = this.add.graphics();
+    this.enemyTop = this.add.graphics();
     this.tint = this.add.graphics();
     this.hud = this.add.graphics();
     const text = (): Phaser.GameObjects.Text =>
@@ -276,14 +356,13 @@ export class StackStrikeScene extends Phaser.Scene {
     this.objectiveText = text().setOrigin(1, 0).setAlign("right");
     this.bannerText = text().setOrigin(0.5).setAlign("center");
     this.buttonLabels = {
-      reload: text().setOrigin(0.5).setText("RELOAD"),
+      reload: text().setOrigin(0.5).setText(""),
       swap: text().setOrigin(0.5),
     };
-    this.moveCaption = text().setOrigin(0.5).setText("MOVE");
-    this.aimCaption = text().setOrigin(0.5).setText("TAP TO FIRE");
     this.hudLayer.add([
       this.dark,
       this.enemyGfx,
+      this.enemyTop,
       this.tint,
       this.hud,
       this.healthText,
@@ -291,8 +370,6 @@ export class StackStrikeScene extends Phaser.Scene {
       this.weaponText,
       this.objectiveText,
       this.bannerText,
-      this.moveCaption,
-      this.aimCaption,
       ...Object.values(this.buttonLabels),
     ]);
 
@@ -302,22 +379,36 @@ export class StackStrikeScene extends Phaser.Scene {
     this.cameras.main.ignore(this.hudLayer);
     this.hudCamera.ignore(this.worldLayer);
 
+    this.announceContract();
     this.setupInput();
     this.scale.on("resize", this.onResize, this);
     this.events.once("shutdown", () => this.scale.off("resize", this.onResize, this));
     this.onResize();
 
+    this.audio = new StackStrikeAudio(this);
+    this.audio.setMuted(this.muted);
+    this.audio.startMusic();
+    this.lastWeapon = this.sim.player.weaponIndex;
+
     if (process.env.NODE_ENV !== "production") {
       (window as unknown as { __stackstrike?: unknown }).__stackstrike = {
         scene: this,
         state: () => this.sim,
+        heard: () => [...this.heard],
       };
     }
+  }
+
+  /** Mutes or unmutes all sound. Can be called before the scene has started. */
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+    this.audio?.setMuted(muted);
   }
 
   /** Freezes the fight, for a portrait phone or a menu. Held sticks are let go. */
   setPaused(paused: boolean): void {
     this.paused = paused;
+    this.audio?.setPaused(paused);
     this.accumulator = 0;
     if (paused) {
       this.moveStick = null;
@@ -349,10 +440,19 @@ export class StackStrikeScene extends Phaser.Scene {
       this.selectQueued = null;
       const wasPlaying = this.sim.status === "playing";
       step(this.sim, input);
-      for (const event of this.sim.events) this.react(event);
-      if (wasPlaying && this.sim.status !== "playing") this.diedAt = this.time.now;
+      for (const event of this.sim.events) {
+        this.react(event);
+        this.hear(this.cueContext(), event);
+      }
+      if (wasPlaying && this.sim.status !== "playing") {
+        this.diedAt = this.time.now;
+        this.result = applyRun(this.progress, this.sim);
+        this.progress = this.result.progress;
+        saveProgress(this.progress);
+      }
     }
 
+    this.updateAudio(frame);
     this.fireBuffer = Math.max(0, this.fireBuffer - frame);
     if (this.hint.left > 0) this.hint.left -= frame;
     this.updateParticles(frame);
@@ -361,8 +461,69 @@ export class StackStrikeScene extends Phaser.Scene {
     this.updateBeams();
     this.drawDark();
     this.drawEnemies();
+    this.syncEnemySprites();
     this.drawHud();
     if (this.banner.left > 0) this.banner.left -= frame;
+  }
+
+  /* ----------------------------------------------------------------- sound */
+
+  private cueContext(): CueContext {
+    const { player, arena } = this.sim;
+    return {
+      weaponId: currentWeapon(this.sim).id,
+      listener: player.pos,
+      blocked: (point) => !lineOfSight(player.pos, point, arena.walls),
+      roll: Math.random,
+    };
+  }
+
+  private hear(ctx: CueContext, event: SimEvent): void {
+    this.playCues(cuesFor(event, ctx));
+  }
+
+  private playCues(cues: Cue[]): void {
+    if (cues.length === 0) return;
+    this.audio.play(cues);
+    for (const cue of cues) this.heard.push(cue.name);
+    if (this.heard.length > 80) this.heard.splice(0, this.heard.length - 80);
+  }
+
+  /** Footsteps, the weapon swap click and the music, once per frame. */
+  private updateAudio(frame: number): void {
+    const { player, enemies, status } = this.sim;
+    const playing = status === "playing";
+    const ctx = this.cueContext();
+
+    const moved = this.lastPlayerPos ? Math.hypot(player.pos.x - this.lastPlayerPos.x, player.pos.y - this.lastPlayerPos.y) : 0;
+    this.lastPlayerPos = { x: player.pos.x, y: player.pos.y };
+    if (playing && player.moving && !player.hidden && this.playerSteps.advance(moved) > 0) this.playCues([playerStep(ctx.roll)]);
+
+    // A guard's boots can be heard through a wall, which is how you know where it is in the dark.
+    const alive = new Set<number>();
+    for (const enemy of enemies) {
+      alive.add(enemy.id);
+      const track = this.guardSteps.get(enemy.id);
+      if (!track) {
+        this.guardSteps.set(enemy.id, { last: { x: enemy.pos.x, y: enemy.pos.y }, counter: new StepCounter(GUARD_STRIDE) });
+        continue;
+      }
+      const walked = Math.hypot(enemy.pos.x - track.last.x, enemy.pos.y - track.last.y);
+      track.last = { x: enemy.pos.x, y: enemy.pos.y };
+      if (playing && track.counter.advance(walked) > 0) {
+        const cue = guardStep(enemy.pos, ctx);
+        if (cue) this.playCues([cue]);
+      }
+    }
+    for (const id of this.guardSteps.keys()) if (!alive.has(id)) this.guardSteps.delete(id);
+
+    if (player.weaponIndex !== this.lastWeapon) {
+      this.lastWeapon = player.weaponIndex;
+      if (playing) this.playCues([{ name: "swap", volume: 0.6, rate: 1, pan: 0, delay: 0 }]);
+    }
+
+    const threat = readThreat(enemies, this.sim.caution);
+    this.audio.update(frame, { ...threat, ending: status === "playing" ? "none" : status });
   }
 
   /* ----------------------------------------------------------------- input */
@@ -420,6 +581,7 @@ export class StackStrikeScene extends Phaser.Scene {
         downY: pointer.y,
         dragged: false,
         fixed: near,
+        history: [],
       };
       if (left) {
         if (!this.moveStick) this.moveStick = pad;
@@ -427,6 +589,7 @@ export class StackStrikeScene extends Phaser.Scene {
         this.aimPad = pad;
         // A tap on the pad aims where it landed, so a tap off-centre shoots that way.
         this.aimFromPad(pad);
+        this.sampleThumb(pad, pointer);
       }
     });
 
@@ -435,6 +598,9 @@ export class StackStrikeScene extends Phaser.Scene {
         if (pad?.id === pointer.id) {
           pad.x = pointer.x;
           pad.y = pointer.y;
+          // Judged here, not on the next step, so a flick that is over within a frame still counts as aiming.
+          if (Math.hypot(pad.x - pad.downX, pad.y - pad.downY) > DRAG_SLOP * this.layoutNow.u) pad.dragged = true;
+          if (pad === this.aimPad) this.sampleThumb(pad, pointer);
         }
       }
     });
@@ -442,8 +608,20 @@ export class StackStrikeScene extends Phaser.Scene {
     const release = (pointer: Phaser.Input.Pointer): void => {
       if (this.moveStick?.id === pointer.id) this.moveStick = null;
       if (this.aimPad?.id === pointer.id) {
-        // A quick touch that never dragged is a tap: fire once, where the gun already points.
-        if (!this.aimPad.dragged && this.time.now - this.aimPad.downAt <= TAP_MS) {
+        if (this.aimPad.dragged) {
+          // Letting go of an aimed thumb shoots, along the aim from just before the lift (the thumb
+          // rolls as it leaves the glass). Slid back to the middle, it is a cancel.
+          const end = this.padVector(this.aimPad, AIM_RADIUS);
+          const shot = releaseShot(this.aimPad.history, pointer.event?.timeStamp ?? performance.now(), {
+            angle: Math.atan2(end.y, end.x),
+            reach: Math.hypot(end.x, end.y),
+          });
+          if (shot) {
+            this.aimAngle = shot.angle;
+            this.fireBuffer = FIRE_BUFFER_SECONDS;
+          }
+        } else if (this.time.now - this.aimPad.downAt <= TAP_MS) {
+          // A quick touch that never dragged is a tap: fire once, where it landed.
           this.fireBuffer = FIRE_BUFFER_SECONDS;
         }
         this.aimPad = null;
@@ -451,6 +629,19 @@ export class StackStrikeScene extends Phaser.Scene {
     };
     this.input.on("pointerup", release);
     this.input.on("pointerupoutside", release);
+  }
+
+  /**
+   * Remembers where the thumb was and when, stamped by the browser when the touch happened
+   * rather than when a frame got round to it, so a slow frame cannot smear the lift-off lookback.
+   */
+  private sampleThumb(pad: Pad, pointer: Phaser.Input.Pointer): void {
+    const vector = this.padVector(pad, AIM_RADIUS);
+    recordAim(pad.history, {
+      at: pointer.event?.timeStamp ?? performance.now(),
+      angle: Math.atan2(vector.y, vector.x),
+      reach: Math.hypot(vector.x, vector.y),
+    });
   }
 
   private pressButton(name: ButtonName): void {
@@ -491,8 +682,6 @@ export class StackStrikeScene extends Phaser.Scene {
       if (Math.hypot(this.aimPad.x - this.aimPad.downX, this.aimPad.y - this.aimPad.downY) > slop) {
         this.aimPad.dragged = true;
       }
-      // Dragging only aims. A thumb held still keeps firing, wherever it landed.
-      if (!this.aimPad.dragged && this.time.now - this.aimPad.downAt > HOLD_FIRE_MS) fire = true;
     } else if (!this.touch) {
       const pointer = this.input.mousePointer;
       const world = this.screenToWorld(pointer.x, pointer.y);
@@ -547,6 +736,7 @@ export class StackStrikeScene extends Phaser.Scene {
     let best: ButtonName | null = null;
     let bestDistance = Infinity;
     for (const name of BUTTON_NAMES) {
+      if (name === "swap" && this.sim.player.weaponIds.length < 2) continue;
       const dist = Math.hypot(x - buttons[name].x, y - buttons[name].y);
       if (dist <= reach && dist < bestDistance) {
         best = name;
@@ -557,7 +747,25 @@ export class StackStrikeScene extends Phaser.Scene {
   }
 
   private restart(): void {
-    this.sim = createState((Math.random() * 2 ** 31) >>> 0, "vanguard", ARENA, this.options.difficulty);
+    this.sim = this.newRun();
+    for (const sprite of this.enemySprites.values()) {
+      sprite.body.destroy();
+      for (const arm of sprite.arms) arm.destroy();
+      sprite.gun.destroy();
+    }
+    this.enemySprites.clear();
+    for (const corpse of this.bodySprites.values()) {
+      corpse.body.destroy();
+      for (const arm of corpse.arms) arm.destroy();
+    }
+    this.bodySprites.clear();
+    this.result = null;
+    this.audio.reset();
+    this.playerSteps.reset();
+    this.lastPlayerPos = null;
+    this.guardSteps.clear();
+    this.lastWeapon = this.sim.player.weaponIndex;
+    this.announceContract();
     this.aimAngle = 0;
     this.fireBuffer = 0;
     this.hint.left = 0;
@@ -632,6 +840,10 @@ export class StackStrikeScene extends Phaser.Scene {
         break;
       case "radio":
         this.hint = { text: "THEY CALLED IT IN", left: 2.4 };
+        break;
+      case "body":
+        this.hint = { text: "BODY FOUND", left: 2.4 };
+        this.cameras.main.shake(120, 0.002);
         break;
       case "dead":
         this.cameras.main.shake(300, 0.012);
@@ -714,11 +926,8 @@ export class StackStrikeScene extends Phaser.Scene {
     this.objectiveText.setFontSize(small).setPosition(width - insets.right - 16 * u, insets.top + 12 * u);
     this.bannerText.setPosition(width / 2, height * 0.3);
     for (const name of BUTTON_NAMES) {
-      this.buttonLabels[name].setFontSize(Math.round(11 * u)).setPosition(this.layoutNow.buttons[name].x, this.layoutNow.buttons[name].y);
+      this.buttonLabels[name].setFontSize(Math.round(9 * u)).setAlpha(0.6).setPosition(this.layoutNow.buttons[name].x, this.layoutNow.buttons[name].y);
     }
-    const caption = Math.round(9 * u);
-    this.moveCaption.setFontSize(caption).setPosition(this.layoutNow.moveHome.x, this.layoutNow.moveHome.y + STICK_RADIUS * 0.66 * u);
-    this.aimCaption.setFontSize(caption).setPosition(this.layoutNow.aimHome.x, this.layoutNow.aimHome.y + AIM_RADIUS * 0.66 * u);
   }
 
   /* ------------------------------------------------------------------ draw */
@@ -748,19 +957,12 @@ export class StackStrikeScene extends Phaser.Scene {
 
   private drawWorld(): void {
     const g = this.world;
-    const { player, enemies, projectiles } = this.sim;
+    const { enemies, projectiles } = this.sim;
     const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 180);
     g.clear();
 
-    g.fillStyle(player.hurt > 0 ? COLORS.playerHurt : COLORS.player, player.hidden ? 0.6 : 1);
-    g.fillCircle(player.pos.x, player.pos.y, player.radius);
-    g.lineStyle(5, 0x14161a, 1);
-    g.lineBetween(
-      player.pos.x,
-      player.pos.y,
-      player.pos.x + Math.cos(player.aim) * (player.radius + 12),
-      player.pos.y + Math.sin(player.aim) * (player.radius + 12),
-    );
+    this.drawBodies();
+    this.drawPlayerSprite();
     this.drawDetectionRing(g, enemies, pulse);
 
     // Bullets are bright whatever the light, so incoming fire can be read.
@@ -776,6 +978,174 @@ export class StackStrikeScene extends Phaser.Scene {
     }
   }
 
+  /** Guards that were shot lie where they fell, arms hanging. Only the light that reaches them shows them. */
+  private drawBodies(): void {
+    const live = new Set<number>();
+    for (const body of this.sim.bodies) {
+      live.add(body.id);
+      let corpse = this.bodySprites.get(body.id);
+      if (!corpse) {
+        const image = this.add.image(body.pos.x, body.pos.y, "guard");
+        const arms = this.makeArms("guard");
+        this.worldLayer.addAt(image, 1);
+        arms.forEach((arm, index) => this.worldLayer.addAt(arm, 2 + index));
+        corpse = { body: image, arms };
+        this.bodySprites.set(body.id, corpse);
+      }
+      const angle = ((body.id * 37) % 11) * 0.57;
+      const scale = pixelScale(14);
+      const color = body.found ? 0xb05050 : 0x7a6a6a;
+      corpse.body.setPosition(body.pos.x, body.pos.y).setRotation(angle).setScale(scale).setTint(color);
+      this.poseArms(corpse.arms, body.pos, angle, angle, scale, REST_HANDS);
+      for (const arm of corpse.arms) arm.setTint(color);
+    }
+    for (const [id, corpse] of this.bodySprites) {
+      if (live.has(id)) continue;
+      corpse.body.destroy();
+      for (const arm of corpse.arms) arm.destroy();
+      this.bodySprites.delete(id);
+    }
+  }
+
+  /** The four arm pieces for one character, hidden until posed. */
+  private makeArms(kind: "operative" | "guard"): ArmRig {
+    return [`${kind}-upper`, `${kind}-upper`, `${kind}-fore`, `${kind}-fore`].map((name) =>
+      this.add.image(0, 0, `arm-${name}`).setOrigin(9 / ARM_TEXTURE_WIDTH, 0.5),
+    );
+  }
+
+  /**
+   * Stretches the arms from the shoulders to the hands. `centre` and `scale` are in whatever space the
+   * sprites are drawn in (world, or screen for guards). The shoulders turn with the body, the hands with the aim.
+   */
+  private poseArms(arms: ArmRig, centre: Point, bodyAngle: number, aim: number, scale: number, hands: { lead: BodyPt; rear: BodyPt }): void {
+    const sides = [
+      ["lead", -1],
+      ["rear", 1],
+    ] as const;
+    sides.forEach(([side, outward], index) => {
+      const pose = solveArm(SHOULDERS[side], hands[side], outward);
+      const shoulder = bodyToWorld(centre, bodyAngle, scale, pose.shoulder);
+      const elbow = bodyToWorld(centre, bodyAngle, scale, pose.elbow);
+      const hand = bodyToWorld(centre, aim, scale, pose.hand);
+      const upper = segmentBetween(shoulder, elbow, ARM_PX * scale);
+      const fore = segmentBetween(elbow, hand, ARM_PX * scale);
+      arms[index].setVisible(true).setPosition(upper.x, upper.y).setRotation(upper.rotation).setScale(scale * upper.stretch, scale);
+      arms[2 + index].setVisible(true).setPosition(fore.x, fore.y).setRotation(fore.rotation).setScale(scale * fore.stretch, scale);
+    });
+  }
+
+  /** The operative from above, turned to where the gun points, with both hands on the gun. */
+  private drawPlayerSprite(): void {
+    const { player } = this.sim;
+    const sway = walkSway(this.time.now / 1000, player.moving);
+    const scale = pixelScale(player.radius);
+    const gunId = this.currentGunId();
+    const art = GUN_ART[gunId];
+    const hands = handOffset(player.aim, player.radius, art.hold);
+    const alpha = player.hidden ? 0.6 : 1;
+    this.playerSprite.setPosition(player.pos.x, player.pos.y).setRotation(player.aim + sway).setScale(scale).setAlpha(alpha);
+    this.poseArms(this.playerArms, player.pos, player.aim + sway, player.aim, scale, handsOnGun(art));
+    for (const part of [this.playerSprite, ...this.playerArms]) {
+      part.setAlpha(alpha);
+      if (player.hurt > 0) part.setTintFill(0xff8080);
+      else part.clearTint();
+    }
+    this.placeGun(this.playerGun, gunId, { x: player.pos.x + hands.x, y: player.pos.y + hands.y }, player.aim, scale, alpha);
+  }
+
+  private currentGunId(): string {
+    return currentWeapon(this.sim).id;
+  }
+
+  /** Pins a gun's grip to the hands and turns it to the aim. Left-facing guns are flipped so the top stays up. */
+  private placeGun(gun: Phaser.GameObjects.Image, id: string, at: Point, aim: number, scale: number, alpha: number): void {
+    const art = GUN_ART[id];
+    if (!art) {
+      gun.setVisible(false);
+      return;
+    }
+    gun
+      .setVisible(true)
+      .setTexture(`gun-${id}`)
+      .setOrigin(art.grip.x / art.w, art.grip.y / art.h)
+      .setPosition(at.x, at.y)
+      .setRotation(aim)
+      .setScale(scale)
+      .setFlipY(Math.cos(aim) < 0)
+      .setAlpha(alpha);
+  }
+
+  /**
+   * One sprite per guard that can be made out: the drawing for the way it faces, a gun
+   * in its hands if it carries one, a little bob while it walks. They sit over the dark in
+   * screen space, like the glows beneath them.
+   */
+  private syncEnemySprites(): void {
+    const zoom = this.zoom;
+    const seconds = this.time.now / 1000;
+    const visible = new Map<number, number>();
+    for (const { enemy, strength } of sensedEnemies(this.sim.player.pos, this.sim.enemies)) visible.set(enemy.id, strength);
+
+    for (const enemy of this.sim.enemies) {
+      let sprite = this.enemySprites.get(enemy.id);
+      if (!sprite) {
+        const body = this.add.image(0, 0, "guard");
+        const arms = this.makeArms("guard");
+        const gun = this.add.image(0, 0, "gun-pistol");
+        const at = this.hudLayer.getIndex(this.enemyTop);
+        this.hudLayer.addAt(body, at);
+        arms.forEach((arm, index) => this.hudLayer.addAt(arm, at + 1 + index));
+        this.hudLayer.addAt(gun, at + 5);
+        sprite = { body, arms, gun, last: { ...enemy.pos }, moving: false };
+        this.enemySprites.set(enemy.id, sprite);
+      }
+      const fade = visible.get(enemy.id);
+      if (fade === undefined) {
+        sprite.body.setVisible(false);
+        for (const arm of sprite.arms) arm.setVisible(false);
+        sprite.gun.setVisible(false);
+        sprite.last = { ...enemy.pos };
+        continue;
+      }
+      const def = enemyDef(enemy.defId);
+      const moved = Math.hypot(enemy.pos.x - sprite.last.x, enemy.pos.y - sprite.last.y) > 0.05;
+      sprite.moving = moved;
+      sprite.last = { ...enemy.pos };
+      const sway = walkSway(seconds + enemy.id * 0.37, moved);
+      const scale = pixelScale(def.radius) * zoom;
+      const at = this.worldToScreen(enemy.pos.x, enemy.pos.y);
+      const bodyAngle = enemy.facing + sway;
+      sprite.body.setVisible(true).setPosition(at.x, at.y).setRotation(bodyAngle).setScale(scale).setAlpha(fade);
+      const armed = def.attack === "ranged";
+      this.poseArms(sprite.arms, at, bodyAngle, enemy.facing, scale, armed ? handsOnGun(GUN_ART.pistol) : FISTS);
+      const tint = ENEMY_TINT[enemy.defId];
+      for (const part of [sprite.body, ...sprite.arms]) {
+        part.setAlpha(fade);
+        if (enemy.hurt > 0) part.setTintFill(0xffffff);
+        else if (tint !== undefined) part.setTint(tint);
+        else part.clearTint();
+      }
+
+      if (armed) {
+        const hands = handOffset(enemy.facing, def.radius, GUN_ART.pistol.hold);
+        const grip = this.worldToScreen(enemy.pos.x + hands.x, enemy.pos.y + hands.y);
+        this.placeGun(sprite.gun, "pistol", grip, enemy.facing, scale, fade);
+      } else {
+        sprite.gun.setVisible(false);
+      }
+    }
+
+    const alive = new Set(this.sim.enemies.map((enemy) => enemy.id));
+    for (const [id, sprite] of this.enemySprites) {
+      if (alive.has(id)) continue;
+      sprite.body.destroy();
+      for (const arm of sprite.arms) arm.destroy();
+      sprite.gun.destroy();
+      this.enemySprites.delete(id);
+    }
+  }
+
   /**
    * Every enemy, all the time, glowing red over the dark so the player is never
    * guessing where they are. Each carries a flashlight and the beam is its line
@@ -787,15 +1157,16 @@ export class StackStrikeScene extends Phaser.Scene {
     const { enemies } = this.sim;
     const { width, height } = this.layoutNow;
     const zoom = this.zoom;
-    g.setPosition(width / 2 - this.cam.x * zoom, height / 2 - this.cam.y * zoom).setScale(zoom);
+    const top = this.enemyTop;
+    for (const layer of [g, top]) layer.setPosition(width / 2 - this.cam.x * zoom, height / 2 - this.cam.y * zoom).setScale(zoom);
     g.clear();
+    top.clear();
     const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 220);
 
     this.drawObjectives(g, pulse);
 
     for (const { enemy, strength: fade } of sensedEnemies(this.sim.player.pos, enemies)) {
       const def = enemyDef(enemy.defId);
-      const base = ENEMY_COLORS[enemy.defId] ?? 0xff00ff;
       const alert = enemy.mode === "chase" || enemy.mode === "attack";
       const { x, y } = enemy.pos;
 
@@ -823,43 +1194,35 @@ export class StackStrikeScene extends Phaser.Scene {
         g.fillCircle(x, y, def.radius * scale);
       }
 
-      g.fillStyle(enemy.hurt > 0 ? 0xffffff : base, fade);
-      g.fillCircle(x, y, def.radius);
+      // A thin ring round the guard: red rim, brighter when it is on to something.
       g.lineStyle(2, ENEMY_GLOW, 0.9 * fade);
       g.strokeCircle(x, y, def.radius + 1);
       if (alert || enemy.mode === "search" || enemy.mode === "suspicious") {
         g.lineStyle(3, alert ? 0xff3030 : 0xffd23f, fade);
         g.strokeCircle(x, y, def.radius + 5);
       }
-      g.lineStyle(4, 0x0b0b0d, fade);
-      g.lineBetween(
-        x,
-        y,
-        x + Math.cos(enemy.facing) * (def.radius + 8),
-        y + Math.sin(enemy.facing) * (def.radius + 8),
-      );
 
       // The detection meter over its head: it fills as it works out you are there.
       const meterWidth = def.radius * 2 + 6;
       const meterLeft = x - meterWidth / 2;
       const meterTop = y - def.radius - 20;
       if (alert) {
-        g.fillStyle(0xff3030, 1);
-        g.fillRect(x - 1.5, meterTop - 6, 3, 7);
-        g.fillRect(x - 1.5, meterTop + 3, 3, 3);
+        top.fillStyle(0xff3030, 1);
+        top.fillRect(x - 1.5, meterTop - 6, 3, 7);
+        top.fillRect(x - 1.5, meterTop + 3, 3, 3);
       } else if (enemy.awareness > 0.02) {
-        g.fillStyle(0x000000, 0.7);
-        g.fillRect(meterLeft - 1, meterTop - 1, meterWidth + 2, 6);
-        g.fillStyle(alertColor(enemy.awareness), 1);
-        g.fillRect(meterLeft, meterTop, meterWidth * enemy.awareness, 4);
+        top.fillStyle(0x000000, 0.7);
+        top.fillRect(meterLeft - 1, meterTop - 1, meterWidth + 2, 6);
+        top.fillStyle(alertColor(enemy.awareness), 1);
+        top.fillRect(meterLeft, meterTop, meterWidth * enemy.awareness, 4);
       }
       if (enemy.radio) {
         // Mid radio call: a ring closing in. Kill it before it ends and nobody else hears.
-        const left = enemy.radio.left / STEALTH_RADIO_SECONDS;
-        g.lineStyle(2, 0x63e6ff, 0.9);
-        g.strokeCircle(x, y, def.radius + 9 + 14 * left);
-        g.fillStyle(0x63e6ff, 1);
-        g.fillRect(x + def.radius * 0.5, y - def.radius - 12, 3, 8);
+        const left = enemy.radio.left / radioDelay(this.sim);
+        top.lineStyle(2, 0x63e6ff, 0.9);
+        top.strokeCircle(x, y, def.radius + 9 + 14 * left);
+        top.fillStyle(0x63e6ff, 1);
+        top.fillRect(x + def.radius * 0.5, y - def.radius - 12, 3, 8);
       }
     }
   }
@@ -942,7 +1305,7 @@ export class StackStrikeScene extends Phaser.Scene {
     this.beams.clear();
     for (const { enemy } of sensedEnemies(this.sim.player.pos, this.sim.enemies)) {
       const def = enemyDef(enemy.defId);
-      this.beams.set(enemy.id, beamPolygon(enemy.pos, enemy.facing, this.sim.arena.walls, def.detectionRange, def.fieldOfView, 28));
+      this.beams.set(enemy.id, beamPolygon(enemy.pos, enemy.facing, this.sim.arena.walls, beamRange(this.sim, def), def.fieldOfView, 28));
     }
   }
 
@@ -991,7 +1354,7 @@ export class StackStrikeScene extends Phaser.Scene {
       const poly = this.beams.get(enemy.id);
       if (!poly) continue;
       erase(poly, 0.3);
-      erase(beamPolygon(enemy.pos, enemy.facing, arena.walls, def.detectionRange * 0.6, def.fieldOfView * 0.75, 20), 0.3);
+      erase(beamPolygon(enemy.pos, enemy.facing, arena.walls, beamRange(this.sim, def) * 0.6, def.fieldOfView * 0.75, 20), 0.3);
     }
 
     // The glow keeps the area right around the player readable.
@@ -1081,23 +1444,35 @@ export class StackStrikeScene extends Phaser.Scene {
     // Objective and score, top right.
     const remaining = this.sim.loot.filter((entry) => !entry.taken && !entry.spot.main).length;
     const goal = this.sim.hasGold ? "Gold secured: get out the west door" : "Find the gold case";
-    this.objectiveText.setText(`${this.sim.score} pts\n${goal}\n${remaining} valuable${remaining === 1 ? "" : "s"} left`);
+    const rank = rankFor(this.progress.xp);
+    this.objectiveText.setText(`${this.sim.score} pts\n${goal}\n${remaining} valuable${remaining === 1 ? "" : "s"} left\nRANK ${rank.level}`);
+
+    // How wound up the building is: a thin bar under the objective that fills as guards get edgy.
+    if (this.sim.caution > 0.02 && status === "playing") {
+      const w = 90 * u;
+      const x = width - insets.right - 16 * u - w;
+      const y = insets.top + 12 * u + 80 * u;
+      g.fillStyle(0x000000, 0.55);
+      g.fillRect(x, y, w, 4 * u);
+      g.fillStyle(alertColor(this.sim.caution), 0.95);
+      g.fillRect(x, y, w * this.sim.caution, 4 * u);
+    }
 
     // Banner: the end screens say how it went; a pickup flashes briefly.
     const ended = status !== "playing";
     if (status === "dead") {
       this.bannerText.setText(
-        `ELIMINATED\n${this.sim.score} pts  ·  ${Math.round(accuracy(this.sim) * 100)}% accuracy\n${this.touch ? "Tap" : "Press R or click"} to try again`,
+        `ELIMINATED\n${this.sim.score} pts  ·  ${Math.round(accuracy(this.sim) * 100)}% accuracy\n${this.rankLine()}\n${this.touch ? "Tap" : "Press R or click"} to try again`,
       );
     } else if (status === "escaped") {
       const taken = this.sim.loot.filter((entry) => entry.taken).length;
       this.bannerText.setText(
-        `${rating(this.sim)}\nGold escaped  ·  ${this.sim.score} pts\n${this.sim.kills} down  ·  spotted ${this.sim.timesSpotted}x  ·  ${taken}/${this.sim.loot.length} loot  ·  ${Math.round(this.sim.endedAt ?? this.sim.time)}s\n${this.touch ? "Tap" : "Press R or click"} to go again`,
+        `${rating(this.sim)}\nGold escaped  ·  ${this.sim.score} pts\n${this.sim.kills} down  ·  spotted ${this.sim.timesSpotted}x  ·  ${taken}/${this.sim.loot.length} loot  ·  ${Math.round(this.sim.endedAt ?? this.sim.time)}s\n${this.rankLine()}\n${this.touch ? "Tap" : "Press R or click"} to go again`,
       );
     } else {
       this.bannerText.setText(this.banner.left > 0 ? this.banner.text : "");
     }
-    this.bannerText.setFontSize(Math.round((ended ? 22 : 28) * u));
+    this.bannerText.setFontSize(Math.round((ended ? 22 : this.banner.size ?? 28) * u));
     if (ended) {
       g.fillStyle(0x000000, 0.5);
       g.fillRect(0, 0, width, height);
@@ -1109,8 +1484,6 @@ export class StackStrikeScene extends Phaser.Scene {
     // Touch controls.
     const playing = status === "playing";
     const showControls = this.touch && playing;
-    this.moveCaption.setVisible(showControls);
-    this.aimCaption.setVisible(showControls);
     for (const label of Object.values(this.buttonLabels)) label.setVisible(showControls);
     if (!showControls) return;
 
@@ -1124,14 +1497,36 @@ export class StackStrikeScene extends Phaser.Scene {
       this.drawPad(g, { x: this.aimPad.originX, y: this.aimPad.originY }, this.aimPad, "aim");
     }
 
-    this.buttonLabels.swap.setText(weapon.name.toUpperCase());
+    const canSwap = this.sim.player.weaponIds.length > 1;
+    this.buttonLabels.swap.setText(weapon.name.toUpperCase()).setVisible(canSwap);
+    this.buttonLabels.reload.setVisible(false);
     for (const name of BUTTON_NAMES) {
+      if (name === "swap" && !canSwap) continue;
       const at = buttons[name];
-      g.fillStyle(0xffffff, 0.12);
-      g.fillCircle(at.x, at.y, BUTTON_RADIUS * u);
-      g.lineStyle(2 * u, 0xffffff, 0.45);
-      g.strokeCircle(at.x, at.y, BUTTON_RADIUS * u);
+      g.lineStyle(1.5 * u, 0xffffff, 0.3);
+      g.strokeCircle(at.x, at.y, BUTTON_DRAW_RADIUS * u);
     }
+    // Reload is an arrow chasing its tail; the weapon button names the gun.
+    const r = buttons.reload;
+    const arrow = 7 * u;
+    g.lineStyle(1.5 * u, 0xffffff, 0.55);
+    g.beginPath();
+    g.arc(r.x, r.y, arrow, Phaser.Math.DegToRad(-60), Phaser.Math.DegToRad(220), false);
+    g.strokePath();
+    const tip = Phaser.Math.DegToRad(220);
+    const tx = r.x + Math.cos(tip) * arrow;
+    const ty = r.y + Math.sin(tip) * arrow;
+    g.fillStyle(0xffffff, 0.55);
+    g.fillTriangle(tx - 4 * u, ty - 3 * u, tx + 3 * u, ty - 4 * u, tx + 1 * u, ty + 4 * u);
+  }
+
+  /** What the run earned, and anything it unlocked, for the end screen. */
+  private rankLine(): string {
+    const result = this.result;
+    if (!result) return "";
+    const rank = rankFor(result.progress.xp);
+    const head = `+${result.xp} XP  ·  RANK ${rank.level}${rank.needed > 0 ? `  (${rank.needed - rank.into} to go)` : "  (MAX)"}`;
+    return result.unlocked.length > 0 ? `${head}\nUNLOCKED: ${result.unlocked.join(", ")}` : head;
   }
 
   /**
@@ -1183,31 +1578,27 @@ export class StackStrikeScene extends Phaser.Scene {
     }
   }
 
-  /** A pad's base ring and knob. Idle, the aim knob rests toward where the gun points. */
+  /**
+   * A pad's base ring and knob, kept faint so the map shows through. Idle, it is a
+   * thin ring and a dot; held, it brightens. The aim dot rests toward where the gun points.
+   */
   private drawPad(g: Phaser.GameObjects.Graphics, home: Point, pad: Pad | null, kind: "move" | "aim"): void {
     const { u } = this.layoutNow;
     const held = pad !== null;
     const radius = kind === "aim" ? AIM_RADIUS : STICK_RADIUS;
-    const rest = kind === "aim" ? { x: Math.cos(this.aimAngle) * 0.42, y: Math.sin(this.aimAngle) * 0.42 } : { x: 0, y: 0 };
+    const rest = kind === "aim" ? { x: Math.cos(this.aimAngle) * 0.5, y: Math.sin(this.aimAngle) * 0.5 } : { x: 0, y: 0 };
     const vector = held ? this.padVector(pad, radius) : rest;
-    g.fillStyle(0xffffff, held ? 0.14 : 0.09);
-    g.fillCircle(home.x, home.y, radius * u);
-    g.lineStyle(2 * u, 0xffffff, held ? 0.7 : 0.4);
+    g.lineStyle(1.5 * u, 0xffffff, held ? 0.4 : 0.16);
     g.strokeCircle(home.x, home.y, radius * u);
 
     const kx = home.x + vector.x * radius * u;
     const ky = home.y + vector.y * radius * u;
-    g.fillStyle(kind === "aim" ? COLORS.beamTint : 0xffffff, held ? 0.55 : 0.3);
-    g.fillCircle(kx, ky, KNOB_RADIUS * u);
-    g.lineStyle(2 * u, 0xffffff, held ? 0.8 : 0.55);
-    g.strokeCircle(kx, ky, KNOB_RADIUS * u);
-    if (kind === "aim") {
-      // A crosshair on the knob: this is the thing you aim, and tap, to shoot.
-      const arm = KNOB_RADIUS * 0.55 * u;
-      g.lineStyle(1.5 * u, 0xffffff, 0.8);
-      g.lineBetween(kx - arm, ky, kx + arm, ky);
-      g.lineBetween(kx, ky - arm, kx, ky + arm);
-      g.strokeCircle(kx, ky, KNOB_RADIUS * 0.3 * u);
+    const tint = kind === "aim" ? COLORS.laser : 0xffffff;
+    g.fillStyle(tint, held ? 0.5 : 0.22);
+    g.fillCircle(kx, ky, (held ? KNOB_RADIUS : KNOB_RADIUS * 0.45) * u);
+    if (held) {
+      g.lineStyle(1.5 * u, 0xffffff, 0.6);
+      g.strokeCircle(kx, ky, KNOB_RADIUS * u);
     }
   }
 }

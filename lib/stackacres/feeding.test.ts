@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest";
 import { CATTLE_FEED_ORDER, HEN_FEED_ORDER, feedingToast, planServings, shelfFeedFor } from "./feeding";
 
 describe("the hen feeding order", () => {
-  it("is Spinach, Wheat, Lettuce, Cabbage, then the Feed Sack", () => {
+  it("feeds Spinach first, then the Feed Sack, then kitchen crops", () => {
     expect([...HEN_FEED_ORDER]).toEqual(["spinach", "wheat", "lettuce", "cabbage"]);
     const plan = planServings(
       ["hen", "hen", "hen", "hen", "hen", "hen"],
       { spinach: 1, wheat: 1, lettuce: 1, cabbage: 1 },
       1,
     );
-    expect(plan.sources).toEqual(["spinach", "wheat", "lettuce", "cabbage", "feed"]);
+    expect(plan.sources).toEqual(["spinach", "feed", "wheat", "lettuce", "cabbage"]);
     expect(plan.fed).toBe(5);
     expect(plan.feedUsed).toBe(1);
   });

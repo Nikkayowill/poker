@@ -18,10 +18,12 @@ interface Handle {
     time: number;
     difficulty: string;
     hasGold: boolean;
-    loot: { taken: boolean }[];
+    loot: { taken: boolean; spot: { pos: Point; main: boolean } }[];
+    contract: { id: string };
     enemies: { mode: string; awareness: number; lastKnown: Point | null }[];
     shotsFired: number;
     player: {
+      weaponIds: string[];
       pos: Point;
       health: number;
       maxHealth: number;
@@ -30,7 +32,10 @@ interface Handle {
       cover: number;
     };
   };
+  heard: () => string[];
   scene: {
+    sound: { mute: boolean; get: (key: string) => { volume: number; isPlaying: boolean } | null };
+    audio: { update: (dt: number, input: { hunted: boolean; awareness: number; ending: "none" | "dead" | "escaped" }) => unknown };
     readInput: () => { aim: number; fire: boolean };
     buttonCentre: (name: "reload" | "swap") => Point;
     padCentre: (which: "move" | "aim") => Point;
@@ -64,7 +69,7 @@ async function openOnPhone(page: Page, difficulty?: "easy" | "normal" | "hard") 
   await page.goto("/stackstrike");
   await expect(page.getByTestId("stackstrike-gate")).toBeVisible();
   if (difficulty) await page.getByTestId(`stackstrike-difficulty-${difficulty}`).tap();
-  await page.getByRole("button", { name: "Tap to play" }).tap();
+  await page.getByTestId("stackstrike-play").tap();
   await readyToPlay(page);
 }
 
@@ -74,7 +79,7 @@ test("desktop: start screen, then boots with guards on duty, moves and shoots", 
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/stackstrike");
   await expect(page.getByTestId("stackstrike-gate")).toBeVisible();
-  await page.getByRole("button", { name: "Play" }).click();
+  await page.getByTestId("stackstrike-play").click();
   await readyToPlay(page);
 
   // No waves: the guards are already there.
@@ -98,7 +103,7 @@ test("desktop: the mouse aims at the right place on a high-density screen", asyn
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2 });
   const page = await context.newPage();
   await page.goto("/stackstrike");
-  await page.getByRole("button", { name: "Play" }).click();
+  await page.getByTestId("stackstrike-play").click();
   await readyToPlay(page);
 
   // The camera centres on the player except near the arena's edge, so stand mid-arena and let it settle.
@@ -128,7 +133,7 @@ test("start screen: the difficulty chosen is the difficulty played", async ({ br
   await page.evaluate(() => localStorage.setItem("stackstrike:difficulty", "easy"));
   await page.reload();
   await page.getByTestId("stackstrike-difficulty-easy").tap();
-  await page.getByRole("button", { name: "Tap to play" }).tap();
+  await page.getByTestId("stackstrike-play").tap();
   await readyToPlay(page);
   expect((await read(page)).difficulty).toBe("easy");
   expect((await read(page)).enemies.length).toBeLessThan(hardGuards);
@@ -168,28 +173,63 @@ test("phone landscape: the controls sit where the thumbs are, and the mission is
   await context.close();
 });
 
-test("phone landscape: the right pad aims without firing, a tap fires", async ({ browser }) => {
+test("phone landscape: dragging the right pad aims, letting go fires along that aim", async ({ browser }) => {
+  const context = await browser.newContext(PHONE);
+  const page = await context.newPage();
+  await openOnPhone(page);
+  const aim = await centre(page, "pad", "aim");
+  const cdp = await context.newCDPSession(page);
+  const wanted = Math.atan2(-20, 40);
+
+  // Drag up and to the right: the gun and laser turn, and nothing is fired while the thumb is down.
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: aim.x, y: aim.y, id: 2 }] });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: aim.x + 40, y: aim.y - 20, id: 2 }] });
+  await expect.poll(async () => (await read(page)).player.aim, { timeout: 20_000 }).toBeCloseTo(wanted, 1);
+  await page.waitForTimeout(900);
+  expect((await read(page)).shotsFired).toBe(0);
+
+  // The thumb rolls as it leaves the glass: the last touch point is a little way off the aim.
+  // Stamped 16ms apart: the software-rendered test browser is slow to take the two calls, and
+  // the lookback goes by when the touch happened.
+  const now = Date.now() / 1000;
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: aim.x + 36, y: aim.y - 2, id: 2 }], timestamp: now });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [], timestamp: now + 0.016 });
+  await expect.poll(async () => (await read(page)).shotsFired, { timeout: 20_000 }).toBeGreaterThan(0);
+  expect((await read(page)).player.aim).toBeCloseTo(wanted, 1);
+  await context.close();
+});
+
+test("phone landscape: a flick that is over within a frame still fires where it went", async ({ browser }) => {
   const context = await browser.newContext(PHONE);
   const page = await context.newPage();
   await openOnPhone(page);
   const aim = await centre(page, "pad", "aim");
   const cdp = await context.newCDPSession(page);
 
-  // Drag up and to the right: the gun and laser turn, and nothing is fired.
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: aim.x, y: aim.y, id: 2 }] });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: aim.x - 40, y: aim.y + 40, id: 2 }] });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await expect.poll(async () => (await read(page)).shotsFired, { timeout: 20_000 }).toBeGreaterThan(0);
+  expect((await read(page)).player.aim).toBeCloseTo(Math.atan2(40, -40), 1);
+  await context.close();
+});
+
+test("phone landscape: sliding the thumb back to the middle cancels the shot", async ({ browser }) => {
+  const context = await browser.newContext(PHONE);
+  const page = await context.newPage();
+  await openOnPhone(page);
+  const aim = await centre(page, "pad", "aim");
+  const cdp = await context.newCDPSession(page);
+
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: aim.x, y: aim.y, id: 2 }] });
   await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: aim.x + 40, y: aim.y - 20, id: 2 }] });
   await expect.poll(async () => (await read(page)).player.aim, { timeout: 20_000 }).toBeCloseTo(Math.atan2(-20, 40), 1);
-  // Hold the drag past the hold-to-fire delay: still nothing, because it is aiming.
-  await page.waitForTimeout(900);
-  expect((await read(page)).shotsFired).toBe(0);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: aim.x + 3, y: aim.y - 2, id: 2 }] });
+  // Long enough for the lookback to see only the thumb back in the middle.
+  await page.waitForTimeout(1200);
   await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(600);
   expect((await read(page)).shotsFired).toBe(0);
-
-  // The gun stays where it was aimed. A tap on the pad now fires.
-  await page.touchscreen.tap(aim.x, aim.y);
-  await expect.poll(async () => (await read(page)).shotsFired, { timeout: 20_000 }).toBeGreaterThan(0);
-  expect((await read(page)).player.aim).toBeCloseTo(Math.atan2(-20, 40), 1);
   await context.close();
 });
 
@@ -203,6 +243,34 @@ test("phone landscape: a tap off the middle of the aim pad fires, and fires that
   await page.touchscreen.tap(aim.x - 30, aim.y + 30);
   await expect.poll(async () => (await read(page)).shotsFired, { timeout: 20_000 }).toBeGreaterThan(0);
   expect((await read(page)).player.aim).toBeCloseTo(Math.atan2(30, -30), 1);
+  await context.close();
+});
+
+test("a new player starts at rank 1 with just the pistol, and a restart deals a different job", async ({ browser }) => {
+  const context = await browser.newContext(PHONE);
+  const page = await context.newPage();
+  await page.goto("/stackstrike");
+  await expect(page.getByTestId("stackstrike-rank")).toContainText("RANK 1");
+  await page.getByTestId("stackstrike-play").tap();
+  await readyToPlay(page);
+
+  const first = await read(page);
+  expect(first.player.weaponIds).toEqual(["pistol"]);
+  expect(first.loot.some((entry) => entry.spot.main)).toBe(true);
+  // Every restart is a different building. Look across a few for the gold moving.
+  const spots = new Set([JSON.stringify(first.loot.find((entry) => entry.spot.main)?.spot.pos)]);
+  for (let n = 0; n < 6; n += 1) {
+    await page.evaluate(() => {
+      const s = (window as unknown as { __stackstrike: Handle }).__stackstrike.state();
+      s.player.health = 0;
+      s.status = "dead";
+    });
+    await page.waitForTimeout(900);
+    await page.touchscreen.tap(400, 200);
+    await expect.poll(async () => (await read(page)).status, { timeout: 20_000 }).toBe("playing");
+    spots.add(JSON.stringify((await read(page)).loot.find((entry) => entry.spot.main)?.spot.pos));
+  }
+  expect(spots.size).toBeGreaterThan(1);
   await context.close();
 });
 
@@ -303,4 +371,58 @@ test("phone: opened upright, the rotate screen comes first", async ({ browser })
   await page.goto("/stackstrike");
   await expect(page.getByTestId("stackstrike-rotate")).toBeVisible();
   await context.close();
+});
+
+test("sound: your shots and footsteps are heard, being hunted brings the hunt music, and the toggle mutes", async ({ page }) => {
+  const errors: string[] = [];
+  const missing: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("response", (response) => {
+    if (response.url().includes("/stackstrike/audio/") && response.status() >= 400) missing.push(response.url());
+  });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/stackstrike");
+  await page.getByTestId("stackstrike-play").click();
+  await readyToPlay(page);
+  const heard = () => page.evaluate(() => (window as unknown as { __stackstrike: Handle }).__stackstrike.heard());
+  const sound = (key: string) =>
+    page.evaluate((k) => {
+      const found = (window as unknown as { __stackstrike: Handle }).__stackstrike.scene.sound.get(k);
+      return found ? { volume: found.volume, playing: found.isPlaying } : null;
+    }, key);
+
+  const before = (await read(page)).player.pos;
+  await page.keyboard.down("s");
+  await expect.poll(async () => (await read(page)).player.pos.y, { timeout: 30_000 }).toBeGreaterThan(before.y + 60);
+  await page.keyboard.up("s");
+  expect((await heard()).some((name) => name.startsWith("step-soft"))).toBe(true);
+
+  await page.mouse.move(900, 360);
+  await page.mouse.down();
+  await expect.poll(async () => (await heard()).some((name) => name.startsWith("shot-pistol")), { timeout: 10_000 }).toBe(true);
+  await page.mouse.up();
+
+  // The calm track fades up on its own once the music has loaded.
+  await expect.poll(async () => (await sound("ss-music-stealth"))?.volume ?? 0, { timeout: 30_000 }).toBeGreaterThan(0.1);
+  expect((await sound("ss-music-hunted"))?.volume ?? 0).toBeLessThan(0.05);
+
+  // A guard giving chase swaps it for the hunt music. The chase decision itself is unit tested; a guard's
+  // own AI changes its mind several times a frame here, so this drives the music as the scene would.
+  await page.evaluate(() => {
+    const { scene } = (window as unknown as { __stackstrike: Handle }).__stackstrike;
+    for (let i = 0; i < 40; i += 1) scene.audio.update(0.1, { hunted: true, awareness: 1, ending: "none" });
+  });
+  expect((await sound("ss-music-hunted"))?.volume ?? 0).toBeGreaterThan(0.3);
+  expect((await sound("ss-music-stealth"))?.volume ?? 1).toBeLessThan(0.1);
+
+  const toggle = page.getByTestId("stackstrike-sound");
+  await expect(toggle).toHaveText("Sound on");
+  await toggle.click();
+  await expect(toggle).toHaveText("Sound off");
+  expect(await page.evaluate(() => (window as unknown as { __stackstrike: Handle }).__stackstrike.scene.sound.mute)).toBe(true);
+  await toggle.click();
+  expect(await page.evaluate(() => (window as unknown as { __stackstrike: Handle }).__stackstrike.scene.sound.mute)).toBe(false);
+
+  expect(missing).toEqual([]);
+  expect(errors).toEqual([]);
 });

@@ -50,6 +50,7 @@ function addEnemy(state: SimState, defId: string, x: number, y: number): EnemySt
     searchLeft: 0,
     route: [{ x, y }],
     routeIndex: 0,
+    routeDir: 1,
     watch: null,
     sweepClock: 0,
     patrolTarget: null,

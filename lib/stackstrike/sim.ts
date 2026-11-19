@@ -1,6 +1,8 @@
 import { mulberry32Step } from "@/lib/seeded-random";
 import {
   ARENA,
+  CAUTION,
+  CONTRACTS,
   DEFAULT_DIFFICULTY,
   DIFFICULTIES,
   ENEMIES,
@@ -65,16 +67,22 @@ export function createState(
   operatorId = "vanguard",
   arena: Arena = ARENA,
   difficulty: DifficultyId = DEFAULT_DIFFICULTY,
+  /** The guns carried. Defaults to the operator's full kit; rank decides what a real run gets. */
+  loadout: string[] = OPERATORS[operatorId]?.startingWeapons ?? [],
 ): SimState {
   const operator = OPERATORS[operatorId];
   if (!operator) throw new Error(`Unknown operator ${operatorId}`);
-  const weapons = operator.startingWeapons.map(weaponDef);
+  if (loadout.length === 0) throw new Error("A loadout needs at least one weapon");
+  const weapons = loadout.map(weaponDef);
   const state: SimState = {
     arena,
     time: 0,
     status: "playing",
     difficulty,
     loot: arena.loot.map((spot) => ({ spot, taken: false })),
+    contract: CONTRACTS[arena.contract ?? "standard"],
+    bodies: [],
+    caution: 0,
     hasGold: false,
     player: {
       pos: { ...arena.playerSpawn },
@@ -84,7 +92,7 @@ export function createState(
       radius: operator.radius,
       moveSpeed: operator.moveSpeed,
       weaponIndex: 0,
-      weaponIds: [...operator.startingWeapons],
+      weaponIds: [...loadout],
       ammo: weapons.map((weapon) => weapon.magazineSize),
       reloadLeft: 0,
       cooldown: 0,
@@ -132,6 +140,16 @@ export function enemyDef(id: string): EnemyDefinition {
   return enemy;
 }
 
+/** How far a guard's flashlight reaches this run: the job's twist and how wound up the building is both stretch it. */
+export function beamRange(state: SimState, def: EnemyDefinition): number {
+  return def.detectionRange * state.contract.beamScale * (1 + CAUTION.beamBoost * state.caution);
+}
+
+/** Seconds a radio call takes to go out on this job. */
+export function radioDelay(state: SimState): number {
+  return STEALTH.radioSeconds * state.contract.radioScale;
+}
+
 export function currentWeapon(state: SimState): WeaponDefinition {
   return weaponDef(state.player.weaponIds[state.player.weaponIndex]);
 }
@@ -147,6 +165,7 @@ export function step(state: SimState, input: PlayerInput, dt: number = STEP_SECO
   if (state.status !== "playing") return;
   state.time += dt;
 
+  state.caution = Math.max(0, state.caution - CAUTION.decayPerSecond * dt);
   updatePlayer(state, input, dt);
   updateEnemies(state, dt);
   updateProjectiles(state, dt);
@@ -287,7 +306,7 @@ export function perceive(state: SimState, enemy: EnemyState, def: EnemyDefinitio
   const alert = isAlert(enemy);
   const dist = distance(enemy.pos, player.pos);
 
-  let range = def.detectionRange * (alert ? STEALTH.alertRangeBonus : 1);
+  let range = beamRange(state, def) * (alert ? STEALTH.alertRangeBonus : 1);
   if (player.hidden) range = Math.min(range, STEALTH.hideRange);
   if (dist > range) return 0;
   if (!lineOfSight(enemy.pos, player.pos, state.arena.walls)) return 0;
@@ -334,6 +353,7 @@ function spot(state: SimState, enemy: EnemyState): void {
   if (wasAlert) return;
   enemy.reaction = def.reactionTime;
   state.timesSpotted += 1;
+  state.caution = Math.min(1, state.caution + CAUTION.spottedRaise);
   state.events.push({ type: "spotted", pos: { x: enemy.pos.x, y: enemy.pos.y } });
 
   // The squad standing near sees it too and knows at once. Everyone else has to be told by radio.
@@ -342,7 +362,7 @@ function spot(state: SimState, enemy: EnemyState): void {
     if (distance(other.pos, enemy.pos) > STEALTH.squadRange) continue;
     alarm(state, other, STEALTH.calloutAwareness, player.pos, STEALTH.noiseScatter / 2);
   }
-  enemy.radio = { left: STEALTH.radioSeconds, pos: { x: player.pos.x, y: player.pos.y } };
+  enemy.radio = { left: radioDelay(state), pos: { x: player.pos.x, y: player.pos.y } };
 }
 
 /** Sends an enemy to look at a spot, without telling it where the player really is. */
@@ -412,6 +432,7 @@ function updateEnemies(state: SimState, dt: number): void {
     enemy.hurt = Math.max(0, enemy.hurt - dt);
     enemy.cooldown = Math.max(0, enemy.cooldown - dt);
     updateRadio(state, enemy, dt);
+    if (!isAlert(enemy)) lookForBodies(state, enemy, def);
 
     const dist = distance(enemy.pos, player.pos);
     const seen = perceive(state, enemy, def);
@@ -466,7 +487,7 @@ function updateEnemies(state: SimState, dt: number): void {
       }
     } else if (seen > 0) {
       // In view but not yet spotted: the meter fills, and the enemy stares at what it saw.
-      enemy.awareness = Math.min(1, enemy.awareness + (seen / difficulty.detectSeconds) * dt);
+      enemy.awareness = Math.min(1, enemy.awareness + ((seen * (1 + CAUTION.meterBoost * state.caution)) / difficulty.detectSeconds) * dt);
       enemy.investigate = { x: player.pos.x, y: player.pos.y };
       enemy.queue = [];
       enemy.patrolTarget = null;
@@ -498,7 +519,7 @@ function updateEnemies(state: SimState, dt: number): void {
         enemy.searchLeft -= dt;
         enemy.facing += STEALTH.lookTurnRate * dt;
       } else {
-        const stop = patrol(enemy, dt);
+        const stop = patrol(state, enemy, dt);
         target = stop.target;
         pace = stop.pace;
         facingSet = stop.facingSet;
@@ -507,7 +528,7 @@ function updateEnemies(state: SimState, dt: number): void {
 
     if (target && !holdPosition) {
       const angle = headingFor(state, enemy, def, target, dt);
-      const speed = def.moveSpeed * difficulty.enemySpeed * pace;
+      const speed = def.moveSpeed * difficulty.enemySpeed * state.contract.speedScale * (1 + CAUTION.speedBoost * state.caution) * pace;
       enemy.pos.x += Math.cos(angle) * speed * dt;
       enemy.pos.y += Math.sin(angle) * speed * dt;
       if (!facingSet) turnToward(enemy, angle, STEALTH.turnRate, dt);
@@ -523,7 +544,7 @@ function updateEnemies(state: SimState, dt: number): void {
  * around at each stop, or stand at its post and sweep its gaze either side.
  * It is not hunting anyone.
  */
-function patrol(enemy: EnemyState, dt: number): { target: Vec | null; pace: number; facingSet: boolean } {
+function patrol(state: SimState, enemy: EnemyState, dt: number): { target: Vec | null; pace: number; facingSet: boolean } {
   enemy.mode = "patrol";
   const waypoint = enemy.route[enemy.routeIndex];
   const arrived = distance(enemy.pos, waypoint) < ARRIVE_DISTANCE;
@@ -536,10 +557,12 @@ function patrol(enemy: EnemyState, dt: number): { target: Vec | null; pace: numb
     return { target: null, pace: 0, facingSet: true };
   }
   if (arrived) {
-    // A stop on the loop: look around, then move on to the next waypoint.
-    enemy.routeIndex = (enemy.routeIndex + 1) % enemy.route.length;
+    // A stop on the loop: look around for a different time each visit, now and then turn back, then move on.
+    const many = enemy.route.length > 1;
+    if (many && random(state) < CAUTION.reverseChance) enemy.routeDir = enemy.routeDir === 1 ? -1 : 1;
+    enemy.routeIndex = (enemy.routeIndex + enemy.routeDir + enemy.route.length) % enemy.route.length;
     enemy.patrolTarget = null;
-    enemy.searchLeft = STEALTH.lookSeconds;
+    enemy.searchLeft = many ? CAUTION.pauseMin + random(state) * (CAUTION.pauseMax - CAUTION.pauseMin) : STEALTH.lookSeconds;
     enemy.mode = "search";
     return { target: null, pace: 0, facingSet: false };
   }
@@ -649,6 +672,36 @@ function damageEnemy(state: SimState, enemy: EnemyState, amount: number, at: Vec
   state.score += def.score;
   state.kills += 1;
   state.events.push({ type: "kill", pos: { x: enemy.pos.x, y: enemy.pos.y }, defId: enemy.defId });
+  state.bodies.push({ id: enemy.id, pos: { x: enemy.pos.x, y: enemy.pos.y }, found: false });
+}
+
+/**
+ * A calm guard whose light falls on a body knows someone is in the building:
+ * it goes to look, checks the dark corners round it, tells the guards near it
+ * and winds the whole building up. A body in a dark corner or behind a wall is
+ * safe until somebody walks by.
+ */
+function lookForBodies(state: SimState, enemy: EnemyState, def: EnemyDefinition): void {
+  for (const body of state.bodies) {
+    if (body.found) continue;
+    const dist = distance(enemy.pos, body.pos);
+    if (dist > beamRange(state, def) * CAUTION.bodySightShare) continue;
+    if (!lineOfSight(enemy.pos, body.pos, state.arena.walls)) continue;
+    if (dist > CAUTION.bodyCloseNotice) {
+      const toBody = Math.atan2(body.pos.y - enemy.pos.y, body.pos.x - enemy.pos.x);
+      if (Math.abs(angleDiff(enemy.facing, toBody)) > def.fieldOfView) continue;
+    }
+    body.found = true;
+    state.caution = Math.min(1, state.caution + CAUTION.bodyRaise);
+    state.events.push({ type: "body", pos: { x: body.pos.x, y: body.pos.y } });
+    alarm(state, enemy, CAUTION.bodyAwareness, body.pos, CAUTION.bodyScatter);
+    enemy.queue = nooksNear(state, body.pos);
+    for (const other of state.enemies) {
+      if (other === enemy || isAlert(other)) continue;
+      if (distance(other.pos, enemy.pos) > CAUTION.bodySquadRange) continue;
+      alarm(state, other, CAUTION.bodyAwareness * 0.8, body.pos, CAUTION.bodyScatter);
+    }
+  }
 }
 
 /* ------------------------------------------------------------ projectiles */
@@ -766,6 +819,7 @@ function guardState(state: SimState, guard: Guard): EnemyState {
     route: guard.route.map((point) => ({ x: point.x, y: point.y })),
     // A roamer starts on its way to the second waypoint; a post is already there.
     routeIndex: guard.route.length > 1 ? 1 : 0,
+    routeDir: 1,
     watch,
     sweepClock: random(state) * Math.PI * 2,
     patrolTarget: null,

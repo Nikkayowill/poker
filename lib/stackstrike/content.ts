@@ -1,5 +1,7 @@
 import type {
   Arena,
+  ContractDefinition,
+  ContractId,
   DifficultyDefinition,
   DifficultyId,
   EnemyDefinition,
@@ -220,6 +222,116 @@ export const STEALTH = {
   lookTurnRate: 1.6,
   /** Corners this near the spot an enemy lost the player are checked. */
   nookCheckRadius: 220,
+};
+
+/**
+ * What a guard does about a body, and how the whole building winds up and
+ * settles. Spotting you or finding a body raises `caution`; while it is up,
+ * guards walk faster, their lights reach farther and they notice you sooner.
+ */
+export const CAUTION = {
+  /** A body is seen inside this share of a guard's beam range... */
+  bodySightShare: 0.85,
+  /** ...or at once this close, whichever way they face. */
+  bodyCloseNotice: 50,
+  /** Awareness a guard that finds a body is left with, and the squad it tells. */
+  bodyAwareness: 0.65,
+  bodyScatter: 50,
+  bodySquadRange: 220,
+  /** What each event adds to caution. */
+  spottedRaise: 0.5,
+  bodyRaise: 0.4,
+  /** Caution lost per second. Full to calm takes 45 seconds. */
+  decayPerSecond: 1 / 45,
+  /** At full caution: walking speed, beam reach and meter speed are scaled by these. */
+  speedBoost: 0.25,
+  beamBoost: 0.2,
+  meterBoost: 0.35,
+  /** A roamer turns back at a stop this often, and pauses between these. */
+  reverseChance: 0.25,
+  pauseMin: 0.5,
+  pauseMax: 2.4,
+};
+
+export const CONTRACTS: Record<ContractId, ContractDefinition> = {
+  standard: {
+    id: "standard",
+    name: "Standard job",
+    blurb: "Nothing out of the ordinary.",
+    unlockLevel: 1,
+    weight: 3,
+    guardDelta: 0,
+    beamScale: 1,
+    speedScale: 1,
+    radioScale: 1,
+    lootDelta: 0,
+    lootScale: 1,
+  },
+  "skeleton-crew": {
+    id: "skeleton-crew",
+    name: "Skeleton crew",
+    blurb: "Short staffed tonight. Fewer guards, thinner pickings.",
+    unlockLevel: 1,
+    weight: 2,
+    guardDelta: -2,
+    beamScale: 1,
+    speedScale: 1,
+    radioScale: 1,
+    lootDelta: -1,
+    lootScale: 0.75,
+  },
+  "rich-pickings": {
+    id: "rich-pickings",
+    name: "Rich pickings",
+    blurb: "More to steal, and someone extra on the door.",
+    unlockLevel: 2,
+    weight: 2,
+    guardDelta: 1,
+    beamScale: 1,
+    speedScale: 1,
+    radioScale: 1,
+    lootDelta: 1,
+    lootScale: 1.25,
+  },
+  "night-shift": {
+    id: "night-shift",
+    name: "Night shift",
+    blurb: "Fewer guards, but their lights reach much farther.",
+    unlockLevel: 3,
+    weight: 2,
+    guardDelta: -1,
+    beamScale: 1.3,
+    speedScale: 1,
+    radioScale: 1,
+    lootDelta: 0,
+    lootScale: 1,
+  },
+  "double-time": {
+    id: "double-time",
+    name: "Double time",
+    blurb: "The guards are in a hurry and walk fast.",
+    unlockLevel: 4,
+    weight: 2,
+    guardDelta: 0,
+    beamScale: 1,
+    speedScale: 1.25,
+    radioScale: 1,
+    lootDelta: 0,
+    lootScale: 1.15,
+  },
+  "tight-radio": {
+    id: "tight-radio",
+    name: "Tight radio",
+    blurb: "Radio calls go out almost at once. Kill a spotter instantly or not at all.",
+    unlockLevel: 5,
+    weight: 2,
+    guardDelta: 0,
+    beamScale: 1,
+    speedScale: 1,
+    radioScale: 0.4,
+    lootDelta: 0,
+    lootScale: 1.2,
+  },
 };
 
 /**

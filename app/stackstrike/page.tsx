@@ -20,6 +20,13 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "StackStrike (preview)",
   robots: { index: false, follow: false },
+  icons: { icon: "/stackstrike/icon-512.png", apple: "/stackstrike/apple-touch-icon.png" },
+  openGraph: {
+    title: "StackStrike",
+    description: "Stay quiet. Take the gold.",
+    images: [{ url: "/stackstrike/thumbnail.png", width: 1200, height: 630 }],
+  },
+  twitter: { card: "summary_large_image", images: ["/stackstrike/thumbnail.png"] },
 };
 
 export default async function StackStrikePage() {

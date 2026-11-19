@@ -61,6 +61,31 @@ export interface EnemyDefinition {
 
 export type DifficultyId = "easy" | "normal" | "hard";
 
+export type ContractId = "standard" | "skeleton-crew" | "night-shift" | "rich-pickings" | "double-time" | "tight-radio";
+
+/** A twist on the heist, drawn at random each run so no two feel the same. */
+export interface ContractDefinition {
+  id: ContractId;
+  name: string;
+  blurb: string;
+  /** Rank that unlocks it. */
+  unlockLevel: number;
+  /** How likely it is among the unlocked ones. */
+  weight: number;
+  /** Guards added or removed from what the difficulty calls for. */
+  guardDelta: number;
+  /** Multiplier on how far guard flashlights reach. */
+  beamScale: number;
+  /** Multiplier on how fast guards walk. */
+  speedScale: number;
+  /** Multiplier on how long a radio call takes to go out. */
+  radioScale: number;
+  /** Side valuables added or removed. */
+  lootDelta: number;
+  /** Multiplier on what the valuables pay. */
+  lootScale: number;
+}
+
 export interface DifficultyDefinition {
   id: DifficultyId;
   label: string;
@@ -110,6 +135,8 @@ export interface Arena {
   corners: Vec[];
   guards: Guard[];
   loot: LootSpot[];
+  /** This run's twist. Absent means the plain heist. */
+  contract?: ContractId;
   /** The way out. The door is drawn on the outer wall; standing in the zone with the gold ends the mission. */
   exit: { door: Rect; zone: Rect };
   playerSpawn: Vec;
@@ -184,6 +211,8 @@ export interface EnemyState {
   routeIndex: number;
   /** For a post: the way it faces. It sweeps a little either side. */
   watch: number | null;
+  /** Which way round its loop a roamer is walking: 1 forward, -1 back. */
+  routeDir: 1 | -1;
   /** Phase of a post's gaze sweep. */
   sweepClock: number;
   patrolTarget: Vec | null;
@@ -220,8 +249,17 @@ export type SimEvent =
   | { type: "radio"; pos: Vec }
   | { type: "hide"; on: boolean }
   | { type: "pickup"; pos: Vec; main: boolean; value: number }
+  | { type: "body"; pos: Vec }
   | { type: "escaped" }
   | { type: "dead" };
+
+/** A guard who was shot. Others who see it know someone is in the building. */
+export interface BodyState {
+  id: number;
+  pos: Vec;
+  /** Someone has already come across it. */
+  found: boolean;
+}
 
 export interface LootState {
   spot: LootSpot;
@@ -234,6 +272,11 @@ export interface SimState {
   status: "playing" | "dead" | "escaped";
   difficulty: DifficultyId;
   loot: LootState[];
+  contract: ContractDefinition;
+  /** Dead guards left where they fell. */
+  bodies: BodyState[];
+  /** How wound up the whole building is, 0 calm to 1 on edge. Spotting you or finding a body raises it; it settles over time. */
+  caution: number;
   /** The main prize is in the player's hands: now get out. */
   hasGold: boolean;
   player: PlayerState;

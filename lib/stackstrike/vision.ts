@@ -1,6 +1,6 @@
 import { AIM_ASSIST, PLAYER_GLOW, SENSE, SHADOW } from "./content";
-import { distance, lineOfSight, segmentRectHit } from "./geometry";
-import type { Arena, EnemyState, Rect, Room, Vec } from "./types";
+import { distance, lineOfSight, segmentWallHit } from "./geometry";
+import type { Arena, EnemyState, Room, Vec, Wall } from "./types";
 
 /**
  * Light and sight shapes. The scene draws the dark and the enemies' flashlight
@@ -16,11 +16,11 @@ export function angleDiff(from: number, to: number): number {
   return diff;
 }
 
-function castRay(origin: Vec, angle: number, range: number, walls: readonly Rect[]): Vec {
+function castRay(origin: Vec, angle: number, range: number, walls: readonly Wall[]): Vec {
   const end = { x: origin.x + Math.cos(angle) * range, y: origin.y + Math.sin(angle) * range };
   let nearest = 1;
   for (const wall of walls) {
-    const t = segmentRectHit(origin, end, wall);
+    const t = segmentWallHit(origin, end, wall);
     if (t !== null && t < nearest) nearest = t;
   }
   return { x: origin.x + (end.x - origin.x) * nearest, y: origin.y + (end.y - origin.y) * nearest };
@@ -30,7 +30,7 @@ function castRay(origin: Vec, angle: number, range: number, walls: readonly Rect
 export function beamPolygon(
   origin: Vec,
   aim: number,
-  walls: readonly Rect[],
+  walls: readonly Wall[],
   range: number,
   halfAngle: number,
   rays = 60,
@@ -44,7 +44,7 @@ export function beamPolygon(
 }
 
 /** A full circle of sight around the origin, cut short by walls. */
-export function glowPolygon(origin: Vec, walls: readonly Rect[], radius: number = PLAYER_GLOW.radius, rays = 32): Vec[] {
+export function glowPolygon(origin: Vec, walls: readonly Wall[], radius: number = PLAYER_GLOW.radius, rays = 32): Vec[] {
   const points: Vec[] = [];
   for (let n = 0; n < rays; n += 1) {
     points.push(castRay(origin, (n / rays) * Math.PI * 2, radius, walls));
@@ -97,7 +97,7 @@ export function assistAim(
   aim: number,
   from: Vec,
   targets: readonly { pos: Vec; radius: number }[],
-  walls: readonly Rect[],
+  walls: readonly Wall[],
   range: number,
 ): number {
   let best = aim;

@@ -3,7 +3,7 @@ import { CONTRACTS, PLAYER_GLOW } from "@/lib/stackstrike/content";
 import { StackStrikeAudio } from "./stackstrike-audio";
 import { recordAim, releaseShot, type AimSample } from "@/lib/stackstrike/aim";
 import { GUARD_STRIDE, guardStep, PLAYER_STRIDE, playerStep, readThreat, StepCounter, cuesFor, type Cue, type CueContext } from "@/lib/stackstrike/audio";
-import { lineOfSight, segmentRectHit } from "@/lib/stackstrike/geometry";
+import { isDisc, isPoly, lineOfSight, segmentWallHit } from "@/lib/stackstrike/geometry";
 import { applyRun, loadoutFor, loadProgress, rankFor, saveProgress, type Progress, type RunResult } from "@/lib/stackstrike/progress";
 import { buildArena, pickContract } from "@/lib/stackstrike/run";
 import {
@@ -946,9 +946,17 @@ export class StackStrikeScene extends Phaser.Scene {
 
     for (const wall of arena.walls) {
       g.fillStyle(COLORS.wall, 1);
-      g.fillRect(wall.x, wall.y, wall.w, wall.h);
       g.lineStyle(2, COLORS.wallEdge, 1);
-      g.strokeRect(wall.x, wall.y, wall.w, wall.h);
+      if (isDisc(wall)) {
+        g.fillCircle(wall.x, wall.y, wall.r);
+        g.strokeCircle(wall.x, wall.y, wall.r);
+      } else if (isPoly(wall)) {
+        g.fillPoints(wall.points, true);
+        g.strokePoints(wall.points, true);
+      } else {
+        g.fillRect(wall.x, wall.y, wall.w, wall.h);
+        g.strokeRect(wall.x, wall.y, wall.w, wall.h);
+      }
     }
 
     // The way in and out, set into the outer wall.
@@ -1406,7 +1414,7 @@ export class StackStrikeScene extends Phaser.Scene {
     const far = { x: player.pos.x + Math.cos(player.aim) * reach, y: player.pos.y + Math.sin(player.aim) * reach };
     let nearest = 1;
     for (const wall of arena.walls) {
-      const t = segmentRectHit(from, far, wall);
+      const t = segmentWallHit(from, far, wall);
       if (t !== null && t < nearest) nearest = t;
     }
     const end = { x: from.x + (far.x - from.x) * nearest, y: from.y + (far.y - from.y) * nearest };

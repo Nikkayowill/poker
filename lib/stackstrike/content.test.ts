@@ -1,18 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { ARENA, DIFFICULTIES, ENEMIES, OPERATORS, SHADOW, WEAPONS } from "./content";
-import { lineOfSight } from "./geometry";
+import { distanceToWall, lineOfSight } from "./geometry";
 import { buildNavGrid, findPath } from "./pathfinding";
-import type { Rect, Vec } from "./types";
+import type { Vec } from "./types";
 import { lightAt } from "./vision";
 
 function touchesWall(point: Vec, radius: number): boolean {
-  return ARENA.walls.some(
-    (wall: Rect) =>
-      point.x > wall.x - radius &&
-      point.x < wall.x + wall.w + radius &&
-      point.y > wall.y - radius &&
-      point.y < wall.y + wall.h + radius,
-  );
+  return ARENA.walls.some((wall) => distanceToWall(point.x, point.y, wall) < radius);
 }
 
 describe("arena", () => {
@@ -132,7 +126,7 @@ describe("arena", () => {
 
   it("keeps every light on open floor", () => {
     for (const light of ARENA.lights) {
-      const inside = ARENA.walls.some((wall) => light.pos.x > wall.x && light.pos.x < wall.x + wall.w && light.pos.y > wall.y && light.pos.y < wall.y + wall.h);
+      const inside = ARENA.walls.some((wall) => distanceToWall(light.pos.x, light.pos.y, wall) === 0);
       expect(inside, `${light.pos.x},${light.pos.y}`).toBe(false);
     }
   });

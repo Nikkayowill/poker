@@ -126,6 +126,31 @@ export interface LootSpot {
   main: boolean;
 }
 
+/** What a solid thing is, for drawing it. It changes nothing about how it blocks. */
+export type WallStyle = "wall" | "crate" | "desk" | "shelf" | "case" | "console" | "machine" | "plant" | "pillar" | "plinth";
+
+/** A straight-sided block, aligned to the map. */
+export interface Block extends Rect {
+  style?: WallStyle;
+}
+
+/** A round post, tank or plinth. */
+export interface Disc {
+  x: number;
+  y: number;
+  r: number;
+  style?: WallStyle;
+}
+
+/** A convex shape with any angle to it: a piece of curved wall, a cut corner. Wound either way; `poly()` normalises it. */
+export interface Poly {
+  points: Vec[];
+  style?: WallStyle;
+}
+
+/** Anything solid: blocks bullets, sight and light, and walkers go round it. */
+export type Wall = Block | Disc | Poly;
+
 export type LightTone = "warm" | "cool" | "red" | "blue";
 
 /** A lamp, window or screen that lights the floor. Walls and props block it, so it leaves shadows behind them. */
@@ -138,7 +163,7 @@ export interface Light {
 export interface Arena {
   width: number;
   height: number;
-  walls: Rect[];
+  walls: Wall[];
   rooms: Room[];
   /** Every fixed light. Where none reaches, the floor is as dark as `ambient`. */
   lights: Light[];

@@ -15,10 +15,10 @@ import {
 import {
   distance,
   lineOfSight,
-  resolveCircleAgainstRects,
+  resolveCircleAgainstWalls,
   segmentCircleHit,
   segmentClear,
-  segmentRectHit,
+  segmentWallHit,
 } from "./geometry";
 import { findPath, navGridFor } from "./pathfinding";
 import type {
@@ -203,7 +203,7 @@ function updatePlayer(state: SimState, input: PlayerInput, dt: number): void {
   player.moving = Math.hypot(mx, my) > MOVING_THRESHOLD;
   player.pos.x += mx * player.moveSpeed * dt;
   player.pos.y += my * player.moveSpeed * dt;
-  resolveCircleAgainstRects(player.pos, radius, state.arena.walls);
+  resolveCircleAgainstWalls(player.pos, radius, state.arena.walls);
   updateShadow(state);
 
   const weapon = currentWeapon(state);
@@ -546,7 +546,7 @@ function updateEnemies(state: SimState, dt: number): void {
       enemy.pos.y += Math.sin(angle) * speed * dt;
       if (!facingSet) turnToward(enemy, angle, STEALTH.turnRate, dt);
     }
-    resolveCircleAgainstRects(enemy.pos, def.radius, walls);
+    resolveCircleAgainstWalls(enemy.pos, def.radius, walls);
   }
 
   separateEnemies(state);
@@ -666,7 +666,7 @@ function separateEnemies(state: SimState): void {
     }
   }
   for (const enemy of enemies) {
-    resolveCircleAgainstRects(enemy.pos, enemyDef(enemy.defId).radius, state.arena.walls);
+    resolveCircleAgainstWalls(enemy.pos, enemyDef(enemy.defId).radius, state.arena.walls);
   }
 }
 
@@ -733,7 +733,7 @@ function updateProjectiles(state: SimState, dt: number): void {
     // The nearest thing along this step wins, so a wall shields what is behind it.
     let wallT = Infinity;
     for (const wall of state.arena.walls) {
-      const t = segmentRectHit(from, to, wall);
+      const t = segmentWallHit(from, to, wall);
       if (t !== null && t < wallT) wallT = t;
     }
 

@@ -12,10 +12,13 @@ for where each came from):
 Sound effects come out as 16-bit mono WAV (no encoder delay, so a shot lands on the frame it is fired).
 Music comes out as MP3 (plays everywhere, loops cheaply). Everything is deterministic.
 """
-import argparse, json, os, subprocess
+import argparse, json, os, subprocess, sys
 import numpy as np
 from scipy.io import wavfile
 from scipy.signal import butter, sosfilt
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import stackstrike_foley
 
 SR = 44100
 rng = np.random.default_rng(7)
@@ -169,24 +172,6 @@ def synth_escaped():
     return peak_to(fade(x + shimmer, 0.0005, 0.15), -3)
 
 
-def synth_pickup_small():
-    x = tone(1318.5, 0.3, 0.12, ((1, 1.0), (2, 0.3)), total=0.3) + tone(1975.5, 0.26, 0.12, ((1, 1.0), (2, 0.25)), delay=0.06, total=0.3)
-    return peak_to(fade(x, 0.0005, 0.04), -4)
-
-
-def synth_pickup_main():
-    notes = [783.99, 987.77, 1174.66, 1567.98, 1975.53]
-    n = int(1.5 * SR)
-    x = np.zeros(n)
-    for i, f in enumerate(notes):
-        x += tone(f, 1.2, 0.45, ((1, 1.0), (2, 0.3), (4, 0.1)), delay=i * 0.07, total=1.5)
-    clinks = np.zeros(n)
-    for k in range(18):
-        at = int((0.05 + k * 0.045 + rng.random() * 0.02) * SR)
-        clinks[at : at + 400] += highpass(noise(400), 4000) * np.exp(-np.arange(400) / 60) * (0.5 + rng.random() * 0.5)
-    return peak_to(fade(x + clinks * 0.5, 0.0005, 0.12), -3)
-
-
 def synth_radio(static):
     n = int(0.55 * SR)
     t = np.arange(n) / SR
@@ -272,9 +257,8 @@ def build_sfx(src, out):
         save(f"kill-{i + 1}", peak_to(fade(impact("impact_soft_heavy", i), 0.0005, 0.06), -3))
     for i in range(3):
         save(f"ricochet-{i + 1}", peak_to(fade(highpass(impact("impact_metal_light", i), 400), 0.0005, 0.05), -6))
-    for i in range(3):
-        save(f"step-soft-{i + 1}", peak_to(fade(impact("footstep_carpet", i), 0.0005, 0.03), -8))
-        save(f"step-boot-{i + 1}", peak_to(fade(impact("footstep_concrete", i), 0.0005, 0.03), -6))
+    # Footsteps and loot sounds are made in code (scripts/stackstrike_foley.py); the Kenney footsteps were bright clicks.
+    made += stackstrike_foley.build(out)
 
     # Alerts, loot and the ends of a run.
     static = decode(os.path.join(oga, "static1.wav"))
@@ -283,8 +267,6 @@ def build_sfx(src, out):
     save("body-found", synth_body())
     save("dead", synth_dead())
     save("escaped", synth_escaped())
-    save("pickup-small", synth_pickup_small())
-    save("pickup-main", synth_pickup_main())
     save("alarm", peak_to(fade(trim_silence(decode(os.path.join(oga, "alarm.ogg"))), 0.001, 0.05), -6))
 
     # Heartbeats, seamless loops: the less suspicious you are the slower the one you hear.

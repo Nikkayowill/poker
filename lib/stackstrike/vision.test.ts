@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PLAYER_GLOW, SENSE } from "./content";
 import type { Arena, EnemyState } from "./types";
-import { angleDiff, assistAim, beamPolygon, coverAt, glowPolygon, roomAt, sensedEnemies } from "./vision";
+import { angleDiff, assistAim, beamPolygon, lightAt, glowPolygon, roomAt, sensedEnemies } from "./vision";
 
 const origin = { x: 500, y: 500 };
 
@@ -37,15 +37,32 @@ describe("glowPolygon", () => {
   });
 });
 
-describe("coverAt", () => {
-  it("is zero in the open, a third against a flat wall and over half in a corner", () => {
-    expect(coverAt(origin, [])).toBe(0);
-    expect(coverAt({ x: 514, y: 500 }, [{ x: 400, y: 300, w: 100, h: 400 }])).toBeCloseTo(3 / 8, 6);
-    const corner = [
-      { x: 400, y: 300, w: 100, h: 400 },
-      { x: 400, y: 300, w: 400, h: 100 },
-    ];
-    expect(coverAt({ x: 514, y: 414 }, corner)).toBeGreaterThanOrEqual(0.5);
+describe("lightAt", () => {
+  const arenaWith = (lights: Arena["lights"], walls: Arena["walls"] = [], ambient = 0): Pick<Arena, "lights" | "ambient" | "walls"> => ({ lights, walls, ambient });
+  const lamp = { pos: { x: 500, y: 500 }, radius: 200, tone: "warm" as const };
+
+  it("is the ambient level with no lights, brightest under a lamp and nothing past its edge", () => {
+    expect(lightAt(origin, arenaWith([], [], 0.3))).toBe(0.3);
+    expect(lightAt({ x: 500, y: 500 }, arenaWith([lamp]))).toBe(1);
+    expect(lightAt({ x: 650, y: 500 }, arenaWith([lamp]))).toBeGreaterThan(0);
+    expect(lightAt({ x: 700, y: 500 }, arenaWith([lamp]))).toBe(0);
+  });
+
+  it("fades with distance", () => {
+    const near = lightAt({ x: 540, y: 500 }, arenaWith([lamp]));
+    const far = lightAt({ x: 640, y: 500 }, arenaWith([lamp]));
+    expect(near).toBeGreaterThan(far);
+  });
+
+  it("does not reach past a wall", () => {
+    const wall = { x: 560, y: 400, w: 20, h: 200 };
+    expect(lightAt({ x: 620, y: 500 }, arenaWith([lamp], [wall]))).toBe(0);
+    expect(lightAt({ x: 620, y: 500 }, arenaWith([lamp]))).toBeGreaterThan(0);
+  });
+
+  it("takes the brightest of overlapping lights rather than adding them up", () => {
+    const other = { pos: { x: 500, y: 500 }, radius: 100, tone: "cool" as const };
+    expect(lightAt({ x: 500, y: 500 }, arenaWith([lamp, other]))).toBe(1);
   });
 });
 
@@ -57,6 +74,8 @@ const twoRooms: Arena = {
     { id: "left", rect: { x: 0, y: 0, w: 490, h: 400 } },
     { id: "right", rect: { x: 510, y: 0, w: 490, h: 400 } },
   ],
+  lights: [],
+  ambient: 1,
   corners: [],
   guards: [],
   loot: [],

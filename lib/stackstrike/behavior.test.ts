@@ -9,6 +9,8 @@ function arena(guards: Guard[] = [], walls: Arena["walls"] = [], contract?: Cont
     height: 1000,
     walls,
     rooms: [],
+    lights: [],
+    ambient: 1,
     corners: [],
     guards,
     loot: [],

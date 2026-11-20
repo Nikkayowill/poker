@@ -17,7 +17,7 @@ import {
   STEP_SECONDS,
   step,
 } from "@/lib/stackstrike/sim";
-import type { DifficultyId, EnemyState, PlayerInput, SimEvent, SimState } from "@/lib/stackstrike/types";
+import type { DifficultyId, EnemyState, LightTone, PlayerInput, SimEvent, SimState } from "@/lib/stackstrike/types";
 import { ARM_PX, bodyToWorld, FISTS, GUN_ART, handOffset, handsOnGun, pixelScale, REST_HANDS, segmentBetween, SHOULDERS, solveArm, walkSway, type Pt as BodyPt } from "@/lib/stackstrike/sprites";
 import { angleDiff, assistAim, beamPolygon, glowPolygon, roomAt, sensedEnemies } from "@/lib/stackstrike/vision";
 
@@ -146,7 +146,11 @@ const CAMERA_FOLLOW_RATE = 12;
 /** How far the laser sight reaches, in world units. */
 const LASER_RANGE = 520;
 /** Floor of the room the player is in is lit this much, so the layout can be read. */
-const ROOM_LIGHT = 0.4;
+const ROOM_LIGHT = 0.12;
+/** Rings a lamp's pool is drawn in, outermost first, each clearing a little more of the dark. */
+const LAMP_RINGS = [1, 0.8, 0.6, 0.4, 0.2];
+const LAMP_RING_ALPHA = 0.17;
+const LAMP_TINT: Record<LightTone, number> = { warm: 0xffc880, cool: 0x9db8ff, red: 0xff4a38, blue: 0x62c8ff };
 
 interface Particle {
   x: number;
@@ -1344,6 +1348,8 @@ export class StackStrikeScene extends Phaser.Scene {
       );
     }
 
+    this.drawLamps(erase);
+
     // The way out is always faintly lit, so you can find your way back.
     const door = arena.exit.door;
     erase(circlePoints(door.x + door.w / 2 + 30, door.y + door.h / 2, 90), 0.4);
@@ -1363,6 +1369,25 @@ export class StackStrikeScene extends Phaser.Scene {
     erase(glowPolygon(player.pos, arena.walls, PLAYER_GLOW.radius * 0.5), 0.9);
 
     this.drawLaser();
+  }
+
+  /**
+   * Every lamp that is on screen: its pool clears the dark in rings that stop at walls, and a faint tint
+   * on top shows its colour. The sim's `lightAt` uses the same lamps, so the dark you see is the dark you can hide in.
+   */
+  private drawLamps(erase: (poly: Point[], alpha: number) => void): void {
+    const { arena } = this.sim;
+    const reach = Math.hypot(this.scale.width, this.scale.height) / (2 * this.zoom);
+    for (const light of arena.lights) {
+      if (Math.hypot(light.pos.x - this.cam.x, light.pos.y - this.cam.y) > reach + light.radius) continue;
+      for (const ring of LAMP_RINGS) erase(glowPolygon(light.pos, arena.walls, light.radius * ring, 40), LAMP_RING_ALPHA);
+      const edge = glowPolygon(light.pos, arena.walls, light.radius, 40).map((p) => this.worldToScreen(p.x, p.y));
+      this.tint.fillStyle(LAMP_TINT[light.tone], 0.07);
+      this.tint.fillPoints(edge, true);
+      const core = glowPolygon(light.pos, arena.walls, light.radius * 0.45, 32).map((p) => this.worldToScreen(p.x, p.y));
+      this.tint.fillStyle(LAMP_TINT[light.tone], 0.07);
+      this.tint.fillPoints(core, true);
+    }
   }
 
   /**

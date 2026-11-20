@@ -53,19 +53,22 @@ export function glowPolygon(origin: Vec, walls: readonly Rect[], radius: number 
 }
 
 /**
- * How boxed in a point is: rays are cast all round it and the share that hit a
- * wall within `reach` is returned. A corner or an alcove scores high, a flat
- * wall about a third, open floor zero. This is what "hugging a dark corner"
- * means to the sim.
+ * How much light falls on a point from the fixed lights, 0 to 1. Each lamp is
+ * brightest at its own spot and fades to nothing at its radius, and only counts
+ * where nothing stands between it and the point, so a crate throws a shadow.
+ * This is what "dark" means to the sim: it decides where you can hide.
  */
-export function coverAt(point: Vec, walls: readonly Rect[], reach: number = SHADOW.reach, rays = 8): number {
-  let blocked = 0;
-  for (let n = 0; n < rays; n += 1) {
-    const angle = (n / rays) * Math.PI * 2;
-    const end = { x: point.x + Math.cos(angle) * reach, y: point.y + Math.sin(angle) * reach };
-    if (walls.some((wall) => segmentRectHit(point, end, wall) !== null)) blocked += 1;
+export function lightAt(point: Vec, arena: Pick<Arena, "lights" | "ambient" | "walls">): number {
+  let level = arena.ambient;
+  for (const light of arena.lights) {
+    const dist = distance(light.pos, point);
+    if (dist >= light.radius) continue;
+    const strength = (1 - dist / light.radius) ** SHADOW.falloff;
+    if (strength <= level) continue;
+    if (!lineOfSight(light.pos, point, arena.walls)) continue;
+    level = strength;
   }
-  return blocked / rays;
+  return Math.min(1, level);
 }
 
 /** The room a point is in, or the nearest one when it stands in a doorway. */

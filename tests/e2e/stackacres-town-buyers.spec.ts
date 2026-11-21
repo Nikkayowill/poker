@@ -65,21 +65,22 @@ const IRIS = { x: 467, y: 389 };
 const DALE = { x: 728, y: 573 };
 const HANK = { x: 614, y: 422 };
 
-test("Iris buys Stone at the general store, and Dale turns it away", async ({ context, page }) => {
+test("nobody in town buys Stone, so the farm keeps it for building", async ({ context, page }) => {
   const profileId = await admit(context);
   const granted = await context.request.post("/api/admin/stackacres-items", { data: { profileId, item: "stone", delta: 3 } });
   expect(granted.ok()).toBe(true);
 
-  // The wrong buyer moves nothing.
-  const wrong = await context.request.post("/api/stackacres/actions", {
-    data: { action: "sell", buyer: "grain-elevator", item: "stone", quantity: 3 },
-  });
-  expect(wrong.status()).toBe(400);
+  // No buyer takes it: the sale is refused and the Stone stays put.
+  for (const buyer of ["grain-elevator", "general-store"]) {
+    const refused = await context.request.post("/api/stackacres/actions", {
+      data: { action: "sell", buyer, item: "stone", quantity: 3 },
+    });
+    expect(refused.ok()).toBe(false);
+  }
   expect((await farm(context)).inventory.stone).toBe(3);
 
   await start(page);
 
-  // Dale has nothing to buy from this farm yet.
   await tapPerson(page, DALE);
   const elevator = page.getByRole("dialog", { name: "Grain Elevator" });
   await expect(elevator).toBeVisible();
@@ -87,15 +88,11 @@ test("Iris buys Stone at the general store, and Dale turns it away", async ({ co
   await elevator.getByRole("button", { name: "Close" }).click();
   await expect(elevator).toHaveCount(0);
 
-  // Iris takes the Stone.
   await tapPerson(page, IRIS);
   const store = page.getByRole("dialog", { name: "General Store" });
   await expect(store).toBeVisible();
-  const before = await farm(context);
-  await store.locator(".sa-stock-card", { hasText: "Stone" }).getByRole("button", { name: "Sell all 3" }).click();
-  await expect(store.getByRole("status")).toContainText("Sold 3 Stone");
-  await expect.poll(async () => (await farm(context)).inventory.stone ?? 0, { timeout: 10_000 }).toBe(0);
-  expect((await farm(context)).profile.goldBalance).toBeGreaterThan(before.profile.goldBalance);
+  await expect(store).toContainText("Nothing on hand that Iris buys.");
+  await expect(store.locator(".sa-stock-card", { hasText: "Stone" })).toHaveCount(0);
 });
 
 test("Hank at the sale barn sells young stock and buys it back", async ({ context, page }) => {

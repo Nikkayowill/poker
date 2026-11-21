@@ -169,7 +169,7 @@ import {
   layoutFingerprint as groceryFingerprint,
 } from "@/lib/stackacres/grocery-layout";
 import { gridRouter } from "@/lib/stackacres-td/work-board";
-import type { AreaSpecForRoutines } from "@/lib/stackacres-td/npc-routine";
+import type { AreaExit, AreaSpecForRoutines } from "@/lib/stackacres-td/npc-routine";
 import { WindSway } from "./wind-sway";
 import { TractorRig } from "./tractor-rig";
 import { HandRig, type HandJobKind } from "./hand-rig";
@@ -417,6 +417,9 @@ const PIECES_LAND_ABOVE_FEET = 14;
 
 /** How far a walk may lean off his current facing before he turns, so a 45° diagonal doesn't flip him every frame. */
 const TURN_LEAN = 0.6;
+
+/** How far outside a gate or bridge a tap still counts as a tap on it, when a tree is drawn over the spot. */
+const EXIT_TAP_GRACE = 8;
 
 interface PropSpec {
   frame: string;
@@ -2115,7 +2118,8 @@ export class TopdownScene extends Phaser.Scene {
     const target = this.targetAt(map);
     // A building with a door (the barn, the workshop) is walked into: its exit is named for the building's tag,
     // and what opens its menu stands inside.
-    const door = target.kind === "tag" ? this.area.exits.find((e) => e.to === target.tag) : undefined;
+    const door =
+      target.kind === "tag" ? this.area.exits.find((e) => e.to === target.tag) ?? this.exitUnderTap(map, target.tag) : undefined;
     if (door) {
       const inside = { x: door.x + door.w / 2, y: door.y + door.h / 2 };
       this.pending = null;
@@ -2184,6 +2188,20 @@ export class TopdownScene extends Phaser.Scene {
   /** Out along the dock to cast. The face point is due west along the planks, which turns him toward the water. */
   private dockTarget(spec: PropSpec): Extract<Target, { kind: "tag" }> {
     return { kind: "tag", tag: "dock", anchor: DOCK_CAST_SPOT, face: { x: spec.x - spec.w, y: DOCK_CAST_SPOT.y } };
+  }
+
+  /** The way out the finger is on when a tree or bush drawn over it would otherwise take the tap. The forest
+   *  along the Homestead's west edge hangs its canopy across the bridge to the City. */
+  private exitUnderTap(map: Point, tag: string): AreaExit | undefined {
+    if (gatherKindOfTag(tag) === null) return undefined;
+    return this.area.exits.find(
+      (e) =>
+        this.canEnter(e.to as TopdownArea) &&
+        map.x >= e.x - EXIT_TAP_GRACE &&
+        map.x < e.x + e.w + EXIT_TAP_GRACE &&
+        map.y >= e.y - EXIT_TAP_GRACE &&
+        map.y < e.y + e.h + EXIT_TAP_GRACE,
+    );
   }
 
   private targetAt(map: Point): Target {

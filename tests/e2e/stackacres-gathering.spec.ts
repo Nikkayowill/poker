@@ -17,9 +17,9 @@ interface Handle {
 /** Where things stand on the Homestead (public/stackacres-td/areas/homestead/area.json).
  *  The four choppable trees stand in the yard, between the buildings and the lake. */
 const TREE_3 = { x: 566, y: 170 };
-/** Trunk tiles that only one tree stands on: tree 3's outer tile, and tree 4's middle one. */
+/** Trunk tiles that only one tree stands on: tree 3's outer tile, and the one under tree 4's foot, which is the tile its stump keeps. */
 const TREE_3_OUTER = { x: 584, y: 168 };
-const TREE_4_MIDDLE = { x: 744, y: 232 };
+const TREE_4_FOOT = { x: 728, y: 232 };
 /** Bush 1 of the four berried ones, which are the forage nodes (lib/stackacres/forage.ts). */
 const BUSH = { x: 250, y: 300 };
 /** Bush 2, picked by the forage test below so the walk-through test above keeps its own. */
@@ -146,7 +146,7 @@ test("a tree felled earlier is already a stump when the farm opens", async ({ co
 
   await expect.poll(() => sceneCall(page, "nodeDrawn", "tree:homestead-4")).toBe("spent");
   expect(await sceneCall(page, "nodeDrawn", "tree:homestead-3")).toBe("standing");
-  expect(await sceneCall(page, "isBlockedAt", TREE_4_MIDDLE)).toBe(true);
+  expect(await sceneCall(page, "isBlockedAt", TREE_4_FOOT)).toBe(true);
 });
 
 test("a bush is walked through, and a house wall still stops you", async ({ context, page }) => {

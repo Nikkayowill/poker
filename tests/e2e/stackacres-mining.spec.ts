@@ -120,19 +120,19 @@ test("mining a Stone node credits inventory, breaks after its swing count, and r
     const otherBody = (await otherNode.json()) as { stoneMined?: { landed: boolean } };
     expect(otherBody.stoneMined?.landed).toBe(true);
 
-    // Stone sells through the generic sell action, same door every other
-    // inventory item uses.
+    // Nobody in town buys Stone: the farm keeps it for building, so the sell
+    // door refuses it and the purse does not move.
     const before = (await (await api.get("/api/profile")).json()) as {
       profile: { goldBalance: number };
     };
     const sold = await api.post("/api/stackacres/actions", {
       data: { action: "sell", buyer: "general-store", item: "stone", quantity: 1 },
     });
-    expect(sold.ok()).toBe(true);
+    expect(sold.ok()).toBe(false);
     const after = (await (await api.get("/api/profile")).json()) as {
       profile: { goldBalance: number };
     };
-    expect(after.profile.goldBalance).toBeGreaterThan(before.profile.goldBalance);
+    expect(after.profile.goldBalance).toBe(before.profile.goldBalance);
   } finally {
     await farmerContext.close();
     await adminContext.close();

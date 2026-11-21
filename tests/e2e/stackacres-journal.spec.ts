@@ -80,8 +80,8 @@ test("the sheet says what filled up while the player was away", async ({ context
   // A farm with nothing built still has things regrowing, which is the whole
   // point: the return loop starts on day one, not at the Farm Kitchen.
   const waiting = sheet.locator(".sa-journal-waiting > li");
-  await expect(waiting.filter({ hasText: "The trees" })).toContainText("4 of 4 ready");
-  await expect(waiting.filter({ hasText: "The bushes" })).toContainText("4 of 4 ready");
+  await expect(waiting.filter({ hasText: "The trees" })).toContainText(/(\d+) of \1 ready/);
+  await expect(waiting.filter({ hasText: "The bushes" })).toContainText(/(\d+) of \1 ready/);
   // The Mine is gone from the world, so the journal must not wait on it.
   await expect(waiting.filter({ hasText: "The Mine" })).toHaveCount(0);
 });

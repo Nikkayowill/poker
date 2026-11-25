@@ -284,9 +284,11 @@ import type { StoryEvent } from "@/lib/stackacres/story/events";
 import type { FarmBoardView } from "@/lib/stackacres/farm-board";
 import {
   claimFarmBoardReward,
+  farmBoardFacts,
   farmBoardView,
   farmBoardsFromBatch,
   recordFarmBoardEvents,
+  storeFarmBoardBeforeAction,
 } from "./stackacres-farm-board-service";
 import { isStoryItemId, type StoryItemId } from "@/lib/stackacres/story/items";
 import { isQuestPlaceId } from "@/lib/stackacres/story/places";
@@ -1401,24 +1403,17 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   const vat = agingContainer("vat", AGING_TIERS);
   const cellar = agingContainer("cellar", CELLAR_AGING_TIERS);
   const settledEnergy = settleEnergy(storedEnergy, now);
-  // The Daily Farm Board. Drawn here, on the player's first read of a
-  // period, because this is the only place the facts eligibility needs are
-  // already loaded -- see lib/server/stackacres-farm-board-service.ts. On
-  // the live path the rows ride in the batch, so a board that already
-  // exists costs no read at all; only the once-a-period draw writes.
+  // The Daily Farm Board. A read only shows it: a period with no stored board
+  // shows the one its first action will store, and nothing is written here.
+  // See lib/server/stackacres-farm-board-service.ts. On the live path the rows
+  // ride in the batch, so a board that already exists costs no read at all.
   const farmBoard = await farmBoardView(
     profile.id,
-    {
-      machines: machineRows.map((row) => row.kind),
-      // Seed on the shelf counts as "has crops" as much as a bed already
-      // sown does: a board that asked a player with seed to harvest is
-      // asking for work they can do, and one drawn the other way would
-      // have nothing to water on the morning they spend it.
-      hasCrops:
-        units.some((unit) => isStackAcresCrop(unit.stock)) ||
-        Object.values(seedStock).some((held) => (held ?? 0) > 0),
-      hasLivestock: units.some((unit) => isLivestock(unit.stock)),
-    },
+    farmBoardFacts(
+      units.map((unit) => unit.stock),
+      seedStock,
+      machineRows.map((row) => row.kind),
+    ),
     now,
     batch ? farmBoardsFromBatch(batch.farm_board_daily, batch.farm_board_weekly) : undefined,
   );
@@ -6791,6 +6786,27 @@ export async function claimStackAcresFarmBoard(
     ...(await view(await ensureProfile(token), now)),
     farmBoardClaim: { gold: claim.entry.goldReward, influence: claim.entry.influenceReward },
   };
+}
+
+/**
+ * Stores today's and this week's Farm Board before an action runs, if either
+ * is not stored yet. The route calls it ahead of every action, which is what
+ * lets a read stay write-free. It never throws and moves no Gold.
+ */
+export async function storeStackAcresFarmBoardBeforeAction(token: string, now = new Date()): Promise<void> {
+  const profile = await ensureProfile(token);
+  await storeFarmBoardBeforeAction(profile.id, now, async () => {
+    const [rows, seedStock, machines] = await Promise.all([
+      listStackAcresUnits(profile.id),
+      readStackAcresSeedStock(profile.id),
+      listStackAcresMachines(profile.id),
+    ]);
+    return farmBoardFacts(
+      rows.map((row) => row.stock),
+      seedStock,
+      machines.map((machine) => machine.kind),
+    );
+  });
 }
 
 const FARM_BOARD_REFUSALS: Record<"unknown" | "unfinished" | "already-claimed" | "conflict", string> = {

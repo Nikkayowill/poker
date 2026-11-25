@@ -4,7 +4,9 @@ import { farmBoardEntry } from "@/lib/stackacres/farm-board";
 import { LAND_OBSTACLES, LAND_OBSTACLE_DEFS } from "@/lib/stackacres/land-clearing";
 import { ORE_PER_BREAK } from "@/lib/stackacres/stone-nodes";
 import { ensureProfile } from "./profile-store";
-import { readStackAcres, workStackAcresLand } from "./stackacres-service";
+import { readStackAcres, storeStackAcresFarmBoardBeforeAction, workStackAcresLand } from "./stackacres-service";
+import { readStackAcresFarmBoard } from "./stackacres-farm-board-store";
+import { farmBoardPeriods } from "./stackacres-farm-board-service";
 import { __resetStackAcresForTest, readStackAcresInventory } from "./stackacres-store";
 
 const T0 = new Date("2026-10-01T12:00:00.000Z");
@@ -29,8 +31,19 @@ async function breakOne(token: string, kind: "tree" | "boulder") {
 describe("clearing land moves the farm board", () => {
   beforeEach(() => __resetStackAcresForTest());
 
+  it("stores no board when the farm is only read", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    const read = await readStackAcres(token, T0);
+    expect(read.farmBoard.lines.length).toBeGreaterThan(0);
+    for (const period of farmBoardPeriods(T0)) {
+      expect(await readStackAcresFarmBoard(profile.id, period.kind, period.start)).toBeNull();
+    }
+  });
+
   it("counts the Wood from a felled tree toward a chop line", async () => {
     const { token, code } = await farmWithLine("chop");
+    await storeStackAcresFarmBoardBeforeAction(token, T0);
     await breakOne(token, "tree");
     const line = (await readStackAcres(token, T0)).farmBoard.lines.find((l) => l.code === code)!;
     expect(line.progress).toBeGreaterThan(0);
@@ -38,6 +51,7 @@ describe("clearing land moves the farm board", () => {
 
   it("counts the Stone from a broken boulder toward a mine line", async () => {
     const { token, code } = await farmWithLine("mine");
+    await storeStackAcresFarmBoardBeforeAction(token, T0);
     await breakOne(token, "boulder");
     const line = (await readStackAcres(token, T0)).farmBoard.lines.find((l) => l.code === code)!;
     expect(line.progress).toBeGreaterThan(0);

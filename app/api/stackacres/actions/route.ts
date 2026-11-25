@@ -70,6 +70,7 @@ import {
   passStackAcresContract,
   fulfillStackAcresTownContract,
   claimStackAcresFarmBoard,
+  storeStackAcresFarmBoardBeforeAction,
   sellStackAcresItem,
   shipStackAcresLivestock,
   processStackAcresRecipeAction,
@@ -765,7 +766,10 @@ export async function POST(request: NextRequest) {
       token,
       action.key ?? null,
       action.action,
-      () => run(token, action, now),
+      async () => {
+        await storeStackAcresFarmBoardBeforeAction(token, now);
+        return run(token, action, now);
+      },
       now,
     );
     // Serialized once so the log can say how big the answer was.

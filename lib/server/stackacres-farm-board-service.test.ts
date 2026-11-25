@@ -3,12 +3,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { FARM_BOARD_POOL, farmBoardEntry, type FarmBoardFacts } from "@/lib/stackacres/farm-board";
 import type { StoryEvent } from "@/lib/stackacres/story/events";
 import { ensureProfile } from "./profile-store";
-import { __resetStackAcresFarmBoardMemory } from "./stackacres-farm-board-store";
+import { __resetStackAcresFarmBoardMemory, readStackAcresFarmBoard } from "./stackacres-farm-board-store";
 import {
   claimFarmBoardReward,
   farmBoardPeriods,
   farmBoardView,
   recordFarmBoardEvents,
+  storeFarmBoardBeforeAction,
 } from "./stackacres-farm-board-service";
 import { __resetStackAcresForTest, readStackAcresInfluence } from "./stackacres-store";
 
@@ -40,6 +41,17 @@ const chopped = (count: number): StoryEvent => ({ kind: "wood-chopped", count })
 async function board(profileId: string, now: Date, facts: FarmBoardFacts = EMPTY) {
   const view = await farmBoardView(profileId, facts, now);
   return view.lines;
+}
+
+/** What the actions route does before every action: store the boards that are not stored yet. */
+async function store(profileId: string, now: Date, facts: FarmBoardFacts = EMPTY) {
+  await storeFarmBoardBeforeAction(profileId, now, async () => facts);
+}
+
+/** Store a farm's boards, then answer with the lines, as a farm does once it has acted. */
+async function storedBoard(profileId: string, now: Date, facts: FarmBoardFacts = EMPTY) {
+  await store(profileId, now, facts);
+  return board(profileId, now, facts);
 }
 
 describe("the Daily Farm Board's periods", () => {
@@ -94,7 +106,7 @@ describe("drawing a board for a farm", () => {
 
   it("keeps the board it drew even after the farm unlocks more", async () => {
     const { profileId } = await newFarm();
-    const drawn = await board(profileId, MONDAY);
+    const drawn = await storedBoard(profileId, MONDAY);
     // A Mill and an Oven go up at noon. The morning's board is the board.
     const later = await board(profileId, new Date("2026-09-28T12:00:00.000Z"), {
       machines: ["mill", "oven"],
@@ -123,6 +135,68 @@ describe("drawing a board for a farm", () => {
   });
 });
 
+describe("reading never writes", () => {
+  beforeEach(() => {
+    __resetStackAcresForTest();
+    __resetStackAcresFarmBoardMemory();
+  });
+
+  it("stores nothing when a board is read, however many times", async () => {
+    const { profileId } = await newFarm();
+    await board(profileId, MONDAY);
+    await board(profileId, MONDAY);
+    for (const period of farmBoardPeriods(MONDAY)) {
+      expect(await readStackAcresFarmBoard(profileId, period.kind, period.start)).toBeNull();
+    }
+  });
+
+  it("shows before the first action the board that action then stores", async () => {
+    const { profileId } = await newFarm();
+    const shown = await board(profileId, MONDAY);
+    await store(profileId, MONDAY);
+    for (const period of farmBoardPeriods(MONDAY)) {
+      expect(await readStackAcresFarmBoard(profileId, period.kind, period.start)).not.toBeNull();
+    }
+    expect(await board(profileId, MONDAY)).toEqual(shown);
+  });
+
+  it("keeps the stored board when a later action finds different facts", async () => {
+    const { profileId } = await newFarm();
+    const first = await storedBoard(profileId, MONDAY);
+    const second = await storedBoard(profileId, MONDAY, { machines: ["mill", "oven"], hasCrops: true, hasLivestock: true });
+    expect(second.map((line) => line.code)).toEqual(first.map((line) => line.code));
+  });
+
+  it("only reads the farm's facts when a period has no board", async () => {
+    const { profileId } = await newFarm();
+    let reads = 0;
+    const readFacts = async () => {
+      reads += 1;
+      return EMPTY;
+    };
+    await storeFarmBoardBeforeAction(profileId, MONDAY, readFacts);
+    await storeFarmBoardBeforeAction(profileId, MONDAY, readFacts);
+    expect(reads).toBe(1);
+  });
+
+  it("stores one board when two first actions land together", async () => {
+    const { profileId } = await newFarm();
+    await Promise.all([store(profileId, MONDAY), store(profileId, MONDAY)]);
+    const once = await board(profileId, MONDAY);
+    expect(once).toHaveLength(3);
+    expect(await board(profileId, MONDAY)).toEqual(once);
+  });
+
+  it("does not throw when the facts cannot be read", async () => {
+    const { profileId } = await newFarm();
+    await expect(
+      storeFarmBoardBeforeAction(profileId, MONDAY, async () => {
+        throw new Error("read failed");
+      }),
+    ).resolves.toBeUndefined();
+  });
+});
+
 describe("progress", () => {
   beforeEach(() => {
     __resetStackAcresForTest();
@@ -131,26 +205,26 @@ describe("progress", () => {
 
   it("shows progress as soon as the action lands", async () => {
     const { profileId } = await newFarm();
-    const drawn = await board(profileId, MONDAY);
+    const drawn = await storedBoard(profileId, MONDAY);
     const easy = drawn.find((line) => line.slot === "easy")!;
     await recordFarmBoardEvents(profileId, [eventFor(easy.code, 1)], MONDAY);
-    const after = await board(profileId, MONDAY);
+    const after = await storedBoard(profileId, MONDAY);
     expect(after.find((line) => line.code === easy.code)!.progress).toBeGreaterThan(0);
   });
 
   it("counts nothing for an action no line asked about", async () => {
     const { profileId } = await newFarm();
-    await board(profileId, MONDAY);
-    const before = await board(profileId, MONDAY);
+    await storedBoard(profileId, MONDAY);
+    const before = await storedBoard(profileId, MONDAY);
     await recordFarmBoardEvents(profileId, [{ kind: "soil-placed", count: 1 }], MONDAY);
-    expect(await board(profileId, MONDAY)).toEqual(before);
+    expect(await storedBoard(profileId, MONDAY)).toEqual(before);
   });
 
   it("moves no Gold, however much work lands on it", async () => {
     // The whole reason the reward is claimed rather than auto-credited: an
     // ordinary farm action must never move a purse (see advanceFarmBoard).
     const { profileId, token } = await newFarm();
-    const drawn = await board(profileId, MONDAY);
+    const drawn = await storedBoard(profileId, MONDAY);
     const before = await gold(token);
     for (const line of drawn) {
       await recordFarmBoardEvents(profileId, [eventFor(line.code, line.target * 3)], MONDAY);
@@ -158,7 +232,7 @@ describe("progress", () => {
     expect(await gold(token)).toBe(before);
   });
 
-  it("counts toward nothing before the day's first read, rather than throwing", async () => {
+  it("counts toward nothing before the board is stored, rather than throwing", async () => {
     const { profileId } = await newFarm();
     await recordFarmBoardEvents(profileId, [chopped(50)], MONDAY);
     for (const line of await board(profileId, MONDAY)) expect(line.progress).toBe(0);
@@ -166,10 +240,10 @@ describe("progress", () => {
 
   it("does not carry yesterday's progress into today's board", async () => {
     const { profileId } = await newFarm();
-    const drawn = await board(profileId, MONDAY);
+    const drawn = await storedBoard(profileId, MONDAY);
     const easy = drawn.find((line) => line.slot === "easy")!;
     await recordFarmBoardEvents(profileId, [eventFor(easy.code, 2)], MONDAY);
-    const tuesday = await board(profileId, new Date("2026-09-29T09:00:00.000Z"));
+    const tuesday = await storedBoard(profileId, new Date("2026-09-29T09:00:00.000Z"));
     for (const line of tuesday.filter((l) => l.slot !== "long")) expect(line.progress).toBe(0);
   });
 
@@ -191,7 +265,7 @@ describe("claiming a reward", () => {
   /** A farm whose easy line is finished and waiting to be claimed. */
   async function finishedEasyLine() {
     const farm = await newFarm();
-    const drawn = await board(farm.profileId, MONDAY);
+    const drawn = await storedBoard(farm.profileId, MONDAY);
     const easy = drawn.find((line) => line.slot === "easy")!;
     await recordFarmBoardEvents(farm.profileId, [eventFor(easy.code, easy.target)], MONDAY);
     return { ...farm, easy };
@@ -232,7 +306,7 @@ describe("claiming a reward", () => {
 
   it("refuses an unfinished line without paying", async () => {
     const farm = await newFarm();
-    const drawn = await board(farm.profileId, MONDAY);
+    const drawn = await storedBoard(farm.profileId, MONDAY);
     const before = await gold(farm.token);
     const claim = await claimFarmBoardReward(farm.profileId, drawn[0].code, MONDAY);
     expect(claim).toEqual({ ok: false, reason: "unfinished" });
@@ -241,7 +315,7 @@ describe("claiming a reward", () => {
 
   it("refuses a code that is not on this board, and one the pool never had", async () => {
     const farm = await newFarm();
-    const drawn = await board(farm.profileId, MONDAY);
+    const drawn = await storedBoard(farm.profileId, MONDAY);
     const notDrawn = FARM_BOARD_POOL.find(
       (entry) => entry.slot === "easy" && !drawn.some((line) => line.code === entry.code),
     )!;

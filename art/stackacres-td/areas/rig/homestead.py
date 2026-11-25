@@ -21,6 +21,7 @@ import props
 from area import AREAS, Area, T
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "rich"))
+import direction_sign  # noqa: E402
 import farm_extras  # noqa: E402
 import gable_buildings  # noqa: E402
 import lpc_cliffs  # noqa: E402
@@ -46,7 +47,7 @@ CAVE_X = 976                                            # the middle of the cave
 # gate is the only way between them. Rows of the face, inclusive; its foot is the row under them.
 TERRACE_ROWS = (31, 35)
 TERRACE_FOOT = (TERRACE_ROWS[1] + 1) * T
-STAIRS = (29, 34)                                       # tile columns of the stair, inclusive: under the house
+STAIRS = (30, 33)                                       # tile columns people walk on the stair, inclusive: under the house
 
 
 def lake_line(x):
@@ -169,9 +170,20 @@ def _gates(a):
     a.exit("empire", 1014, 464, 10, 32, (48, 240))
     # The bridge on the west edge leads to the City (areas/rig/city.py), onto the road where it comes in from the east.
     a.exit("city", 0, 448, 10, 32, (928, 456))
+    # Signs say which way each gate lies: one board by each, north of its lane, and a post with both near where
+    # the farm starts, so nobody has to walk the edge to find them.
+    for made, x, y in SIGNS:
+        a.add(made(), x, y, (6, 2))
 
 
 GAPS = {"east": [(464, 496)], "west": [(448, 480)]}
+
+# (the sign, x, y of its post's foot). Each foot stands on one tile that is then neither walked nor hoed.
+SIGNS = [
+    (lambda: direction_sign.signs([("CITY", "west"), ("FAR FIELD", "east")]), 410, 380),
+    (lambda: direction_sign.sign("CITY", "west"), 96, 447),
+    (lambda: direction_sign.sign("FAR FIELD", "east"), 924, 447),
+]
 
 
 def _hill(a):
@@ -191,7 +203,9 @@ def _terrace(a):
     The stair walks but never hoes. A few bushes at the wall's foot and trees along its top break the run."""
     s0, s1 = STAIRS
     rows = TERRACE_ROWS[1] - TERRACE_ROWS[0] + 1
-    a.add(lpc_terrace.terrace(MW, s0, s1 - s0 + 1, rows), 0, TERRACE_FOOT, ground=True)
+    # The drawn stair is six tiles wide: the four tiles walked, and a tile of rail and rock either side that
+    # nobody walks.
+    a.add(lpc_terrace.terrace(MW, s0 - 1, s1 - s0 + 3, rows), 0, TERRACE_FOOT, ground=True)
     a.wall(0, TERRACE_ROWS[0], s0 - 1, TERRACE_ROWS[1])
     a.wall(s1 + 1, TERRACE_ROWS[0], MW - 1, TERRACE_ROWS[1])
     a.no_hoe = {(tx, ty) for tx in range(s0, s1 + 1) for ty in range(TERRACE_ROWS[0], TERRACE_ROWS[1] + 2)}

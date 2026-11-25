@@ -150,6 +150,7 @@ import { SunlightLayer } from "./sunlight-layer";
 import { WaterFilm } from "./water-film";
 import { PeopleLife, greeting } from "./people-life";
 import { NpcWalkers, keepsRoutine } from "./npc-walkers";
+import { GatePointers, type GateTarget } from "./gate-pointers";
 import { SpeechBubbles } from "./npc-speech";
 import { WorksiteCrew } from "./worksite-crew";
 import { EMPIRE_BUILDINGS, buildingTiles, doorTile, type PlacedEmpireBuilding, type Tile } from "@/lib/stackacres/empire-buildings";
@@ -698,6 +699,8 @@ export class TopdownScene extends Phaser.Scene {
   private people!: PeopleLife;
   private walkers!: NpcWalkers;
   private speech!: SpeechBubbles;
+  /** Arrows on the view's edge toward the gates he has not been through yet. */
+  private gates!: GatePointers;
   /** A dev preview of hired hands working a farm and store (startWorksiteDemo), or null. */
   private worksite: WorksiteCrew | null = null;
   /** A pinned clock (setClock) and when it was pinned: the people on their rounds keep walking from it. */
@@ -860,7 +863,16 @@ export class TopdownScene extends Phaser.Scene {
     this.tractor.setOwned(this.tractorOwned, "");
     this.hand = new HandRig(this, (object) => this.keep(object));
     this.hand.setHired(this.handHired, "");
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.speech.clear());
+    this.gates = new GatePointers(
+      this.host,
+      (p) => this.mapToCss(p),
+      (to) => this.walkToGate(to),
+      () => this.reducedMotion,
+    );
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.speech.clear();
+      this.gates.clear();
+    });
     this.drops = new ChunkDrops(
       this,
       (object) => this.keep(object),
@@ -939,6 +951,7 @@ export class TopdownScene extends Phaser.Scene {
       },
     );
     this.speech.update(time);
+    this.updateGatePointers();
     // A cast holds its poses as still frames (the rod out, a fish held up), so
     // it counts as busy: the idle fidget would otherwise take him over mid-cast.
     // The opening poses the two of them itself, frame by frame.
@@ -1261,6 +1274,9 @@ export class TopdownScene extends Phaser.Scene {
     this.npcSprites.clear();
     this.walkers.clear();
     this.speech.clear();
+    this.gates.clear();
+    // Having been through a gate is all the pointer to it was for.
+    if (name === "city" || name === "empire") this.gates.markSeen(name);
     this.stopWorksiteDemo();
     this.soilImages.clear();
     for (const image of this.fenceImages) image.destroy();
@@ -2188,6 +2204,38 @@ export class TopdownScene extends Phaser.Scene {
   /** Out along the dock to cast. The face point is due west along the planks, which turns him toward the water. */
   private dockTarget(spec: PropSpec): Extract<Target, { kind: "tag" }> {
     return { kind: "tag", tag: "dock", anchor: DOCK_CAST_SPOT, face: { x: spec.x - spec.w, y: DOCK_CAST_SPOT.y } };
+  }
+
+  /** The ways out of the Homestead a new farmer is told about, by name. */
+  private static readonly GATE_LABELS: Readonly<Record<string, string>> = { city: "The City", empire: "The Far Field" };
+
+  /** Points at the City bridge and the Far Field gate from wherever on the Homestead they are off screen. */
+  private updateGatePointers(): void {
+    const free = this.booted && this.areaName === "homestead" && !this.travelling && !this.opening && !this.buildMode;
+    const targets: GateTarget[] = [];
+    if (free) {
+      for (const exit of this.area.exits) {
+        const label = TopdownScene.GATE_LABELS[exit.to];
+        if (label && this.canEnter(exit.to as TopdownArea)) {
+          targets.push({ to: exit.to, label, at: { x: exit.x + exit.w / 2, y: exit.y + exit.h / 2 } });
+        }
+      }
+    }
+    this.gates.update(targets, free);
+  }
+
+  /** A gate pointer was tapped: walk to that gate the way a tap on a door does, and through it. */
+  private walkToGate(to: string): void {
+    if (!this.booted || this.travelling || this.opening?.directing || this.buildMode) return;
+    const gate = this.area.exits.find((e) => e.to === to);
+    if (!gate) return;
+    const inside = { x: gate.x + gate.w / 2, y: gate.y + gate.h / 2 };
+    this.homeCamera();
+    this.pending = null;
+    this.path = findPath(this.grid, this.pos, inside);
+    if (this.path.length === 0) return;
+    this.callbacks.onViewMoved();
+    this.drawMarker(inside);
   }
 
   /** The way out the finger is on when a tree or bush drawn over it would otherwise take the tap. The forest

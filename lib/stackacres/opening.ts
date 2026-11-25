@@ -81,6 +81,8 @@ export const OPENING_LINES: readonly OpeningBeat[] = [
   { at: "stop", text: "Come on. The house is just up past the trees." },
   { at: "porch", text: "This is it. House, barn, the old workshop. All of it's yours now." },
   { at: "porch", text: "Roof leaks over the kitchen. Bed's good. Well's better." },
+  { at: "porch", text: "Past the bridge on the west side is town. That's where you sell, and where you buy seed." },
+  { at: "porch", text: "Gate on the east side opens onto the Far Field. Good flat ground. You'll build out there." },
   { at: "porch", text: "Go on and have a look round. Nobody's going to tell you where to start." },
   { at: "porch", text: "When you're ready, come find me in the city. I'll be there." },
 ];

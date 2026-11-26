@@ -82,12 +82,12 @@ const sharpFiles = [
 // route that cannot require it. Extensions are listed rather than a bare ** on
 // the tree because pnpm symlinks @img directories in here too.
 const sharpRuntimeFiles = [
-  "node_modules/.pnpm/sharp@0.35.3*/node_modules/**/*.js",
-  "node_modules/.pnpm/sharp@0.35.3*/node_modules/**/*.cjs",
-  "node_modules/.pnpm/sharp@0.35.3*/node_modules/**/*.mjs",
-  "node_modules/.pnpm/sharp@0.35.3*/node_modules/**/*.json",
-  "node_modules/.pnpm/sharp@0.35.3*/node_modules/**/*.node",
-  "node_modules/.pnpm/sharp@0.35.3*/node_modules/**/*.so.*",
+  "node_modules/.pnpm/sharp@0.35.5*/node_modules/**/*.js",
+  "node_modules/.pnpm/sharp@0.35.5*/node_modules/**/*.cjs",
+  "node_modules/.pnpm/sharp@0.35.5*/node_modules/**/*.mjs",
+  "node_modules/.pnpm/sharp@0.35.5*/node_modules/**/*.json",
+  "node_modules/.pnpm/sharp@0.35.5*/node_modules/**/*.node",
+  "node_modules/.pnpm/sharp@0.35.5*/node_modules/**/*.so.*",
 ];
 
 const ogFiles = ["node_modules/**/next/dist/compiled/@vercel/og/**"];

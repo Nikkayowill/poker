@@ -482,7 +482,10 @@ def made(name):
     proxy.info['hires'] = {'img': img, 'scale': 0.5}
     f = FEATURES[name]
     proxy.info['lights'] = [((x - l) // 2, (y - t) // 2, k) for x, y, k in f['lights']]
-    proxy.info['solid_h'] = proxy.height - 10              # the whole plan walks round, not just the porch
+    # Solid from the wall down. The roof above it is not: he can walk in behind it, where it draws over him and
+    # fades. The first solid row is the one whose top is at least 32px under the roof's top edge, so a body
+    # standing at its north side is wholly inside the picture (the +15 rounds that row up to a whole tile).
+    proxy.info['solid_h'] = proxy.height - 47
     base = (proxy.width // 2, proxy.height)
     rel = lambda x, y: ((x - l) // 2 - base[0], (y - t) // 2 - base[1])
     meta = {'door_dx': rel(f['door'], 0)[0], 'chimney': rel(*f['chimney']) if f['chimney'] else None,

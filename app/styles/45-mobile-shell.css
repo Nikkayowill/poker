@@ -386,6 +386,10 @@
     margin-bottom: auto;
     image-rendering: pixelated;
   }
+  /* Smooth artwork, not pixel art, so it is not drawn with hard edges. */
+  .mshell-play-art-soft { image-rendering: auto; }
+  /* Coming soon: not a link, so a tap does nothing and the card does not press. */
+  .mshell-play-soon { pointer-events: none; cursor: default; }
   .mshell-play-mid strong,
   .mshell-game-card strong {
     color: #eef2f8;

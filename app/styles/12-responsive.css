@@ -64,12 +64,14 @@
      which is what a render caught. The scrim runs top-left to bottom-right
      and agrees with this; if either moves, both move. */
   .hub-tile-private,
+  .hub-tile-strike,
   .hub-tile-gold,
   .hub-tile-collection,
   .hub-tile-leaderboard {
     background-position: center, center, right 10px bottom 8px, center;
   }
   .hub-tile-private { background-size: auto, auto, 52px, auto; }
+  .hub-tile-strike { background-size: auto, auto, 46px, auto; }
   .hub-tile-gold { background-size: auto, auto, 58px, auto; }
   /* The avatar crop is a face, so it is anchored so the chin clears the edge
      rather than being inset like the chip renders -- a face cropped at the

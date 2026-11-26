@@ -517,12 +517,12 @@ export function Lobby({
             </div>
           </form>
 
-          {/* A private prototype: the tile exists only for a profile an admin
-              has opened it for, and sits last so it cannot move the panel's
-              2x2 block. */}
-          {profile.stackstrikeAccess && (
+          {/* Sits last so it cannot move the panel's 2x2 block. A profile an
+              admin has opened it for gets the link to the prototype; everyone
+              else sees a tile that says it is coming soon and does nothing. */}
+          {profile.stackstrikeAccess ? (
             <Link
-              className="hub-tile hub-tile-private"
+              className="hub-tile hub-tile-strike"
               href="/stackstrike"
               style={tileIndexStyle(9)}
               onClick={tapSound}
@@ -530,9 +530,16 @@ export function Lobby({
             >
               <span className="hub-tile-body">
                 <strong>StackStrike</strong>
-                <small>Stealth shooter · Private preview</small>
+                <small>Stealth heist · Private preview</small>
               </span>
             </Link>
+          ) : (
+            <div className="hub-tile hub-tile-strike hub-tile-locked" style={tileIndexStyle(9)}>
+              <span className="hub-tile-body">
+                <strong>StackStrike</strong>
+                <small className="hub-tile-soon">Coming soon</small>
+              </span>
+            </div>
           )}
         </div>
       </section>

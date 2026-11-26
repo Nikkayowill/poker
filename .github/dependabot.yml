@@ -6,7 +6,7 @@ updates:
       interval: weekly
     # A version has to be a few days old before it is proposed, so a hijacked release is usually pulled first.
     cooldown:
-      default-days: 5
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       minor-and-patch:
@@ -16,4 +16,4 @@ updates:
     schedule:
       interval: weekly
     cooldown:
-      default-days: 5
+      default-days: 7

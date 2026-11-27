@@ -12,6 +12,9 @@ import { RailGameCard } from "./rail-game-card";
 /** Bodie Ferris, the roster character the sign-in page puts in the middle. */
 const HOLDEM_FIGURE_ID = "character25";
 
+/** The StackStrike icon at card size, from public/stackstrike. */
+const STRIKE_ART = "/stackstrike/card.png";
+
 /**
  * The phone Play tab's first row: Hold'em, then StackAcres, then one duel.
  *
@@ -29,9 +32,11 @@ const HOLDEM_FIGURE_ID = "character25";
  * prefetch={false} because the row is on screen on mount and a default link
  * would prefetch the heaviest route.
  *
- * StackStrike is a private prototype: its card shows only for a player with
- * stackstrikeAccess, and for everyone else there is nothing on the row.
+ * StackStrike shows for everyone. A player with stackstrikeAccess gets the
+ * link to the prototype, everyone else gets a "Coming soon" card that does
+ * nothing when tapped.
  */
+
 export function PlayRail({
   profile,
   wallet,
@@ -101,16 +106,26 @@ export function PlayRail({
           </Link>
         )}
 
-        {profile.stackstrikeAccess && (
+        {profile.stackstrikeAccess ? (
           <Link
             className="mshell-card mshell-play-card mshell-play-mid"
             href="/stackstrike"
             onClick={tapSound}
             prefetch={false}
           >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="mshell-play-art mshell-play-art-soft" src={STRIKE_ART} alt="" width={64} height={64} draggable={false} />
             <strong>StackStrike</strong>
-            <small>Stealth shooter · Private preview</small>
+            <small>Stealth heist · Private preview</small>
           </Link>
+        ) : (
+          <div className="mshell-card mshell-play-card mshell-play-mid mshell-play-soon">
+            <span className="mshell-premium-badge">Coming soon</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="mshell-play-art mshell-play-art-soft" src={STRIKE_ART} alt="" width={64} height={64} draggable={false} />
+            <strong>StackStrike</strong>
+            <small>Stealth heist</small>
+          </div>
         )}
 
         {featuredDuel && <RailGameCard game={featuredDuel} wallet={wallet} />}

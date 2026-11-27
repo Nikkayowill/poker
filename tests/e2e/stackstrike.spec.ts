@@ -29,7 +29,7 @@ interface Handle {
       maxHealth: number;
       aim: number;
       hidden: boolean;
-      cover: number;
+      light: number;
     };
   };
   heard: () => string[];

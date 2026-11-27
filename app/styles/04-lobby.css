@@ -2045,6 +2045,9 @@ button:disabled { cursor: wait; opacity: .62; }
    art is in. Checked on a render at 1440: "Open a room, share the code" was
    running straight through the chip cluster at the old 96px. */
 .hub-tile-private { --tile-art: url("/chips/cluster-three.webp"); background-size: auto, auto, 82px, auto; background-position: center, center, right 14px bottom 12px, center; }
+.hub-tile-strike { --tile-art: url("/stackstrike/card.png"); background-size: auto, auto, 72px, auto; background-position: center, center, right 14px bottom 12px, center; }
+/* Coming soon: not a link, so nothing reacts to a tap or hover. */
+.hub-tile-locked { pointer-events: none; cursor: default; }
 .hub-tile-gold { --tile-art: url("/chips/stack-three.webp"); background-size: auto, auto, 92px, auto; background-position: center, center, right 12px bottom 10px, center; }
 /* The old illustrated-avatar asset this pointed at (public/avatars/) was
    deleted 2026-08-17 when the seat-art character roster became the whole

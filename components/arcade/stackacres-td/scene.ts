@@ -175,6 +175,7 @@ import { WindSway } from "./wind-sway";
 import { TractorRig } from "./tractor-rig";
 import { HandRig, type HandJobKind } from "./hand-rig";
 import { GET_OFF_TRACTOR_FIRST } from "@/lib/stackacres/tractor";
+import { depthStrips, type DepthStrip } from "@/lib/stackacres-td/building-depth";
 import { SeeThrough } from "./see-through";
 import { drawNodeTextures } from "./node-textures";
 import { NODE_ART, gatherKindOfTag, spentForage, spentStones, spentTrees, type SpentNode } from "@/lib/stackacres-td/gather-nodes";
@@ -611,7 +612,15 @@ export class TopdownScene extends Phaser.Scene {
   private animated: { sprite: Phaser.GameObjects.Image; frames: string[] }[] = [];
   private falls: Phaser.GameObjects.TileSprite[] = [];
   /** `canopy` is a tree's swaying top; `stump` marks what is drawn in place of a spent tree or boulder. */
-  private propImages: { spec: PropSpec; image: Phaser.GameObjects.Image; canopy?: Phaser.GameObjects.Image; stump?: boolean }[] = [];
+  private propImages: {
+    spec: PropSpec;
+    image: Phaser.GameObjects.Image;
+    canopy?: Phaser.GameObjects.Image;
+    stump?: boolean;
+    /** The rest of a building drawn in strips (`image` is the first), and where each sorts. */
+    extras?: Phaser.GameObjects.Image[];
+    strips?: readonly DepthStrip[];
+  }[] = [];
   /** Fades whatever tall thing he is standing behind. */
   private readonly seeThrough = new SeeThrough(this);
   private npcSprites = new Map<string, { sprite: Phaser.GameObjects.Sprite; shadow: Phaser.GameObjects.Ellipse }>();
@@ -1342,6 +1351,7 @@ export class TopdownScene extends Phaser.Scene {
           .setDepth(spec.flat ? -5 : spec.y),
       );
       let canopy: Phaser.GameObjects.Image | undefined;
+      const cut = this.cutBuilding(spec, image);
       if (spec.frames.length > 1) this.animated.push({ sprite: image, frames: spec.frames });
       if (spec.sway) {
         canopy = this.keep(
@@ -1365,7 +1375,7 @@ export class TopdownScene extends Phaser.Scene {
           ),
         );
       }
-      this.propImages.push({ spec, image, canopy });
+      this.propImages.push({ spec, image, canopy, extras: cut?.extras, strips: cut?.strips });
       const gather = gatherKindOfTag(spec.tag);
       if (gather) {
         // The stump or rubble, hidden until the node is spent. It keeps the tag so a tap on it still answers.
@@ -1439,8 +1449,42 @@ export class TopdownScene extends Phaser.Scene {
     this.seeThrough.track(
       this.area.indoor
         ? []
-        : this.propImages.filter(({ stump }) => !stump).map(({ spec, image, canopy }) => ({ images: canopy ? [image, canopy] : [image], baseY: spec.y })),
+        : this.propImages
+            .filter(({ stump }) => !stump)
+            .map(({ spec, image, canopy, extras, strips }) => ({
+              images: [image, ...(extras ?? []), ...(canopy ? [canopy] : [])],
+              baseY: spec.y,
+              strips,
+            })),
     );
+  }
+
+  /**
+   * Cuts a building's picture into strips that sort against people at their own depth
+   * (lib/stackacres-td/building-depth.ts), so the porch never covers someone in the doorway and a wall never
+   * covers someone beside it. The first strip stays on `image`, which taps and everything else still use.
+   * Anything that is not a plain walled building is left as the one picture it was.
+   */
+  private cutBuilding(spec: PropSpec, image: Phaser.GameObjects.Image): { extras: Phaser.GameObjects.Image[]; strips: DepthStrip[] } | undefined {
+    if (this.area.indoor || spec.flat || spec.sway || spec.passable || spec.falls || spec.frames.length !== 1) return undefined;
+    if (spec.blocks.length < 6 || spec.h < 32 || gatherKindOfTag(spec.tag) !== null) return undefined;
+    const strips = depthStrips({
+      left: image.x,
+      right: image.x + image.displayWidth,
+      baseY: spec.y,
+      blocks: spec.blocks,
+      tile: this.area.tile,
+      backY: image.y,
+    });
+    if (strips.length < 2) return undefined;
+    const extras: Phaser.GameObjects.Image[] = [];
+    strips.forEach((strip, index) => {
+      const part = index === 0 ? image : this.keep(this.add.image(image.x, image.y, image.texture.key, image.frame.name).setOrigin(0, 0).setScale(spec.scale));
+      // A crop is in the picture's own pixels, from its top left; the image does not move.
+      part.setCrop((strip.x0 - image.x) / spec.scale, 0, (strip.x1 - strip.x0) / spec.scale, image.height).setDepth(strip.depth);
+      if (index > 0) extras.push(part);
+    });
+    return { extras, strips };
   }
 
   private keep<T extends Phaser.GameObjects.GameObject>(object: T): T {
@@ -1578,7 +1622,7 @@ export class TopdownScene extends Phaser.Scene {
    *  breaks himself, so nothing bars the way north. */
   private applyGates(): void {
     const blocked = new Set(this.area.blocked.map(([tx, ty]) => tileKey(tx, ty)));
-    for (const { spec, image, canopy, stump } of this.propImages) {
+    for (const { spec, image, canopy, extras, stump } of this.propImages) {
       const [kind, detail] = (spec.tag ?? "").split(":") as [string, ZoneId | undefined];
       const isSpent = spec.tag !== undefined && gatherKindOfTag(spec.tag) !== null && this.spent.has(spec.tag);
       const down = kind === "land" && detail !== undefined && (this.landDown.has(detail) || this.bedOverObstacle(detail));
@@ -1587,6 +1631,7 @@ export class TopdownScene extends Phaser.Scene {
       const visible = held ? !stump : stump ? isSpent : !(isSpent || down);
       image.setVisible(visible);
       canopy?.setVisible(visible);
+      for (const extra of extras ?? []) extra.setVisible(visible);
       if (visible) {
         for (const [tx, ty] of spec.blocks) blocked.add(tileKey(tx, ty));
         // A spent tree whose trunk tile was not found still blocks one tile,
@@ -3809,9 +3854,10 @@ export class TopdownScene extends Phaser.Scene {
   private redrawGreenhouse(): void {
     if (!this.placeGreenhouse()) return;
     // The see-through starts every prop over from solid, so nothing it was fading is left half see-through.
-    for (const { image, canopy } of this.propImages) {
+    for (const { image, canopy, extras } of this.propImages) {
       image.setAlpha(1);
       canopy?.setAlpha(1);
+      for (const extra of extras ?? []) extra.setAlpha(1);
     }
     this.trackSeeThrough();
   }
@@ -3823,7 +3869,11 @@ export class TopdownScene extends Phaser.Scene {
    */
   private placeGreenhouse(): boolean {
     const standing = this.propImages.findIndex(({ spec }) => spec.tag === GREENHOUSE.tag);
-    if (standing !== -1) this.propImages.splice(standing, 1)[0].image.destroy();
+    if (standing !== -1) {
+      const gone = this.propImages.splice(standing, 1)[0];
+      gone.image.destroy();
+      for (const extra of gone.extras ?? []) extra.destroy();
+    }
     const footing = this.area.zones.find((zone) => zone.tag === GREENHOUSE.tag);
     if (!this.greenhouseBuilt || !footing || !this.greenhouseArtReady()) return standing !== -1;
     const image = this.keep(this.add.image(0, 0, GREENHOUSE.texture).setOrigin(0, 0).setScale(GREENHOUSE.scale));

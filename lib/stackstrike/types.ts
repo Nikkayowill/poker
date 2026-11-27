@@ -126,11 +126,49 @@ export interface LootSpot {
   main: boolean;
 }
 
+/** What a solid thing is, for drawing it. It changes nothing about how it blocks. */
+export type WallStyle = "wall" | "crate" | "desk" | "shelf" | "case" | "console" | "machine" | "plant" | "pillar" | "plinth";
+
+/** A straight-sided block, aligned to the map. */
+export interface Block extends Rect {
+  style?: WallStyle;
+}
+
+/** A round post, tank or plinth. */
+export interface Disc {
+  x: number;
+  y: number;
+  r: number;
+  style?: WallStyle;
+}
+
+/** A convex shape with any angle to it: a piece of curved wall, a cut corner. Wound either way; `poly()` normalises it. */
+export interface Poly {
+  points: Vec[];
+  style?: WallStyle;
+}
+
+/** Anything solid: blocks bullets, sight and light, and walkers go round it. */
+export type Wall = Block | Disc | Poly;
+
+export type LightTone = "warm" | "cool" | "red" | "blue";
+
+/** A lamp, window or screen that lights the floor. Walls and props block it, so it leaves shadows behind them. */
+export interface Light {
+  pos: Vec;
+  radius: number;
+  tone: LightTone;
+}
+
 export interface Arena {
   width: number;
   height: number;
-  walls: Rect[];
+  walls: Wall[];
   rooms: Room[];
+  /** Every fixed light. Where none reaches, the floor is as dark as `ambient`. */
+  lights: Light[];
+  /** Light on the floor where no lamp reaches, 0 to 1. At or above `SHADOW.darkBelow` nowhere is dark enough to hide in. */
+  ambient: number;
   /** The darkest corners. Not marked on the floor: guards check them after losing you. */
   corners: Vec[];
   guards: Guard[];
@@ -169,10 +207,10 @@ export interface PlayerState {
   cooldown: number;
   /** Seconds of hit flash left, for rendering only. */
   hurt: number;
-  /** Pressed into a dark corner: hard to notice. Recomputed every step. */
+  /** Standing in real darkness, with no guard's beam on you: hard to notice. Recomputed every step. */
   hidden: boolean;
-  /** How boxed in the player is by walls, 0 in the open to 1 all round. Recomputed every step. */
-  cover: number;
+  /** How much light falls on the floor under the player from the fixed lights, 0 to 1. Recomputed every step. */
+  light: number;
   /** Seconds left of being easy to see after a shot, however dark the corner. */
   exposedLeft: number;
   /** Walking this step. Standing still is harder to notice. */

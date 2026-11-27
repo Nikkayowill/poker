@@ -9,16 +9,27 @@ import {
   type Box,
   type Point,
 } from "@/lib/stackacres-td/see-through";
+import type { DepthStrip } from "@/lib/stackacres-td/building-depth";
 
 /** A tree (trunk and crown) or a building. */
 export interface SeeThroughProp {
   readonly images: readonly Phaser.GameObjects.Image[];
+  readonly baseY: number;
+  /** A building drawn in strips that sort apart (lib/stackacres-td/building-depth.ts): each is judged on its own
+   *  depth, and the building still fades as one. */
+  readonly strips?: readonly DepthStrip[];
+}
+
+/** One run of the picture and the depth it is drawn at. */
+interface Zone {
+  readonly box: Box;
   readonly baseY: number;
 }
 
 interface Tracked extends SeeThroughProp {
   /** Taken once; tall things only lean in the wind or shiver when chopped. */
   readonly box: Box;
+  readonly zones: readonly Zone[];
   alpha: number;
   hiding: boolean;
 }
@@ -49,7 +60,12 @@ export class SeeThrough {
       const y = Math.min(...bounds.map((b) => b.y)) - BOX_SLACK;
       const right = Math.max(...bounds.map((b) => b.right)) + BOX_SLACK;
       const bottom = Math.max(...bounds.map((b) => b.bottom)) + BOX_SLACK;
-      const tracked: Tracked = { ...prop, box: { x, y, width: right - x, height: bottom - y }, alpha: 1, hiding: false };
+      const box = { x, y, width: right - x, height: bottom - y };
+      const zones: Zone[] = prop.strips
+        ? // Exact edges, no slack: a building does not sway, and a neighbour that sorts differently must not claim his body.
+          prop.strips.map((strip) => ({ box: { ...box, x: strip.x0, width: strip.x1 - strip.x0 }, baseY: strip.depth }))
+        : [{ box, baseY: prop.baseY }];
+      const tracked: Tracked = { ...prop, box, zones, alpha: 1, hiding: false };
       this.tracked.push(tracked);
       for (const image of prop.images) this.byImage.set(image, tracked);
     }
@@ -65,10 +81,8 @@ export class SeeThrough {
     for (const prop of this.tracked) {
       const shown = prop.images[0].visible;
       if (moved || !shown) {
-        prop.hiding =
-          shown &&
-          nearBody(prop.box, feet) &&
-          hidesFarmer(prop.baseY, prop.box, feet, (x, y) => prop.images.some((image) => image.visible && this.solidAt(image, x, y)));
+        const solid = (x: number, y: number) => prop.images.some((image) => image.visible && this.solidAt(image, x, y));
+        prop.hiding = shown && prop.zones.some((zone) => nearBody(zone.box, feet) && hidesFarmer(zone.baseY, zone.box, feet, solid));
       }
       const target = prop.hiding ? SEE_THROUGH_ALPHA : 1;
       if (prop.alpha === target) continue;

@@ -30,7 +30,6 @@ Both are leveled with ffmpeg `loudnorm` (hunted is louder on purpose) and encode
 [kenney-impact-sounds-for-godot](https://github.com/Boyquotes/kenney-impact-sounds-for-godot) and
 [kenney-interface-sounds](https://github.com/Calinou/kenney-interface-sounds).
 
-- `step-soft-*` (you): `footstep_carpet`. `step-boot-*` (guards): `footstep_concrete`.
 - `hit-enemy-*`: `impact_punch_medium`. `hit-player-*`: `impact_punch_heavy`. `kill-*`: `impact_soft_heavy`.
 - `ricochet-*`: `impact_metal_light`, high-passed.
 - `ui-click`, `ui-confirm`, `ui-back`: `click_002`, `confirmation_002`, `back_002`.
@@ -46,7 +45,7 @@ Both are leveled with ffmpeg `loudnorm` (hunted is louder on purpose) and encode
 
 ## Made in code
 
-`spotted`, `body-found`, `dead`, `escaped`, `pickup-small`, `pickup-main`, `radio` (the beeps), `empty-click`, `swap`
+`step-soft-*`, `step-boot-*`, `pickup-small`, `pickup-main` (`scripts/stackstrike_foley.py`), `spotted`, `body-found`, `dead`, `escaped`, `radio` (the beeps), `empty-click`, `swap`
 and `hide` are synthesized by `scripts/stackstrike-audio.py`, so they have no source file.
 
 ## Looked at and not used

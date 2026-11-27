@@ -88,7 +88,7 @@ export function handsOnGun(art: GunArt): { lead: Pt; rear: Pt } {
 }
 
 /** Characters are drawn a little bigger than their hit circle so they read on a phone. */
-export const VISUAL_SCALE = 1.3;
+export const VISUAL_SCALE = 1.55;
 
 /** World units per picture pixel for a body of this radius. Guns use the same scale so they match. */
 export function pixelScale(radius: number): number {

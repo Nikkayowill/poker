@@ -1,8 +1,8 @@
 import type { Point } from "@/lib/stackacres-td/movement";
 
 const SEEN_KEY = "stackacres.gates-seen";
-/** How far in from the edge of the view a pointer sits. The top and bottom leave room for the HUD and the stick. */
-const INSET = { left: 10, right: 10, top: 72, bottom: 112 } as const;
+/** How far in from the edge of the view a pointer sits. The left clears the tool rail, the top the HUD, the bottom the stick. */
+const INSET = { left: 62, right: 10, top: 72, bottom: 112 } as const;
 /** A gate this close to the view's edge, or inside it, is already on screen and needs no pointer. */
 const ON_SCREEN_MARGIN = 28;
 

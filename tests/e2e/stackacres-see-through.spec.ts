@@ -53,6 +53,10 @@ function standAt(page: Page, at: { x: number; y: number }): Promise<void> {
   );
 }
 
+// Where he stands to be behind each, from its base point: the farmhouse's roof is open ground he walks in behind,
+// 58px up; a tree's crown covers him a step north of its foot.
+const BEHIND: Record<string, { dx: number; dy: number }> = { farmhouse: { dx: 0, dy: -58 }, "tree:homestead-1": { dx: 0, dy: -14 } };
+
 for (const tag of ["farmhouse", "tree:homestead-1"]) {
   test(`${tag} goes see-through while the farmer is behind it`, async ({ context, page }) => {
     await openStackAcres(context, page);
@@ -60,8 +64,8 @@ for (const tag of ["farmhouse", "tree:homestead-1"]) {
     expect(start).not.toBeNull();
     const { base } = start!;
 
-    // A step north of where it meets the ground puts him behind it, under its picture.
-    await standAt(page, { x: base.x, y: base.y - 14 });
+    // Up under its picture, behind it.
+    await standAt(page, { x: base.x + BEHIND[tag].dx, y: base.y + BEHIND[tag].dy });
     await expect.poll(async () => (await sight(page, tag))!.alpha).toBeLessThan(0.6);
 
     // He walks out in front of it, where he is drawn over it, and it is solid again.
@@ -76,3 +80,18 @@ for (const tag of ["farmhouse", "tree:homestead-1"]) {
     await expect.poll(async () => (await sight(page, tag))!.alpha, { timeout: 15_000 }).toBe(1);
   });
 }
+
+test("the farmhouse stays solid while the farmer stands in its doorway or beside its wall", async ({ context, page }) => {
+  await openStackAcres(context, page);
+  const { base } = (await sight(page, "farmhouse"))!;
+
+  // On the steps the porch is behind him, not over him.
+  await standAt(page, { x: base.x, y: base.y - 14 });
+  await page.waitForTimeout(600);
+  expect((await sight(page, "farmhouse"))!.alpha).toBe(1);
+
+  // Beside the east wall, where the roof's edge used to catch his shoulder.
+  await standAt(page, { x: base.x + 52, y: base.y - 30 });
+  await page.waitForTimeout(600);
+  expect((await sight(page, "farmhouse"))!.alpha).toBe(1);
+});

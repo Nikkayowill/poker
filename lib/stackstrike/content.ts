@@ -6,6 +6,7 @@ import type {
   DifficultyId,
   EnemyDefinition,
   Guard,
+  Light,
   LootSpot,
   OperatorDefinition,
   Rect,
@@ -335,15 +336,16 @@ export const CONTRACTS: Record<ContractId, ContractDefinition> = {
 };
 
 /**
- * There is no hide button. A player pressed into a corner or alcove is lost in
- * the shadow. "Pressed in" is measured by casting rays
- * round the player: the share that hit a wall within `reach` is the cover.
- * Against a flat wall that is 3 of 8, in a corner 5 of 8.
+ * There is no hide button, and a wall is not cover. You are hidden when the floor
+ * under you is dark (no lamp reaches it, or a prop shades it) and no guard's
+ * flashlight is on you. Each lamp lights a pool that fades toward its edge, so
+ * the outer third of every pool is dark enough to stand in.
  */
 export const SHADOW = {
-  reach: 44,
-  /** Cover at or above this counts as a dark corner. */
-  hiddenAt: 0.5,
+  /** Light below this level counts as dark. */
+  darkBelow: 0.2,
+  /** How fast a lamp's light dies away: 1 is a straight line, higher keeps the middle bright and the edge dark. */
+  falloff: 1.5,
   /** A shot lights you up for this long, so you cannot snipe from the dark for free. */
   exposedSeconds: 1.2,
 };
@@ -526,11 +528,28 @@ const LOOT: LootSpot[] = [
   { id: "ingots", label: "Ingots", pos: { x: 1160, y: 790 }, value: 250, main: false },
 ];
 
+/**
+ * One lamp or two per room, set so each pool leaves the corners dark. Where a
+ * crate or a rack stands between a lamp and the floor, that floor is in shadow too.
+ */
+const LIGHTS: Light[] = [
+  { pos: { x: 260, y: 190 }, radius: 200, tone: "cool" },
+  { pos: { x: 230, y: 650 }, radius: 190, tone: "warm" },
+  { pos: { x: 80, y: 580 }, radius: 150, tone: "warm" },
+  { pos: { x: 650, y: 215 }, radius: 230, tone: "warm" },
+  { pos: { x: 750, y: 650 }, radius: 230, tone: "warm" },
+  { pos: { x: 1240, y: 200 }, radius: 190, tone: "blue" },
+  { pos: { x: 1230, y: 525 }, radius: 210, tone: "blue" },
+  { pos: { x: 1230, y: 760 }, radius: 190, tone: "warm" },
+];
+
 export const ARENA: Arena = {
   width: 1500,
   height: 900,
   walls: WALLS,
   rooms: ROOMS,
+  lights: LIGHTS,
+  ambient: 0.04,
   corners: [
     ...cornerSpots(),
     // The locker nook, behind the storeroom shelves and in the server aisles.

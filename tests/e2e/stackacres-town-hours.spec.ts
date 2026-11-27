@@ -46,12 +46,14 @@ async function place(page: Page, area: string, at: { x: number; y: number }) {
 }
 
 const KEEPERS = ["cora", "hank", "iris", "gus"];
+const NEIGHBOURS = ["mabel", "priya", "lena", "tomas", "sam", "felix", "ned", "olive", "hugo", "winnie", "tilly"];
+const EVERYONE = [...KEEPERS, ...NEIGHBOURS];
 
 const outAndAbout = (page: Page) =>
   page.evaluate((names) => {
     const { npcSprites } = (window as unknown as Handle).__stackacres.scene;
     return names.filter((name) => npcSprites.get(name)?.sprite.visible);
-  }, KEEPERS);
+  }, EVERYONE);
 
 async function inTown(page: Page, hour: number) {
   await page.evaluate((h) => (window as unknown as Handle).__stackacres.scene.setClock(h), hour);
@@ -60,11 +62,11 @@ async function inTown(page: Page, hour: number) {
   await page.waitForTimeout(500);
 }
 
-test("the shopkeepers are out at midday and indoors at night", async ({ context, page }) => {
+test("the whole square is out at midday and indoors at night", async ({ context, page }) => {
   await openFarm(context, page);
 
   await inTown(page, 10);
-  expect(await outAndAbout(page)).toEqual(expect.arrayContaining(KEEPERS));
+  expect(await outAndAbout(page)).toEqual(expect.arrayContaining(EVERYONE));
 
   await inTown(page, 2);
   expect(await outAndAbout(page)).toEqual([]);

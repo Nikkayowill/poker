@@ -3,7 +3,7 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     # A version has to be a few days old before it is proposed, so a hijacked release is usually pulled first.
     cooldown:
       default-days: 7
@@ -14,6 +14,9 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     cooldown:
       default-days: 7
+    groups:
+      actions:
+        update-types: [minor, patch]

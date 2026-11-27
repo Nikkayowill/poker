@@ -182,7 +182,7 @@ GAPS = {"east": [(464, 496)], "west": [(448, 480)]}
 SIGNS = [
     (lambda: direction_sign.signs([("CITY", "west"), ("FAR FIELD", "east")]), 410, 380),
     (lambda: direction_sign.sign("CITY", "west"), 96, 447),
-    (lambda: direction_sign.sign("FAR FIELD", "east"), 924, 447),
+    (lambda: direction_sign.sign("FAR FIELD", "east"), 920, 463),
 ]
 
 

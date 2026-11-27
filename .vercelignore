@@ -2,6 +2,6 @@
 .next
 node_modules
 assets-src
-art
+/art
 test-results
 playwright-report

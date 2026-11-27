@@ -7,7 +7,7 @@ import { isAdminAuthorized } from "@/lib/server/admin-auth";
 export const runtime = "nodejs";
 
 /**
- * Lets one player into the StackStrike prototype, or takes it back.
+ * Lets one player into the StackDead prototype, or takes it back.
  *
  * Same shape as the StackAcres toggle beside it: admin cookie, one profile,
  * one boolean. The guest list lives in the dashboard; there is no code.
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     await setStackStrikeAccess(parsed.data.profileId, parsed.data.allowed);
     return NextResponse.json({ ok: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not update that profile's StackStrike access.";
+    const message = error instanceof Error ? error.message : "Could not update that profile's StackDead access.";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

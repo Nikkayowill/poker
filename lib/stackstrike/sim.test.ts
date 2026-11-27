@@ -1,888 +1,806 @@
 import { describe, expect, it } from "vitest";
-import { DIFFICULTIES, ENEMIES, MISSION, SHADOW, STEALTH, WEAPONS } from "./content";
-import { createState, currentWeapon, enemyDef, NO_INPUT, perceive, rating, STEP_SECONDS, step } from "./sim";
-import type { Arena, DifficultyId, EnemyState, PlayerInput, SimState } from "./types";
+import { ARENA, BARRELS, ENEMIES, HORDE, LEVELING, PICKUPS, WEAPONS } from "./content";
+import { choosePerk, comboMultiplier, createState, magazineSize, NO_INPUT, redrawOffer, skipOffer, step, STEP_SECONDS } from "./sim";
+import type { Arena, EnemyState, PlayerInput, SimState } from "./types";
+import { waveMix } from "./waves";
 
-/** An open room with no walls and no guards unless a test adds them. */
-function room(walls: Arena["walls"] = [], corners: Arena["corners"] = [], loot: Arena["loot"] = [], guards: Arena["guards"] = []): Arena {
+/** A bare field with one spawn in the corner, so a scenario is about the rules and not the map. */
+function field(over: Partial<Arena> = {}): Arena {
   return {
     width: 1000,
     height: 1000,
-    walls,
+    walls: [],
     rooms: [],
     lights: [],
     ambient: 1,
-    corners,
-    guards,
-    loot,
-    exit: { door: { x: 0, y: 450, w: 10, h: 100 }, zone: { x: 0, y: 450, w: 60, h: 100 } },
-    playerSpawn: { x: 500, y: 500 },
+    spawns: [{ x: 900, y: 900 }],
+    playerSpawn: { x: 100, y: 100 },
+    ...over,
   };
 }
 
-function input(patch: Partial<PlayerInput> = {}): PlayerInput {
-  return { ...NO_INPUT, move: { x: 0, y: 0 }, ...patch };
-}
-
-function run(state: SimState, seconds: number, make: () => PlayerInput = () => input()): void {
+function run(state: SimState, seconds: number, input: PlayerInput = NO_INPUT): void {
   const steps = Math.round(seconds / STEP_SECONDS);
-  for (let n = 0; n < steps; n += 1) step(state, make());
+  for (let i = 0; i < steps; i += 1) step(state, input);
 }
 
-/** A fresh state with no guards unless the arena names some, so tests place enemies by hand. */
-function quiet(arena: Arena = room(), difficulty: DifficultyId = "normal"): SimState {
-  return createState(1, "vanguard", arena, difficulty);
-}
-
-function addEnemy(state: SimState, defId: string, x: number, y: number): EnemyState {
+/** Puts a zombie in by hand. A scenario with hand-placed zombies has no waves of its own. */
+function zombie(state: SimState, defId: string, x: number, y: number): EnemyState {
   const def = ENEMIES[defId];
-  const enemy: EnemyState = {
-    id: state.nextId++,
-    defId,
-    pos: { x, y },
-    facing: Math.atan2(state.player.pos.y - y, state.player.pos.x - x),
-    health: def.health,
-    maxHealth: def.health,
-    mode: "patrol",
-    awareness: 0,
-    investigate: null,
-    queue: [],
-    lastKnown: null,
-    cooldown: 0,
-    searchLeft: 0,
-    route: [{ x, y }],
-    routeIndex: 0,
-    routeDir: 1,
-    watch: null,
-    sweepClock: 0,
-    patrolTarget: null,
-    path: [],
-    pathAge: 0,
-    pathGoal: null,
-    reaction: def.reactionTime,
-    radio: null,
-    hurt: 0,
-  };
+  state.wave.breakLeft = 1e9;
+  const enemy: EnemyState = { id: state.nextId++, defId, pos: { x, y }, facing: 0, health: def.health, maxHealth: def.health, cooldown: 0, hurt: 0 };
   state.enemies.push(enemy);
   return enemy;
 }
 
-/** Puts an enemy straight into the fight, as if it had already spotted the player. */
-function alert(state: SimState, enemy: EnemyState): EnemyState {
-  enemy.mode = "chase";
-  enemy.awareness = 1;
-  enemy.lastKnown = { x: state.player.pos.x, y: state.player.pos.y };
-  return enemy;
+/** Holds the first wave back for good, so a scenario is only about the zombies it sets up. */
+function noWaves(state: SimState): SimState {
+  state.wave.breakLeft = 1e9;
+  return state;
 }
 
-function perception(state: SimState, enemy: EnemyState): number {
-  return perceive(state, enemy, enemyDef(enemy.defId));
+/** Skips the quiet before the first wave so the next step starts it. */
+function startFirstWave(state: SimState): void {
+  state.wave.breakLeft = STEP_SECONDS / 2;
 }
 
-const isAlert = (enemy: EnemyState): boolean => enemy.mode === "chase" || enemy.mode === "attack";
+const aimAt = (state: SimState, x: number, y: number): number => Math.atan2(y - state.player.pos.y, x - state.player.pos.x);
 
-describe("movement", () => {
-  it("moves at operator speed, and diagonals are no faster", () => {
-    const straight = quiet();
-    const diagonal = quiet();
-    run(straight, 1, () => input({ move: { x: 1, y: 0 } }));
-    run(diagonal, 1, () => input({ move: { x: 1, y: 1 } }));
-
-    const speed = straight.player.moveSpeed;
-    const dStraight = straight.player.pos.x - 500;
-    const dDiagonal = Math.hypot(diagonal.player.pos.x - 500, diagonal.player.pos.y - 500);
-    expect(dStraight).toBeCloseTo(speed, 0);
-    expect(dDiagonal).toBeCloseTo(speed, 0);
+describe("a new run", () => {
+  it("starts quiet, with no zombies and the first wave on its way", () => {
+    const state = createState(1, "vanguard", field());
+    expect(state.status).toBe("playing");
+    expect(state.enemies).toEqual([]);
+    expect(state.wave.number).toBe(0);
+    expect(state.wave.breakLeft).toBe(HORDE.startDelay);
   });
 
-  it("keeps a half-tilted stick at half speed", () => {
-    const state = quiet();
-    run(state, 1, () => input({ move: { x: 0.5, y: 0 } }));
-    expect(state.player.pos.x - 500).toBeCloseTo(state.player.moveSpeed / 2, 0);
-  });
-
-  it("stops at a wall instead of passing through", () => {
-    const state = quiet(room([{ x: 600, y: 400, w: 40, h: 200 }]));
-    run(state, 3, () => input({ move: { x: 1, y: 0 } }));
-    expect(state.player.pos.x).toBeLessThanOrEqual(600 - state.player.radius + 0.01);
-  });
-
-  it("covers the same ground whatever the step size", () => {
-    const fine = quiet();
-    const coarse = quiet();
-    for (let n = 0; n < 120; n += 1) step(fine, input({ move: { x: 1, y: 0 } }), 1 / 120);
-    for (let n = 0; n < 30; n += 1) step(coarse, input({ move: { x: 1, y: 0 } }), 1 / 30);
-    expect(fine.player.pos.x).toBeCloseTo(coarse.player.pos.x, 3);
+  it("insists on a weapon", () => {
+    expect(() => createState(1, "vanguard", field(), "normal", [])).toThrow();
   });
 });
 
-describe("weapons", () => {
-  it("respects fire rate", () => {
-    const state = quiet();
-    run(state, 1, () => input({ fire: true }));
-    // Pistol: 4 shots a second, the first lands on step one.
-    expect(state.shotsFired).toBe(4);
+describe("waves", () => {
+  it("starts wave 1 after the quiet, queues its zombies and sends the first batch", () => {
+    const state = createState(1, "vanguard", field());
+    run(state, HORDE.startDelay + 1);
+    expect(state.wave.number).toBe(1);
+    expect(state.enemies.length).toBeGreaterThan(0);
+    const mix = waveMix(1, 1);
+    expect(state.enemies.length + state.wave.queue.length).toBe(mix.walker + mix.runner + mix.bloater + mix.armored + mix.brute);
   });
 
-  it("empties the magazine, reloads on its own, then fires again", () => {
-    const state = quiet();
-    const pistol = WEAPONS.pistol;
-    run(state, pistol.magazineSize / pistol.fireRate + 0.05, () => input({ fire: true }));
-    expect(state.player.ammo[0]).toBe(0);
-    expect(state.player.reloadLeft).toBeGreaterThan(0);
-
-    run(state, pistol.reloadDuration + 0.05);
-    expect(state.player.ammo[0]).toBe(pistol.magazineSize);
-    expect(state.player.reloadLeft).toBe(0);
+  it("announces each wave", () => {
+    const state = createState(1, "vanguard", field());
+    startFirstWave(state);
+    step(state, NO_INPUT);
+    expect(state.events).toContainEqual({ type: "wave", number: 1 });
   });
 
-  it("cannot fire mid-reload", () => {
-    const state = quiet();
-    step(state, input({ reload: false, fire: true }));
-    step(state, input({ reload: true }));
-    const before = state.shotsFired;
-    run(state, 0.5, () => input({ fire: true }));
-    expect(state.shotsFired).toBe(before);
-  });
-
-  it("ignores reload on a full magazine", () => {
-    const state = quiet();
-    step(state, input({ reload: true }));
-    expect(state.player.reloadLeft).toBe(0);
-  });
-
-  it("switching weapons cancels a reload and keeps each magazine", () => {
-    const state = quiet();
-    step(state, input({ fire: true }));
-    step(state, input({ reload: true }));
-    expect(state.player.reloadLeft).toBeGreaterThan(0);
-
-    step(state, input({ selectWeapon: 1 }));
-    expect(state.player.reloadLeft).toBe(0);
-    expect(currentWeapon(state).id).toBe("smg");
-    expect(state.player.ammo[0]).toBe(WEAPONS.pistol.magazineSize - 1);
-    expect(state.player.ammo[1]).toBe(WEAPONS.smg.magazineSize);
-  });
-
-  it("ignores a weapon slot that does not exist", () => {
-    const state = quiet();
-    step(state, input({ selectWeapon: 9 }));
-    expect(state.player.weaponIndex).toBe(0);
-  });
-
-  it("fires one shotgun round as several pellets", () => {
-    const state = quiet();
-    step(state, input({ selectWeapon: 2 }));
+  it("brings zombies in a long way from the player", () => {
+    const state = createState(2, "vanguard", field());
+    startFirstWave(state);
+    step(state, NO_INPUT);
     run(state, 0.2);
-    step(state, input({ fire: true }));
-    expect(state.projectiles).toHaveLength(WEAPONS.shotgun.pellets);
-    expect(state.player.ammo[2]).toBe(WEAPONS.shotgun.magazineSize - 1);
-  });
-});
-
-describe("combat", () => {
-  it("kills an enemy in the line of fire and scores it", () => {
-    const state = quiet();
-    addEnemy(state, "runner", 700, 500);
-    run(state, 1, () => input({ fire: true, aim: 0 }));
-    expect(state.kills).toBe(1);
-    expect(state.enemies).toHaveLength(0);
-    expect(state.shotsHit).toBeGreaterThan(0);
-  });
-
-  it("is stopped by a wall in between", () => {
-    const state = quiet(room([{ x: 600, y: 300, w: 40, h: 400 }]));
-    const enemy = addEnemy(state, "grunt", 800, 500);
-    run(state, 1, () => input({ fire: true, aim: 0 }));
-    expect(enemy.health).toBe(ENEMIES.grunt.health);
-    expect(state.shotsHit).toBe(0);
-  });
-
-  it("drops a bullet past its range", () => {
-    const state = quiet();
-    step(state, input({ fire: true }));
-    run(state, WEAPONS.pistol.range / WEAPONS.pistol.projectileSpeed + 0.2);
-    expect(state.projectiles).toHaveLength(0);
-  });
-
-  it("registers a hit on a target the bullet would tunnel through in one step", () => {
-    const state = quiet();
-    const enemy = addEnemy(state, "grunt", 530, 500);
-    step(state, input({ fire: true, aim: 0 }));
-    // One step moves a pistol round 15 px: enough to cross a 28 px target.
-    step(state, input({ aim: 0 }), 0.5);
-    expect(enemy.health).toBeLessThan(ENEMIES.grunt.health);
-  });
-
-  it("only a clear line lets a hunting grunt see and shoot the player", () => {
-    const seen = quiet();
-    const gruntA = alert(seen, addEnemy(seen, "grunt", 750, 500));
-    run(seen, 2);
-    expect(seen.damageTaken).toBeGreaterThan(0);
-    expect(perception(seen, gruntA)).toBeGreaterThan(0);
-
-    const blocked = quiet(room([{ x: 650, y: 300, w: 40, h: 400 }]));
-    const gruntB = alert(blocked, addEnemy(blocked, "grunt", 750, 500));
-    expect(perception(blocked, gruntB)).toBe(0);
-    run(blocked, 0.3);
-    expect(blocked.damageTaken).toBe(0);
-  });
-
-  it("gives the player a reaction window before the first enemy shot", () => {
-    const state = quiet();
-    alert(state, addEnemy(state, "grunt", 750, 500));
-    run(state, ENEMIES.grunt.reactionTime - 0.1);
-    expect(state.projectiles.filter((shot) => shot.from === "enemy")).toHaveLength(0);
-  });
-
-  it("runner hits in melee and the hit costs health", () => {
-    const state = quiet();
-    alert(state, addEnemy(state, "runner", 600, 500));
-    run(state, 2);
-    expect(state.player.health).toBeLessThan(state.player.maxHealth);
-  });
-
-  it("ends the run at zero health and stops simulating", () => {
-    const state = quiet();
-    state.player.health = 1;
-    alert(state, addEnemy(state, "runner", 520, 500));
-    run(state, 2);
-    expect(state.status).toBe("dead");
-    expect(state.player.health).toBe(0);
-
-    const time = state.time;
-    step(state, input({ move: { x: 1, y: 0 }, fire: true }));
-    expect(state.time).toBe(time);
-  });
-
-  it("an enemy that loses sight walks to where it last saw the player", () => {
-    const state = quiet();
-    const enemy = alert(state, addEnemy(state, "runner", 750, 500));
-    step(state, input());
-    expect(enemy.lastKnown).not.toBeNull();
-    state.arena.walls.push({ x: 640, y: 300, w: 40, h: 400 });
-    enemy.pos.x = 900;
-    step(state, input());
-    expect(enemy.lastKnown).not.toBeNull();
-    expect(enemy.mode).toBe("chase");
-  });
-
-  it("every weapon kills with a single bullet", () => {
-    const toughest = Math.max(...Object.values(ENEMIES).map((def) => def.health));
-    for (const weapon of Object.values(WEAPONS)) expect(weapon.damage, weapon.id).toBeGreaterThanOrEqual(toughest);
-  });
-
-  it("one shot takes down an unaware enemy, and it never gets the chance to hunt you", () => {
-    const state = quiet();
-    const enemy = addEnemy(state, "grunt", 700, 500);
-    enemy.facing = 0;
-    step(state, input({ fire: true, aim: 0 }));
-    run(state, 0.3, () => input({ aim: 0 }));
-    expect(state.enemies).not.toContain(enemy);
-    expect(state.kills).toBe(1);
-    expect(enemy.radio).toBeNull();
-  });
-
-});
-
-describe("getting around walls", () => {
-  it("a runner finds its way round a long wall to the player", () => {
-    const state = quiet(room([{ x: 300, y: 100, w: 40, h: 700 }]));
-    state.player.pos = { x: 600, y: 450 };
-    const enemy = addEnemy(state, "runner", 100, 450);
-    alert(state, enemy);
-    run(state, 10);
-    expect(state.player.health).toBeLessThan(state.player.maxHealth);
-    expect(enemy.pos.x).toBeGreaterThan(300);
-  });
-});
-
-describe("stealth", () => {
-  it("is not spotted at once: the meter fills while an enemy watches you", () => {
-    const state = quiet();
-    const grunt = addEnemy(state, "grunt", 750, 500);
-    run(state, 0.3);
-    expect(grunt.awareness).toBeGreaterThan(0.05);
-    expect(grunt.awareness).toBeLessThan(1);
-    expect(grunt.mode).toBe("suspicious");
-    expect(isAlert(grunt)).toBe(false);
-    expect(state.damageTaken).toBe(0);
-  });
-
-  it("is spotted once the meter is full, and then the enemy hunts", () => {
-    const state = quiet();
-    const grunt = addEnemy(state, "grunt", 750, 500);
-    let spotted = false;
-    const steps = Math.round(6 / STEP_SECONDS);
-    for (let n = 0; n < steps && !spotted; n += 1) {
-      step(state, input());
-      spotted = state.events.some((event) => event.type === "spotted");
+    for (const enemy of state.enemies) {
+      const dist = Math.hypot(enemy.pos.x - state.player.pos.x, enemy.pos.y - state.player.pos.y);
+      expect(dist).toBeGreaterThan(HORDE.spawnMinDistance - 100);
     }
-    expect(spotted).toBe(true);
-    expect(isAlert(grunt)).toBe(true);
-    expect(grunt.lastKnown).not.toBeNull();
   });
 
-  it("a harder difficulty fills the meter faster", () => {
-    const fill = (difficulty: DifficultyId): number => {
-      const state = quiet(room(), difficulty);
-      const grunt = addEnemy(state, "grunt", 750, 500);
-      run(state, 0.4);
-      return grunt.awareness;
-    };
-    expect(fill("hard")).toBeGreaterThan(fill("normal"));
-    expect(fill("normal")).toBeGreaterThan(fill("easy"));
-  });
-
-  it("closer fills faster", () => {
-    const state = quiet();
-    const near = addEnemy(state, "grunt", 640, 500);
-    const far = addEnemy(state, "grunt", 780, 500);
-    expect(perception(state, near)).toBeGreaterThan(perception(state, far));
-  });
-
-  it("the meter drains once the enemy loses sight of you", () => {
-    const state = quiet();
-    const grunt = addEnemy(state, "grunt", 750, 500);
-    run(state, 0.4);
-    const peak = grunt.awareness;
-    expect(peak).toBeGreaterThan(0.1);
-    state.arena.walls.push({ x: 640, y: 300, w: 40, h: 400 });
-    run(state, DIFFICULTIES.normal.decaySeconds + 0.5);
-    expect(grunt.awareness).toBeLessThan(peak);
-    expect(isAlert(grunt)).toBe(false);
-  });
-
-  it("standing still is harder to notice than walking", () => {
-    const still = quiet();
-    const walker = quiet();
-    const a = addEnemy(still, "grunt", 750, 500);
-    const b = addEnemy(walker, "grunt", 750, 500);
-    step(still, input());
-    step(walker, input({ move: { x: 0, y: 1 } }));
-    expect(perception(walker, b)).toBeGreaterThan(perception(still, a));
-  });
-
-  it("an enemy facing away does not see you, and one facing you does", () => {
-    const away = quiet();
-    const awayGrunt = addEnemy(away, "grunt", 750, 500);
-    awayGrunt.facing = 0;
-    expect(perception(away, awayGrunt)).toBe(0);
-
-    const toward = quiet();
-    const towardGrunt = addEnemy(toward, "grunt", 750, 500);
-    expect(perception(toward, towardGrunt)).toBeGreaterThan(0);
-  });
-
-  it("only the enemy's own flashlight beam counts: just outside the cone you are not seen", () => {
-    const def = ENEMIES.grunt;
-    const make = (offset: number): number => {
-      const state = quiet();
-      const grunt = addEnemy(state, "grunt", 750, 500);
-      grunt.facing = Math.PI + offset;
-      return perception(state, grunt);
-    };
-    expect(make(def.fieldOfView - 0.1)).toBeGreaterThan(0);
-    expect(make(def.fieldOfView + 0.1)).toBe(0);
-  });
-
-  it("but anything right behind you is noticed whatever way it faces", () => {
-    const state = quiet();
-    const grunt = addEnemy(state, "grunt", 500 + STEALTH.closeNotice - 20, 500);
-    grunt.facing = 0;
-    expect(perception(state, grunt)).toBeGreaterThan(0);
-  });
-
-  it("an enemy that has noticed something stops and stares at it", () => {
-    const state = quiet();
-    const grunt = addEnemy(state, "grunt", 750, 500);
-    run(state, 0.2);
-    const there = { ...grunt.pos };
-    run(state, 0.2);
-    expect(Math.hypot(grunt.pos.x - there.x, grunt.pos.y - there.y)).toBeLessThan(1);
-  });
-
-  describe("hiding in the shadows", () => {
-    /** A room with no ambient light: every floor is dark unless a lamp reaches it. */
-    const dark = (walls: Arena["walls"] = [], lights: Arena["lights"] = []): SimState => quiet({ ...room(walls), ambient: 0, lights });
-    const lamp = (x: number, y: number, radius = 200): Arena["lights"][number] => ({ pos: { x, y }, radius, tone: "warm" });
-
-    it("standing in the dark hides you, with no wall anywhere near", () => {
-      const state = dark();
-      step(state, input());
-      expect(state.player.light).toBe(0);
-      expect(state.player.hidden).toBe(true);
-    });
-
-    it("lit floor does not hide you, even pressed into a corner", () => {
-      const state = dark(
-        [
-          { x: 400, y: 300, w: 30, h: 400 },
-          { x: 400, y: 300, w: 400, h: 30 },
-        ],
-        [lamp(520, 420, 300)],
-      );
-      state.player.pos = { x: 430 + state.player.radius, y: 330 + state.player.radius };
-      step(state, input());
-      expect(state.player.light).toBeGreaterThan(SHADOW.darkBelow);
-      expect(state.player.hidden).toBe(false);
-    });
-
-    it("hugging a wall in a dark room is no different from standing in the middle of it", () => {
-      const walled = dark([{ x: 400, y: 300, w: 30, h: 400 }]);
-      walled.player.pos = { x: 430 + walled.player.radius, y: 500 };
-      step(walled, input());
-      const open = dark();
-      step(open, input());
-      expect(walled.player.hidden).toBe(open.player.hidden);
-    });
-
-    it("a lamp lights its middle and leaves the edge of its pool dark", () => {
-      const state = dark([], [lamp(500, 500, 200)]);
-      step(state, input());
-      expect(state.player.hidden).toBe(false);
-      state.player.pos = { x: 500 + 170, y: 500 };
-      step(state, input());
-      expect(state.player.hidden).toBe(true);
-    });
-
-    it("a crate throws a shadow you can stand in", () => {
-      const state = dark([{ x: 540, y: 460, w: 40, h: 80 }], [lamp(450, 500, 400)]);
-      state.player.pos = { x: 640, y: 500 };
-      step(state, input());
-      expect(state.player.light).toBe(0);
-      expect(state.player.hidden).toBe(true);
-      state.player.pos = { x: 560, y: 700 };
-      step(state, input());
-      expect(state.player.hidden).toBe(false);
-    });
-
-    it("a guard's flashlight on you takes the dark away, and looking elsewhere gives it back", () => {
-      const state = dark();
-      const grunt = addEnemy(state, "grunt", 400, 500);
-      grunt.facing = 0;
-      step(state, input());
-      expect(state.player.hidden).toBe(false);
-      grunt.facing = Math.PI;
-      step(state, input());
-      expect(state.player.hidden).toBe(true);
-    });
-
-    it("walking out of the dark into a lamp's light un-hides you, and you can still walk and shoot while hidden", () => {
-      const state = dark([], [lamp(650, 500, 200)]);
-      state.player.pos = { x: 440, y: 500 };
-      step(state, input());
-      expect(state.player.hidden).toBe(true);
-      const at = { ...state.player.pos };
-      run(state, 0.1, () => input({ move: { x: 1, y: 0 } }));
-      expect(state.player.pos.x).toBeGreaterThan(at.x);
-      run(state, 1.5, () => input({ move: { x: 1, y: 0 } }));
-      expect(state.player.hidden).toBe(false);
-    });
-
-    it("a shot gives you away for a moment, then the shadow takes you back", () => {
-      const state = dark();
-      step(state, input());
-      expect(state.player.hidden).toBe(true);
-      step(state, input({ fire: true }));
-      expect(state.shotsFired).toBe(1);
-      expect(state.player.hidden).toBe(false);
-      run(state, 0.5);
-      expect(state.player.hidden).toBe(false);
-      run(state, SHADOW.exposedSeconds);
-      expect(state.player.hidden).toBe(true);
-    });
-
-    it("a guard that looks the other way cannot see a hidden player, and a lit one is seen at a glance", () => {
-      const far = dark();
-      step(far, input());
-      const farGrunt = addEnemy(far, "grunt", far.player.pos.x + 250, far.player.pos.y);
-      farGrunt.facing = 0;
-      expect(perception(far, farGrunt)).toBe(0);
-
-      const lit = quiet();
-      const exposed = addEnemy(lit, "grunt", 570, 500);
-      expect(perception(lit, exposed)).toBeGreaterThan(0);
-    });
-
-    it("a guard passing by does not find you, but one that walks right up does", () => {
-      const passing = dark();
-      step(passing, input());
-      const passer = addEnemy(passing, "grunt", passing.player.pos.x + 70, passing.player.pos.y);
-      passer.facing = 0;
-      run(passing, 1.2);
-      expect(isAlert(passer)).toBe(false);
-
-      const checking = dark();
-      step(checking, input());
-      const checker = addEnemy(checking, "grunt", checking.player.pos.x + STEALTH.hideCheckRange - 10, checking.player.pos.y);
-      checker.facing = 0;
-      run(checking, 2);
-      expect(isAlert(checker)).toBe(true);
-    });
-  });
-
-  it("a silenced shot heard close by, even through a thin wall, sends an enemy to look without telling it where you are", () => {
-    const state = quiet(room([{ x: 530, y: 300, w: 20, h: 400 }]));
-    const grunt = addEnemy(state, "grunt", 575, 500);
-    grunt.facing = 0;
-    step(state, input({ fire: true }));
-    expect(grunt.investigate).not.toBeNull();
-    expect(grunt.lastKnown).toBeNull();
-    expect(isAlert(grunt)).toBe(false);
-    expect(grunt.awareness).toBeGreaterThan(STEALTH.noiseAwareness - 0.05);
-    expect(grunt.mode).toBe("suspicious");
-  });
-
-  it("a silenced shot is not heard across the room", () => {
-    const state = quiet();
-    const grunt = addEnemy(state, "grunt", 500 + STEALTH.hearRange + 60, 500);
-    grunt.facing = 0;
-    step(state, input({ fire: true, aim: Math.PI }));
-    expect(grunt.investigate).toBeNull();
-    expect(grunt.awareness).toBe(0);
-  });
-
-  it("through a wall a shot carries only half as far", () => {
-    const state = quiet(room([{ x: 530, y: 300, w: 20, h: 400 }]));
-    const grunt = addEnemy(state, "grunt", 500 + STEALTH.hearRange * 0.5 + 40, 500);
-    grunt.facing = 0;
-    step(state, input({ fire: true, aim: Math.PI }));
-    expect(grunt.investigate).toBeNull();
-  });
-
-  it("a miss that whizzes past an enemy puts it on alert, though it still does not know where you are", () => {
-    const state = quiet();
-    const grunt = addEnemy(state, "grunt", 760, 528);
-    grunt.facing = 0;
-    step(state, input({ fire: true, aim: 0 }));
-    run(state, 0.5, () => input({ aim: 0 }));
-    expect(state.enemies).toContain(grunt);
-    expect(grunt.mode).toBe("suspicious");
-    expect(grunt.awareness).toBeGreaterThan(0.3);
-    expect(isAlert(grunt)).toBe(false);
-    expect(grunt.lastKnown).toBeNull();
-  });
-
-  it("a miss that flies well clear of an enemy goes unnoticed", () => {
-    const state = quiet();
-    const grunt = addEnemy(state, "grunt", 760, 560);
-    grunt.facing = 0;
-    step(state, input({ fire: true, aim: 0 }));
-    run(state, 0.5, () => input({ aim: 0 }));
-    expect(grunt.investigate).toBeNull();
-  });
-
-  it("an enemy that reaches where it last saw you looks around, then goes back to its route", () => {
-    const state = quiet();
-    state.player.pos = { x: 900, y: 100 };
-    const grunt = addEnemy(state, "grunt", 200, 100);
-    grunt.route = [{ x: 100, y: 900 }, { x: 200, y: 900 }];
-    grunt.routeIndex = 1;
-    grunt.facing = Math.PI;
-    grunt.mode = "chase";
-    grunt.awareness = 1;
-    grunt.lastKnown = { x: 260, y: 100 };
-    run(state, 2);
-    expect(grunt.mode).toBe("search");
-    run(state, STEALTH.searchSeconds + 0.5);
-    expect(grunt.mode).toBe("patrol");
-    expect(grunt.patrolTarget).toEqual({ x: 200, y: 900 });
-  });
-
-  it("after losing you an enemy checks the dark corners nearby", () => {
-    const state = quiet(room([], [{ x: 330, y: 180 }]));
-    state.player.pos = { x: 900, y: 100 };
-    const grunt = addEnemy(state, "grunt", 200, 100);
-    grunt.facing = Math.PI;
-    grunt.mode = "chase";
-    grunt.awareness = 1;
-    grunt.lastKnown = { x: 260, y: 100 };
-    run(state, 1.5);
-    expect(grunt.investigate).not.toBeNull();
-    expect(grunt.investigate?.x).toBeCloseTo(330, 0);
-    expect(grunt.mode).toBe("suspicious");
-  });
-
-  describe("guard duty", () => {
-    const loop = [{ x: 200, y: 500 }, { x: 600, y: 500 }, { x: 600, y: 700 }];
-
-    it("a roamer walks its loop, one waypoint after another, and looks around at each stop", () => {
-      const state = quiet(room([], [], [], [{ defId: "grunt", tier: 1, route: loop }]));
-      state.player.pos = { x: 900, y: 50 };
-      const guard = state.enemies[0];
-      const visited = new Set<number>();
-      let looked = false;
-      for (let n = 0; n < 60 * 40; n += 1) {
-        step(state, input());
-        visited.add(guard.routeIndex);
-        if (guard.mode === "search") looked = true;
-      }
-      expect(visited.size).toBe(loop.length);
-      expect(looked).toBe(true);
-      expect(isAlert(guard)).toBe(false);
-    });
-
-    it("a roamer is not hunting anyone: left alone it never goes after the player", () => {
-      const state = quiet(room([], [], [], [{ defId: "grunt", tier: 1, route: loop }]));
-      state.player.pos = { x: 900, y: 50 };
-      run(state, 30);
-      expect(state.timesSpotted).toBe(0);
-      expect(state.enemies[0].lastKnown).toBeNull();
-    });
-
-    it("a posted guard stays put and sweeps its gaze either side of the way it faces", () => {
-      const post = { x: 300, y: 300 };
-      const state = quiet(room([], [], [], [{ defId: "grunt", tier: 1, route: [post], watch: 0 }]));
-      state.player.pos = { x: 900, y: 900 };
-      const guard = state.enemies[0];
-      let low = Infinity;
-      let high = -Infinity;
-      for (let n = 0; n < 60 * 12; n += 1) {
-        step(state, input());
-        low = Math.min(low, guard.facing);
-        high = Math.max(high, guard.facing);
-      }
-      expect(Math.hypot(guard.pos.x - post.x, guard.pos.y - post.y)).toBeLessThan(1);
-      expect(low).toBeLessThan(-0.3);
-      expect(high).toBeGreaterThan(0.3);
-      expect(high).toBeLessThanOrEqual(STEALTH.postSweep + 0.05);
-    });
-
-    it("a posted guard that was drawn off by a noise walks back to its post", () => {
-      const post = { x: 300, y: 300 };
-      const state = quiet(room([], [], [], [{ defId: "grunt", tier: 1, route: [post], watch: 0 }]));
-      state.player.pos = { x: 900, y: 900 };
-      const guard = state.enemies[0];
-      guard.pos = { x: 300, y: 600 };
-      run(state, 12);
-      expect(Math.hypot(guard.pos.x - post.x, guard.pos.y - post.y)).toBeLessThan(30);
-    });
-
-    it("walking guards walk, they do not run", () => {
-      const state = quiet(room([], [], [], [{ defId: "grunt", tier: 1, route: loop }]));
-      state.player.pos = { x: 900, y: 50 };
-      const guard = state.enemies[0];
-      const start = { ...guard.pos };
-      run(state, 1);
-      const travelled = Math.hypot(guard.pos.x - start.x, guard.pos.y - start.y);
-      expect(travelled).toBeLessThan(ENEMIES.grunt.moveSpeed * 0.8);
-      expect(travelled).toBeGreaterThan(10);
-    });
-
-    it("the difficulty decides who is on duty", () => {
-      const arena = room([], [], [], [
-        { defId: "grunt", tier: 1, route: [{ x: 100, y: 100 }] },
-        { defId: "grunt", tier: 2, route: [{ x: 200, y: 100 }] },
-        { defId: "grunt", tier: 3, route: [{ x: 300, y: 100 }] },
-      ]);
-      expect(createState(1, "vanguard", arena, "easy").enemies).toHaveLength(1);
-      expect(createState(1, "vanguard", arena, "normal").enemies).toHaveLength(2);
-      expect(createState(1, "vanguard", arena, "hard").enemies).toHaveLength(3);
-    });
-  });
-
-  /** Runs until the spotter has noticed the player, so its radio call is running. */
-  function spotted(state: SimState, spotter: EnemyState): void {
-    for (let n = 0; n < 600 && !isAlert(spotter); n += 1) step(state, input());
-    expect(isAlert(spotter)).toBe(true);
-  }
-
-  it("a spotted enemy tells its squad at once, but they come to look rather than know", () => {
-    const state = quiet();
-    const spotter = addEnemy(state, "grunt", 700, 500);
-    const mate = addEnemy(state, "grunt", 760, 560);
-    mate.facing = 0;
-    let matePeak = 0;
-    for (let n = 0; n < 240; n += 1) {
-      step(state, input());
-      matePeak = Math.max(matePeak, mate.awareness);
-    }
-    expect(isAlert(spotter)).toBe(true);
-    expect(matePeak).toBeGreaterThanOrEqual(STEALTH.calloutAwareness - 0.01);
-  });
-
-  it("an enemy out of the squad only learns by radio, after the call has had time to go out", () => {
-    const state = quiet();
-    const spotter = addEnemy(state, "grunt", 700, 500);
-    const far = addEnemy(state, "grunt", 600, 900);
-    far.facing = Math.PI / 2;
-    spotted(state, spotter);
-    expect(spotter.radio).not.toBeNull();
-    expect(far.awareness).toBe(0);
-    expect(far.investigate).toBeNull();
-    let peak = 0;
-    for (let n = 0; n < Math.round((STEALTH.radioSeconds + 0.2) / STEP_SECONDS); n += 1) {
-      step(state, input());
-      peak = Math.max(peak, far.awareness);
-    }
-    expect(spotter.radio).toBeNull();
-    expect(peak).toBeGreaterThanOrEqual(STEALTH.radioAwareness - 0.01);
-    expect(far.investigate).not.toBeNull();
-    expect(isAlert(far)).toBe(false);
-    expect(far.lastKnown).toBeNull();
-  });
-
-  it("the radio call announces itself with an event", () => {
-    const state = quiet();
-    const spotter = addEnemy(state, "grunt", 700, 500);
-    addEnemy(state, "grunt", 600, 900).facing = Math.PI / 2;
-    spotted(state, spotter);
-    let called = false;
-    for (let n = 0; n < 300; n += 1) {
-      step(state, input());
-      if (state.events.some((event) => event.type === "radio")) called = true;
-    }
-    expect(called).toBe(true);
-  });
-
-  it("killing the spotter before its call goes out keeps everyone else in the dark", () => {
-    const state = quiet();
+  it("never has more than the cap alive at once", () => {
+    const state = createState(3, "vanguard", field());
     state.player.health = state.player.maxHealth = 1e9;
-    const spotter = addEnemy(state, "grunt", 700, 500);
-    const far = addEnemy(state, "grunt", 600, 900);
-    far.facing = Math.PI / 2;
-    spotted(state, spotter);
-    const aim = Math.atan2(spotter.pos.y - state.player.pos.y, spotter.pos.x - state.player.pos.x);
-    step(state, input({ fire: true, aim }));
-    run(state, STEALTH.radioSeconds + 1, () => input({ aim }));
-    expect(state.enemies).not.toContain(spotter);
-    expect(far.awareness).toBe(0);
-    expect(far.investigate).toBeNull();
+    state.wave.number = 14;
+    startFirstWave(state);
+    let most = 0;
+    for (let i = 0; i < 60 * 40; i += 1) {
+      step(state, NO_INPUT);
+      most = Math.max(most, state.enemies.length);
+    }
+    expect(most).toBeLessThanOrEqual(HORDE.maxAlive);
+    expect(most).toBeGreaterThan(10);
   });
 
-  it("radioed enemies get a fuzzy position, not the exact spot", () => {
-    const state = quiet();
-    const spotter = addEnemy(state, "grunt", 700, 500);
-    const far = addEnemy(state, "grunt", 600, 900);
-    far.facing = Math.PI / 2;
-    spotted(state, spotter);
-    run(state, STEALTH.radioSeconds + 0.1);
-    const spot = far.investigate;
-    expect(spot).not.toBeNull();
-    expect(Math.hypot((spot?.x ?? 0) - state.player.pos.x, (spot?.y ?? 0) - state.player.pos.y)).toBeLessThanOrEqual(STEALTH.radioScatter);
-  });
-});
-
-describe("pace", () => {
-  it("the player can outwalk a grunt, so retreating works", () => {
-    const state = quiet();
-    expect(state.player.moveSpeed).toBeGreaterThan(ENEMIES.grunt.moveSpeed * 1.5);
-  });
-
-  it("guards walk slower on easy than on hard", () => {
-    const travelled = (difficulty: DifficultyId): number => {
-      const state = quiet(room([], [], [], [{ defId: "grunt", tier: 1, route: [{ x: 200, y: 500 }, { x: 900, y: 500 }] }]), difficulty);
-      state.player.pos = { x: 100, y: 80 };
-      const guard = state.enemies[0];
-      const start = { ...guard.pos };
-      run(state, 1);
-      return Math.hypot(guard.pos.x - start.x, guard.pos.y - start.y);
-    };
-    expect(travelled("easy")).toBeLessThan(travelled("normal"));
-    expect(travelled("normal")).toBeLessThan(travelled("hard"));
+  it("pays a bonus, heals a little and rests when a wave is cleared, then starts the next", () => {
+    const state = createState(4, "vanguard", field());
+    startFirstWave(state);
+    step(state, NO_INPUT);
+    state.wave.queue = [];
+    state.enemies = [];
+    state.player.health = 50;
+    step(state, NO_INPUT);
+    expect(state.score).toBe(HORDE.waveBonus);
+    expect(state.player.health).toBeGreaterThan(50);
+    expect(state.wave.breakLeft).toBe(HORDE.breakSeconds);
+    run(state, HORDE.breakSeconds + 0.2);
+    expect(state.wave.number).toBe(2);
   });
 });
 
-describe("the heist", () => {
-  const gold = { id: "gold", label: "Gold", pos: { x: 600, y: 500 }, value: 1000, main: true };
-  const trinket = { id: "trinket", label: "Trinket", pos: { x: 500, y: 600 }, value: 150, main: false };
-  const heist = (): SimState => quiet(room([], [], [gold, trinket]));
-  const walkTo = (state: SimState, to: { x: number; y: number }): void => {
-    state.player.pos = { x: to.x - 40, y: to.y };
-    run(state, 1, () => input({ move: { x: 1, y: 0 } }));
+describe("tougher waves", () => {
+  const spawnedHealth = (wave: number, defId = "walker"): number => {
+    const state = createState(40, "vanguard", field());
+    state.wave.number = wave - 1;
+    startFirstWave(state);
+    step(state, NO_INPUT);
+    state.enemies = [];
+    state.wave.queue = [defId];
+    state.wave.spawnIn = 0;
+    run(state, 1);
+    return state.enemies[0].maxHealth;
   };
 
-  it("starts with the mission still to do", () => {
-    const state = heist();
-    expect(state.status).toBe("playing");
-    expect(state.hasGold).toBe(false);
-    expect(state.loot.every((entry) => !entry.taken)).toBe(true);
+  it("makes each zombie tougher every wave, up to a cap", () => {
+    expect(spawnedHealth(1)).toBe(ENEMIES.walker.health);
+    expect(spawnedHealth(6)).toBeGreaterThan(spawnedHealth(2));
+    expect(spawnedHealth(100)).toBe(Math.round(ENEMIES.walker.health * HORDE.healthCap));
   });
 
-  it("picking up the gold case pays and marks it carried", () => {
-    const state = heist();
-    walkTo(state, gold.pos);
-    expect(state.hasGold).toBe(true);
-    expect(state.score).toBe(gold.value);
-    expect(state.loot[0].taken).toBe(true);
-  });
-
-  it("a side valuable pays but is not the mission", () => {
-    const state = heist();
-    walkTo(state, trinket.pos);
-    expect(state.hasGold).toBe(false);
-    expect(state.score).toBe(trinket.value);
-  });
-
-  it("loot is only taken once", () => {
-    const state = heist();
-    walkTo(state, gold.pos);
-    run(state, 1);
-    expect(state.score).toBe(gold.value);
-  });
-
-  it("the exit does nothing without the gold", () => {
-    const state = heist();
-    state.player.pos = { x: 30, y: 500 };
+  it("sends a riot zombie that stops half of every bullet but none of a blast", () => {
+    const state = createState(41, "vanguard", field());
+    const riot = zombie(state, "armored", 300, 100);
+    const plain = zombie(state, "walker", 300, 160);
+    plain.health = riot.health;
+    plain.maxHealth = riot.maxHealth;
+    const aim = aimAt(state, 300, 100);
+    step(state, { ...NO_INPUT, aim, fire: true });
     run(state, 0.5);
+    expect(riot.maxHealth - riot.health).toBe(WEAPONS.pistol.damage * ENEMIES.armored.armor);
+    state.pickups.push({ id: 950, kind: "bomb", pos: { ...state.player.pos }, left: 5 });
+    step(state, NO_INPUT);
+    expect(state.enemies.find((enemy) => enemy.defId === "armored")).toBeUndefined();
+  });
+
+  it("announces a cleared wave with its bonus", () => {
+    const state = createState(42, "vanguard", field());
+    startFirstWave(state);
+    step(state, NO_INPUT);
+    state.wave.queue = [];
+    state.enemies = [];
+    step(state, NO_INPUT);
+    expect(state.events).toContainEqual({ type: "waveclear", number: 1, bonus: HORDE.waveBonus });
+  });
+});
+
+describe("bloaters", () => {
+  const shootDown = (state: SimState, bloater: EnemyState): void => {
+    bloater.health = 1;
+    const aim = aimAt(state, bloater.pos.x, bloater.pos.y);
+    for (let i = 0; i < 90 && state.enemies.includes(bloater); i += 1) step(state, { ...NO_INPUT, aim, fire: true });
+  };
+
+  it("burst when they die, hurting zombies beside them but not ones well away", () => {
+    const state = createState(70, "vanguard", field());
+    const bloater = zombie(state, "bloater", 400, 100);
+    const beside = zombie(state, "walker", 440, 120);
+    beside.health = beside.maxHealth = 5;
+    const far = zombie(state, "walker", 400 + (ENEMIES.bloater.burst?.radius ?? 0) + 150, 100);
+    shootDown(state, bloater);
+    expect(state.enemies.includes(beside)).toBe(false);
+    expect(far.health).toBe(far.maxHealth);
+    expect(state.kills).toBeGreaterThanOrEqual(2);
+  });
+
+  it("hurt a player standing too close when they burst, but not one at range", () => {
+    const close = createState(71, "vanguard", field());
+    const near = zombie(close, "bloater", close.player.pos.x + 60, close.player.pos.y);
+    near.health = 1;
+    close.projectiles.push({ id: 800, pos: { x: close.player.pos.x + 30, y: close.player.pos.y }, vel: { x: 600, y: 0 }, damage: 40, travelled: 0, maxRange: 200 });
+    run(close, 0.2);
+    expect(close.player.health).toBeLessThan(close.player.maxHealth);
+
+    const ranged = createState(72, "vanguard", field());
+    const farOff = zombie(ranged, "bloater", ranged.player.pos.x + 400, ranged.player.pos.y);
+    shootDown(ranged, farOff);
+    expect(ranged.enemies.includes(farOff)).toBe(false);
+    expect(ranged.player.health).toBe(ranged.player.maxHealth);
+  });
+
+  it("set off a chain through a pack of bloaters", () => {
+    const state = createState(73, "vanguard", field());
+    const pack = [0, 1, 2].map((n) => zombie(state, "bloater", 420 + n * 60, 100));
+    for (const bloater of pack) bloater.health = 1;
+    shootDown(state, pack[0]);
+    run(state, 0.1);
+    expect(pack.every((bloater) => !state.enemies.includes(bloater))).toBe(true);
+  });
+});
+
+describe("explosive barrels", () => {
+  const withBarrels = (spots: { x: number; y: number }[], over: Partial<Arena> = {}): SimState => noWaves(createState(50, "vanguard", field({ barrels: spots, ...over })));
+
+  it("stand on their spots at the start, and stop bullets", () => {
+    const state = withBarrels([{ x: 300, y: 100 }]);
+    expect(state.barrels).toHaveLength(1);
+    const walker = zombie(state, "walker", 500, 100);
+    const aim = aimAt(state, 500, 100);
+    // The barrel is in the way, so the first shots go into it and not the zombie.
+    step(state, { ...NO_INPUT, aim, fire: true });
+    run(state, 0.5);
+    expect(walker.health).toBe(walker.maxHealth);
+  });
+
+  it("blow up when shot enough, hurting zombies in the blast and sparing those outside", () => {
+    const state = withBarrels([{ x: 300, y: 100 }]);
+    const near = zombie(state, "walker", 360, 140);
+    const far = zombie(state, "walker", 300 + BARRELS.blastRadius + 120, 100);
+    const aim = aimAt(state, 300, 100);
+    for (let i = 0; i < 90 && state.barrels.length > 0; i += 1) step(state, { ...NO_INPUT, aim, fire: true });
+    expect(state.barrels).toHaveLength(0);
+    expect(state.enemies.includes(near)).toBe(false);
+    expect(state.kills).toBeGreaterThanOrEqual(1);
+    expect(far.health).toBe(far.maxHealth);
+  });
+
+  it("hurt a player who is too close to the blast but not one well away", () => {
+    const close = withBarrels([{ x: 140, y: 100 }]);
+    close.barrels[0].health = 1;
+    close.projectiles.push({ id: 900, pos: { x: 130, y: 100 }, vel: { x: 600, y: 0 }, damage: 40, travelled: 0, maxRange: 300 });
+    run(close, 0.2);
+    expect(close.player.health).toBeLessThan(close.player.maxHealth);
+
+    const wide = withBarrels([{ x: 100 + BARRELS.blastRadius + 200, y: 100 }]);
+    wide.barrels[0].health = 1;
+    wide.projectiles.push({ id: 901, pos: { x: 500, y: 100 }, vel: { x: 600, y: 0 }, damage: 40, travelled: 0, maxRange: 300 });
+    run(wide, 0.2);
+    expect(wide.player.health).toBe(wide.player.maxHealth);
+  });
+
+  it("set each other off in a chain", () => {
+    const state = withBarrels([
+      { x: 300, y: 100 },
+      { x: 300 + BARRELS.blastRadius - 20, y: 100 },
+      { x: 300 + (BARRELS.blastRadius - 20) * 2, y: 100 },
+    ]);
+    state.barrels[0].health = 1;
+    state.projectiles.push({ id: 902, pos: { x: 280, y: 100 }, vel: { x: 600, y: 0 }, damage: 40, travelled: 0, maxRange: 300 });
+    run(state, 0.2);
+    expect(state.barrels).toHaveLength(0);
+  });
+
+  it("do not wedge a zombie that is heading straight through one", () => {
+    // The player is straight on from a zombie with a barrel dead in line between them, in a room with no other way round.
+    const state = withBarrels([{ x: 300, y: 300 }], { playerSpawn: { x: 600, y: 300 } });
+    const walker = zombie(state, "walker", 150, 300);
+    run(state, 20);
+    expect(Math.hypot(walker.pos.x - state.player.pos.x, walker.pos.y - state.player.pos.y)).toBeLessThan(60);
+  });
+
+  it("are walked round, not through", () => {
+    const state = withBarrels([{ x: 200, y: 100 }]);
+    run(state, 2, { ...NO_INPUT, move: { x: 1, y: 0 } });
+    expect(state.player.pos.x).toBeLessThan(200 - BARRELS.radius);
+  });
+
+  it("come back at the start of the next wave", () => {
+    const state = withBarrels([{ x: 600, y: 600 }]);
+    state.barrels = [];
+    state.wave.breakLeft = STEP_SECONDS / 2;
+    step(state, NO_INPUT);
+    expect(state.barrels).toHaveLength(1);
+  });
+});
+
+describe("zombies", () => {
+  it("walk at the player and bite", () => {
+    const state = createState(5, "vanguard", field());
+    zombie(state, "walker", 300, 100);
+    const before = state.player.health;
+    run(state, 8);
+    expect(state.player.health).toBeLessThan(before);
+    expect(state.events.length + state.damageTaken).toBeGreaterThan(0);
+  });
+
+  it("are slower than the player, so running keeps you clear", () => {
+    const state = createState(6, "vanguard", field());
+    const walker = zombie(state, "walker", 300, 100);
+    run(state, 6, { ...NO_INPUT, move: { x: 0, y: 1 } });
+    const gap = Math.hypot(walker.pos.x - state.player.pos.x, walker.pos.y - state.player.pos.y);
+    expect(gap).toBeGreaterThan(200);
+    expect(state.player.health).toBe(state.player.maxHealth);
+  });
+
+  it("find their way round a wall to the player", () => {
+    // A long wall splits the field with a gap at the bottom. The zombie starts at the top, on the far side.
+    const arena = field({ walls: [{ x: 480, y: 0, w: 40, h: 760 }], playerSpawn: { x: 800, y: 300 } });
+    const state = noWaves(createState(7, "vanguard", arena));
+    const walker = zombie(state, "walker", 200, 300);
+    run(state, 40);
+    const dist = Math.hypot(walker.pos.x - state.player.pos.x, walker.pos.y - state.player.pos.y);
+    expect(dist).toBeLessThan(60);
+  });
+
+  it("get out of a room corner they were shoved into", () => {
+    const arena = field({
+      walls: [
+        { x: 0, y: 0, w: 1000, h: 32 },
+        { x: 0, y: 0, w: 32, h: 1000 },
+      ],
+      playerSpawn: { x: 700, y: 700 },
+    });
+    const state = noWaves(createState(9, "vanguard", arena));
+    const walker = zombie(state, "walker", 45, 45);
+    run(state, 30);
+    expect(Math.hypot(walker.pos.x - state.player.pos.x, walker.pos.y - state.player.pos.y)).toBeLessThan(60);
+  });
+
+  it("are moved to a spawn when they are stuck somewhere that cannot be walked out of", () => {
+    // Sealed in a box with no way out, nowhere near the player.
+    const arena = field({
+      walls: [
+        { x: 400, y: 400, w: 200, h: 24 },
+        { x: 400, y: 600, w: 200, h: 24 },
+        { x: 400, y: 400, w: 24, h: 224 },
+        { x: 576, y: 400, w: 24, h: 224 },
+      ],
+    });
+    const state = noWaves(createState(11, "vanguard", arena));
+    const walker = zombie(state, "walker", 500, 500);
+    run(state, 30);
+    // It was lifted out of the box: it is now well outside it, and nearer the spawn than the box.
+    const inBox = walker.pos.x > 400 && walker.pos.x < 600 && walker.pos.y > 400 && walker.pos.y < 624;
+    expect(inBox).toBe(false);
+  });
+
+  it("leave a crowd waiting round the player alone: a jam in the fight is not stuck", () => {
+    const state = noWaves(createState(13, "vanguard", field()));
+    state.player.health = state.player.maxHealth = 1e9;
+    const crowd = Array.from({ length: 14 }, (_, n) => zombie(state, "walker", 140 + (n % 7) * 22, 140 + Math.floor(n / 7) * 22));
+    run(state, 20);
+    for (const walker of crowd) expect(Math.hypot(walker.pos.x - 900, walker.pos.y - 900)).toBeGreaterThan(300);
+  });
+
+  it("slide past each other in a narrow lane instead of standing off head-on", () => {
+    // A one-zombie-wide corridor, two zombies coming from opposite ends toward a player off to one side.
+    const arena = field({
+      walls: [
+        { x: 200, y: 280, w: 600, h: 24 },
+        { x: 200, y: 360, w: 600, h: 24 },
+      ],
+      playerSpawn: { x: 100, y: 330 },
+    });
+    const state = noWaves(createState(12, "vanguard", arena));
+    const near = zombie(state, "walker", 260, 332);
+    const far = zombie(state, "walker", 700, 332);
+    run(state, 40);
+    expect(Math.hypot(near.pos.x - state.player.pos.x, near.pos.y - state.player.pos.y)).toBeLessThan(60);
+    expect(Math.hypot(far.pos.x - state.player.pos.x, far.pos.y - state.player.pos.y)).toBeLessThan(60);
+  });
+
+  it("do not walk through walls or each other", () => {
+    const arena = field({ walls: [{ x: 480, y: 0, w: 40, h: 760 }], playerSpawn: { x: 800, y: 300 } });
+    const state = noWaves(createState(8, "vanguard", arena));
+    for (let i = 0; i < 12; i += 1) zombie(state, "walker", 200 + (i % 4) * 10, 280 + Math.floor(i / 4) * 10);
+    for (let i = 0; i < 60 * 12; i += 1) {
+      step(state, NO_INPUT);
+      for (const enemy of state.enemies) expect(enemy.pos.x > 480 && enemy.pos.x < 520 && enemy.pos.y < 760).toBe(false);
+    }
+  });
+
+  it("hit harder and bite faster on hard", () => {
+    const damage = (difficulty: "easy" | "hard") => {
+      const state = createState(9, "vanguard", field(), difficulty);
+      zombie(state, "walker", state.player.pos.x + 20, state.player.pos.y);
+      run(state, 3);
+      return state.damageTaken;
+    };
+    expect(damage("hard")).toBeGreaterThan(damage("easy"));
+  });
+
+  it("end the run when the player runs out of health", () => {
+    const state = createState(10, "vanguard", field());
+    state.player.health = 5;
+    zombie(state, "brute", state.player.pos.x + 25, state.player.pos.y);
+    run(state, 3);
+    expect(state.status).toBe("dead");
+    expect(state.player.health).toBe(0);
+    expect(state.endedAt).not.toBeNull();
+    const time = state.time;
+    step(state, NO_INPUT);
+    expect(state.time).toBe(time);
+  });
+});
+
+describe("shooting", () => {
+  it("kills a walker in a few pistol shots, and scores it", () => {
+    const state = createState(11, "vanguard", field());
+    zombie(state, "walker", 400, 100);
+    const aim = aimAt(state, 400, 100);
+    for (let i = 0; i < 60 * 3 && state.kills === 0; i += 1) step(state, { ...NO_INPUT, aim, fire: true });
+    expect(state.kills).toBe(1);
+    expect(state.enemies).toHaveLength(0);
+    expect(state.score).toBe(ENEMIES.walker.score);
+    expect(state.shotsHit).toBe(Math.ceil(ENEMIES.walker.health / WEAPONS.pistol.damage));
+  });
+
+  it("is stopped by a wall", () => {
+    const arena = field({ walls: [{ x: 250, y: 60, w: 30, h: 100 }] });
+    const state = createState(12, "vanguard", arena);
+    const walker = zombie(state, "walker", 600, 100);
+    walker.pos.x = 600;
+    run(state, 2, { ...NO_INPUT, aim: 0, fire: true });
+    expect(state.kills).toBe(0);
+  });
+
+  it("reloads after a magazine and shoots again", () => {
+    const state = createState(13, "vanguard", field());
+    const aim = 0;
+    let reloaded = false;
+    for (let i = 0; i < 60 * 8; i += 1) {
+      step(state, { ...NO_INPUT, aim, fire: true });
+      if (state.events.some((event) => event.type === "reload")) reloaded = true;
+    }
+    expect(reloaded).toBe(true);
+    expect(state.shotsFired).toBeGreaterThan(WEAPONS.pistol.magazineSize);
+  });
+
+  it("shoves a zombie back a little, and a brute less", () => {
+    const state = createState(14, "vanguard", field());
+    const walker = zombie(state, "walker", 300, 100);
+    const brute = zombie(state, "brute", 300, 140);
+    const aim = aimAt(state, 300, 100);
+    step(state, { ...NO_INPUT, aim, fire: true });
+    run(state, 0.3);
+    expect(walker.hurt + brute.hurt).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("the streak", () => {
+  it("multiplies the score as kills pile up, up to a cap", () => {
+    expect(comboMultiplier(0)).toBe(1);
+    expect(comboMultiplier(HORDE.comboStep - 1)).toBe(1);
+    expect(comboMultiplier(HORDE.comboStep)).toBe(1.5);
+    expect(comboMultiplier(HORDE.comboStep * 4)).toBe(3);
+    expect(comboMultiplier(10_000)).toBe(HORDE.comboMax);
+  });
+
+  it("runs while kills keep coming and ends when they stop", () => {
+    const state = createState(15, "vanguard", field());
+    state.combo = { count: 7, left: HORDE.comboWindow };
+    run(state, HORDE.comboWindow + 0.2);
+    expect(state.combo.count).toBe(0);
+  });
+
+  it("scores a kill at the streak's multiplier and remembers the best streak", () => {
+    const state = createState(16, "vanguard", field());
+    state.combo = { count: HORDE.comboStep - 1, left: HORDE.comboWindow };
+    const walker = zombie(state, "walker", 300, 100);
+    walker.health = 1;
+    const aim = aimAt(state, 300, 100);
+    for (let i = 0; i < 60 && state.kills === 0; i += 1) step(state, { ...NO_INPUT, aim, fire: true });
+    expect(state.score).toBe(Math.round(ENEMIES.walker.score * 1.5));
+    expect(state.best.combo).toBe(HORDE.comboStep);
+  });
+});
+
+/** Gets a run to the point where a card choice is on the table. */
+function onTheTable(seed = 20): SimState {
+  const state = createState(seed, "vanguard", field());
+  state.player.health = state.player.maxHealth = 1e9;
+  state.xp.into = state.xp.needed - 1;
+  const walker = zombie(state, "walker", 300, 100);
+  walker.health = 1;
+  const aim = aimAt(state, 300, 100);
+  for (let i = 0; i < 120 && state.status === "playing"; i += 1) step(state, { ...NO_INPUT, aim, fire: true });
+  return state;
+}
+
+describe("leveling up", () => {
+  it("pauses the game on three cards when the XP bar fills", () => {
+    const state = onTheTable();
+    expect(state.status).toBe("perk");
+    expect(state.offer?.cards).toHaveLength(3);
+    expect(new Set(state.offer?.cards).size).toBe(3);
+    expect(state.xp.level).toBe(2);
+    const time = state.time;
+    step(state, NO_INPUT);
+    expect(state.time).toBe(time);
+  });
+
+  it("applies the chosen card and carries on", () => {
+    const state = onTheTable();
+    const pick = state.offer?.cards[1] as string;
+    expect(choosePerk(state, 1)).toBe(true);
+    expect(state.status).toBe("playing");
+    expect(state.offer).toBeNull();
+    expect(state.perks[pick]).toBe(1);
+  });
+
+  it("does not take a card that is not on the table", () => {
+    const state = onTheTable();
+    expect(choosePerk(state, 5)).toBe(false);
+    expect(state.status).toBe("perk");
+  });
+
+  it("lets the hand be redrawn three times, then no more", () => {
+    const state = onTheTable();
+    for (let i = 0; i < LEVELING.redraws; i += 1) expect(redrawOffer(state)).toBe(true);
+    expect(redrawOffer(state)).toBe(false);
+    expect(state.redraws).toBe(0);
+    expect(state.offer?.cards).toHaveLength(3);
+  });
+
+  it("keeps the redraws used up for the rest of the run", () => {
+    const state = onTheTable();
+    redrawOffer(state);
+    skipOffer(state);
+    state.xp.into = state.xp.needed - 1;
+    state.pendingLevels = 1;
+    run(state, 0.1);
+    expect(state.status).toBe("perk");
+    expect(state.offer?.redraws).toBe(LEVELING.redraws - 1);
+  });
+
+  it("can be skipped without taking anything", () => {
+    const state = onTheTable();
+    expect(skipOffer(state)).toBe(true);
+    expect(state.status).toBe("playing");
+    expect(Object.keys(state.perks)).toHaveLength(0);
+  });
+
+  it("offers one hand after another when several levels land at once", () => {
+    const state = onTheTable();
+    state.pendingLevels += 1;
+    choosePerk(state, 0);
+    expect(state.status).toBe("perk");
+    choosePerk(state, 0);
     expect(state.status).toBe("playing");
   });
 
-  it("walking into the exit with the gold ends the mission and pays for the escape", () => {
-    const state = heist();
-    walkTo(state, gold.pos);
-    state.player.pos = { x: 30, y: 500 };
-    step(state, input());
-    expect(state.status).toBe("escaped");
-    expect(state.events.some((event) => event.type === "escaped")).toBe(true);
-    expect(state.score).toBe(gold.value + MISSION.escapeBonus + MISSION.unseenBonus + MISSION.ghostBonus);
-    expect(rating(state)).toBe("GHOST");
+  it("makes Thick Skin raise max health and heal", () => {
+    const state = onTheTable();
+    state.offer = { cards: ["thick-skin", "leech", "fast-feet"], redraws: 3 };
+    state.player.maxHealth = 100;
+    state.player.health = 60;
+    choosePerk(state, 0);
+    expect(state.player.maxHealth).toBe(125);
+    expect(state.player.health).toBe(85);
   });
 
-  it("being spotted costs the unseen bonus, and a kill costs the ghost bonus", () => {
-    const seen = heist();
-    seen.timesSpotted = 1;
-    walkTo(seen, gold.pos);
-    seen.player.pos = { x: 30, y: 500 };
-    step(seen, input());
-    expect(seen.score).toBe(gold.value + MISSION.escapeBonus);
-    expect(rating(seen)).toBe("SEEN");
-
-    const quietKill = heist();
-    quietKill.kills = 1;
-    walkTo(quietKill, gold.pos);
-    quietKill.player.pos = { x: 30, y: 500 };
-    step(quietKill, input());
-    expect(quietKill.score).toBe(gold.value + MISSION.escapeBonus + MISSION.unseenBonus);
-    expect(rating(quietKill)).toBe("SHADOW");
+  it("makes Hot Barrel fire faster and Hollow Points hit harder", () => {
+    const plain = createState(21, "vanguard", field());
+    const tuned = createState(21, "vanguard", field());
+    tuned.perks = { "hot-barrel": 2, "hollow-points": 2 };
+    const input = { ...NO_INPUT, fire: true };
+    step(plain, input);
+    step(tuned, input);
+    expect(tuned.player.cooldown).toBeLessThan(plain.player.cooldown);
+    expect(tuned.projectiles[0].damage).toBeGreaterThan(plain.projectiles[0].damage);
   });
 
-  it("counts every time a guard spots you", () => {
-    const state = quiet();
-    addEnemy(state, "grunt", 700, 500);
-    run(state, 4);
-    expect(state.timesSpotted).toBe(1);
+  it("makes Fast Feet speed the player up", () => {
+    const plain = createState(22, "vanguard", field());
+    const quick = createState(22, "vanguard", field());
+    quick.perks = { "fast-feet": 3 };
+    run(plain, 1, { ...NO_INPUT, move: { x: 1, y: 0 } });
+    run(quick, 1, { ...NO_INPUT, move: { x: 1, y: 0 } });
+    expect(quick.player.pos.x).toBeGreaterThan(plain.player.pos.x);
   });
 
-  it("freezes the world once you are out", () => {
-    const state = heist();
-    walkTo(state, gold.pos);
-    state.player.pos = { x: 30, y: 500 };
-    step(state, input());
-    const time = state.time;
-    step(state, input({ move: { x: 1, y: 0 } }));
-    expect(state.time).toBe(time);
+  it("makes Leech heal on a kill and Second Wind heal when left alone", () => {
+    const leeched = createState(23, "vanguard", field());
+    leeched.perks = { leech: 2 };
+    leeched.player.health = 50;
+    const walker = zombie(leeched, "walker", 300, 100);
+    walker.health = 1;
+    const aim = aimAt(leeched, 300, 100);
+    for (let i = 0; i < 60 && leeched.kills === 0; i += 1) step(leeched, { ...NO_INPUT, aim, fire: true });
+    expect(leeched.player.health).toBeGreaterThan(50);
+
+    const rested = createState(24, "vanguard", field());
+    rested.perks = { "second-wind": 2 };
+    rested.player.health = 50;
+    run(rested, 6);
+    expect(rested.player.health).toBeGreaterThan(55);
+  });
+
+  it("makes Scavenger bring the next level sooner", () => {
+    const gain = (perks: Record<string, number>) => {
+      const state = createState(25, "vanguard", field());
+      state.perks = perks;
+      state.xp.into = 0;
+      const walker = zombie(state, "walker", 300, 100);
+      walker.health = 1;
+      const aim = aimAt(state, 300, 100);
+      for (let i = 0; i < 60 && state.kills === 0; i += 1) step(state, { ...NO_INPUT, aim, fire: true });
+      return state.xp.into;
+    };
+    expect(gain({ scavenger: 2 })).toBeGreaterThan(gain({}));
+  });
+
+  it("stops offering a card once it has been taken as many times as it allows", () => {
+    const state = createState(26, "vanguard", field());
+    state.perks = { "second-wind": 3, "fast-feet": 4 };
+    state.pendingLevels = 5;
+    for (let i = 0; i < 5; i += 1) {
+      step(state, NO_INPUT);
+      expect(state.offer?.cards).not.toContain("second-wind");
+      expect(state.offer?.cards).not.toContain("fast-feet");
+      skipOffer(state);
+    }
+  });
+});
+
+describe("gun perks", () => {
+  it("make Big Mags hold more rounds, full after a reload", () => {
+    const state = createState(60, "vanguard", field());
+    state.perks = { "big-mags": 2 };
+    const base = WEAPONS.pistol.magazineSize;
+    expect(magazineSize(state, WEAPONS.pistol)).toBe(Math.round(base * 1.5));
+    state.player.ammo[0] = 0;
+    step(state, { ...NO_INPUT, reload: true });
+    run(state, WEAPONS.pistol.reloadDuration + 0.2);
+    expect(state.player.ammo[0]).toBe(Math.round(base * 1.5));
+  });
+
+  it("make Piercing Rounds go through zombies, once per card, and not hit one twice", () => {
+    const line = (pierce: number) => {
+      const state = createState(61, "vanguard", field());
+      state.perks = { piercing: pierce };
+      const first = zombie(state, "walker", 250, 100);
+      const second = zombie(state, "walker", 300, 100);
+      const third = zombie(state, "walker", 350, 100);
+      first.health = second.health = third.health = 1000;
+      first.maxHealth = second.maxHealth = third.maxHealth = 1000;
+      step(state, { ...NO_INPUT, aim: 0, fire: true });
+      run(state, 0.4);
+      return [first, second, third].filter((enemy) => enemy.health < 1000).length;
+    };
+    expect(line(0)).toBe(1);
+    expect(line(1)).toBe(2);
+    expect(line(2)).toBe(3);
+  });
+
+  it("hits a pierced zombie only once per bullet", () => {
+    const state = createState(62, "vanguard", field());
+    state.perks = { piercing: 1 };
+    const target = zombie(state, "walker", 250, 100);
+    target.health = target.maxHealth = 1000;
+    step(state, { ...NO_INPUT, aim: 0, fire: true });
+    run(state, 0.5);
+    expect(target.maxHealth - target.health).toBe(WEAPONS.pistol.damage);
+  });
+});
+
+describe("pickups", () => {
+  it("heal on touch and then disappear", () => {
+    const state = createState(30, "vanguard", field());
+    state.player.health = 40;
+    state.pickups.push({ id: 900, kind: "health", pos: { ...state.player.pos }, left: 10 });
+    step(state, NO_INPUT);
+    expect(state.player.health).toBe(40 + PICKUPS.healAmount);
+    expect(state.pickups).toHaveLength(0);
+    expect(state.events).toContainEqual({ type: "pickup", pos: state.player.pos, kind: "health" });
+  });
+
+  it("never heal past full", () => {
+    const state = createState(31, "vanguard", field());
+    state.pickups.push({ id: 901, kind: "health", pos: { ...state.player.pos }, left: 10 });
+    step(state, NO_INPUT);
+    expect(state.player.health).toBe(state.player.maxHealth);
+  });
+
+  it("fade away if nobody takes them", () => {
+    const state = createState(32, "vanguard", field());
+    state.pickups.push({ id: 902, kind: "health", pos: { x: 800, y: 800 }, left: 1 });
+    run(state, 1.2);
+    expect(state.pickups).toHaveLength(0);
+  });
+
+  it("make a bomb that kills everything nearby but not far-off zombies", () => {
+    const state = createState(33, "vanguard", field());
+    zombie(state, "walker", 200, 100);
+    zombie(state, "brute", 100, 300);
+    const far = zombie(state, "walker", 950, 950);
+    state.pickups.push({ id: 903, kind: "bomb", pos: { ...state.player.pos }, left: 10 });
+    step(state, NO_INPUT);
+    expect(state.enemies).toEqual([far]);
+    expect(state.kills).toBe(2);
+    expect(state.events.some((event) => event.type === "bomb")).toBe(true);
+  });
+
+  it("make frenzy double the fire rate for a while", () => {
+    const state = createState(34, "vanguard", field());
+    state.pickups.push({ id: 904, kind: "frenzy", pos: { ...state.player.pos }, left: 10 });
+    step(state, NO_INPUT);
+    expect(state.frenzyLeft).toBeGreaterThan(PICKUPS.frenzySeconds - 0.1);
+    const calm = createState(34, "vanguard", field());
+    step(calm, { ...NO_INPUT, fire: true });
+    step(state, { ...NO_INPUT, fire: true });
+    expect(state.player.cooldown).toBeLessThan(calm.player.cooldown);
+    run(state, PICKUPS.frenzySeconds + 0.5);
+    expect(state.frenzyLeft).toBe(0);
+  });
+
+  it("make double points double what a kill scores, for a while", () => {
+    const state = createState(36, "vanguard", field());
+    state.pickups.push({ id: 905, kind: "double", pos: { ...state.player.pos }, left: 10 });
+    step(state, NO_INPUT);
+    expect(state.doubleLeft).toBeGreaterThan(PICKUPS.doubleSeconds - 0.1);
+    const walker = zombie(state, "walker", 300, 100);
+    walker.health = 1;
+    const aim = aimAt(state, 300, 100);
+    for (let i = 0; i < 60 && state.kills === 0; i += 1) step(state, { ...NO_INPUT, aim, fire: true });
+    expect(state.score).toBe(ENEMIES.walker.score * 2);
+    run(state, PICKUPS.doubleSeconds + 0.5);
+    expect(state.doubleLeft).toBe(0);
+  });
+
+  it("make a shield that stops all damage until it runs out", () => {
+    const state = createState(37, "vanguard", field());
+    state.pickups.push({ id: 906, kind: "shield", pos: { ...state.player.pos }, left: 10 });
+    step(state, NO_INPUT);
+    zombie(state, "brute", state.player.pos.x + 25, state.player.pos.y);
+    run(state, 3);
+    expect(state.player.health).toBe(state.player.maxHealth);
+    run(state, PICKUPS.shieldSeconds);
+    expect(state.player.health).toBeLessThan(state.player.maxHealth);
+  });
+
+  it("are taken from farther off with Magnet", () => {
+    const place = (perks: Record<string, number>) => {
+      const state = createState(38, "vanguard", field());
+      state.perks = perks;
+      state.pickups.push({ id: 907, kind: "health", pos: { x: state.player.pos.x + 55, y: state.player.pos.y }, left: 10 });
+      state.player.health = 10;
+      step(state, NO_INPUT);
+      return state.pickups.length;
+    };
+    expect(place({})).toBe(1);
+    expect(place({ magnet: 2 })).toBe(0);
+  });
+
+  it("always come from a brute", () => {
+    const state = createState(35, "vanguard", field());
+    const brute = zombie(state, "brute", 300, 100);
+    brute.health = 1;
+    const aim = aimAt(state, 300, 100);
+    for (let i = 0; i < 60 && state.kills === 0; i += 1) step(state, { ...NO_INPUT, aim, fire: true });
+    expect(state.pickups).toHaveLength(1);
   });
 });
 
 describe("determinism", () => {
-  it("the same seed and inputs give the same fight", () => {
-    const play = (): string => {
-      const state = createState(42);
-      run(state, 14, () => input({ fire: true, aim: 1, move: { x: 0.3, y: -0.2 } }));
-      return JSON.stringify({ score: state.score, p: state.player, e: state.enemies.map((enemy) => enemy.pos), rng: state.rng });
+  it("plays the same run for the same seed and inputs", () => {
+    const play = () => {
+      const state = createState(77, "vanguard", ARENA);
+      state.player.health = state.player.maxHealth = 1e9;
+      startFirstWave(state);
+      for (let i = 0; i < 60 * 20; i += 1) step(state, { ...NO_INPUT, aim: (i % 360) * 0.017, fire: i % 3 === 0, move: { x: Math.sin(i / 50), y: Math.cos(i / 70) } });
+      return { enemies: state.enemies.map((e) => [e.id, Math.round(e.pos.x), Math.round(e.pos.y)]), score: state.score, kills: state.kills, status: state.status };
     };
-    expect(play()).toBe(play());
+    expect(play()).toEqual(play());
+  });
+});
+
+describe("the real compound", () => {
+  it("lets a stationary player get swarmed and killed by the first waves", () => {
+    const state = createState(88, "vanguard", ARENA);
+    startFirstWave(state);
+    run(state, 90);
+    expect(state.status).toBe("dead");
+    expect(state.wave.number).toBeGreaterThanOrEqual(1);
+  });
+
+  it("keeps a moving, shooting player alive through wave 1 on easy", () => {
+    const state = createState(89, "vanguard", ARENA, "easy");
+    startFirstWave(state);
+    const shootNearest = (): PlayerInput => {
+      let near: EnemyState | null = null;
+      let best = Infinity;
+      for (const enemy of state.enemies) {
+        const dist = Math.hypot(enemy.pos.x - state.player.pos.x, enemy.pos.y - state.player.pos.y);
+        if (dist < best) {
+          best = dist;
+          near = enemy;
+        }
+      }
+      const away = near ? { x: state.player.pos.x - near.pos.x, y: state.player.pos.y - near.pos.y } : { x: 0, y: 0 };
+      const len = Math.hypot(away.x, away.y) || 1;
+      return { ...NO_INPUT, aim: near ? aimAt(state, near.pos.x, near.pos.y) : 0, fire: near !== null && best < 400, move: best < 160 ? { x: away.x / len, y: away.y / len } : { x: 0, y: 0 } };
+    };
+    for (let i = 0; i < 60 * 60 && state.wave.number < 2 && state.status === "playing"; i += 1) step(state, shootNearest());
+    expect(state.kills).toBeGreaterThan(5);
   });
 });

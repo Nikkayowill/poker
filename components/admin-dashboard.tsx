@@ -282,12 +282,12 @@ export function AdminDashboard() {
         body: JSON.stringify({ profileId: profile.id, allowed: !profile.stackstrikeAccess }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Could not update that profile's StackStrike access.");
+      if (!response.ok) throw new Error(data.error ?? "Could not update that profile's StackDead access.");
       setProfiles((current) => current?.map((entry) => (
         entry.id === profile.id ? { ...entry, stackstrikeAccess: !profile.stackstrikeAccess } : entry
       )) ?? null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not update that profile's StackStrike access.");
+      setError(caught instanceof Error ? caught.message : "Could not update that profile's StackDead access.");
     } finally {
       setPendingId(null);
     }
@@ -726,7 +726,7 @@ export function AdminDashboard() {
               <th>Adjust Gold</th>
               <th>Banned</th>
               <th>StackAcres</th>
-              <th>StackStrike</th>
+              <th>StackDead</th>
               <th>Admin tag</th>
               <th />
               <th>Push</th>
@@ -804,9 +804,9 @@ export function AdminDashboard() {
                       className="admin-toggle"
                       disabled={bulkPending || pendingId === profile.id}
                       onClick={() => void toggleStackStrike(profile)}
-                      title="Shows the StackStrike prototype under Play for this player and lets them open it. Private: nobody else sees it."
+                      title="Shows the StackDead prototype under Play for this player and lets them open it. Private: nobody else sees it."
                     >
-                      {profile.stackstrikeAccess ? "Close StackStrike" : "Open StackStrike"}
+                      {profile.stackstrikeAccess ? "Close StackDead" : "Open StackDead"}
                     </button>
                     <button
                       type="button"

@@ -51,14 +51,14 @@ export function navGridFor(arena: Arena): NavGrid {
   return grid;
 }
 
-function cellOf(grid: NavGrid, p: Vec): number {
+export function cellOf(grid: NavGrid, p: Vec): number {
   const col = Math.max(0, Math.min(grid.cols - 1, Math.floor(p.x / grid.cell)));
   const row = Math.max(0, Math.min(grid.rows - 1, Math.floor(p.y / grid.cell)));
   return row * grid.cols + col;
 }
 
 /** The point itself if its cell is open, else the nearest open cell within a few steps. */
-function nearestOpen(grid: NavGrid, index: number): number | null {
+export function nearestOpen(grid: NavGrid, index: number): number | null {
   if (!grid.blocked[index]) return index;
   const col0 = index % grid.cols;
   const row0 = Math.floor(index / grid.cols);

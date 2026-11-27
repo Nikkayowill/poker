@@ -1,4 +1,4 @@
-import type { EnemyState, SimEvent, Vec } from "./types";
+import type { SimEvent, Vec } from "./types";
 
 /**
  * What StackStrike sounds like, as decisions: which sound an event makes, how loud and from
@@ -13,7 +13,6 @@ export const SOUND_GROUPS = {
   "shot-pistol": ["shot-pistol-1", "shot-pistol-2", "shot-pistol-3"],
   "shot-smg": ["shot-smg-1", "shot-smg-2", "shot-smg-3"],
   "shot-shotgun": ["shot-shotgun-1", "shot-shotgun-2"],
-  "shot-guard": ["shot-guard-1", "shot-guard-2", "shot-guard-3"],
   "hit-enemy": ["hit-enemy-1", "hit-enemy-2"],
   "hit-player": ["hit-player-1", "hit-player-2"],
   kill: ["kill-1", "kill-2"],
@@ -32,13 +31,8 @@ export const SINGLE_SOUNDS = [
   "shotgun-rack",
   "empty-click",
   "swap",
-  "hide",
-  "spotted",
-  "radio",
   "alarm",
-  "body-found",
   "dead",
-  "escaped",
   "pickup-small",
   "pickup-main",
   "heart-slow",
@@ -115,14 +109,10 @@ export function cuesFor(event: SimEvent, ctx: CueContext): Cue[] {
   const near = (at: Vec) => hearing(ctx.listener, at, ctx.blocked(at));
   switch (event.type) {
     case "shot": {
-      if (event.from === "player") {
-        const group: SoundGroup = ctx.weaponId === "smg" ? "shot-smg" : ctx.weaponId === "shotgun" ? "shot-shotgun" : "shot-pistol";
-        const out = [cue(pick(group, ctx.roll()), PLAYER_GUN_VOLUME[ctx.weaponId] ?? 0.6, { rate: jitter(ctx.roll) })];
-        if (ctx.weaponId === "shotgun") out.push(cue("shotgun-rack", 0.5, { delay: 0.5 }));
-        return out;
-      }
-      const h = near(event.pos);
-      return h.gain < AUDIBLE ? [] : [cue(pick("shot-guard", ctx.roll()), 0.95 * h.gain, { rate: jitter(ctx.roll, 0.05), pan: h.pan })];
+      const group: SoundGroup = ctx.weaponId === "smg" ? "shot-smg" : ctx.weaponId === "shotgun" ? "shot-shotgun" : "shot-pistol";
+      const out = [cue(pick(group, ctx.roll()), PLAYER_GUN_VOLUME[ctx.weaponId] ?? 0.6, { rate: jitter(ctx.roll) })];
+      if (ctx.weaponId === "shotgun") out.push(cue("shotgun-rack", 0.5, { delay: 0.5 }));
+      return out;
     }
     case "hit": {
       if (event.target === "player") return [cue(pick("hit-player", ctx.roll()), 1)];
@@ -141,18 +131,25 @@ export function cuesFor(event: SimEvent, ctx: CueContext): Cue[] {
       const name = ctx.weaponId === "smg" ? "reload-smg" : ctx.weaponId === "shotgun" ? "reload-shotgun" : "reload-pistol";
       return [cue(name, 0.7)];
     }
-    case "spotted":
-      return [cue("spotted", 0.85)];
-    case "radio":
-      return [cue("radio", 0.8), cue("alarm", 0.32, { delay: 0.45 })];
-    case "hide":
-      return [event.on ? cue("hide", 0.6) : cue("hide", 0.45, { rate: 1.25 })];
     case "pickup":
-      return [event.main ? cue("pickup-main", 0.8) : cue("pickup-small", 0.6)];
-    case "body":
-      return [cue("body-found", 0.8)];
-    case "escaped":
-      return [cue("escaped", 1)];
+      return [event.kind === "health" ? cue("pickup-small", 0.6) : cue("pickup-main", 0.8)];
+    case "wave":
+      return [cue("alarm", 0.4)];
+    case "levelup":
+      return [cue("ui-confirm", 0.7)];
+    case "bomb":
+      return [cue(pick("shot-shotgun", ctx.roll()), 1, { rate: 0.55 })];
+    case "barrel": {
+      // Heard from where it went off, and always at least faintly: a blast is felt through the floor.
+      const h = near(event.pos);
+      return [cue(pick("shot-shotgun", ctx.roll()), Math.max(0.35, 0.95 * h.gain), { rate: 0.62, pan: h.pan })];
+    }
+    case "burst": {
+      const h = near(event.pos);
+      return h.gain < AUDIBLE ? [] : [cue(pick("shot-shotgun", ctx.roll()), 0.55 * h.gain, { rate: 0.85, pan: h.pan })];
+    }
+    case "waveclear":
+      return [cue("ui-confirm", 0.55, { rate: 1.12 })];
     case "dead":
       return [cue("dead", 1)];
   }
@@ -180,55 +177,42 @@ export class StepCounter {
 }
 
 export const PLAYER_STRIDE = 58;
-export const GUARD_STRIDE = 66;
 
 /** The player's own footfall: soft, quiet, always heard. */
 export function playerStep(roll: () => number): Cue {
   return cue(pick("step-soft", roll()), 0.5, { rate: 0.95 + roll() * 0.1 });
 }
 
-/** A guard's footfall, heard through walls if it is close enough: it is how you tell where they are in the dark. */
-export function guardStep(at: Vec, ctx: Pick<CueContext, "listener" | "blocked" | "roll">): Cue | null {
-  const h = hearing(ctx.listener, at, ctx.blocked(at));
-  if (h.gain * 0.7 < AUDIBLE) return null;
-  return cue(pick("step-boot", ctx.roll()), 0.7 * h.gain, { rate: 0.95 + ctx.roll() * 0.1, pan: h.pan });
-}
-
 /* --------------------------------------------------------------------- music */
 
 export interface MusicMix {
-  /** The calm track. */
+  /** The calm track, between waves. */
   stealth: number;
-  /** The track that plays while you are being hunted. */
+  /** The track that plays while a wave is on. */
   hunted: number;
-  /** A slow heartbeat, for when something is getting suspicious. */
+  /** A slow heartbeat, for when you are hurt. */
   heartSlow: number;
-  /** A racing one, for when it nearly has you. */
+  /** A racing one, for when one more bite could do it. */
   heartFast: number;
 }
 
 export interface MusicInput {
-  /** At least one guard is chasing or shooting at the player. */
+  /** A wave is on: zombies are coming or still alive. */
   hunted: boolean;
-  /** How suspicious the most suspicious guard is, 0 to 1. */
-  awareness: number;
-  ending: "none" | "dead" | "escaped";
+  /** How hurt the player is, 0 untouched to 1 nearly dead. */
+  strain: number;
+  ending: "none" | "dead";
 }
 
 /** Seconds to bring a track in and to let it go. */
 export const FADE_IN = 1.2;
 export const FADE_OUT = 2.4;
-/** The hunt music stays this long after the last guard gives up, so it does not flicker. */
-export const HUNT_HOLD = 5;
+/** The fight music stays this long after the last zombie falls, so it does not flicker between waves. */
+export const HUNT_HOLD = 4;
 
-export function readThreat(enemies: readonly Pick<EnemyState, "mode" | "awareness">[], caution: number): Pick<MusicInput, "hunted" | "awareness"> {
-  let awareness = Math.max(0, Math.min(1, caution)) * 0.5;
-  let hunted = false;
-  for (const enemy of enemies) {
-    if (enemy.mode === "chase" || enemy.mode === "attack") hunted = true;
-    awareness = Math.max(awareness, enemy.awareness);
-  }
-  return { hunted, awareness };
+/** How hurt the player is, for the heartbeat. */
+export function readStrain(health: number, maxHealth: number): number {
+  return maxHealth <= 0 ? 0 : Math.max(0, Math.min(1, 1 - health / maxHealth));
 }
 
 function smoothstep(lo: number, hi: number, x: number): number {
@@ -242,9 +226,9 @@ function slew(from: number, to: number, seconds: number, dt: number): number {
 }
 
 /**
- * Decides how loud each music layer is. Calm stealth music plays until a guard gives chase,
- * then the hunt track takes over and holds for a few seconds after it is over. A heartbeat
- * creeps in as a guard gets suspicious and speeds up as it closes in. When the run ends the music dips
+ * Decides how loud each music layer is. The calm track plays between waves and the hard one
+ * takes over while a wave is on, holding a few seconds after the last zombie falls. A heartbeat
+ * creeps in as the player gets hurt and speeds up near death. When the run ends the music dips
  * so the ending sound can be heard.
  */
 export class MusicDirector {
@@ -261,8 +245,8 @@ export class MusicDirector {
       if (this.calm >= HUNT_HOLD) this.hunting = false;
     }
     const over = input.ending !== "none";
-    const duck = input.ending === "dead" ? 0.12 : input.ending === "escaped" ? 0.4 : 1;
-    const tension = Math.max(0, Math.min(1, (input.awareness - 0.08) / 0.92));
+    const duck = input.ending === "dead" ? 0.12 : 1;
+    const tension = Math.max(0, Math.min(1, (input.strain - 0.08) / 0.92));
 
     const target: MusicMix = {
       stealth: this.hunting ? 0 : duck,

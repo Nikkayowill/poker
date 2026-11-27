@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { CONTRACTS } from "./content";
 import { applyRun, loadoutFor, loadProgress, MAX_LEVEL, NEW_PROGRESS, rankFor, runXp, saveProgress, unlocksBetween, xpToReach } from "./progress";
 import { createState } from "./sim";
 import type { DifficultyId, SimState } from "./types";
 
 function finished(over: Partial<SimState> & { difficulty?: DifficultyId } = {}): SimState {
   const state = createState(1, "vanguard", undefined, over.difficulty ?? "normal");
-  return Object.assign(state, { status: "escaped" as const, ...over });
+  return Object.assign(state, { status: "dead" as const, ...over });
 }
 
 function memory(initial: Record<string, string> = {}) {
@@ -44,43 +43,48 @@ describe("unlocks", () => {
   });
 
   it("names what a level-up unlocked", () => {
-    expect(unlocksBetween(1, 2)).toContain(`${CONTRACTS["rich-pickings"].name} job`);
-    expect(unlocksBetween(2, 3)).toEqual(expect.arrayContaining(["SMG", `${CONTRACTS["night-shift"].name} job`]));
+    expect(unlocksBetween(1, 2)).toEqual([]);
+    expect(unlocksBetween(2, 3)).toEqual(["SMG"]);
+    expect(unlocksBetween(4, 5)).toEqual(["Shotgun"]);
     expect(unlocksBetween(3, 3)).toEqual([]);
   });
 });
 
 describe("run XP", () => {
-  it("pays more for escaping, and most for a clean run", () => {
-    const dead = runXp(finished({ status: "dead", score: 300 }));
-    const seen = runXp(finished({ score: 1500, timesSpotted: 2, kills: 2 }));
-    const shadow = runXp(finished({ score: 1500, timesSpotted: 0, kills: 2 }));
-    const ghost = runXp(finished({ score: 1500, timesSpotted: 0, kills: 0 }));
-    expect(dead).toBeLessThan(seen);
-    expect(seen).toBeLessThan(shadow);
-    expect(shadow).toBeLessThan(ghost);
+  const reached = (waves: number, score: number, difficulty: DifficultyId = "normal") => {
+    const state = finished({ score, difficulty });
+    state.wave.number = waves;
+    return runXp(state);
+  };
+
+  it("pays more for a higher score and for lasting more waves", () => {
+    expect(reached(1, 500)).toBeLessThan(reached(1, 3000));
+    expect(reached(2, 1000)).toBeLessThan(reached(8, 1000));
   });
 
-  it("pays more on harder jobs", () => {
-    const base = { score: 1500, timesSpotted: 0, kills: 0 };
-    expect(runXp(finished({ ...base, difficulty: "easy" }))).toBeLessThan(runXp(finished({ ...base, difficulty: "normal" })));
-    expect(runXp(finished({ ...base, difficulty: "normal" }))).toBeLessThan(runXp(finished({ ...base, difficulty: "hard" })));
+  it("pays more on harder difficulties", () => {
+    expect(reached(5, 2000, "easy")).toBeLessThan(reached(5, 2000, "normal"));
+    expect(reached(5, 2000, "normal")).toBeLessThan(reached(5, 2000, "hard"));
   });
 
   it("never pays nothing", () => {
-    expect(runXp(finished({ status: "dead", score: 0 }))).toBeGreaterThan(0);
+    expect(reached(0, 0)).toBeGreaterThan(0);
   });
 });
 
 describe("applying a run", () => {
-  it("adds XP, counts the run and the escape, and tracks the best score", () => {
-    const first = applyRun(NEW_PROGRESS, finished({ score: 2000 }));
+  it("adds XP, counts the run, and tracks the best score and wave", () => {
+    const strong = finished({ score: 2000 });
+    strong.wave.number = 6;
+    const first = applyRun(NEW_PROGRESS, strong);
     expect(first.progress.runs).toBe(1);
-    expect(first.progress.escapes).toBe(1);
+    expect(first.progress.bestWave).toBe(6);
     expect(first.progress.bestScore).toBe(2000);
-    const second = applyRun(first.progress, finished({ status: "dead", score: 100 }));
+    const weak = finished({ score: 100 });
+    weak.wave.number = 2;
+    const second = applyRun(first.progress, weak);
     expect(second.progress.runs).toBe(2);
-    expect(second.progress.escapes).toBe(1);
+    expect(second.progress.bestWave).toBe(6);
     expect(second.progress.bestScore).toBe(2000);
   });
 
@@ -95,14 +99,14 @@ describe("applying a run", () => {
 describe("saving", () => {
   it("round-trips", () => {
     const store = memory();
-    saveProgress({ xp: 123, runs: 4, escapes: 2, bestScore: 999 }, store);
-    expect(loadProgress(store)).toEqual({ xp: 123, runs: 4, escapes: 2, bestScore: 999 });
+    saveProgress({ xp: 123, runs: 4, bestWave: 2, bestScore: 999 }, store);
+    expect(loadProgress(store)).toEqual({ xp: 123, runs: 4, bestWave: 2, bestScore: 999 });
   });
 
   it("starts fresh from nothing, junk or blocked storage", () => {
     expect(loadProgress(memory())).toEqual(NEW_PROGRESS);
     expect(loadProgress(memory({ "stackstrike:progress": "{not json" }))).toEqual(NEW_PROGRESS);
-    expect(loadProgress(memory({ "stackstrike:progress": JSON.stringify({ xp: -5, runs: "x", escapes: NaN }) }))).toEqual(NEW_PROGRESS);
+    expect(loadProgress(memory({ "stackstrike:progress": JSON.stringify({ xp: -5, runs: "x", bestWave: NaN }) }))).toEqual(NEW_PROGRESS);
     expect(loadProgress({ getItem: () => { throw new Error("blocked"); } })).toEqual(NEW_PROGRESS);
     expect(() => saveProgress(NEW_PROGRESS, { setItem: () => { throw new Error("blocked"); } })).not.toThrow();
   });

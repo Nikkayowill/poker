@@ -523,14 +523,14 @@ export function Lobby({
               prefetch={false}
             >
               <span className="hub-tile-body">
-                <strong>StackStrike</strong>
-                <small>Stealth heist · Private preview</small>
+                <strong>StackDead</strong>
+                <small>Zombie survival · Private preview</small>
               </span>
             </Link>
           ) : (
             <div className="hub-tile hub-tile-strike hub-tile-locked" style={tileIndexStyle(9)}>
               <span className="hub-tile-body">
-                <strong>StackStrike</strong>
+                <strong>StackDead</strong>
                 <small className="hub-tile-soon">Coming soon</small>
               </span>
             </div>

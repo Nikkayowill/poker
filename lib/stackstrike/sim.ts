@@ -1,17 +1,6 @@
 import { mulberry32Step } from "@/lib/seeded-random";
-import {
-  ARENA,
-  CAUTION,
-  CONTRACTS,
-  DEFAULT_DIFFICULTY,
-  DIFFICULTIES,
-  ENEMIES,
-  MISSION,
-  OPERATORS,
-  SHADOW,
-  STEALTH,
-  WEAPONS,
-} from "./content";
+import { ARENA, BARRELS, DEFAULT_DIFFICULTY, DIFFICULTIES, ENEMIES, HORDE, LEVELING, OPERATORS, PERKS, PICKUPS, WEAPONS } from "./content";
+import { buildFlow, flowDirection, type FlowField } from "./flow";
 import {
   distance,
   lineOfSight,
@@ -20,26 +9,33 @@ import {
   segmentClear,
   segmentWallHit,
 } from "./geometry";
-import { findPath, navGridFor } from "./pathfinding";
+import { cellOf, navGridFor } from "./pathfinding";
+import { drawCards, playerStats, xpNeeded } from "./perks";
 import type {
   Arena,
+  BarrelState,
   DifficultyDefinition,
   DifficultyId,
   EnemyDefinition,
   EnemyState,
-  Guard,
+  PickupKind,
   PlayerInput,
   SimState,
   Vec,
+  Wall,
   WeaponDefinition,
 } from "./types";
-import { angleDiff, lightAt } from "./vision";
+import { spawnInterval, waveQueue } from "./waves";
 
 /**
  * The whole fight, with no Phaser in it, so it can be tested and later
  * replayed or checked on the server. `step` mutates the state it is given:
  * the scene calls it 60 times a second and a fresh copy each time would only
  * feed the garbage collector.
+ *
+ * Waves of zombies walk in from the spawns and head straight for the player.
+ * Kills build a streak that multiplies the score and give XP; each level-up
+ * pauses the game on three perk cards.
  */
 
 export const STEP_SECONDS = 1 / 60;
@@ -47,12 +43,27 @@ export const STEP_SECONDS = 1 / 60;
 const WEAPON_SWAP_DELAY = 0.15;
 const PLAYER_HURT_FLASH = 0.15;
 const ENEMY_HURT_FLASH = 0.1;
-/** Enemies stop walking to a spot this close to it. */
-const ARRIVE_DISTANCE = 14;
-/** Faster than the usual turn, for an enemy that has just glimpsed something. */
-const STARE_TURN_RATE = 10;
-/** Movement input above this counts as walking, for stealth. */
+/** Movement input above this counts as walking. */
 const MOVING_THRESHOLD = 0.1;
+/** A zombie this close with a clear line walks straight at the player instead of following the map. */
+const DIRECT_RANGE = 260;
+/** How fast a zombie turns to face where it is going, per second. */
+const TURN_RATE = 9;
+/** The "which way" map is rebuilt when the player changes cell, or at least this often. */
+const FLOW_REFRESH = 0.25;
+/** A shot pushes a zombie back this far (a brute shrugs most of it off). */
+const KNOCKBACK = 5;
+/** Zombies lean a little to one side or the other (each its own way), so two meeting head-on slide past instead of standing off. */
+const LEAN = 0.15;
+/** Only far from the player: close in, a zombie heads straight at them. */
+const LEAN_RANGE = 90;
+/** A zombie that stays within STUCK_RADIUS of one spot this long, while not yet in reach of the player, is stuck and gets moved to a spawn. */
+const STUCK_SECONDS = 6;
+const STUCK_RADIUS = 30;
+/** Zombies closer than this are in the fight, where a jam is just a crowd waiting its turn, so they are never moved. */
+const STUCK_MIN_DISTANCE = 180;
+/** Quiet time after a wave is cleared that heals a little, so a clean wave is rewarded. */
+const WAVE_HEAL = 10;
 
 export const NO_INPUT: PlayerInput = {
   move: { x: 0, y: 0 },
@@ -74,16 +85,22 @@ export function createState(
   if (!operator) throw new Error(`Unknown operator ${operatorId}`);
   if (loadout.length === 0) throw new Error("A loadout needs at least one weapon");
   const weapons = loadout.map(weaponDef);
-  const state: SimState = {
+  return {
     arena,
     time: 0,
     status: "playing",
     difficulty,
-    loot: arena.loot.map((spot) => ({ spot, taken: false })),
-    contract: CONTRACTS[arena.contract ?? "standard"],
-    bodies: [],
-    caution: 0,
-    hasGold: false,
+    wave: { number: 0, queue: [], spawnIn: 0, breakLeft: HORDE.startDelay },
+    combo: { count: 0, left: 0 },
+    best: { combo: 0 },
+    xp: { level: 1, into: 0, needed: xpNeeded(1) },
+    pendingLevels: 0,
+    redraws: LEVELING.redraws,
+    offer: null,
+    perks: {},
+    frenzyLeft: 0,
+    doubleLeft: 0,
+    shieldLeft: 0,
     player: {
       pos: { ...arena.playerSpawn },
       aim: 0,
@@ -97,29 +114,23 @@ export function createState(
       reloadLeft: 0,
       cooldown: 0,
       hurt: 0,
-      hidden: false,
-      light: 0,
-      exposedLeft: 0,
+      sinceHurt: 99,
       moving: false,
     },
     enemies: [],
     projectiles: [],
+    pickups: [],
+    barrels: (arena.barrels ?? []).map((pos, home) => ({ id: home + 1, home, pos: { ...pos }, health: BARRELS.health })),
     events: [],
     score: 0,
     kills: 0,
-    timesSpotted: 0,
     shotsFired: 0,
     shotsHit: 0,
     damageTaken: 0,
     endedAt: null,
     rng: seed >>> 0,
-    nextId: 1,
+    nextId: (arena.barrels?.length ?? 0) + 1,
   };
-  const tier = difficultyDef(difficulty).tier;
-  for (const guard of arena.guards) {
-    if (guard.tier <= tier) state.enemies.push(guardState(state, guard));
-  }
-  return state;
 }
 
 export function difficultyDef(id: DifficultyId): DifficultyDefinition {
@@ -140,16 +151,6 @@ export function enemyDef(id: string): EnemyDefinition {
   return enemy;
 }
 
-/** How far a guard's flashlight reaches this run: the job's twist and how wound up the building is both stretch it. */
-export function beamRange(state: SimState, def: EnemyDefinition): number {
-  return def.detectionRange * state.contract.beamScale * (1 + CAUTION.beamBoost * state.caution);
-}
-
-/** Seconds a radio call takes to go out on this job. */
-export function radioDelay(state: SimState): number {
-  return STEALTH.radioSeconds * state.contract.radioScale;
-}
-
 export function currentWeapon(state: SimState): WeaponDefinition {
   return weaponDef(state.player.weaponIds[state.player.weaponIndex]);
 }
@@ -160,29 +161,40 @@ function random(state: SimState): number {
   return value;
 }
 
+/** The score multiplier the streak has earned: 1 to start, half a point more for every few kills. */
+export function comboMultiplier(count: number): number {
+  return Math.min(HORDE.comboMax, 1 + 0.5 * Math.floor(count / HORDE.comboStep));
+}
+
 export function step(state: SimState, input: PlayerInput, dt: number = STEP_SECONDS): void {
   state.events.length = 0;
   if (state.status !== "playing") return;
   state.time += dt;
 
-  state.caution = Math.max(0, state.caution - CAUTION.decayPerSecond * dt);
-  updatePlayer(state, input, dt);
+  const solids = solidsFor(state);
+  updatePlayer(state, input, dt, solids);
+  updateWaves(state, dt);
   updateEnemies(state, dt);
   updateProjectiles(state, dt);
-  updateMission(state);
+  updatePickups(state, dt);
+  updateStreak(state, dt);
+  openOfferIfDue(state);
 }
 
 /* ----------------------------------------------------------------- player */
 
-function updatePlayer(state: SimState, input: PlayerInput, dt: number): void {
+function updatePlayer(state: SimState, input: PlayerInput, dt: number, solids: Wall[]): void {
   const player = state.player;
-  const radius = player.radius;
+  const stats = playerStats(state);
 
   player.aim = input.aim;
   player.hurt = Math.max(0, player.hurt - dt);
   player.cooldown = Math.max(0, player.cooldown - dt);
-
-  player.exposedLeft = Math.max(0, player.exposedLeft - dt);
+  player.sinceHurt += dt;
+  state.frenzyLeft = Math.max(0, state.frenzyLeft - dt);
+  state.doubleLeft = Math.max(0, state.doubleLeft - dt);
+  state.shieldLeft = Math.max(0, state.shieldLeft - dt);
+  if (stats.regen > 0 && player.sinceHurt > 3) player.health = Math.min(player.maxHealth, player.health + stats.regen * dt);
 
   const wanted = input.selectWeapon;
   if (wanted !== null && wanted >= 0 && wanted < player.weaponIds.length && wanted !== player.weaponIndex) {
@@ -201,10 +213,10 @@ function updatePlayer(state: SimState, input: PlayerInput, dt: number): void {
     my /= length;
   }
   player.moving = Math.hypot(mx, my) > MOVING_THRESHOLD;
-  player.pos.x += mx * player.moveSpeed * dt;
-  player.pos.y += my * player.moveSpeed * dt;
-  resolveCircleAgainstWalls(player.pos, radius, state.arena.walls);
-  updateShadow(state);
+  const speed = player.moveSpeed * stats.speed;
+  player.pos.x += mx * speed * dt;
+  player.pos.y += my * speed * dt;
+  resolveCircleAgainstWalls(player.pos, player.radius, solids);
 
   const weapon = currentWeapon(state);
   const index = player.weaponIndex;
@@ -213,12 +225,12 @@ function updatePlayer(state: SimState, input: PlayerInput, dt: number): void {
     player.reloadLeft -= dt;
     if (player.reloadLeft <= 0) {
       player.reloadLeft = 0;
-      player.ammo[index] = weapon.magazineSize;
+      player.ammo[index] = magazineSize(state, weapon);
     }
     return;
   }
 
-  if (input.reload && player.ammo[index] < weapon.magazineSize) {
+  if (input.reload && player.ammo[index] < magazineSize(state, weapon)) {
     startReload(state, weapon);
     return;
   }
@@ -232,63 +244,45 @@ function updatePlayer(state: SimState, input: PlayerInput, dt: number): void {
   }
 }
 
-/** True when a guard's flashlight is on this point: in range, inside the cone, nothing in the way. */
-function inGuardBeam(state: SimState, point: Vec): boolean {
-  for (const enemy of state.enemies) {
-    const def = enemyDef(enemy.defId);
-    if (distance(enemy.pos, point) > beamRange(state, def)) continue;
-    const toPoint = Math.atan2(point.y - enemy.pos.y, point.x - enemy.pos.x);
-    if (Math.abs(angleDiff(enemy.facing, toPoint)) > def.fieldOfView) continue;
-    if (lineOfSight(enemy.pos, point, state.arena.walls)) return true;
-  }
-  return false;
-}
-
-/** Hidden means standing in real darkness, out of every flashlight, and not just fired a shot. */
-function updateShadow(state: SimState): void {
-  const player = state.player;
-  player.light = lightAt(player.pos, state.arena);
-  const dark = player.light < SHADOW.darkBelow && !inGuardBeam(state, player.pos);
-  const hidden = player.exposedLeft <= 0 && dark;
-  if (hidden !== player.hidden) {
-    player.hidden = hidden;
-    state.events.push({ type: "hide", on: hidden });
-  }
+/** Rounds in a full magazine, with Big Mags counted. */
+export function magazineSize(state: Pick<SimState, "perks" | "frenzyLeft">, weapon: WeaponDefinition): number {
+  return Math.round(weapon.magazineSize * playerStats(state).mags);
 }
 
 function startReload(state: SimState, weapon: WeaponDefinition): void {
-  state.player.reloadLeft = weapon.reloadDuration;
+  state.player.reloadLeft = weapon.reloadDuration * playerStats(state).reload;
   state.events.push({ type: "reload" });
 }
 
 function fireWeapon(state: SimState, weapon: WeaponDefinition): void {
   const player = state.player;
+  const stats = playerStats(state);
   for (let pellet = 0; pellet < weapon.pellets; pellet += 1) {
     const angle = player.aim + (random(state) - 0.5) * weapon.spread;
     state.projectiles.push({
       id: state.nextId++,
       pos: { x: player.pos.x, y: player.pos.y },
       vel: { x: Math.cos(angle) * weapon.projectileSpeed, y: Math.sin(angle) * weapon.projectileSpeed },
-      damage: weapon.damage,
-      from: "player",
+      damage: weapon.damage * stats.damage,
       travelled: 0,
       maxRange: weapon.range,
+      pierce: stats.pierce,
+      hit: [],
     });
   }
   state.shotsFired += weapon.pellets;
-  hearShot(state);
-  player.exposedLeft = SHADOW.exposedSeconds;
-  player.hidden = false;
   player.ammo[player.weaponIndex] -= 1;
-  player.cooldown = 1 / weapon.fireRate;
+  player.cooldown = 1 / (weapon.fireRate * stats.fireRate);
   state.events.push({ type: "shot", from: "player", pos: { x: player.pos.x, y: player.pos.y } });
   if (player.ammo[player.weaponIndex] <= 0) startReload(state, weapon);
 }
 
 function damagePlayer(state: SimState, amount: number, at: Vec): void {
   const player = state.player;
+  if (state.shieldLeft > 0) return;
   player.health -= amount;
   player.hurt = PLAYER_HURT_FLASH;
+  player.sinceHurt = 0;
   state.damageTaken += amount;
   state.events.push({ type: "hit", pos: { x: at.x, y: at.y }, target: "player" });
   if (player.health <= 0) {
@@ -299,350 +293,186 @@ function damagePlayer(state: SimState, amount: number, at: Vec): void {
   }
 }
 
-/* ---------------------------------------------------------------- enemies */
+/* ------------------------------------------------------------------ waves */
 
-function isAlert(enemy: EnemyState): boolean {
-  return enemy.mode === "chase" || enemy.mode === "attack";
-}
-
-/**
- * How fast this enemy's awareness fills right now, as a multiplier on
- * 1 / detectSeconds. Zero means it cannot see the player at all. The enemy's
- * flashlight is its eyes: the player has to be inside the beam (in range, in
- * the cone, nothing in the way) for the meter to move. A player in a dark
- * corner is nearly invisible unless someone walks up to them, and creeping up
- * behind a sweep works. Enemies already in the fight track farther and ignore
- * facing.
- */
-export function perceive(state: SimState, enemy: EnemyState, def: EnemyDefinition): number {
-  const player = state.player;
-  const alert = isAlert(enemy);
-  const dist = distance(enemy.pos, player.pos);
-
-  let range = beamRange(state, def) * (alert ? STEALTH.alertRangeBonus : 1);
-  if (player.hidden) range = Math.min(range, STEALTH.hideRange);
-  if (dist > range) return 0;
-  if (!lineOfSight(enemy.pos, player.pos, state.arena.walls)) return 0;
-
-  if (!alert && dist > STEALTH.closeNotice) {
-    const toPlayer = Math.atan2(player.pos.y - enemy.pos.y, player.pos.x - enemy.pos.x);
-    if (Math.abs(angleDiff(enemy.facing, toPlayer)) > def.fieldOfView) return 0;
+function updateWaves(state: SimState, dt: number): void {
+  const wave = state.wave;
+  if (wave.breakLeft > 0) {
+    wave.breakLeft -= dt;
+    if (wave.breakLeft <= 0) startWave(state);
+    return;
   }
-
-  // Someone walking right up to a hiding player finds them.
-  if (player.hidden && dist <= STEALTH.hideCheckRange) return STEALTH.hideCheckFill;
-
-  const span = Math.max(1, range - STEALTH.closeNotice);
-  const far = Math.min(1, Math.max(0, (dist - STEALTH.closeNotice) / span));
-  let fill = STEALTH.closeFill + (STEALTH.farFill - STEALTH.closeFill) * far;
-  if (!player.moving) fill *= STEALTH.stillFill;
-  if (player.hidden) fill *= STEALTH.hideFill;
-  return fill;
-}
-
-/** True if this enemy can see the player right now, whether or not it has yet noticed. */
-export function enemySees(state: SimState, enemy: EnemyState, def: EnemyDefinition): boolean {
-  return perceive(state, enemy, def) > 0;
-}
-
-function turnToward(enemy: EnemyState, angle: number, rate: number, dt: number): void {
-  const diff = angleDiff(enemy.facing, angle);
-  const turn = Math.min(Math.abs(diff), rate * dt);
-  enemy.facing += Math.sign(diff) * turn;
-}
-
-/** An enemy has the player: hunt them, and tell the friends nearby. */
-function spot(state: SimState, enemy: EnemyState): void {
-  const player = state.player;
-  const def = enemyDef(enemy.defId);
-  const wasAlert = isAlert(enemy);
-  enemy.awareness = 1;
-  enemy.lastKnown = { x: player.pos.x, y: player.pos.y };
-  enemy.investigate = null;
-  enemy.queue = [];
-  enemy.searchLeft = 0;
-  enemy.patrolTarget = null;
-  enemy.mode = "chase";
-  if (wasAlert) return;
-  enemy.reaction = def.reactionTime;
-  state.timesSpotted += 1;
-  state.caution = Math.min(1, state.caution + CAUTION.spottedRaise);
-  state.events.push({ type: "spotted", pos: { x: enemy.pos.x, y: enemy.pos.y } });
-
-  // The squad standing near sees it too and knows at once. Everyone else has to be told by radio.
-  for (const other of state.enemies) {
-    if (other === enemy || isAlert(other)) continue;
-    if (distance(other.pos, enemy.pos) > STEALTH.squadRange) continue;
-    alarm(state, other, STEALTH.calloutAwareness, player.pos, STEALTH.noiseScatter / 2);
+  if (wave.queue.length > 0) {
+    wave.spawnIn -= dt;
+    if (wave.spawnIn <= 0) {
+      spawnBatch(state);
+      wave.spawnIn = spawnInterval(wave.number);
+    }
+    return;
   }
-  enemy.radio = { left: radioDelay(state), pos: { x: player.pos.x, y: player.pos.y } };
-}
-
-/** Sends an enemy to look at a spot, without telling it where the player really is. */
-function alarm(state: SimState, enemy: EnemyState, awareness: number, at: Vec, scatter: number): void {
-  enemy.awareness = Math.max(enemy.awareness, awareness);
-  enemy.investigate = jitter(state, at, scatter);
-  enemy.queue = [];
-  enemy.patrolTarget = null;
-  enemy.searchLeft = 0;
-}
-
-/** Counts a radio call down. If the spotter is still alive when it ends, every calm enemy is sent to the spot. */
-function updateRadio(state: SimState, enemy: EnemyState, dt: number): void {
-  const call = enemy.radio;
-  if (!call) return;
-  call.left -= dt;
-  if (call.left > 0) return;
-  enemy.radio = null;
-  const at = enemy.lastKnown ?? call.pos;
-  for (const other of state.enemies) {
-    if (other === enemy || isAlert(other)) continue;
-    alarm(state, other, STEALTH.radioAwareness, at, STEALTH.radioScatter);
-  }
-  state.events.push({ type: "radio", pos: { x: enemy.pos.x, y: enemy.pos.y } });
-}
-
-function jitter(state: SimState, at: Vec, scatter: number): Vec {
-  return { x: at.x + (random(state) - 0.5) * scatter, y: at.y + (random(state) - 0.5) * scatter };
-}
-
-/** The guns are silenced, so only enemies close by hear a shot, and less through a wall. They go and look, but are not told where the player is. */
-function hearShot(state: SimState): void {
-  for (const enemy of state.enemies) {
-    if (isAlert(enemy)) continue;
-    const walled = !lineOfSight(enemy.pos, state.player.pos, state.arena.walls);
-    if (distance(enemy.pos, state.player.pos) > STEALTH.hearRange * (walled ? 0.5 : 1)) continue;
-    alarm(state, enemy, STEALTH.noiseAwareness, state.player.pos, STEALTH.noiseScatter);
+  if (state.enemies.length === 0) {
+    const bonus = HORDE.waveBonus * wave.number;
+    state.score += bonus;
+    state.events.push({ type: "waveclear", number: wave.number, bonus });
+    state.player.health = Math.min(state.player.maxHealth, state.player.health + WAVE_HEAL);
+    wave.breakLeft = HORDE.breakSeconds;
   }
 }
 
-/** A bullet that flies past an enemy without hitting it puts that enemy on alert. */
-function whizzPast(state: SimState, from: Vec, to: Vec, except: EnemyState | null): void {
-  for (const enemy of state.enemies) {
-    if (enemy === except || enemy.health <= 0 || isAlert(enemy)) continue;
-    const reach = enemyDef(enemy.defId).radius + STEALTH.nearMissRange;
-    if (segmentCircleHit(from, to, enemy.pos, reach) === null) continue;
-    alarm(state, enemy, STEALTH.nearMissAwareness, state.player.pos, STEALTH.nearMissScatter);
+function startWave(state: SimState): void {
+  const wave = state.wave;
+  wave.number += 1;
+  wave.queue = waveQueue(wave.number, difficultyDef(state.difficulty).horde, () => random(state));
+  wave.spawnIn = 0.4;
+  restockBarrels(state);
+  state.events.push({ type: "wave", number: wave.number });
+}
+
+/** The spawns far enough away to come in unseen, or failing that the farthest one. */
+function pickSpawn(state: SimState): Vec {
+  const { spawns, walls } = state.arena;
+  const player = state.player.pos;
+  const far = spawns.filter((spawn) => distance(spawn, player) >= HORDE.spawnMinDistance);
+  const hidden = far.filter((spawn) => !lineOfSight(spawn, player, walls));
+  const pool = hidden.length > 0 ? hidden : far;
+  if (pool.length > 0) return pool[Math.floor(random(state) * pool.length)];
+  return spawns.reduce((best, spawn) => (distance(spawn, player) > distance(best, player) ? spawn : best), spawns[0]);
+}
+
+function spawnBatch(state: SimState): void {
+  const wave = state.wave;
+  const room = HORDE.maxAlive - state.enemies.length;
+  if (room <= 0) return;
+  const want = HORDE.batch.min + Math.floor(random(state) * (HORDE.batch.max - HORDE.batch.min + 1));
+  const count = Math.min(want, wave.queue.length, room);
+  const at = pickSpawn(state);
+  for (let i = 0; i < count; i += 1) {
+    const defId = wave.queue.shift();
+    if (!defId) break;
+    const def = enemyDef(defId);
+    const angle = random(state) * Math.PI * 2;
+    const pos = { x: at.x + Math.cos(angle) * 22 * i, y: at.y + Math.sin(angle) * 22 * i };
+    resolveCircleAgainstWalls(pos, def.radius, state.arena.walls);
+    const health = Math.round(def.health * Math.min(HORDE.healthCap, 1 + HORDE.healthPerWave * (wave.number - 1)));
+    state.enemies.push({
+      id: state.nextId++,
+      defId,
+      pos,
+      facing: Math.atan2(state.player.pos.y - pos.y, state.player.pos.x - pos.x),
+      health,
+      maxHealth: health,
+      cooldown: 0.5,
+      hurt: 0,
+    });
   }
 }
 
-/** The dark corners an enemy that just lost the player should look in, nearest first. */
-function nooksNear(state: SimState, at: Vec): Vec[] {
-  return state.arena.corners
-    .filter((centre) => distance(centre, at) <= STEALTH.nookCheckRadius)
-    .sort((a, b) => distance(a, at) - distance(b, at))
-    .slice(0, 2);
+/* ---------------------------------------------------------------- zombies */
+
+interface FlowCache {
+  field: FlowField | null;
+  cell: number;
+  age: number;
+}
+
+const flowCaches = new WeakMap<SimState, FlowCache>();
+
+/** The shared map to the player, rebuilt only when it has gone stale. */
+function flowFor(state: SimState, dt: number): FlowField {
+  const grid = navGridFor(state.arena);
+  let cache = flowCaches.get(state);
+  if (!cache) {
+    cache = { field: null, cell: -1, age: 0 };
+    flowCaches.set(state, cache);
+  }
+  cache.age += dt;
+  const cell = cellOf(grid, state.player.pos);
+  if (!cache.field || cell !== cache.cell || cache.age > FLOW_REFRESH) {
+    cache.field = buildFlow(grid, state.player.pos, cache.field ?? undefined);
+    cache.cell = cell;
+    cache.age = 0;
+  }
+  return cache.field;
 }
 
 function updateEnemies(state: SimState, dt: number): void {
-  const player = state.player;
-  const walls = state.arena.walls;
-  const pr = player.radius;
+  if (state.enemies.length === 0) return;
+  const { player, arena } = state;
   const difficulty = difficultyDef(state.difficulty);
+  const field = flowFor(state, dt);
 
   for (const enemy of state.enemies) {
     const def = enemyDef(enemy.defId);
     enemy.hurt = Math.max(0, enemy.hurt - dt);
     enemy.cooldown = Math.max(0, enemy.cooldown - dt);
-    updateRadio(state, enemy, dt);
-    if (!isAlert(enemy)) lookForBodies(state, enemy, def);
 
-    const dist = distance(enemy.pos, player.pos);
-    const seen = perceive(state, enemy, def);
+    const dx = player.pos.x - enemy.pos.x;
+    const dy = player.pos.y - enemy.pos.y;
+    const dist = Math.hypot(dx, dy);
+    const reach = def.radius + player.radius + def.attackRange;
 
-    let target: Vec | null = null;
-    let holdPosition = false;
-    let pace = 1;
-    let facingSet = false;
-
-    if (isAlert(enemy)) {
-      if (seen > 0) {
-        enemy.reaction = Math.max(0, enemy.reaction - dt);
-        enemy.lastKnown = { x: player.pos.x, y: player.pos.y };
-        enemy.facing = Math.atan2(player.pos.y - enemy.pos.y, player.pos.x - enemy.pos.x);
-        facingSet = true;
-        target = enemy.lastKnown;
-
-        if (def.attack === "ranged") {
-          holdPosition = dist <= def.attackRange * 0.85;
-          if (enemy.reaction <= 0 && enemy.cooldown <= 0 && dist <= def.attackRange) {
-            enemyShoot(state, enemy, def);
-          }
-        } else {
-          const reach = def.radius + pr + def.attackRange;
-          holdPosition = dist <= reach;
-          if (holdPosition && enemy.reaction <= 0 && enemy.cooldown <= 0) {
-            enemy.cooldown = 1 / def.fireRate;
-            damagePlayer(state, def.damage, player.pos);
-          }
-        }
-        enemy.mode = holdPosition ? "attack" : "chase";
-      } else if (enemy.lastKnown) {
-        // Lost them: go to where they were last seen, then look around.
-        enemy.reaction = def.reactionTime;
-        enemy.mode = "chase";
-        target = enemy.lastKnown;
-        if (distance(enemy.pos, target) < ARRIVE_DISTANCE) {
-          const lost = enemy.lastKnown;
-          enemy.lastKnown = null;
-          enemy.mode = "search";
-          enemy.awareness = STEALTH.searchAwareness;
-          enemy.searchLeft = STEALTH.searchSeconds;
-          enemy.queue = nooksNear(state, lost);
-          enemy.investigate = enemy.queue.shift() ?? null;
-          target = null;
-        }
-      } else {
-        // Nowhere left to go on: stand down into a search.
-        enemy.mode = "search";
-        enemy.awareness = STEALTH.searchAwareness;
-        enemy.searchLeft = STEALTH.searchSeconds;
-      }
-    } else if (seen > 0) {
-      // In view but not yet spotted: the meter fills, and the enemy stares at what it saw.
-      enemy.awareness = Math.min(1, enemy.awareness + ((seen * (1 + CAUTION.meterBoost * state.caution)) / difficulty.detectSeconds) * dt);
-      enemy.investigate = { x: player.pos.x, y: player.pos.y };
-      enemy.queue = [];
-      enemy.patrolTarget = null;
-      enemy.searchLeft = 0;
-      turnToward(enemy, Math.atan2(player.pos.y - enemy.pos.y, player.pos.x - enemy.pos.x), STARE_TURN_RATE, dt);
-      facingSet = true;
-      if (enemy.awareness >= 1) {
-        spot(state, enemy);
-      } else {
-        enemy.mode = "suspicious";
-        holdPosition = true;
-      }
-    } else {
-      enemy.awareness = Math.max(0, enemy.awareness - dt / difficulty.decaySeconds);
-      enemy.reaction = def.reactionTime;
-
-      if (enemy.investigate) {
-        enemy.mode = "suspicious";
-        target = enemy.investigate;
-        pace = STEALTH.investigateSpeed;
-        if (distance(enemy.pos, target) < ARRIVE_DISTANCE) {
-          enemy.investigate = enemy.queue.shift() ?? null;
-          if (!enemy.investigate) enemy.searchLeft = STEALTH.searchSeconds;
-          target = null;
-        }
-      } else if (enemy.searchLeft > 0) {
-        // Looking around, not walking.
-        enemy.mode = "search";
-        enemy.searchLeft -= dt;
-        enemy.facing += STEALTH.lookTurnRate * dt;
-      } else {
-        const stop = patrol(state, enemy, dt);
-        target = stop.target;
-        pace = stop.pace;
-        facingSet = stop.facingSet;
-      }
+    // Straight at the player when it can, otherwise along the shared map.
+    let heading = Math.atan2(dy, dx);
+    if (dist > DIRECT_RANGE || !segmentClear(enemy.pos, player.pos, def.radius, arena.walls)) {
+      const way = flowDirection(field, enemy.pos);
+      if (way) heading = Math.atan2(way.y, way.x);
     }
+    if (dist > reach + LEAN_RANGE) heading += (((enemy.id * 37) % 7) - 3) * (LEAN / 3);
+    const turn = Math.atan2(Math.sin(heading - enemy.facing), Math.cos(heading - enemy.facing));
+    enemy.facing += Math.max(-TURN_RATE * dt, Math.min(TURN_RATE * dt, turn));
 
-    if (target && !holdPosition) {
-      const angle = headingFor(state, enemy, def, target, dt);
-      const speed = def.moveSpeed * difficulty.enemySpeed * state.contract.speedScale * (1 + CAUTION.speedBoost * state.caution) * pace;
-      enemy.pos.x += Math.cos(angle) * speed * dt;
-      enemy.pos.y += Math.sin(angle) * speed * dt;
-      if (!facingSet) turnToward(enemy, angle, STEALTH.turnRate, dt);
+    if (dist > reach) {
+      const speed = def.moveSpeed * difficulty.speed;
+      enemy.pos.x += Math.cos(enemy.facing) * speed * dt;
+      enemy.pos.y += Math.sin(enemy.facing) * speed * dt;
+    } else if (enemy.cooldown <= 0) {
+      damagePlayer(state, def.damage * difficulty.damage, enemy.pos);
+      enemy.cooldown = 1 / def.fireRate;
+      if (state.status !== "playing") return;
     }
-    resolveCircleAgainstWalls(enemy.pos, def.radius, walls);
   }
-
   separateEnemies(state);
+  freeStuckZombies(state, dt);
 }
 
 /**
- * What a guard does when nothing has caught its eye: walk its loop, looking
- * around at each stop, or stand at its post and sweep its gaze either side.
- * It is not hunting anyone.
+ * Last resort for a zombie wedged somewhere the steering cannot fix (it can circle in place at full speed, so
+ * speed tells nothing): one that has not got out of a small circle for a few seconds while still far from the
+ * player is picked up and put at a spawn, as zombie games do. Without it a single stuck zombie would hold a
+ * whole wave open for good.
  */
-function patrol(state: SimState, enemy: EnemyState, dt: number): { target: Vec | null; pace: number; facingSet: boolean } {
-  enemy.mode = "patrol";
-  const waypoint = enemy.route[enemy.routeIndex];
-  const arrived = distance(enemy.pos, waypoint) < ARRIVE_DISTANCE;
-
-  if (enemy.watch !== null && arrived) {
-    // On post: hold the spot and let the gaze drift either side of the way it faces.
-    const sweep = Math.sin(enemy.sweepClock) * STEALTH.postSweep;
-    enemy.sweepClock += dt * STEALTH.postSweepRate * Math.PI * 2;
-    turnToward(enemy, enemy.watch + sweep, STEALTH.postTurnRate, dt);
-    return { target: null, pace: 0, facingSet: true };
+function freeStuckZombies(state: SimState, dt: number): void {
+  const { player } = state;
+  for (const enemy of state.enemies) {
+    const def = enemyDef(enemy.defId);
+    const outOfReach = distance(enemy.pos, player.pos) > STUCK_MIN_DISTANCE;
+    if (!outOfReach || !enemy.anchor || distance(enemy.pos, enemy.anchor) > STUCK_RADIUS) {
+      enemy.anchor = { x: enemy.pos.x, y: enemy.pos.y };
+      enemy.stuck = 0;
+      continue;
+    }
+    enemy.stuck = (enemy.stuck ?? 0) + dt;
+    if (enemy.stuck < STUCK_SECONDS) continue;
+    const at = pickSpawn(state);
+    enemy.pos = { x: at.x, y: at.y };
+    resolveCircleAgainstWalls(enemy.pos, def.radius, state.arena.walls);
+    enemy.anchor = { x: enemy.pos.x, y: enemy.pos.y };
+    enemy.stuck = 0;
   }
-  if (arrived) {
-    // A stop on the loop: look around for a different time each visit, now and then turn back, then move on.
-    const many = enemy.route.length > 1;
-    if (many && random(state) < CAUTION.reverseChance) enemy.routeDir = enemy.routeDir === 1 ? -1 : 1;
-    enemy.routeIndex = (enemy.routeIndex + enemy.routeDir + enemy.route.length) % enemy.route.length;
-    enemy.patrolTarget = null;
-    enemy.searchLeft = many ? CAUTION.pauseMin + random(state) * (CAUTION.pauseMax - CAUTION.pauseMin) : STEALTH.lookSeconds;
-    enemy.mode = "search";
-    return { target: null, pace: 0, facingSet: false };
-  }
-  enemy.patrolTarget = waypoint;
-  return { target: waypoint, pace: STEALTH.patrolSpeed, facingSet: false };
 }
 
-function enemyShoot(state: SimState, enemy: EnemyState, def: EnemyDefinition): void {
-  const angle = enemy.facing + (random(state) - 0.5) * def.spread;
-  state.projectiles.push({
-    id: state.nextId++,
-    pos: { x: enemy.pos.x, y: enemy.pos.y },
-    vel: { x: Math.cos(angle) * def.projectileSpeed, y: Math.sin(angle) * def.projectileSpeed },
-    damage: def.damage,
-    from: "enemy",
-    travelled: 0,
-    maxRange: def.attackRange * 1.4,
-  });
-  enemy.cooldown = 1 / def.fireRate;
-  state.events.push({ type: "shot", from: "enemy", pos: { x: enemy.pos.x, y: enemy.pos.y } });
-}
-
-/** How often a blocked enemy replans, and how far its goal may drift before it must. */
-const REPLAN_SECONDS = 0.5;
-const REPLAN_DRIFT = 60;
-const WAYPOINT_REACHED = 14;
-
-/**
- * Heading toward `target`: straight there when the body fits the whole way,
- * otherwise along an A* route that is replanned as the target moves.
- */
-function headingFor(state: SimState, enemy: EnemyState, def: EnemyDefinition, target: Vec, dt: number): number {
-  const walls = state.arena.walls;
-  const direct = Math.atan2(target.y - enemy.pos.y, target.x - enemy.pos.x);
-  if (segmentClear(enemy.pos, target, def.radius, walls)) {
-    enemy.path = [];
-    enemy.pathGoal = null;
-    return direct;
-  }
-
-  enemy.pathAge += dt;
-  const stale =
-    enemy.path.length === 0 ||
-    enemy.pathAge > REPLAN_SECONDS ||
-    (enemy.pathGoal !== null && distance(enemy.pathGoal, target) > REPLAN_DRIFT);
-  if (stale) {
-    enemy.path = findPath(navGridFor(state.arena), walls, enemy.pos, target, def.radius) ?? [];
-    enemy.pathGoal = { x: target.x, y: target.y };
-    enemy.pathAge = 0;
-  }
-  while (enemy.path.length > 0 && distance(enemy.pos, enemy.path[0]) < WAYPOINT_REACHED) enemy.path.shift();
-  const next = enemy.path[0];
-  return next ? Math.atan2(next.y - enemy.pos.y, next.x - enemy.pos.x) : direct;
-}
-
+/** Zombies shoulder each other apart, and none walks through the player. */
 function separateEnemies(state: SimState): void {
   const { enemies, player } = state;
-  const pr = player.radius;
   for (let i = 0; i < enemies.length; i += 1) {
     const a = enemies[i];
     const ra = enemyDef(a.defId).radius;
-
     for (let j = i + 1; j < enemies.length; j += 1) {
       const b = enemies[j];
       const min = ra + enemyDef(b.defId).radius;
       const dx = b.pos.x - a.pos.x;
       const dy = b.pos.y - a.pos.y;
+      if (Math.abs(dx) >= min || Math.abs(dy) >= min) continue;
       const dist = Math.hypot(dx, dy);
       if (dist >= min) continue;
       // Exactly stacked: separate along a fixed axis rather than divide by zero.
@@ -654,74 +484,149 @@ function separateEnemies(state: SimState): void {
       b.pos.x += nx * half;
       b.pos.y += ny * half;
     }
-
-    // Enemies do not walk through the player either.
     const dx = a.pos.x - player.pos.x;
     const dy = a.pos.y - player.pos.y;
     const dist = Math.hypot(dx, dy);
-    const min = ra + pr;
+    const min = ra + player.radius;
     if (dist < min && dist > 1e-6) {
       a.pos.x = player.pos.x + (dx / dist) * min;
       a.pos.y = player.pos.y + (dy / dist) * min;
     }
   }
-  for (const enemy of enemies) {
-    resolveCircleAgainstWalls(enemy.pos, enemyDef(enemy.defId).radius, state.arena.walls);
-  }
+  for (const enemy of enemies) resolveCircleAgainstWalls(enemy.pos, enemyDef(enemy.defId).radius, state.arena.walls);
 }
 
-function damageEnemy(state: SimState, enemy: EnemyState, amount: number, at: Vec): void {
+function damageEnemy(state: SimState, enemy: EnemyState, amount: number, at: Vec, push: Vec | null): void {
+  const def = enemyDef(enemy.defId);
   enemy.health -= amount;
   enemy.hurt = ENEMY_HURT_FLASH;
-  state.shotsHit += 1;
   state.events.push({ type: "hit", pos: { x: at.x, y: at.y }, target: "enemy" });
-  // Getting shot is as good as seeing the shooter.
-  if (enemy.health > 0) {
-    if (isAlert(enemy)) enemy.lastKnown = { x: state.player.pos.x, y: state.player.pos.y };
-    else spot(state, enemy);
+  if (push && enemy.health > 0) {
+    // Heavier zombies get shoved less.
+    const shove = (KNOCKBACK * 13) / def.radius;
+    enemy.pos.x += push.x * shove;
+    enemy.pos.y += push.y * shove;
+  }
+  if (enemy.health <= 0) kill(state, enemy);
+}
+
+function kill(state: SimState, enemy: EnemyState): void {
+  const def = enemyDef(enemy.defId);
+  const stats = playerStats(state);
+
+  state.combo.count += 1;
+  state.combo.left = HORDE.comboWindow;
+  state.best.combo = Math.max(state.best.combo, state.combo.count);
+  const points = Math.round(def.score * comboMultiplier(state.combo.count) * (state.doubleLeft > 0 ? 2 : 1));
+  state.score += points;
+  state.kills += 1;
+  state.events.push({ type: "kill", pos: { x: enemy.pos.x, y: enemy.pos.y }, defId: enemy.defId, points });
+  if (def.burst) burstZombie(state, enemy, def.burst);
+
+  if (stats.leech > 0) state.player.health = Math.min(state.player.maxHealth, state.player.health + stats.leech);
+  if (random(state) < Math.min(1, def.dropChance * stats.drops)) dropPickup(state, enemy.pos);
+  gainXp(state, def.xp * stats.xp);
+}
+
+/** A bloater bursts: nearby zombies take the blast (and may burst too), and so does the player if they were too close. */
+function burstZombie(state: SimState, source: EnemyState, burst: { radius: number; damage: number }): void {
+  state.events.push({ type: "burst", pos: { x: source.pos.x, y: source.pos.y }, radius: burst.radius });
+  for (const other of state.enemies) {
+    if (other === source || other.health <= 0) continue;
+    const reach = distance(other.pos, source.pos);
+    if (reach > burst.radius) continue;
+    damageEnemy(state, other, burst.damage * (1 - 0.5 * (reach / burst.radius)), other.pos, null);
+  }
+  const away = distance(state.player.pos, source.pos);
+  if (away <= burst.radius && state.status === "playing") {
+    damagePlayer(state, burst.damage * (1 - 0.5 * (away / burst.radius)), source.pos);
+  }
+}
+
+function dropPickup(state: SimState, at: Vec): void {
+  const entries = Object.entries(PICKUPS.weights) as [PickupKind, number][];
+  let roll = random(state) * entries.reduce((sum, [, weight]) => sum + weight, 0);
+  let kind = entries[0][0];
+  for (const [candidate, weight] of entries) {
+    kind = candidate;
+    if (roll < weight) break;
+    roll -= weight;
+  }
+  state.pickups.push({ id: state.nextId++, kind, pos: { x: at.x, y: at.y }, left: PICKUPS.life });
+}
+
+/* --------------------------------------------------------- xp and perks */
+
+function gainXp(state: SimState, amount: number): void {
+  const xp = state.xp;
+  xp.into += amount;
+  while (xp.into >= xp.needed) {
+    xp.into -= xp.needed;
+    xp.level += 1;
+    xp.needed = xpNeeded(xp.level);
+    state.pendingLevels += 1;
+    state.events.push({ type: "levelup", level: xp.level });
+  }
+}
+
+/** Pauses the game on a fresh hand of cards when a level-up is waiting for one. */
+function openOfferIfDue(state: SimState): void {
+  if (state.status !== "playing" || state.offer || state.pendingLevels <= 0) return;
+  const cards = drawCards(state, () => random(state));
+  if (cards.length === 0) {
+    state.pendingLevels = 0;
     return;
   }
-  const def = enemyDef(enemy.defId);
-  state.score += def.score;
-  state.kills += 1;
-  state.events.push({ type: "kill", pos: { x: enemy.pos.x, y: enemy.pos.y }, defId: enemy.defId });
-  state.bodies.push({ id: enemy.id, pos: { x: enemy.pos.x, y: enemy.pos.y }, found: false });
+  state.offer = { cards, redraws: state.redraws };
+  state.status = "perk";
 }
 
-/**
- * A calm guard whose light falls on a body knows someone is in the building:
- * it goes to look, checks the dark corners round it, tells the guards near it
- * and winds the whole building up. A body in a dark corner or behind a wall is
- * safe until somebody walks by.
- */
-function lookForBodies(state: SimState, enemy: EnemyState, def: EnemyDefinition): void {
-  for (const body of state.bodies) {
-    if (body.found) continue;
-    const dist = distance(enemy.pos, body.pos);
-    if (dist > beamRange(state, def) * CAUTION.bodySightShare) continue;
-    if (!lineOfSight(enemy.pos, body.pos, state.arena.walls)) continue;
-    if (dist > CAUTION.bodyCloseNotice) {
-      const toBody = Math.atan2(body.pos.y - enemy.pos.y, body.pos.x - enemy.pos.x);
-      if (Math.abs(angleDiff(enemy.facing, toBody)) > def.fieldOfView) continue;
-    }
-    body.found = true;
-    state.caution = Math.min(1, state.caution + CAUTION.bodyRaise);
-    state.events.push({ type: "body", pos: { x: body.pos.x, y: body.pos.y } });
-    alarm(state, enemy, CAUTION.bodyAwareness, body.pos, CAUTION.bodyScatter);
-    enemy.queue = nooksNear(state, body.pos);
-    for (const other of state.enemies) {
-      if (other === enemy || isAlert(other)) continue;
-      if (distance(other.pos, enemy.pos) > CAUTION.bodySquadRange) continue;
-      alarm(state, other, CAUTION.bodyAwareness * 0.8, body.pos, CAUTION.bodyScatter);
-    }
+function closeOffer(state: SimState): void {
+  state.offer = null;
+  state.pendingLevels = Math.max(0, state.pendingLevels - 1);
+  state.status = "playing";
+  openOfferIfDue(state);
+}
+
+/** Takes the card at `index` of the hand on the table. Returns false if there is no such card. */
+export function choosePerk(state: SimState, index: number): boolean {
+  if (state.status !== "perk" || !state.offer) return false;
+  const id = state.offer.cards[index];
+  const perk = id ? PERKS[id] : undefined;
+  if (!perk) return false;
+  state.perks[id] = (state.perks[id] ?? 0) + 1;
+  const player = state.player;
+  if (id === "thick-skin") {
+    player.maxHealth += 25;
+    player.health = Math.min(player.maxHealth, player.health + 25);
+  } else if (id === "frenzy") {
+    state.frenzyLeft = PICKUPS.frenzySeconds;
+  } else if (id === "nuke") {
+    explode(state, player.pos);
   }
+  closeOffer(state);
+  return true;
 }
 
-/* ------------------------------------------------------------ projectiles */
+/** Throws the hand back for a new one. Three a run. */
+export function redrawOffer(state: SimState): boolean {
+  if (state.status !== "perk" || !state.offer || state.redraws <= 0) return false;
+  state.redraws -= 1;
+  state.offer = { cards: drawCards(state, () => random(state), state.offer.cards), redraws: state.redraws };
+  return true;
+}
+
+/** Leaves the cards on the table and carries on. */
+export function skipOffer(state: SimState): boolean {
+  if (state.status !== "perk" || !state.offer) return false;
+  closeOffer(state);
+  return true;
+}
+
+/* ------------------------------------------------------------- projectiles */
 
 function updateProjectiles(state: SimState, dt: number): void {
   const survivors: SimState["projectiles"] = [];
-  const pr = state.player.radius;
 
   for (const shot of state.projectiles) {
     const speed = Math.hypot(shot.vel.x, shot.vel.y);
@@ -738,35 +643,48 @@ function updateProjectiles(state: SimState, dt: number): void {
     }
 
     let targetT = Infinity;
-    let hitEnemy: EnemyState | null = null;
-    if (shot.from === "player") {
-      for (const enemy of state.enemies) {
-        if (enemy.health <= 0) continue;
-        const t = segmentCircleHit(from, to, enemy.pos, enemyDef(enemy.defId).radius);
-        if (t !== null && t < targetT) {
-          targetT = t;
-          hitEnemy = enemy;
-        }
+    let hit: EnemyState | null = null;
+    for (const enemy of state.enemies) {
+      if (enemy.health <= 0 || shot.hit?.includes(enemy.id)) continue;
+      const t = segmentCircleHit(from, to, enemy.pos, enemyDef(enemy.defId).radius);
+      if (t !== null && t < targetT) {
+        targetT = t;
+        hit = enemy;
       }
-    } else {
-      const t = segmentCircleHit(from, to, state.player.pos, pr);
-      if (t !== null) targetT = t;
     }
 
+    let barrelT = Infinity;
+    let barrelHit: BarrelState | null = null;
+    for (const barrel of state.barrels) {
+      const t = segmentCircleHit(from, to, barrel.pos, BARRELS.radius);
+      if (t !== null && t < barrelT) {
+        barrelT = t;
+        barrelHit = barrel;
+      }
+    }
+
+    if (barrelHit && barrelT < wallT && barrelT <= targetT) {
+      barrelHit.health -= shot.damage;
+      if (barrelHit.health <= 0) popBarrel(state, barrelHit);
+      continue;
+    }
     if (wallT <= targetT && wallT !== Infinity) {
-      const at = { x: from.x + (to.x - from.x) * wallT, y: from.y + (to.y - from.y) * wallT };
-      if (shot.from === "player") whizzPast(state, from, at, null);
-      state.events.push({ type: "wall", pos: at });
+      state.events.push({ type: "wall", pos: { x: from.x + (to.x - from.x) * wallT, y: from.y + (to.y - from.y) * wallT } });
       continue;
     }
-    if (targetT !== Infinity) {
+    if (hit) {
       const at = { x: from.x + (to.x - from.x) * targetT, y: from.y + (to.y - from.y) * targetT };
-      if (shot.from === "player") whizzPast(state, from, at, hitEnemy);
-      if (hitEnemy) damageEnemy(state, hitEnemy, shot.damage, at);
-      else damagePlayer(state, shot.damage, at);
-      continue;
+      state.shotsHit += 1;
+      damageEnemy(state, hit, shot.damage * enemyDef(hit.defId).armor, at, { x: shot.vel.x / speed, y: shot.vel.y / speed });
+      if ((shot.pierce ?? 0) > 0) {
+        // Through and on: it keeps flying a little weaker, and cannot hit the same one twice.
+        shot.pierce = (shot.pierce ?? 0) - 1;
+        shot.hit = [...(shot.hit ?? []), hit.id];
+        shot.damage *= 0.75;
+      } else {
+        continue;
+      }
     }
-    if (shot.from === "player") whizzPast(state, from, to, null);
 
     shot.pos = to;
     shot.travelled += stepLength;
@@ -777,72 +695,95 @@ function updateProjectiles(state: SimState, dt: number): void {
   state.enemies = state.enemies.filter((enemy) => enemy.health > 0);
 }
 
-/* ---------------------------------------------------------------- mission */
+/* ----------------------------------------------------------------- barrels */
 
-/** Picking things up, and walking out with the gold. */
-function updateMission(state: SimState): void {
+const solidCache = new WeakMap<SimState, { barrels: SimState["barrels"]; count: number; walls: Wall[] }>();
+
+/**
+ * The walls plus a round wall for every barrel standing, so the player walks round barrels. Zombies do not:
+ * they steer by a map that knows nothing of barrels and would wedge against one, stalling a wave.
+ */
+function solidsFor(state: SimState): Wall[] {
+  if (state.barrels.length === 0) return state.arena.walls;
+  const cached = solidCache.get(state);
+  if (cached && cached.barrels === state.barrels && cached.count === state.barrels.length) return cached.walls;
+  const walls: Wall[] = [...state.arena.walls, ...state.barrels.map((barrel) => ({ x: barrel.pos.x, y: barrel.pos.y, r: BARRELS.radius }))];
+  solidCache.set(state, { barrels: state.barrels, count: state.barrels.length, walls });
+  return walls;
+}
+
+/** Puts back every barrel that was blown up since the last wave. */
+function restockBarrels(state: SimState): void {
+  const spots = state.arena.barrels ?? [];
+  const standing = new Set(state.barrels.map((barrel) => barrel.home));
+  const fresh = spots
+    .map((pos, home) => ({ pos, home }))
+    .filter(({ pos, home }) => !standing.has(home) && distance(pos, state.player.pos) > 60 && !state.enemies.some((enemy) => distance(enemy.pos, pos) < 40));
+  if (fresh.length === 0) return;
+  state.barrels = [
+    ...state.barrels,
+    ...fresh.map(({ pos, home }) => ({ id: state.nextId++, home, pos: { ...pos }, health: BARRELS.health })),
+  ];
+}
+
+/** A barrel goes up: zombies and the player in the blast are hurt, and any barrel in reach goes up with it. */
+function popBarrel(state: SimState, barrel: BarrelState): void {
+  state.barrels = state.barrels.filter((other) => other !== barrel);
+  state.events.push({ type: "barrel", pos: { x: barrel.pos.x, y: barrel.pos.y } });
+  for (const enemy of state.enemies) {
+    if (enemy.health <= 0) continue;
+    const reach = distance(enemy.pos, barrel.pos);
+    if (reach > BARRELS.blastRadius) continue;
+    damageEnemy(state, enemy, BARRELS.zombieDamage * (1 - 0.5 * (reach / BARRELS.blastRadius)), enemy.pos, null);
+  }
   const player = state.player;
-  for (const entry of state.loot) {
-    if (entry.taken || distance(entry.spot.pos, player.pos) > MISSION.pickupRadius) continue;
-    entry.taken = true;
-    state.score += entry.spot.value;
-    if (entry.spot.main) state.hasGold = true;
-    state.events.push({ type: "pickup", pos: { ...entry.spot.pos }, main: entry.spot.main, value: entry.spot.value });
+  const away = distance(player.pos, barrel.pos);
+  if (away <= BARRELS.blastRadius && state.status === "playing") {
+    damagePlayer(state, Math.max(BARRELS.playerFloor, BARRELS.playerDamage * (1 - away / BARRELS.blastRadius)), barrel.pos);
   }
-
-  const zone = state.arena.exit.zone;
-  const inside =
-    player.pos.x >= zone.x && player.pos.x <= zone.x + zone.w && player.pos.y >= zone.y && player.pos.y <= zone.y + zone.h;
-  if (state.hasGold && inside) {
-    state.status = "escaped";
-    state.endedAt = state.time;
-    state.score += MISSION.escapeBonus;
-    if (state.timesSpotted === 0) state.score += MISSION.unseenBonus;
-    if (state.timesSpotted === 0 && state.kills === 0) state.score += MISSION.ghostBonus;
-    state.events.push({ type: "escaped" });
+  for (const other of [...state.barrels]) {
+    if (distance(other.pos, barrel.pos) <= BARRELS.blastRadius) popBarrel(state, other);
   }
+  state.enemies = state.enemies.filter((enemy) => enemy.health > 0);
 }
 
-/** How the run is remembered: unseen and unbloodied is the best there is. */
-export function rating(state: SimState): "GHOST" | "SHADOW" | "SEEN" {
-  if (state.timesSpotted > 0) return "SEEN";
-  return state.kills === 0 ? "GHOST" : "SHADOW";
+/* ---------------------------------------------------------------- pickups */
+
+/** Blows up every zombie within the bomb's reach. */
+function explode(state: SimState, at: Vec): void {
+  state.events.push({ type: "bomb", pos: { x: at.x, y: at.y } });
+  for (const enemy of state.enemies) {
+    if (enemy.health <= 0 || distance(enemy.pos, at) > PICKUPS.bombRadius) continue;
+    damageEnemy(state, enemy, PICKUPS.bombDamage, enemy.pos, null);
+  }
+  state.enemies = state.enemies.filter((enemy) => enemy.health > 0);
 }
 
-function guardState(state: SimState, guard: Guard): EnemyState {
-  const def = enemyDef(guard.defId);
-  const start = guard.route[0];
-  const pos = { x: start.x, y: start.y };
-  const watch = guard.watch ?? null;
-  const next = guard.route[Math.min(1, guard.route.length - 1)];
-  return {
-    id: state.nextId++,
-    defId: guard.defId,
-    pos,
-    facing: watch ?? Math.atan2(next.y - start.y, next.x - start.x),
-    health: def.health,
-    maxHealth: def.health,
-    mode: "patrol",
-    awareness: 0,
-    investigate: null,
-    queue: [],
-    lastKnown: null,
-    cooldown: 0,
-    searchLeft: 0,
-    route: guard.route.map((point) => ({ x: point.x, y: point.y })),
-    // A roamer starts on its way to the second waypoint; a post is already there.
-    routeIndex: guard.route.length > 1 ? 1 : 0,
-    routeDir: 1,
-    watch,
-    sweepClock: random(state) * Math.PI * 2,
-    patrolTarget: null,
-    path: [],
-    pathAge: 0,
-    pathGoal: null,
-    reaction: def.reactionTime,
-    radio: null,
-    hurt: 0,
-  };
+function updatePickups(state: SimState, dt: number): void {
+  const player = state.player;
+  const reach = PICKUPS.radius * playerStats(state).magnet + player.radius;
+  const kept: SimState["pickups"] = [];
+  for (const pickup of state.pickups) {
+    pickup.left -= dt;
+    if (pickup.left <= 0) continue;
+    if (distance(pickup.pos, player.pos) > reach) {
+      kept.push(pickup);
+      continue;
+    }
+    state.events.push({ type: "pickup", pos: { ...pickup.pos }, kind: pickup.kind });
+    if (pickup.kind === "health") player.health = Math.min(player.maxHealth, player.health + PICKUPS.healAmount);
+    else if (pickup.kind === "frenzy") state.frenzyLeft = PICKUPS.frenzySeconds;
+    else if (pickup.kind === "double") state.doubleLeft = PICKUPS.doubleSeconds;
+    else if (pickup.kind === "shield") state.shieldLeft = PICKUPS.shieldSeconds;
+    else explode(state, player.pos);
+  }
+  state.pickups = kept;
+}
+
+function updateStreak(state: SimState, dt: number): void {
+  if (state.combo.count === 0) return;
+  state.combo.left -= dt;
+  if (state.combo.left <= 0) state.combo = { count: 0, left: 0 };
 }
 
 export function accuracy(state: SimState): number {

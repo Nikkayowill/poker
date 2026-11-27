@@ -1,34 +1,28 @@
 import type {
   Arena,
-  ContractDefinition,
-  ContractId,
   DifficultyDefinition,
   DifficultyId,
   EnemyDefinition,
-  Guard,
   Light,
-  LootSpot,
   OperatorDefinition,
+  PerkDefinition,
+  PickupKind,
   Rect,
   Room,
-  Vec,
   WeaponDefinition,
 } from "./types";
 
 /**
  * All tuning lives here. The sim reads these tables and never names a weapon
- * or enemy, so a new one is a new row. Numbers are first guesses for feel.
+ * or zombie, so a new one is a new row. Numbers are first guesses for feel.
  */
-
-/** Every bullet kills whatever it hits: this is a stealth game, not a gunfight. */
-const ONE_SHOT = 100;
 
 export const WEAPONS: Record<string, WeaponDefinition> = {
   pistol: {
     id: "pistol",
     name: "Pistol",
-    damage: ONE_SHOT,
-    fireRate: 4,
+    damage: 34,
+    fireRate: 4.5,
     range: 700,
     projectileSpeed: 900,
     magazineSize: 12,
@@ -39,11 +33,11 @@ export const WEAPONS: Record<string, WeaponDefinition> = {
   smg: {
     id: "smg",
     name: "SMG",
-    damage: ONE_SHOT,
-    fireRate: 7,
+    damage: 22,
+    fireRate: 9,
     range: 460,
     projectileSpeed: 850,
-    magazineSize: 24,
+    magazineSize: 30,
     reloadDuration: 1.6,
     spread: 0.1,
     pellets: 1,
@@ -51,8 +45,8 @@ export const WEAPONS: Record<string, WeaponDefinition> = {
   shotgun: {
     id: "shotgun",
     name: "Shotgun",
-    damage: ONE_SHOT,
-    fireRate: 1.2,
+    damage: 26,
+    fireRate: 1.1,
     range: 340,
     projectileSpeed: 800,
     magazineSize: 6,
@@ -67,308 +61,223 @@ export const OPERATORS: Record<string, OperatorDefinition> = {
     id: "vanguard",
     name: "Vanguard",
     maxHealth: 100,
-    moveSpeed: 120,
+    moveSpeed: 135,
     radius: 14,
     startingWeapons: ["pistol", "smg", "shotgun"],
   },
 };
 
+/** Zombies. Walkers are the crowd, runners punish standing still, brutes soak up a lot of lead. */
 export const ENEMIES: Record<string, EnemyDefinition> = {
-  grunt: {
-    id: "grunt",
-    name: "Grunt",
-    health: 100,
-    moveSpeed: 62,
-    radius: 14,
-    detectionRange: 300,
-    fieldOfView: 0.5,
-    attackRange: 300,
-    attack: "ranged",
-    damage: 8,
-    fireRate: 0.9,
-    projectileSpeed: 420,
-    spread: 0.14,
-    reactionTime: 0.45,
+  walker: {
+    id: "walker",
+    name: "Walker",
+    health: 60,
+    moveSpeed: 58,
+    radius: 13,
+    attackRange: 8,
+    damage: 10,
+    fireRate: 1,
     score: 100,
+    xp: 10,
+    dropChance: 0.05,
+    armor: 1,
   },
   runner: {
     id: "runner",
     name: "Runner",
-    health: 100,
-    moveSpeed: 118,
-    radius: 12,
-    detectionRange: 340,
-    fieldOfView: 0.6,
-    attackRange: 30,
-    attack: "melee",
+    health: 40,
+    moveSpeed: 112,
+    radius: 11,
+    attackRange: 8,
+    damage: 8,
+    fireRate: 1.4,
+    score: 150,
+    xp: 14,
+    dropChance: 0.06,
+    armor: 1,
+  },
+  bloater: {
+    id: "bloater",
+    name: "Bloater",
+    health: 90,
+    moveSpeed: 52,
+    radius: 16,
+    attackRange: 9,
     damage: 12,
-    fireRate: 1.6,
-    projectileSpeed: 0,
-    spread: 0,
-    reactionTime: 0.2,
-    score: 80,
+    fireRate: 0.9,
+    score: 200,
+    xp: 20,
+    dropChance: 0.1,
+    armor: 1,
+    burst: { radius: 110, damage: 26 },
+  },
+  armored: {
+    id: "armored",
+    name: "Riot Zombie",
+    health: 240,
+    moveSpeed: 50,
+    radius: 15,
+    attackRange: 9,
+    damage: 16,
+    fireRate: 1,
+    score: 300,
+    xp: 30,
+    dropChance: 0.2,
+    armor: 0.5,
+  },
+  brute: {
+    id: "brute",
+    name: "Brute",
+    health: 600,
+    moveSpeed: 46,
+    radius: 20,
+    attackRange: 10,
+    damage: 28,
+    fireRate: 0.8,
+    score: 800,
+    xp: 80,
+    dropChance: 1,
+    armor: 1,
   },
 };
 
-/**
- * How far away the player can make out a guard, through walls. Inside
- * `clearRange` they are drawn in full; out to `range` they fade to `farStrength`.
- */
-export const SENSE = {
-  range: 560,
-  clearRange: 380,
-  farStrength: 0.4,
+/** Explosive barrels: one stray shot sets one off, and the blast sets off any barrel next to it. */
+export const BARRELS = {
+  radius: 14,
+  health: 30,
+  blastRadius: 170,
+  /** Damage to a zombie at the centre, falling to half at the edge. */
+  zombieDamage: 320,
+  /** Damage to the player at the centre, falling off to nothing at the edge. Never less than the floor inside the blast. */
+  playerDamage: 35,
+  playerFloor: 6,
 };
+const BARREL_SPOTS = [
+  { x: 590, y: 390 },
+  { x: 400, y: 200 },
+  { x: 420, y: 700 },
+  { x: 640, y: 690 },
+  { x: 900, y: 650 },
+  { x: 1400, y: 200 },
+  { x: 1100, y: 500 },
+  { x: 1260, y: 640 },
+];
 
-/** The heist: what the player is paid for and how close they must be to pick something up. */
-export const MISSION = {
-  pickupRadius: 26,
-  /** Paid for walking out with the gold. */
-  escapeBonus: 500,
-  /** Extra for leaving without a single guard ever spotting you. */
-  unseenBonus: 500,
-  /** Extra again for leaving without firing a shot that killed anyone. */
-  ghostBonus: 500,
-};
-
-/**
- * How hard the enemy is to sneak past. Harder means a faster detection
- * meter, more doors to cover and less time to plan.
- */
 export const DIFFICULTIES: Record<DifficultyId, DifficultyDefinition> = {
-  easy: {
-    id: "easy",
-    label: "Easy",
-    blurb: "Slow to notice you. Few guards.",
-    detectSeconds: 2.6,
-    decaySeconds: 2.5,
-    tier: 1,
-    enemySpeed: 0.8,
-  },
-  normal: {
-    id: "normal",
-    label: "Normal",
-    blurb: "More guards. Keep out of sight.",
-    detectSeconds: 1.5,
-    decaySeconds: 2,
-    tier: 2,
-    enemySpeed: 1,
-  },
-  hard: {
-    id: "hard",
-    label: "Hard",
-    blurb: "Every guard on duty, quick to spot you.",
-    detectSeconds: 0.8,
-    decaySeconds: 1.5,
-    tier: 3,
-    enemySpeed: 1.15,
-  },
+  easy: { id: "easy", label: "Easy", blurb: "Smaller crowds, slower and softer hitting.", horde: 0.8, speed: 0.92, damage: 0.8 },
+  normal: { id: "normal", label: "Normal", blurb: "The full horde.", horde: 1, speed: 1, damage: 1 },
+  hard: { id: "hard", label: "Hard", blurb: "A bigger crowd that is quicker and hits hard.", horde: 1.25, speed: 1.08, damage: 1.25 },
 };
 
 export const DEFAULT_DIFFICULTY: DifficultyId = "normal";
 
-/**
- * What makes the player easy or hard to notice. An enemy that can see the
- * player fills its awareness meter at (multiplier / detectSeconds) per second;
- * the multipliers below shape that, and at 1 it has spotted them.
- */
-export const STEALTH = {
-  /** A player in the shadows is only in view this close. */
-  hideRange: 80,
-  /** Inside this an enemy walking up to a hiding player finds them fast. */
-  hideCheckRange: 45,
-  hideCheckFill: 1.2,
-  /** Fill multiplier when hidden and not being checked up close. */
-  hideFill: 0.3,
-  /** Fill multiplier when not moving. */
-  stillFill: 0.75,
-  /** Fill multiplier up close, fading to farFill at the edge of an enemy's range. */
-  closeFill: 1.6,
-  farFill: 0.45,
-  /** Bumping into someone is noticed whatever way they face. Everything else has to be in their beam. */
-  closeNotice: 36,
-  /** The guns are silenced: a shot is only heard this close, and half as far through a wall. */
-  hearRange: 170,
-  /** Awareness a heard shot adds. It points the enemy at the sound, not at the player. */
-  noiseAwareness: 0.4,
-  /** How wide the guess at where a shot came from is. */
-  noiseScatter: 60,
-  /** A bullet that whizzes past this close to an enemy (a miss) puts it on alert. */
-  nearMissRange: 38,
-  nearMissAwareness: 0.7,
-  nearMissScatter: 36,
-  /** A spotted enemy tells the squad this close at once, no radio needed. */
-  squadRange: 150,
-  calloutAwareness: 0.6,
-  /** Anyone farther away only learns by radio: the spotter has to live this long after spotting you. */
-  radioSeconds: 1.6,
-  radioAwareness: 0.6,
-  /** How wide the radioed position is, so they come to the area rather than the exact spot. */
-  radioScatter: 70,
-  /** Awareness an enemy keeps after losing the player. */
-  searchAwareness: 0.7,
-  /** Alert enemies keep tracking a little farther out than they first notice. */
-  alertRangeBonus: 1.25,
-  searchSeconds: 3,
-  /** Looking around where a patrol leg ends. */
-  lookSeconds: 1.2,
-  /** Walking pace as a share of full speed. */
-  patrolSpeed: 0.55,
-  /** A posted guard turns this fast and sweeps this far either side of the way it faces. */
-  postTurnRate: 1.3,
-  postSweep: 0.8,
-  postSweepRate: 0.6,
-  investigateSpeed: 0.7,
-  turnRate: 7,
-  lookTurnRate: 1.6,
-  /** Corners this near the spot an enemy lost the player are checked. */
-  nookCheckRadius: 220,
+/** How the waves come and how a run is scored. */
+export const HORDE = {
+  /** Quiet before the first wave, and between waves. */
+  startDelay: 3,
+  breakSeconds: 5,
+  /** Every wave after the first makes each zombie this much tougher, up to the cap (a multiple of its base health). */
+  healthPerWave: 0.07,
+  healthCap: 3,
+  /** Never more than this many zombies alive at once, so a phone can keep up. */
+  maxAlive: 40,
+  /** Zombies come in this far from the player at least. */
+  spawnMinDistance: 360,
+  /** Seconds between batches, easing from the first value to the second over `rampWaves` waves. */
+  spawnInterval: { start: 0.9, end: 0.3 },
+  rampWaves: 12,
+  batch: { min: 1, max: 3 },
+  /** Paid at the end of every wave, times the wave number. */
+  waveBonus: 100,
+  /** Kills this close together keep a streak going. */
+  comboWindow: 2.2,
+  /** Every this many kills in a streak adds half a point to the multiplier, up to the cap. */
+  comboStep: 5,
+  comboMax: 4,
+};
+
+/** XP for the next perk card: it takes `base` for level 2, and each level after costs `step` more. */
+export const LEVELING = { base: 70, step: 45, redraws: 3 };
+
+export const PICKUPS = {
+  life: 14,
+  radius: 24,
+  healAmount: 35,
+  /** What a drop turns out to be. */
+  weights: { health: 0.4, bomb: 0.12, frenzy: 0.2, double: 0.16, shield: 0.12 } satisfies Record<PickupKind, number>,
+  bombRadius: 560,
+  bombDamage: 700,
+  frenzySeconds: 12,
+  doubleSeconds: 15,
+  shieldSeconds: 6,
+};
+
+/** The level-up cards. Each can be taken up to `max` times in a run and stacks. */
+export const PERKS: Record<string, PerkDefinition> = {
+  "hot-barrel": { id: "hot-barrel", name: "Hot Barrel", blurb: "Fire 15% faster", kind: "combat", max: 5 },
+  "hollow-points": { id: "hollow-points", name: "Hollow Points", blurb: "Bullets hit 20% harder", kind: "combat", max: 5 },
+  "quick-hands": { id: "quick-hands", name: "Quick Hands", blurb: "Reload 25% faster", kind: "combat", max: 3 },
+  "thick-skin": { id: "thick-skin", name: "Thick Skin", blurb: "+25 max health, and heal 25", kind: "survival", max: 5 },
+  "second-wind": { id: "second-wind", name: "Second Wind", blurb: "Slowly heal when nothing is biting you", kind: "survival", max: 3 },
+  leech: { id: "leech", name: "Leech", blurb: "Heal 2 for every kill", kind: "survival", max: 3 },
+  "fast-feet": { id: "fast-feet", name: "Fast Feet", blurb: "Move 8% faster", kind: "mobility", max: 4 },
+  scavenger: { id: "scavenger", name: "Scavenger", blurb: "25% more XP from kills", kind: "economy", max: 4 },
+  "big-drops": { id: "big-drops", name: "Big Drops", blurb: "Zombies drop pickups more often", kind: "economy", max: 3 },
+  magnet: { id: "magnet", name: "Magnet", blurb: "Pick up drops from much farther away", kind: "economy", max: 3 },
+  "big-mags": { id: "big-mags", name: "Big Mags", blurb: "+25% rounds in every magazine", kind: "combat", max: 4 },
+  piercing: { id: "piercing", name: "Piercing Rounds", blurb: "Bullets go through one more zombie", kind: "combat", max: 2 },
+  frenzy: { id: "frenzy", name: "Adrenaline", blurb: "Double fire rate for 12 seconds", kind: "chaos", max: 99 },
+  nuke: { id: "nuke", name: "Dead Air", blurb: "Blow up every zombie nearby", kind: "chaos", max: 99 },
 };
 
 /**
- * What a guard does about a body, and how the whole building winds up and
- * settles. Spotting you or finding a body raises `caution`; while it is up,
- * guards walk faster, their lights reach farther and they notice you sooner.
+ * What a perk is worth per card taken. The sim multiplies or adds these up
+ * from `state.perks`.
  */
-export const CAUTION = {
-  /** A body is seen inside this share of a guard's beam range... */
-  bodySightShare: 0.85,
-  /** ...or at once this close, whichever way they face. */
-  bodyCloseNotice: 50,
-  /** Awareness a guard that finds a body is left with, and the squad it tells. */
-  bodyAwareness: 0.65,
-  bodyScatter: 50,
-  bodySquadRange: 220,
-  /** What each event adds to caution. */
-  spottedRaise: 0.5,
-  bodyRaise: 0.4,
-  /** Caution lost per second. Full to calm takes 45 seconds. */
-  decayPerSecond: 1 / 45,
-  /** At full caution: walking speed, beam reach and meter speed are scaled by these. */
-  speedBoost: 0.25,
-  beamBoost: 0.2,
-  meterBoost: 0.35,
-  /** A roamer turns back at a stop this often, and pauses between these. */
-  reverseChance: 0.25,
-  pauseMin: 0.5,
-  pauseMax: 2.4,
-};
-
-export const CONTRACTS: Record<ContractId, ContractDefinition> = {
-  standard: {
-    id: "standard",
-    name: "Standard job",
-    blurb: "Nothing out of the ordinary.",
-    unlockLevel: 1,
-    weight: 3,
-    guardDelta: 0,
-    beamScale: 1,
-    speedScale: 1,
-    radioScale: 1,
-    lootDelta: 0,
-    lootScale: 1,
-  },
-  "skeleton-crew": {
-    id: "skeleton-crew",
-    name: "Skeleton crew",
-    blurb: "Short staffed tonight. Fewer guards, thinner pickings.",
-    unlockLevel: 1,
-    weight: 2,
-    guardDelta: -2,
-    beamScale: 1,
-    speedScale: 1,
-    radioScale: 1,
-    lootDelta: -1,
-    lootScale: 0.75,
-  },
-  "rich-pickings": {
-    id: "rich-pickings",
-    name: "Rich pickings",
-    blurb: "More to steal, and someone extra on the door.",
-    unlockLevel: 2,
-    weight: 2,
-    guardDelta: 1,
-    beamScale: 1,
-    speedScale: 1,
-    radioScale: 1,
-    lootDelta: 1,
-    lootScale: 1.25,
-  },
-  "night-shift": {
-    id: "night-shift",
-    name: "Night shift",
-    blurb: "Fewer guards, but their lights reach much farther.",
-    unlockLevel: 3,
-    weight: 2,
-    guardDelta: -1,
-    beamScale: 1.3,
-    speedScale: 1,
-    radioScale: 1,
-    lootDelta: 0,
-    lootScale: 1,
-  },
-  "double-time": {
-    id: "double-time",
-    name: "Double time",
-    blurb: "The guards are in a hurry and walk fast.",
-    unlockLevel: 4,
-    weight: 2,
-    guardDelta: 0,
-    beamScale: 1,
-    speedScale: 1.25,
-    radioScale: 1,
-    lootDelta: 0,
-    lootScale: 1.15,
-  },
-  "tight-radio": {
-    id: "tight-radio",
-    name: "Tight radio",
-    blurb: "Radio calls go out almost at once. Kill a spotter instantly or not at all.",
-    unlockLevel: 5,
-    weight: 2,
-    guardDelta: 0,
-    beamScale: 1,
-    speedScale: 1,
-    radioScale: 0.4,
-    lootDelta: 0,
-    lootScale: 1.2,
-  },
+export const PERK_VALUES = {
+  fireRate: 0.15,
+  damage: 0.2,
+  reload: 0.25,
+  health: 25,
+  regenPerSecond: 1.5,
+  /** Seconds without being hit before regeneration starts. */
+  regenDelay: 3,
+  leechHeal: 2,
+  speed: 0.08,
+  xp: 0.25,
+  drops: 0.4,
+  /** Each Magnet card makes pickups reachable from this much farther off (a share of the base reach). */
+  magnet: 0.7,
+  /** Each Big Mags card adds this share to every magazine. */
+  mags: 0.25,
 };
 
 /**
- * There is no hide button, and a wall is not cover. You are hidden when the floor
- * under you is dark (no lamp reaches it, or a prop shades it) and no guard's
- * flashlight is on you. Each lamp lights a pool that fades toward its edge, so
- * the outer third of every pool is dark enough to stand in.
+ * How far away the player can make out a zombie, through walls. Inside
+ * `clearRange` they are drawn in full; out to `range` they fade to `farStrength`.
  */
-export const SHADOW = {
-  /** Light below this level counts as dark. */
-  darkBelow: 0.2,
-  /** How fast a lamp's light dies away: 1 is a straight line, higher keeps the middle bright and the edge dark. */
-  falloff: 1.5,
-  /** A shot lights you up for this long, so you cannot snipe from the dark for free. */
-  exposedSeconds: 1.2,
+export const SENSE = {
+  range: 700,
+  clearRange: 460,
+  farStrength: 0.35,
 };
 
-/**
- * The player carries no light, only a laser for aiming that enemies cannot
- * see. The floor is lit by the enemies' flashlights, plus this small glow so
- * the ground right around the player stays readable.
- */
+/** The soft pool of light the player carries, so the ground right around them stays readable. */
 export const PLAYER_GLOW = {
-  radius: 62,
+  radius: 230,
 };
 
 /**
- * Aim assist for a thumb on a glass screen. An enemy that is nearly in the
+ * Aim assist for a thumb on a glass screen. A zombie that is nearly in the
  * sights pulls the aim the rest of the way, more the closer to dead on.
  */
 export const AIM_ASSIST = {
-  /** Never wider than this either side of the enemy, in radians. */
+  /** Never wider than this either side of the zombie, in radians. */
   maxCone: 0.2,
-  /** Added to the enemy's radius when working out how wide it looks. */
+  /** Added to the zombie's radius when working out how wide it looks. */
   slack: 6,
-  /** Share of the gap to the enemy that is closed when dead on. */
+  /** Share of the gap to the zombie that is closed when dead on. */
   pull: 0.65,
 };
 
@@ -390,19 +299,16 @@ function wallLine(axis: "h" | "v", fixed: number, from: number, to: number, gaps
 /**
  * The compound, drawn as a floor plan (x across, y down, 1500 x 900):
  *
- *   NW office      | north lobby  | NE server room (the gold)
+ *   NW office      | north lobby  | NE server room
  *   ---------------+==checkpoint==+---------------
  *   SW storeroom   | south lobby  | east control room
- *   west door (in  |              +---------------
- *   and out)       |              | SE workshop
+ *                  |              +---------------
+ *                  |              | SE workshop
  *
- * It is built for creeping. Rooms are joined by doorways just wide enough for
- * one body, so every doorway is a place to wait beside. The two lobbies are
- * linked by one narrow gap at the checkpoint, and the west and east wings
- * loop back on themselves, so there is always a second way round. Each room
- * has cover to break sight lines and a dark nook to hide in; the player starts
- * in through the west door; the gold case is in the server room, the far
- * corner of the building.
+ * Rooms are joined by doorways one body wide, so every doorway is a choke point
+ * that a crowd has to squeeze through, and the wings loop back on themselves so
+ * there is always a way round. Cover breaks up the rooms and gives you something
+ * to kite a crowd around.
  */
 const ROOMS: Room[] = [
   { id: "office", rect: { x: 32, y: 32, w: 464, h: 398 } },
@@ -466,68 +372,6 @@ const WALLS: Rect[] = [
   ...COVER,
 ];
 
-/** Dark spots enemies check once a wave drags on or after losing you: every room's corners, plus the nooks behind cover. */
-function cornerSpots(): Vec[] {
-  const inset = 30;
-  const spots: Vec[] = [];
-  for (const { rect } of ROOMS) {
-    for (const [x, y] of [
-      [rect.x + inset, rect.y + inset],
-      [rect.x + rect.w - inset, rect.y + inset],
-      [rect.x + inset, rect.y + rect.h - inset],
-      [rect.x + rect.w - inset, rect.y + rect.h - inset],
-    ]) {
-      const clear = !WALLS.some((wall) => {
-        const dx = Math.max(wall.x - x, 0, x - (wall.x + wall.w));
-        const dy = Math.max(wall.y - y, 0, y - (wall.y + wall.h));
-        return Math.hypot(dx, dy) < 24;
-      });
-      if (clear) spots.push({ x, y });
-    }
-  }
-  return spots;
-}
-
-/**
- * Who is on duty. Roamers walk their loop forever, posts stand and watch. Most
- * of them are not looking for anyone: they only become dangerous once they
- * notice you. Tier 1 is on every difficulty, tier 3 only on hard.
- */
-const GUARDS: Guard[] = [
-  // Tier 1: enough to make the vault a real choice on easy.
-  { defId: "grunt", tier: 1, route: [{ x: 1400, y: 240 }], watch: Math.PI },
-  {
-    defId: "grunt",
-    tier: 1,
-    route: [{ x: 620, y: 100 }, { x: 900, y: 100 }, { x: 900, y: 380 }, { x: 620, y: 380 }],
-  },
-  {
-    defId: "grunt",
-    tier: 1,
-    route: [{ x: 600, y: 780 }, { x: 900, y: 780 }, { x: 900, y: 500 }, { x: 600, y: 500 }],
-  },
-  { defId: "grunt", tier: 1, route: [{ x: 440, y: 120 }], watch: Math.PI * 0.75 },
-  // Tier 2.
-  {
-    defId: "grunt",
-    tier: 2,
-    route: [{ x: 1100, y: 540 }, { x: 1420, y: 540 }, { x: 1420, y: 360 }, { x: 1100, y: 360 }],
-  },
-  { defId: "grunt", tier: 2, route: [{ x: 1400, y: 660 }], watch: Math.PI },
-  { defId: "grunt", tier: 2, route: [{ x: 612, y: 500 }], watch: -Math.PI / 2 },
-  // Tier 3: the whole building on its toes.
-  { defId: "grunt", tier: 3, route: [{ x: 420, y: 520 }, { x: 420, y: 820 }, { x: 240, y: 840 }, { x: 240, y: 650 }] },
-  { defId: "grunt", tier: 3, route: [{ x: 1150, y: 250 }, { x: 1400, y: 250 }] },
-  { defId: "runner", tier: 3, route: [{ x: 420, y: 360 }, { x: 140, y: 380 }, { x: 140, y: 200 }, { x: 420, y: 200 }] },
-];
-
-const LOOT: LootSpot[] = [
-  { id: "gold", label: "GOLD CASE", pos: { x: 1267, y: 130 }, value: 1000, main: true },
-  { id: "watch", label: "Watch", pos: { x: 225, y: 170 }, value: 150, main: false },
-  { id: "ledger", label: "Ledger", pos: { x: 1120, y: 470 }, value: 200, main: false },
-  { id: "ingots", label: "Ingots", pos: { x: 1160, y: 790 }, value: 250, main: false },
-];
-
 /**
  * One lamp or two per room, set so each pool leaves the corners dark. Where a
  * crate or a rack stands between a lamp and the floor, that floor is in shadow too.
@@ -543,24 +387,37 @@ const LIGHTS: Light[] = [
   { pos: { x: 1230, y: 760 }, radius: 190, tone: "warm" },
 ];
 
+
+/**
+ * Where zombies come in: breaches near the corners of every room, spread so
+ * a crowd can arrive from any side and the player can never watch them all.
+ */
+const SPAWNS = [
+  { x: 70, y: 70 },
+  { x: 450, y: 390 },
+  { x: 70, y: 830 },
+  { x: 450, y: 500 },
+  { x: 560, y: 70 },
+  { x: 940, y: 400 },
+  { x: 560, y: 830 },
+  { x: 940, y: 500 },
+  { x: 1440, y: 70 },
+  { x: 1040, y: 270 },
+  { x: 1440, y: 550 },
+  { x: 1040, y: 540 },
+  { x: 1230, y: 835 },
+  { x: 1040, y: 830 },
+];
+
 export const ARENA: Arena = {
   width: 1500,
   height: 900,
   walls: WALLS,
   rooms: ROOMS,
   lights: LIGHTS,
-  ambient: 0.04,
-  corners: [
-    ...cornerSpots(),
-    // The locker nook, behind the storeroom shelves and in the server aisles.
-    { x: 58, y: 288 },
-    { x: 250, y: 838 },
-    { x: 1155, y: 150 },
-    { x: 1267, y: 150 },
-  ],
-  guards: GUARDS,
-  loot: LOOT,
-  // In through the west door and back out the same way: the gold is on the far side of the building.
-  exit: { door: { x: 0, y: 520, w: SHELL, h: 120 }, zone: { x: SHELL, y: 520, w: 70, h: 120 } },
-  playerSpawn: { x: 90, y: 580 },
+  ambient: 0.1,
+  spawns: SPAWNS,
+  barrels: BARREL_SPOTS,
+  // The north lobby: a doorway out of every side, and cover to dodge round.
+  playerSpawn: { x: 900, y: 280 },
 };

@@ -903,13 +903,13 @@ export async function hasStackStrikeAccess(token: string): Promise<boolean> {
     .select("stackstrike_access")
     .eq("session_token", token)
     .maybeSingle();
-  if (error) throw new Error(`Could not check StackStrike access: ${error.message}`);
+  if (error) throw new Error(`Could not check StackDead access: ${error.message}`);
   return Boolean(data?.stackstrike_access);
 }
 
 /** Lets a specific profile into (or back out of) the StackStrike prototype. */
 export async function setStackStrikeAccess(profileId: string, allowed: boolean): Promise<void> {
-  return setProfileFlag(profileId, "stackstrikeAccess", allowed, "stackstrike_access", "StackStrike access");
+  return setProfileFlag(profileId, "stackstrikeAccess", allowed, "stackstrike_access", "StackDead access");
 }
 
 /** Puts the "Admin" tag above a profile's seat at the table, or takes it off. */

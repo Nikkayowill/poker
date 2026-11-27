@@ -17,10 +17,13 @@ interface Handle {
     status: string;
     time: number;
     difficulty: string;
-    hasGold: boolean;
-    loot: { taken: boolean; spot: { pos: Point; main: boolean } }[];
-    contract: { id: string };
-    enemies: { mode: string; awareness: number; lastKnown: Point | null }[];
+    wave: { number: number; queue: string[]; breakLeft: number };
+    enemies: { defId: string }[];
+    offer: { cards: string[]; redraws: number } | null;
+    perks: Record<string, number>;
+    pendingLevels: number;
+    score: number;
+    kills: number;
     shotsFired: number;
     player: {
       weaponIds: string[];
@@ -28,18 +31,17 @@ interface Handle {
       health: number;
       maxHealth: number;
       aim: number;
-      hidden: boolean;
-      light: number;
     };
   };
   heard: () => string[];
   scene: {
     sound: { mute: boolean; get: (key: string) => { volume: number; isPlaying: boolean } | null };
-    audio: { update: (dt: number, input: { hunted: boolean; awareness: number; ending: "none" | "dead" | "escaped" }) => unknown };
+    audio: { update: (dt: number, input: { hunted: boolean; strain: number; ending: "none" | "dead" }) => unknown };
     readInput: () => { aim: number; fire: boolean };
     buttonCentre: (name: "reload" | "swap") => Point;
     padCentre: (which: "move" | "aim") => Point;
   };
+  offerRects: () => { cards: { x: number; y: number; w: number; h: number }[]; redraw: { x: number; y: number; w: number; h: number }; skip: { x: number; y: number; w: number; h: number } };
 }
 
 type Win = { __stackstrike?: Handle };
@@ -75,18 +77,19 @@ async function openOnPhone(page: Page, difficulty?: "easy" | "normal" | "hard") 
 
 const PHONE = { viewport: { width: 844, height: 390 }, deviceScaleFactor: 1, hasTouch: true, isMobile: true };
 
-test("desktop: start screen, then boots with guards on duty, moves and shoots", async ({ page }) => {
+test("desktop: start screen, then boots into a quiet first moment, then a wave, and moves and shoots", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/stackstrike");
   await expect(page.getByTestId("stackstrike-gate")).toBeVisible();
   await page.getByTestId("stackstrike-play").click();
   await readyToPlay(page);
 
-  // No waves: the guards are already there.
-  expect((await read(page)).enemies.length).toBeGreaterThan(0);
+  // A few quiet seconds first, then the first wave walks in.
+  expect((await read(page)).wave.number).toBe(0);
+  await expect.poll(async () => (await read(page)).enemies.length, { timeout: 60_000 }).toBeGreaterThan(0);
+  expect((await read(page)).wave.number).toBe(1);
 
   const before = (await read(page)).player.pos;
-  // Down: the start is in a server-rack aisle that opens to the south.
   await page.keyboard.down("s");
   await expect.poll(async () => (await read(page)).player.pos.y, { timeout: 30_000 }).toBeGreaterThan(before.y + 40);
   await page.keyboard.up("s");
@@ -128,30 +131,25 @@ test("start screen: the difficulty chosen is the difficulty played", async ({ br
   const page = await context.newPage();
   await openOnPhone(page, "hard");
   expect((await read(page)).difficulty).toBe("hard");
-  // Hard puts more guards on duty than easy.
-  const hardGuards = (await read(page)).enemies.length;
   await page.evaluate(() => localStorage.setItem("stackstrike:difficulty", "easy"));
   await page.reload();
   await page.getByTestId("stackstrike-difficulty-easy").tap();
   await page.getByTestId("stackstrike-play").tap();
   await readyToPlay(page);
   expect((await read(page)).difficulty).toBe("easy");
-  expect((await read(page)).enemies.length).toBeLessThan(hardGuards);
   await context.close();
 });
 
-test("phone landscape: the controls sit where the thumbs are, and the mission is still to do", async ({ browser }) => {
+test("phone landscape: the controls sit where the thumbs are, and the run is only starting", async ({ browser }) => {
   const context = await browser.newContext(PHONE);
   const page = await context.newPage();
   await openOnPhone(page);
 
   await expect(page.getByTestId("stackstrike-rotate")).toHaveCount(0);
 
-  // The guards are on duty and the gold is still where it was left.
   const start = await read(page);
-  expect(start.enemies.length).toBeGreaterThan(0);
-  expect(start.hasGold).toBe(false);
-  expect(start.loot.every((entry) => !entry.taken)).toBe(true);
+  expect(start.wave.number).toBe(0);
+  expect(start.score).toBe(0);
 
   // Pads in the bottom corners, buttons clear of them and of each other.
   const move = await centre(page, "pad", "move");
@@ -246,7 +244,7 @@ test("phone landscape: a tap off the middle of the aim pad fires, and fires that
   await context.close();
 });
 
-test("a new player starts at rank 1 with just the pistol, and a restart deals a different job", async ({ browser }) => {
+test("a new player starts at rank 1 with just the pistol, and a restart starts the run over", async ({ browser }) => {
   const context = await browser.newContext(PHONE);
   const page = await context.newPage();
   await page.goto("/stackstrike");
@@ -254,23 +252,32 @@ test("a new player starts at rank 1 with just the pistol, and a restart deals a 
   await page.getByTestId("stackstrike-play").tap();
   await readyToPlay(page);
 
-  const first = await read(page);
-  expect(first.player.weaponIds).toEqual(["pistol"]);
-  expect(first.loot.some((entry) => entry.spot.main)).toBe(true);
-  // Every restart is a different building. Look across a few for the gold moving.
-  const spots = new Set([JSON.stringify(first.loot.find((entry) => entry.spot.main)?.spot.pos)]);
-  for (let n = 0; n < 6; n += 1) {
-    await page.evaluate(() => {
-      const s = (window as unknown as { __stackstrike: Handle }).__stackstrike.state();
-      s.player.health = 0;
-      s.status = "dead";
-    });
-    await page.waitForTimeout(900);
-    await page.touchscreen.tap(400, 200);
-    await expect.poll(async () => (await read(page)).status, { timeout: 20_000 }).toBe("playing");
-    spots.add(JSON.stringify((await read(page)).loot.find((entry) => entry.spot.main)?.spot.pos));
-  }
-  expect(spots.size).toBeGreaterThan(1);
+  expect((await read(page)).player.weaponIds).toEqual(["pistol"]);
+
+  await page.evaluate(() => {
+    const s = (window as unknown as { __stackstrike: Handle }).__stackstrike.state();
+    s.score = 1234;
+    s.player.health = 0;
+    s.status = "dead";
+  });
+  await page.waitForTimeout(900);
+  await page.touchscreen.tap(400, 200);
+  await expect.poll(async () => (await read(page)).status, { timeout: 20_000 }).toBe("playing");
+  const fresh = await read(page);
+  expect(fresh.score).toBe(0);
+  expect(fresh.wave.number).toBe(0);
+  await context.close();
+});
+
+test("the title screen shows your best run once you have played one", async ({ browser }) => {
+  const context = await browser.newContext(PHONE);
+  const page = await context.newPage();
+  await page.goto("/stackstrike");
+  await expect(page.getByTestId("stackstrike-gate")).toBeVisible();
+  await expect(page.getByTestId("stackstrike-best")).toHaveCount(0);
+  await page.evaluate(() => localStorage.setItem("stackstrike:progress", JSON.stringify({ xp: 300, runs: 3, bestWave: 9, bestScore: 12345 })));
+  await page.reload();
+  await expect(page.getByTestId("stackstrike-best")).toHaveText("Best: wave 9 · 12,345 pts");
   await context.close();
 });
 
@@ -289,41 +296,45 @@ test("phone landscape: the left stick walks", async ({ browser }) => {
   await context.close();
 });
 
-test("phone landscape: a dark corner hides you, and walking out does not", async ({ browser }) => {
+test("phone landscape: a level-up stops the fight on three cards, and a tap takes one", async ({ browser }) => {
   const context = await browser.newContext(PHONE);
   const page = await context.newPage();
   await openOnPhone(page);
 
-  // Out in the open there is nothing to hide behind.
-  expect((await read(page)).player.hidden).toBe(false);
-
-  // Press into the north-west corner of the office.
   await page.evaluate(() => {
     const s = (window as unknown as { __stackstrike: Handle }).__stackstrike.state();
-    s.player.pos.x = 62;
-    s.player.pos.y = 62;
+    s.pendingLevels = 1;
   });
-  await expect.poll(async () => (await read(page)).player.hidden, { timeout: 10_000 }).toBe(true);
+  await expect.poll(async () => (await read(page)).status, { timeout: 20_000 }).toBe("perk");
+  const offer = (await read(page)).offer;
+  expect(offer?.cards).toHaveLength(3);
 
-  // Out of the corner: seen again.
-  await page.evaluate(() => {
-    const s = (window as unknown as { __stackstrike: Handle }).__stackstrike.state();
-    s.player.pos.x = 250;
-    s.player.pos.y = 200;
-  });
-  await expect.poll(async () => (await read(page)).player.hidden, { timeout: 10_000 }).toBe(false);
+  // The fight is frozen while the cards are up.
+  const frozen = (await read(page)).time;
+  await page.waitForTimeout(800);
+  expect((await read(page)).time).toBe(frozen);
+
+  // Taps right after the cards appear are ignored, so a thumb still down from the fight cannot pick one.
+  await page.waitForTimeout(500);
+  const rects = await page.evaluate(() => (window as unknown as { __stackstrike: Handle }).__stackstrike.offerRects());
+  const card = rects.cards[1];
+  await page.touchscreen.tap(card.x + card.w / 2, card.y + card.h / 2);
+  await expect.poll(async () => (await read(page)).status, { timeout: 20_000 }).toBe("playing");
+  const picked = offer?.cards[1] as string;
+  expect((await read(page)).perks[picked]).toBe(1);
   await context.close();
 });
 
-test("phone landscape: guards start out knowing nothing and the meter fills before they hunt you", async ({ browser }) => {
+test("phone landscape: the next wave walks in when the rest is over", async ({ browser }) => {
   const context = await browser.newContext(PHONE);
   const page = await context.newPage();
   await openOnPhone(page, "easy");
-  const first = (await read(page)).enemies;
-  for (const enemy of first) {
-    expect(enemy.lastKnown).toBeNull();
-    expect(["patrol", "suspicious", "search"]).toContain(enemy.mode);
-  }
+  await page.evaluate(() => {
+    const s = (window as unknown as { __stackstrike: Handle }).__stackstrike.state();
+    s.wave.breakLeft = 0.1;
+  });
+  await expect.poll(async () => (await read(page)).wave.number, { timeout: 30_000 }).toBe(1);
+  await expect.poll(async () => (await read(page)).enemies.length, { timeout: 30_000 }).toBeGreaterThan(0);
   await context.close();
 });
 
@@ -373,7 +384,7 @@ test("phone: opened upright, the rotate screen comes first", async ({ browser })
   await context.close();
 });
 
-test("sound: your shots and footsteps are heard, being hunted brings the hunt music, and the toggle mutes", async ({ page }) => {
+test("sound: your shots and footsteps are heard, a fight brings the fight music, and the toggle mutes", async ({ page }) => {
   const errors: string[] = [];
   const missing: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -406,11 +417,10 @@ test("sound: your shots and footsteps are heard, being hunted brings the hunt mu
   await expect.poll(async () => (await sound("ss-music-stealth"))?.volume ?? 0, { timeout: 30_000 }).toBeGreaterThan(0.1);
   expect((await sound("ss-music-hunted"))?.volume ?? 0).toBeLessThan(0.05);
 
-  // A guard giving chase swaps it for the hunt music. The chase decision itself is unit tested; a guard's
-  // own AI changes its mind several times a frame here, so this drives the music as the scene would.
+  // A wave swaps it for the fight music. The wave timing is unit tested; this drives the music as the scene would.
   await page.evaluate(() => {
     const { scene } = (window as unknown as { __stackstrike: Handle }).__stackstrike;
-    for (let i = 0; i < 40; i += 1) scene.audio.update(0.1, { hunted: true, awareness: 1, ending: "none" });
+    for (let i = 0; i < 40; i += 1) scene.audio.update(0.1, { hunted: true, strain: 0.2, ending: "none" });
   });
   expect((await sound("ss-music-hunted"))?.volume ?? 0).toBeGreaterThan(0.3);
   expect((await sound("ss-music-stealth"))?.volume ?? 1).toBeLessThan(0.1);

@@ -6,8 +6,8 @@ import { tokenHasStackStrikeAccess } from "@/lib/server/stackstrike-access";
 import { readSessionTokenFromCookies } from "@/lib/server/session";
 
 /**
- * StackStrike is a private prototype. Only a profile an admin has opened it
- * for (the dashboard's "Open StackStrike") gets in; everyone else gets a 404,
+ * StackDead (the game at /stackstrike) is a private prototype. Only a profile an admin has opened it
+ * for (the dashboard's "Open StackDead") gets in; everyone else gets a 404,
  * because nothing advertises it. Local dev always opens it so the game runs
  * without an admin grant. The Play tiles in components/lobby show only for the
  * same profiles. Nothing else links here and robots.ts keeps crawlers out.
@@ -18,12 +18,12 @@ import { readSessionTokenFromCookies } from "@/lib/server/session";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "StackStrike (preview)",
+  title: "StackDead (preview)",
   robots: { index: false, follow: false },
   icons: { icon: "/stackstrike/icon-512.png", apple: "/stackstrike/apple-touch-icon.png" },
   openGraph: {
-    title: "StackStrike",
-    description: "Stay quiet. Take the gold.",
+    title: "StackDead",
+    description: "Hold the line. Survive the waves.",
     images: [{ url: "/stackstrike/thumbnail.png", width: 1200, height: 630 }],
   },
   twitter: { card: "summary_large_image", images: ["/stackstrike/thumbnail.png"] },

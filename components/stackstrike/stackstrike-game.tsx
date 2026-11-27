@@ -331,7 +331,7 @@ export function StackStrikeGame() {
         <div data-testid="stackstrike-rotate" style={{ ...COVER, zIndex: 10 }}>
           <div style={{ fontSize: 46, transform: "rotate(90deg)" }}>📱</div>
           <div style={{ fontSize: 20, fontWeight: 800 }}>Turn your phone sideways</div>
-          <div style={{ fontSize: 13, color: "#9aa3af" }}>StackStrike plays in landscape.</div>
+          <div style={{ fontSize: 13, color: "#9aa3af" }}>StackDead plays in landscape.</div>
         </div>
       )}
     </div>
@@ -341,22 +341,20 @@ export function StackStrikeGame() {
 const HOW_TO_TOUCH = [
   "Left thumb moves.",
   "Right thumb: drag to aim the red laser, let go to fire. Slide back to the middle first to cancel.",
-  "Guards can't see the laser. They carry flashlights: stay out of the beam.",
-  "Shots are silent and one kills, but a miss gets noticed, and so does a body left in the light. Drop a spotter before the radio call.",
-  "Every job is different: the gold case, the valuables and the guards move, and each job has a twist.",
-  "Take the gold case and get back out the west door. Press into a dark corner to disappear. Clean runs earn rank, and rank unlocks guns.",
+  "Zombies come in waves, and every wave is bigger. Kill them for XP: each level, pick one of three cards.",
+  "Walk over pickups. Green heals, orange is a bomb that clears the screen, yellow doubles your fire rate.",
+  "Keep killing to build a streak and a bigger score. Rank carries over between runs and unlocks guns.",
 ];
 const HOW_TO_DESKTOP = [
   "WASD moves, the mouse aims the red laser, click fires, R reloads, 1-3 or the wheel swaps guns.",
-  "Guards can't see the laser. They carry flashlights: stay out of the beam.",
-  "Shots are silent and one kills, but a miss gets noticed, and so does a body left in the light. Drop a spotter before the radio call.",
-  "Every job is different: the gold case, the valuables and the guards move, and each job has a twist.",
-  "Take the gold case and get back out the west door. Press into a dark corner to disappear. Clean runs earn rank, and rank unlocks guns.",
+  "Zombies come in waves, and every wave is bigger. Kill them for XP: each level, pick one of three cards (1-3, R to redraw, X to skip).",
+  "Walk over pickups. Green heals, orange is a bomb that clears the screen, yellow doubles your fire rate.",
+  "Keep killing to build a streak and a bigger score. Rank carries over between runs and unlocks guns.",
 ];
 
 const TITLE_CSS = `
 @keyframes ss-drift { from { transform: scale(1.04) translate3d(0,0,0); } to { transform: scale(1.14) translate3d(-2.2%, -1.4%, 0); } }
-@keyframes ss-glow { 0%,100% { box-shadow: 0 0 0 0 rgba(255,217,138,.0), 0 8px 26px rgba(0,0,0,.55); } 50% { box-shadow: 0 0 26px 2px rgba(255,217,138,.45), 0 8px 26px rgba(0,0,0,.55); } }
+@keyframes ss-glow { 0%,100% { box-shadow: 0 0 0 0 rgba(125,255,106,.0), 0 8px 26px rgba(0,0,0,.55); } 50% { box-shadow: 0 0 26px 2px rgba(125,255,106,.45), 0 8px 26px rgba(0,0,0,.55); } }
 @keyframes ss-rise { from { opacity: 0; transform: translate3d(0,14px,0); } to { opacity: 1; transform: none; } }
 .ss-title-bg { animation: ss-drift 22s ease-in-out infinite alternate; }
 .ss-rise { animation: ss-rise .6s ease-out both; }
@@ -410,24 +408,29 @@ function TitleScreen({
       >
         <div>
           <div style={{ fontSize: "clamp(34px, 11vh, 60px)", fontWeight: 900, letterSpacing: "0.04em", lineHeight: 1, color: "#f4f1ea", textShadow: "0 3px 0 #000, 0 0 24px rgba(0,0,0,.6)" }}>
-            STACK<span style={{ color: "#ffd98a" }}>STRIKE</span>
+            STACK<span style={{ color: "#7dff6a" }}>DEAD</span>
           </div>
-          <div style={{ marginTop: 8, fontSize: "clamp(10px, 2.4vh, 13px)", fontWeight: 700, letterSpacing: "0.32em", color: "#9aa3af" }}>STAY QUIET. TAKE THE GOLD.</div>
+          <div style={{ marginTop: 8, fontSize: "clamp(10px, 2.4vh, 13px)", fontWeight: 700, letterSpacing: "0.32em", color: "#9aa3af" }}>HOLD THE LINE. SURVIVE THE WAVES.</div>
         </div>
 
         <div data-testid="stackstrike-rank" style={{ display: "flex", alignItems: "center", gap: 10, maxWidth: 340 }}>
-          <div style={{ flex: "none", padding: "4px 10px", borderRadius: 6, background: "rgba(255,217,138,.14)", border: "1px solid rgba(255,217,138,.45)", color: "#ffd98a", fontSize: 12, fontWeight: 900, letterSpacing: "0.1em" }}>
+          <div style={{ flex: "none", padding: "4px 10px", borderRadius: 6, background: "rgba(125,255,106,.14)", border: "1px solid rgba(125,255,106,.45)", color: "#7dff6a", fontSize: 12, fontWeight: 900, letterSpacing: "0.1em" }}>
             RANK {rank.level}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ height: 5, borderRadius: 3, background: "rgba(255,255,255,.12)", overflow: "hidden" }}>
-              <div style={{ width: `${Math.round(rank.fraction * 100)}%`, height: "100%", background: "#ffd98a" }} />
+              <div style={{ width: `${Math.round(rank.fraction * 100)}%`, height: "100%", background: "#7dff6a" }} />
             </div>
             <div style={{ marginTop: 4, fontSize: 11, color: "#8b93a1", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {rank.needed === 0 ? "Top rank" : next.length > 0 ? `Next: ${next.join(", ")}` : `${rank.needed - rank.into} XP to rank ${rank.level + 1}`}
             </div>
           </div>
         </div>
+        {progress.runs > 0 && (
+          <div data-testid="stackstrike-best" style={{ marginTop: -6, fontSize: 12, fontWeight: 700, letterSpacing: "0.04em", color: "#9aa3af" }}>
+            Best: wave {progress.bestWave} · {progress.bestScore.toLocaleString("en-US")} pts
+          </div>
+        )}
 
         <div role="group" aria-label="Difficulty" style={{ display: "flex", background: "rgba(255,255,255,.07)", borderRadius: 999, padding: 3, width: "fit-content", border: "1px solid rgba(255,255,255,.12)" }}>
           {DIFFICULTY_IDS.map((id) => (
@@ -444,7 +447,7 @@ function TitleScreen({
                 letterSpacing: "0.04em",
                 border: 0,
                 borderRadius: 999,
-                background: difficulty === id ? "#ffd98a" : "transparent",
+                background: difficulty === id ? "#7dff6a" : "transparent",
                 color: difficulty === id ? "#1a1204" : "#b6bdc8",
               }}
             >
@@ -460,7 +463,7 @@ function TitleScreen({
             className="ss-play"
             data-testid="stackstrike-play"
             onClick={onPlay}
-            style={{ padding: "clamp(11px, 3vh, 15px) 44px", fontSize: 19, fontWeight: 900, letterSpacing: "0.08em", color: "#1a1204", background: "linear-gradient(#ffe6a8, #ffc95e)", border: 0, borderRadius: 12 }}
+            style={{ padding: "clamp(11px, 3vh, 15px) 44px", fontSize: 19, fontWeight: 900, letterSpacing: "0.08em", color: "#07160a", background: "linear-gradient(#b6ffa6, #5fe04a)", border: 0, borderRadius: 12 }}
           >
             PLAY
           </button>

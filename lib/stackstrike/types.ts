@@ -43,87 +43,40 @@ export interface EnemyDefinition {
   health: number;
   moveSpeed: number;
   radius: number;
-  /** How far the enemy's flashlight reaches. It sees the player only inside the beam, with a clear line. */
-  detectionRange: number;
-  /** Half the width of the flashlight beam, in radians. Alert enemies ignore it. */
-  fieldOfView: number;
+  /** Zombies hit in melee: how close they must get, how hard, and how often per second. */
   attackRange: number;
-  attack: "ranged" | "melee";
   damage: number;
-  /** Attacks per second. */
   fireRate: number;
-  projectileSpeed: number;
-  spread: number;
-  /** Seconds between first seeing the player and first attack. */
-  reactionTime: number;
+  /** Points for a kill, before the streak multiplier. */
   score: number;
+  /** XP toward the next perk card. */
+  xp: number;
+  /** Chance a kill leaves a pickup behind, 0 to 1. */
+  dropChance: number;
+  /** Bursts when it dies: everything within `radius` takes `damage` (half at the edge), the player included. */
+  burst?: { radius: number; damage: number };
+  /** Share of a bullet's damage that gets through: 1 is none stopped, 0.5 takes half. Blasts ignore it. */
+  armor: number;
 }
 
 export type DifficultyId = "easy" | "normal" | "hard";
-
-export type ContractId = "standard" | "skeleton-crew" | "night-shift" | "rich-pickings" | "double-time" | "tight-radio";
-
-/** A twist on the heist, drawn at random each run so no two feel the same. */
-export interface ContractDefinition {
-  id: ContractId;
-  name: string;
-  blurb: string;
-  /** Rank that unlocks it. */
-  unlockLevel: number;
-  /** How likely it is among the unlocked ones. */
-  weight: number;
-  /** Guards added or removed from what the difficulty calls for. */
-  guardDelta: number;
-  /** Multiplier on how far guard flashlights reach. */
-  beamScale: number;
-  /** Multiplier on how fast guards walk. */
-  speedScale: number;
-  /** Multiplier on how long a radio call takes to go out. */
-  radioScale: number;
-  /** Side valuables added or removed. */
-  lootDelta: number;
-  /** Multiplier on what the valuables pay. */
-  lootScale: number;
-}
 
 export interface DifficultyDefinition {
   id: DifficultyId;
   label: string;
   blurb: string;
-  /** Seconds one enemy needs to spot a player in clear view at medium range. */
-  detectSeconds: number;
-  /** Seconds a half-spotted player takes to fade from an enemy's mind. */
-  decaySeconds: number;
-  /** Guards posted on this difficulty: every guard whose tier is this or lower. */
-  tier: 1 | 2 | 3;
-  /** Multiplier on how fast guards walk. */
-  enemySpeed: number;
+  /** Multiplier on how many zombies a wave has. */
+  horde: number;
+  /** Multiplier on how fast they walk. */
+  speed: number;
+  /** Multiplier on how hard they hit. */
+  damage: number;
 }
 
 /** A walled room, for lighting it as the player enters. */
 export interface Room {
   id: string;
   rect: Rect;
-}
-
-/** A guard the map starts with: either a roamer walking a loop, or a sentry posted in one spot watching one way. */
-export interface Guard {
-  defId: string;
-  /** The easiest difficulty this guard is on. 1 is on every difficulty, 3 only on hard. */
-  tier: 1 | 2 | 3;
-  /** Waypoints walked in a loop. A single point is a post. */
-  route: Vec[];
-  /** For a post: the way the guard faces, swept a little either side. */
-  watch?: number;
-}
-
-/** Something worth taking. The main one is what the mission is for. */
-export interface LootSpot {
-  id: string;
-  label: string;
-  pos: Vec;
-  value: number;
-  main: boolean;
 }
 
 /** What a solid thing is, for drawing it. It changes nothing about how it blocks. */
@@ -167,16 +120,12 @@ export interface Arena {
   rooms: Room[];
   /** Every fixed light. Where none reaches, the floor is as dark as `ambient`. */
   lights: Light[];
-  /** Light on the floor where no lamp reaches, 0 to 1. At or above `SHADOW.darkBelow` nowhere is dark enough to hide in. */
+  /** Light on the floor where no lamp reaches, 0 to 1. */
   ambient: number;
-  /** The darkest corners. Not marked on the floor: guards check them after losing you. */
-  corners: Vec[];
-  guards: Guard[];
-  loot: LootSpot[];
-  /** This run's twist. Absent means the plain heist. */
-  contract?: ContractId;
-  /** The way out. The door is drawn on the outer wall; standing in the zone with the gold ends the mission. */
-  exit: { door: Rect; zone: Rect };
+  /** Where zombies come in: breaches in the outer walls and the far corners of rooms. */
+  spawns: Vec[];
+  /** Where explosive barrels stand at the start of every wave. */
+  barrels?: Vec[];
   playerSpawn: Vec;
 }
 
@@ -207,129 +156,153 @@ export interface PlayerState {
   cooldown: number;
   /** Seconds of hit flash left, for rendering only. */
   hurt: number;
-  /** Standing in real darkness, with no guard's beam on you: hard to notice. Recomputed every step. */
-  hidden: boolean;
-  /** How much light falls on the floor under the player from the fixed lights, 0 to 1. Recomputed every step. */
-  light: number;
-  /** Seconds left of being easy to see after a shot, however dark the corner. */
-  exposedLeft: number;
-  /** Walking this step. Standing still is harder to notice. */
+  /** Seconds since a zombie last hit the player, for health regeneration. */
+  sinceHurt: number;
+  /** Walking this step. */
   moving: boolean;
 }
-
-/**
- * patrol: sweeping the map, unaware. suspicious: has glimpsed or heard
- * something and is checking it out. search: looking around a spot. chase and
- * attack: has spotted the player.
- */
-export type EnemyMode = "patrol" | "suspicious" | "search" | "chase" | "attack";
 
 export interface EnemyState {
   id: number;
   defId: string;
   pos: Vec;
+  /** The way it faces, which is the way it is heading. */
   facing: number;
   health: number;
   maxHealth: number;
-  mode: EnemyMode;
-  /** 0 knows nothing, 1 has spotted the player. Fills while the player is in view. */
-  awareness: number;
-  /** Somewhere to go and look: a glimpse or a sound. Not the player's true position. */
-  investigate: Vec | null;
-  /** Nooks still to check after the investigate spot. */
-  queue: Vec[];
-  /** Where the player was last seen, or null when the enemy has lost them. */
-  lastKnown: Vec | null;
   cooldown: number;
-  /** Seconds left looking around before going back on patrol. */
-  searchLeft: number;
-  /** The loop this guard walks, or a single post. */
-  route: Vec[];
-  /** Which waypoint it is walking to. */
-  routeIndex: number;
-  /** For a post: the way it faces. It sweeps a little either side. */
-  watch: number | null;
-  /** Which way round its loop a roamer is walking: 1 forward, -1 back. */
-  routeDir: 1 | -1;
-  /** Phase of a post's gaze sweep. */
-  sweepClock: number;
-  patrolTarget: Vec | null;
-  /** Waypoints still to walk when a wall is in the way. Empty when the way is clear. */
-  path: Vec[];
-  /** Seconds since `path` was planned. */
-  pathAge: number;
-  /** Where `path` was planned to end. */
-  pathGoal: Vec | null;
-  /** Counts down from reactionTime while the player is in view. */
-  reaction: number;
-  /** A radio call to the rest of the team, counting down. Dies with the spotter. */
-  radio: { left: number; pos: Vec } | null;
+  /** Seconds of hit flash left, for rendering only. */
   hurt: number;
+  /** Seconds spent inside a small circle round `anchor` while still out of reach of the player. A zombie stuck this long is moved to a spawn. */
+  stuck?: number;
+  anchor?: Vec;
 }
+
+export type PickupKind = "health" | "bomb" | "frenzy" | "double" | "shield";
+
+export interface BarrelState {
+  id: number;
+  /** Which of the arena's barrel spots it stands on, so it can be put back next wave. */
+  home: number;
+  pos: Vec;
+  health: number;
+}
+
+export interface PickupState {
+  id: number;
+  kind: PickupKind;
+  pos: Vec;
+  /** Seconds before it is gone. */
+  left: number;
+}
+
+export type PerkKind = "combat" | "survival" | "mobility" | "economy" | "chaos";
+
+/** A card offered at a level-up. `max` is how many times it can be taken in one run. */
+export interface PerkDefinition {
+  id: string;
+  name: string;
+  blurb: string;
+  kind: PerkKind;
+  max: number;
+}
+
+/** Three cards on the table, and how many times the hand can still be redrawn. */
+export interface PerkOffer {
+  cards: string[];
+  redraws: number;
+}
+
+export type SimEvent =
+  | { type: "shot"; from: "player"; pos: Vec }
+  | { type: "hit"; pos: Vec; target: "player" | "enemy" }
+  | { type: "wall"; pos: Vec }
+  | { type: "kill"; pos: Vec; defId: string; points: number }
+  | { type: "reload" }
+  | { type: "pickup"; pos: Vec; kind: PickupKind }
+  | { type: "wave"; number: number }
+  | { type: "levelup"; level: number }
+  | { type: "bomb"; pos: Vec }
+  | { type: "barrel"; pos: Vec }
+  | { type: "burst"; pos: Vec; radius: number }
+  | { type: "waveclear"; number: number; bonus: number }
+  | { type: "dead" };
 
 export interface ProjectileState {
   id: number;
   pos: Vec;
   vel: Vec;
   damage: number;
-  from: "player" | "enemy";
   travelled: number;
   maxRange: number;
+  /** How many more zombies it can go through. Missing means none. */
+  pierce?: number;
+  /** Zombies it has already gone through, so it does not hit one twice. */
+  hit?: number[];
 }
 
-export type SimEvent =
-  | { type: "shot"; from: "player" | "enemy"; pos: Vec }
-  | { type: "hit"; pos: Vec; target: "player" | "enemy" }
-  | { type: "wall"; pos: Vec }
-  | { type: "kill"; pos: Vec; defId: string }
-  | { type: "reload" }
-  | { type: "spotted"; pos: Vec }
-  | { type: "radio"; pos: Vec }
-  | { type: "hide"; on: boolean }
-  | { type: "pickup"; pos: Vec; main: boolean; value: number }
-  | { type: "body"; pos: Vec }
-  | { type: "escaped" }
-  | { type: "dead" };
-
-/** A guard who was shot. Others who see it know someone is in the building. */
-export interface BodyState {
-  id: number;
-  pos: Vec;
-  /** Someone has already come across it. */
-  found: boolean;
+/** Where the wave director is: zombies still to send in, and the pause between waves. */
+export interface WaveState {
+  number: number;
+  /** Zombie kinds still to come in, in order. */
+  queue: string[];
+  /** Seconds until the next batch walks in. */
+  spawnIn: number;
+  /** Seconds of quiet left before the next wave starts. 0 while a wave is on. */
+  breakLeft: number;
 }
 
-export interface LootState {
-  spot: LootSpot;
-  taken: boolean;
+/** Kills in quick succession build a streak, and the streak multiplies the score. */
+export interface ComboState {
+  count: number;
+  /** Seconds left to land the next kill and keep it going. */
+  left: number;
+}
+
+export interface LevelState {
+  level: number;
+  /** XP earned since this level began. */
+  into: number;
+  /** XP the next level needs on top of that. */
+  needed: number;
 }
 
 export interface SimState {
   arena: Arena;
   time: number;
-  status: "playing" | "dead" | "escaped";
+  /** `perk` is the game paused on a level-up card choice. */
+  status: "playing" | "perk" | "dead";
   difficulty: DifficultyId;
-  loot: LootState[];
-  contract: ContractDefinition;
-  /** Dead guards left where they fell. */
-  bodies: BodyState[];
-  /** How wound up the whole building is, 0 calm to 1 on edge. Spotting you or finding a body raises it; it settles over time. */
-  caution: number;
-  /** The main prize is in the player's hands: now get out. */
-  hasGold: boolean;
+  wave: WaveState;
+  combo: ComboState;
+  best: { combo: number };
+  xp: LevelState;
+  /** Level-ups waiting for a card, beyond the one on the table. */
+  pendingLevels: number;
+  /** Redraws left for the whole run. */
+  redraws: number;
+  offer: PerkOffer | null;
+  /** How many times each card has been taken this run. */
+  perks: Record<string, number>;
+  /** Seconds left of doubled fire rate. */
+  frenzyLeft: number;
+  /** Seconds left of double points. */
+  doubleLeft: number;
+  /** Seconds left of taking no damage. */
+  shieldLeft: number;
   player: PlayerState;
   enemies: EnemyState[];
   projectiles: ProjectileState[];
+  pickups: PickupState[];
+  barrels: BarrelState[];
   /** What happened during the latest step. Cleared at the start of each step. */
   events: SimEvent[];
   score: number;
   kills: number;
-  /** How many times a guard has spotted the player. */
-  timesSpotted: number;
   shotsFired: number;
   shotsHit: number;
   damageTaken: number;
-  /** When the mission ended, if it has. */
+  /** When the run ended, if it has. */
   endedAt: number | null;
   rng: number;
   nextId: number;

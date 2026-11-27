@@ -115,16 +115,16 @@ export function PlayRail({
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="mshell-play-art mshell-play-art-soft" src={STRIKE_ART} alt="" width={64} height={64} draggable={false} />
-            <strong>StackStrike</strong>
-            <small>Stealth heist · Private preview</small>
+            <strong>StackDead</strong>
+            <small>Zombie survival · Private preview</small>
           </Link>
         ) : (
           <div className="mshell-card mshell-play-card mshell-play-mid mshell-play-soon">
             <span className="mshell-premium-badge">Coming soon</span>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="mshell-play-art mshell-play-art-soft" src={STRIKE_ART} alt="" width={64} height={64} draggable={false} />
-            <strong>StackStrike</strong>
-            <small>Stealth heist</small>
+            <strong>StackDead</strong>
+            <small>Zombie survival</small>
           </div>
         )}
 

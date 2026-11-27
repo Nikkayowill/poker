@@ -5,8 +5,6 @@ import {
   cuesFor,
   FADE_IN,
   FADE_OUT,
-  GUARD_STRIDE,
-  guardStep,
   HEARING_RANGE,
   HUNT_HOLD,
   hearing,
@@ -15,7 +13,7 @@ import {
   MusicDirector,
   pick,
   playerStep,
-  readThreat,
+  readStrain,
   SOUND_GROUPS,
   StepCounter,
   type CueContext,
@@ -93,26 +91,30 @@ describe("what an event sounds like", () => {
     expect(level("smg")).toBeGreaterThanOrEqual(level("pistol"));
   });
 
-  it("hears a guard's shot from where it is, and not at all from across the building", () => {
-    const near = cuesFor({ type: "shot", from: "enemy", pos: { x: -200, y: 0 } }, ctx());
-    expect(near).toHaveLength(1);
-    expect(near[0].name).toMatch(/^shot-guard/);
-    expect(near[0].pan).toBeLessThan(0);
-    expect(cuesFor({ type: "shot", from: "enemy", pos: { x: 5000, y: 0 } }, ctx())).toEqual([]);
-  });
-
-  it("makes a guard's gun louder than yours when it is as close", () => {
-    const mine = cuesFor({ type: "shot", from: "player", pos: { x: 0, y: 0 } }, ctx())[0].volume;
-    const theirs = cuesFor({ type: "shot", from: "enemy", pos: { x: 10, y: 0 } }, ctx())[0].volume;
-    expect(theirs).toBeGreaterThan(mine);
-  });
-
-  it("always plays the sound of being hit, and the radio call with an alarm behind it", () => {
+  it("always plays the sound of being hit, but not a zombie hit from across the building", () => {
     expect(cuesFor({ type: "hit", pos: { x: 3000, y: 0 }, target: "player" }, ctx())[0].name).toMatch(/^hit-player/);
     expect(cuesFor({ type: "hit", pos: { x: 3000, y: 0 }, target: "enemy" }, ctx())).toEqual([]);
-    const radio = cuesFor({ type: "radio", pos: { x: 0, y: 0 } }, ctx());
-    expect(radio.map((c) => c.name)).toEqual(["radio", "alarm"]);
-    expect(radio[1].delay).toBeGreaterThan(0);
+  });
+
+  it("sounds an alarm when a wave starts, and a chime for a level-up", () => {
+    expect(cuesFor({ type: "wave", number: 2 }, ctx()).map((c) => c.name)).toEqual(["alarm"]);
+    expect(cuesFor({ type: "levelup", level: 3 }, ctx()).map((c) => c.name)).toEqual(["ui-confirm"]);
+  });
+
+  it("makes a barrel blast a deep boom that is still felt from across the building", () => {
+    const near = cuesFor({ type: "barrel", pos: { x: -50, y: 0 } }, ctx())[0];
+    const far = cuesFor({ type: "barrel", pos: { x: 5000, y: 0 } }, ctx())[0];
+    expect(near.name).toMatch(/^shot-shotgun/);
+    expect(near.rate).toBeLessThan(0.7);
+    expect(far.volume).toBeGreaterThan(0);
+    expect(far.volume).toBeLessThan(near.volume);
+  });
+
+  it("makes a bomb a deep shotgun boom", () => {
+    const [boom] = cuesFor({ type: "bomb", pos: { x: 0, y: 0 } }, ctx());
+    expect(boom.name).toMatch(/^shot-shotgun/);
+    expect(boom.rate).toBeLessThan(0.7);
+    expect(boom.volume).toBe(1);
   });
 
   it("gives every kind of event a sound or says why not", () => {
@@ -120,16 +122,17 @@ describe("what an event sounds like", () => {
       { type: "shot", from: "player", pos: { x: 0, y: 0 } },
       { type: "hit", pos: { x: 0, y: 0 }, target: "enemy" },
       { type: "wall", pos: { x: 10, y: 0 } },
-      { type: "kill", pos: { x: 10, y: 0 }, defId: "grunt" },
+      { type: "kill", pos: { x: 10, y: 0 }, defId: "walker", points: 100 },
       { type: "reload" },
-      { type: "spotted", pos: { x: 0, y: 0 } },
-      { type: "radio", pos: { x: 0, y: 0 } },
-      { type: "hide", on: true },
-      { type: "hide", on: false },
-      { type: "pickup", pos: { x: 0, y: 0 }, main: true, value: 1 },
-      { type: "pickup", pos: { x: 0, y: 0 }, main: false, value: 1 },
-      { type: "body", pos: { x: 0, y: 0 } },
-      { type: "escaped" },
+      { type: "pickup", pos: { x: 0, y: 0 }, kind: "health" },
+      { type: "pickup", pos: { x: 0, y: 0 }, kind: "bomb" },
+      { type: "pickup", pos: { x: 0, y: 0 }, kind: "frenzy" },
+      { type: "wave", number: 1 },
+      { type: "levelup", level: 2 },
+      { type: "bomb", pos: { x: 0, y: 0 } },
+      { type: "barrel", pos: { x: 0, y: 0 } },
+      { type: "burst", pos: { x: 10, y: 0 }, radius: 110 },
+      { type: "waveclear", number: 1, bonus: 100 },
       { type: "dead" },
     ];
     for (const event of events) {
@@ -139,15 +142,16 @@ describe("what an event sounds like", () => {
         expect(ALL_SOUNDS).toContain(c.name);
         expect(c.volume).toBeGreaterThan(0);
         expect(c.volume).toBeLessThanOrEqual(1);
-        expect(c.rate).toBeGreaterThan(0.7);
+        expect(c.rate).toBeGreaterThan(0.5);
         expect(c.rate).toBeLessThan(1.4);
       }
     }
   });
 
-  it("plays the main pickup bigger than a small one", () => {
-    expect(cuesFor({ type: "pickup", pos: { x: 0, y: 0 }, main: true, value: 1 }, ctx())[0].name).toBe("pickup-main");
-    expect(cuesFor({ type: "pickup", pos: { x: 0, y: 0 }, main: false, value: 1 }, ctx())[0].name).toBe("pickup-small");
+  it("plays a health pickup small and the power pickups bigger", () => {
+    expect(cuesFor({ type: "pickup", pos: { x: 0, y: 0 }, kind: "health" }, ctx())[0].name).toBe("pickup-small");
+    expect(cuesFor({ type: "pickup", pos: { x: 0, y: 0 }, kind: "bomb" }, ctx())[0].name).toBe("pickup-main");
+    expect(cuesFor({ type: "pickup", pos: { x: 0, y: 0 }, kind: "frenzy" }, ctx())[0].name).toBe("pickup-main");
   });
 });
 
@@ -162,17 +166,6 @@ describe("footsteps", () => {
     expect(steps.advance(39)).toBe(0);
   });
 
-  it("hears a close guard through a wall but not a far one", () => {
-    const base = { listener: { x: 0, y: 0 }, roll: () => 0.5 };
-    expect(guardStep({ x: 150, y: 0 }, { ...base, blocked: () => true })).not.toBeNull();
-    expect(guardStep({ x: 2000, y: 0 }, { ...base, blocked: () => false })).toBeNull();
-    const open = guardStep({ x: 300, y: 0 }, { ...base, blocked: () => false })!;
-    const shut = guardStep({ x: 300, y: 0 }, { ...base, blocked: () => true })!;
-    expect(open.volume).toBeGreaterThan(shut.volume);
-    expect(open.name).toMatch(/^step-boot/);
-    expect(GUARD_STRIDE).toBeGreaterThan(0);
-  });
-
   it("keeps your own steps quiet and soft", () => {
     const step = playerStep(() => 0.4);
     expect(step.name).toMatch(/^step-soft/);
@@ -181,7 +174,7 @@ describe("footsteps", () => {
 });
 
 describe("the music", () => {
-  const calm: MusicInput = { hunted: false, awareness: 0, ending: "none" };
+  const calm: MusicInput = { hunted: false, strain: 0, ending: "none" };
   const run = (director: MusicDirector, seconds: number, input: MusicInput) => {
     let mix = director.update(0, input);
     for (let t = 0; t < seconds; t += 1 / 30) mix = director.update(1 / 30, input);
@@ -196,7 +189,7 @@ describe("the music", () => {
     expect(mix.hunted).toBe(0);
   });
 
-  it("swaps to the hunt track when a guard gives chase, and holds it a while after", () => {
+  it("swaps to the fight track while a wave is on, and holds it a while after", () => {
     const director = new MusicDirector();
     run(director, 3, calm);
     const chased = run(director, FADE_OUT + 0.3, { ...calm, hunted: true });
@@ -209,7 +202,7 @@ describe("the music", () => {
     expect(later.stealth).toBe(1);
   });
 
-  it("does not drop the hunt for a one-second break in the chase", () => {
+  it("does not drop the fight track for a one-second lull", () => {
     const director = new MusicDirector();
     run(director, 3, { ...calm, hunted: true });
     run(director, 1, calm);
@@ -217,23 +210,20 @@ describe("the music", () => {
     expect(back.hunted).toBe(1);
   });
 
-  it("brings a heartbeat in as a guard gets suspicious, and speeds it up", () => {
+  it("brings a heartbeat in as the player gets hurt, and speeds it up", () => {
     const quiet = run(new MusicDirector(), 5, calm);
     expect(quiet.heartSlow).toBe(0);
     expect(quiet.heartFast).toBe(0);
-    const wary = run(new MusicDirector(), 5, { ...calm, awareness: 0.4 });
+    const wary = run(new MusicDirector(), 5, { ...calm, strain: 0.4 });
     expect(wary.heartSlow).toBeGreaterThan(0.3);
-    const nearly = run(new MusicDirector(), 5, { ...calm, awareness: 0.97 });
+    const nearly = run(new MusicDirector(), 5, { ...calm, strain: 0.97 });
     expect(nearly.heartFast).toBeGreaterThan(0.5);
     expect(nearly.heartSlow).toBeLessThan(wary.heartSlow);
   });
 
-  it("dips the music for the end of a run, harder for a death, and stops the heart", () => {
-    const dead = run(new MusicDirector(), 6, { hunted: true, awareness: 1, ending: "dead" });
-    const won = run(new MusicDirector(), 6, { hunted: false, awareness: 0, ending: "escaped" });
+  it("dips the music when the run ends, and stops the heart", () => {
+    const dead = run(new MusicDirector(), 6, { hunted: true, strain: 1, ending: "dead" });
     expect(dead.hunted).toBeLessThan(0.2);
-    expect(won.stealth).toBeLessThan(0.5);
-    expect(won.stealth).toBeGreaterThan(dead.hunted);
     expect(dead.heartFast).toBe(0);
     expect(dead.heartSlow).toBe(0);
   });
@@ -241,7 +231,7 @@ describe("the music", () => {
   it("only ever asks for levels from 0 to 1", () => {
     const director = new MusicDirector();
     for (let i = 0; i < 600; i += 1) {
-      const mix = director.update(1 / 30, { hunted: i % 90 < 30, awareness: (i % 70) / 70, ending: "none" });
+      const mix = director.update(1 / 30, { hunted: i % 90 < 30, strain: (i % 70) / 70, ending: "none" });
       for (const value of Object.values(mix)) {
         expect(value).toBeGreaterThanOrEqual(0);
         expect(value).toBeLessThanOrEqual(1);
@@ -249,11 +239,11 @@ describe("the music", () => {
     }
   });
 
-  it("reads the threat from the guards", () => {
-    expect(readThreat([], 0)).toEqual({ hunted: false, awareness: 0 });
-    expect(readThreat([{ mode: "patrol", awareness: 0.3 }, { mode: "suspicious", awareness: 0.6 }], 0)).toEqual({ hunted: false, awareness: 0.6 });
-    expect(readThreat([{ mode: "chase", awareness: 1 }], 0).hunted).toBe(true);
-    expect(readThreat([{ mode: "attack", awareness: 1 }], 0).hunted).toBe(true);
-    expect(readThreat([], 1).awareness).toBeCloseTo(0.5);
+  it("reads how hurt the player is", () => {
+    expect(readStrain(100, 100)).toBe(0);
+    expect(readStrain(25, 100)).toBeCloseTo(0.75);
+    expect(readStrain(0, 100)).toBe(1);
+    expect(readStrain(150, 100)).toBe(0);
+    expect(readStrain(10, 0)).toBe(0);
   });
 });

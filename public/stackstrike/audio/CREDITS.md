@@ -14,7 +14,6 @@ Real recordings, near-distance takes, cut into single shots.
 | `shot-pistol-*` (your pistol) | Walther PPQ 9mm, `X_39P`, low-passed and shortened so it sounds suppressed |
 | `shot-smg-*` (your SMG) | Carl Gustav M45 9mm, `G_31P`, lightly low-passed |
 | `shot-shotgun-*` (your shotgun) | Benelli Nova 12 gauge, `O_21P`, lightly low-passed |
-| `shot-guard-*` (guards' pistols) | 1911 .45, `A_42P` and `A_34P`, left loud and open |
 
 A little compression and a short low thump are added under each shot (see `punch` in the script).
 
@@ -41,12 +40,11 @@ Both are leveled with ffmpeg `loudnorm` (hunted is louder on purpose) and encode
 - `reload-shotgun`, `shotgun-rack`: `Shell in Chamber` and `Rack` from [Shotgun Reload Sound effects](https://opengameart.org/content/shotgun-reload-sound-effects), CC0.
 - `heart-slow`, `heart-fast`: [Heartbeat sounds](https://opengameart.org/content/heartbeat-sounds) by estevinho, CC0 (seamless loops).
 - `alarm`: [Short alarm](https://opengameart.org/content/short-alarm) by qubodup, CC0.
-- `radio` borrows its crackle from `static1` in [Frequency Static Sound Effects](https://opengameart.org/content/frequency-static-sound-effects) by Gena Sealov, CC0.
 
 ## Made in code
 
-`step-soft-*`, `step-boot-*`, `pickup-small`, `pickup-main` (`scripts/stackstrike_foley.py`), `spotted`, `body-found`, `dead`, `escaped`, `radio` (the beeps), `empty-click`, `swap`
-and `hide` are synthesized by `scripts/stackstrike-audio.py`, so they have no source file.
+`step-soft-*`, `step-boot-*`, `pickup-small`, `pickup-main` (`scripts/stackstrike_foley.py`), `dead`, `empty-click` and `swap`
+are synthesized by `scripts/stackstrike-audio.py`, so they have no source file.
 
 ## Looked at and not used
 

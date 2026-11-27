@@ -1,11 +1,11 @@
-import { AIM_ASSIST, PLAYER_GLOW, SENSE, SHADOW } from "./content";
+import { AIM_ASSIST, PLAYER_GLOW, SENSE } from "./content";
 import { distance, lineOfSight, segmentWallHit } from "./geometry";
 import type { Arena, EnemyState, Room, Vec, Wall } from "./types";
 
 /**
- * Light and sight shapes. The scene draws the dark and the enemies' flashlight
- * beams from these polygons, cut short by walls the same way the sim's line
- * of sight is, so what is drawn and what counts as seen agree.
+ * Light and sight shapes. The scene draws the pool of light round the player
+ * from these polygons, cut short by walls the same way the sim's line of sight
+ * is, so what is drawn and what counts as lit agree.
  */
 
 /** Shortest signed angle from `from` to `to`, in -PI..PI. */
@@ -26,23 +26,6 @@ function castRay(origin: Vec, angle: number, range: number, walls: readonly Wall
   return { x: origin.x + (end.x - origin.x) * nearest, y: origin.y + (end.y - origin.y) * nearest };
 }
 
-/** A flashlight beam as a fan of points: the origin, then the far edge swept left to right. Walls cut it short. */
-export function beamPolygon(
-  origin: Vec,
-  aim: number,
-  walls: readonly Wall[],
-  range: number,
-  halfAngle: number,
-  rays = 60,
-): Vec[] {
-  const points: Vec[] = [{ x: origin.x, y: origin.y }];
-  for (let n = 0; n <= rays; n += 1) {
-    const angle = aim - halfAngle + (halfAngle * 2 * n) / rays;
-    points.push(castRay(origin, angle, range, walls));
-  }
-  return points;
-}
-
 /** A full circle of sight around the origin, cut short by walls. */
 export function glowPolygon(origin: Vec, walls: readonly Wall[], radius: number = PLAYER_GLOW.radius, rays = 32): Vec[] {
   const points: Vec[] = [];
@@ -50,25 +33,6 @@ export function glowPolygon(origin: Vec, walls: readonly Wall[], radius: number 
     points.push(castRay(origin, (n / rays) * Math.PI * 2, radius, walls));
   }
   return points;
-}
-
-/**
- * How much light falls on a point from the fixed lights, 0 to 1. Each lamp is
- * brightest at its own spot and fades to nothing at its radius, and only counts
- * where nothing stands between it and the point, so a crate throws a shadow.
- * This is what "dark" means to the sim: it decides where you can hide.
- */
-export function lightAt(point: Vec, arena: Pick<Arena, "lights" | "ambient" | "walls">): number {
-  let level = arena.ambient;
-  for (const light of arena.lights) {
-    const dist = distance(light.pos, point);
-    if (dist >= light.radius) continue;
-    const strength = (1 - dist / light.radius) ** SHADOW.falloff;
-    if (strength <= level) continue;
-    if (!lineOfSight(light.pos, point, arena.walls)) continue;
-    level = strength;
-  }
-  return Math.min(1, level);
 }
 
 /** The room a point is in, or the nearest one when it stands in a doorway. */
@@ -118,7 +82,7 @@ export function assistAim(
 }
 
 /**
- * The guards the player can make out: everyone within `SENSE.range`, walls or
+ * The zombies the player can make out: everyone within `SENSE.range`, walls or
  * no walls. They are fully clear when close and fade toward the edge of the
  * range, and anyone farther off is not shown at all until the player gets closer.
  */

@@ -1,25 +1,27 @@
 import * as Phaser from "phaser";
-import { CONTRACTS, PLAYER_GLOW } from "@/lib/stackstrike/content";
+import { ARENA, BARRELS, PICKUPS, PLAYER_GLOW, SENSE } from "@/lib/stackstrike/content";
 import { StackStrikeAudio } from "./stackstrike-audio";
 import { recordAim, releaseShot, type AimSample } from "@/lib/stackstrike/aim";
-import { GUARD_STRIDE, guardStep, PLAYER_STRIDE, playerStep, readThreat, StepCounter, cuesFor, type Cue, type CueContext } from "@/lib/stackstrike/audio";
+import { PLAYER_STRIDE, playerStep, readStrain, StepCounter, cuesFor, type Cue, type CueContext } from "@/lib/stackstrike/audio";
 import { isDisc, isPoly, lineOfSight, segmentWallHit } from "@/lib/stackstrike/geometry";
+import { PERKS } from "@/lib/stackstrike/content";
 import { applyRun, loadoutFor, loadProgress, rankFor, saveProgress, type Progress, type RunResult } from "@/lib/stackstrike/progress";
-import { buildArena, pickContract } from "@/lib/stackstrike/run";
 import {
   accuracy,
-  beamRange,
+  choosePerk,
+  comboMultiplier,
   createState,
   currentWeapon,
   enemyDef,
-  radioDelay,
-  rating,
+  magazineSize,
+  redrawOffer,
+  skipOffer,
   STEP_SECONDS,
   step,
 } from "@/lib/stackstrike/sim";
-import type { DifficultyId, EnemyState, LightTone, PlayerInput, SimEvent, SimState } from "@/lib/stackstrike/types";
-import { ARM_PX, bodyToWorld, FISTS, GUN_ART, handOffset, handsOnGun, pixelScale, REST_HANDS, segmentBetween, SHOULDERS, solveArm, walkSway, type Pt as BodyPt } from "@/lib/stackstrike/sprites";
-import { angleDiff, assistAim, beamPolygon, glowPolygon, roomAt, sensedEnemies } from "@/lib/stackstrike/vision";
+import type { DifficultyId, EnemyState, Light, LightTone, PickupKind, PlayerInput, SimEvent, SimState } from "@/lib/stackstrike/types";
+import { ARM_PX, bodyToWorld, FISTS, GUN_ART, handOffset, handsOnGun, pixelScale, segmentBetween, SHOULDERS, solveArm, walkSway, type Pt as BodyPt } from "@/lib/stackstrike/sprites";
+import { angleDiff, assistAim, glowPolygon, roomAt, sensedEnemies } from "@/lib/stackstrike/vision";
 
 /**
  * The Phaser side of StackStrike: reads input, runs lib/stackstrike/sim.ts at
@@ -36,17 +38,13 @@ import { angleDiff, assistAim, beamPolygon, glowPolygon, roomAt, sensedEnemies }
  * There is no hide button: pressing into a corner is hiding. Desktop is the
  * same game with WASD, mouse, R and 1-3.
  *
- * The player carries no light. The world is black, lit only by a small glow
- * round the player and by the enemies' flashlights: each beam, cut short by
- * walls, is erased out of the dark, and being inside one is what fills that
- * enemy's spotted meter. The laser is draw-only, so enemies never see it.
- * It is a heist, not a wave shooter: guards are placed on the map (roamers
- * and posts), the gold case is on the far side, and the way out is the door you
- * came in. Guards within sensing range are drawn glowing red over the dark,
- * through walls, fading toward the edge of the range; far ones stay hidden until
- * you get closer, and near ones just off screen get an arrow on the edge. The
- * room you stand in is dimly lit. A spotter shows a radio ring until its call
- * goes out; shoot it first and the call dies.
+ * The world is dark, lit only by a small glow round the player, the room they
+ * stand in and the lamps. It is a wave shooter: zombies walk in from the
+ * spawns in numbered waves, the crowd grows every wave, and a brute lumbers in
+ * every fifth. Kills fill an XP bar; each level pauses the fight on three cards
+ * (three redraws a run, or skip). Zombies within sensing range are drawn glowing
+ * green over the dark, through walls, fading toward the edge of the range; near
+ * ones just off screen get an arrow on the edge. The laser is draw-only.
  *
  * The canvas is drawn at device resolution, so every screen size below is in
  * device pixels: `u` is one CSS pixel's worth.
@@ -87,29 +85,24 @@ const COLORS = {
   hud: "#e6edf3",
 };
 
-const ENEMY_COLORS: Record<string, number> = { grunt: 0xe5484d, runner: 0xf59f00 };
+const ENEMY_COLORS: Record<string, number> = { walker: 0x7fbf6a, runner: 0xc9d96a, bloater: 0xb7e05a, armored: 0x8fb4d8, brute: 0x4f8a48 };
 
 const ART = "/stackstrike/art";
-/** The runner is the guard's drawing, tinted so it reads as a different kind of enemy. */
-const ENEMY_TINT: Record<string, number> = { runner: 0xffb070 };
+/** Every zombie is one grey drawing with its arms out (made from the guard art by scripts/stackstrike-zombies.py), tinted green; the kind changes the shade. */
+const ENEMY_TINT: Record<string, number> = { walker: 0x86d46a, runner: 0xcfe85a, bloater: 0xd2f06a, armored: 0xa9c7e6, brute: 0x4fa84a };
+const PICKUP_COLORS: Record<PickupKind, number> = { health: 0x5ee0a0, bomb: 0xff9f43, frenzy: 0xffe066, double: 0xd58cff, shield: 0x63e6ff };
 
 /** Leading upper arm, trigger upper arm, leading forearm, trigger forearm. Forearms end in a glove. */
 type ArmRig = Phaser.GameObjects.Image[];
 const ARM_TEXTURE_WIDTH = ARM_PX + 18;
 
-interface Corpse {
-  body: Phaser.GameObjects.Image;
-  arms: ArmRig;
-}
-
 interface EnemySprite {
   body: Phaser.GameObjects.Image;
   arms: ArmRig;
-  gun: Phaser.GameObjects.Image;
   last: Point;
   moving: boolean;
 }
-const ENEMY_GLOW = 0xff2a2a;
+const ENEMY_GLOW = 0x7dff6a;
 
 const DARKNESS = 0.95;
 /** The dark is drawn at this share of screen resolution and stretched back up: light is soft anyway, and it is a full-screen fill. */
@@ -203,26 +196,12 @@ interface Layout {
   buttons: Record<ButtonName, Point>;
 }
 
-function circlePoints(x: number, y: number, radius: number, count = 24): Point[] {
-  const points: Point[] = [];
-  for (let n = 0; n < count; n += 1) {
-    const angle = (n / count) * Math.PI * 2;
-    points.push({ x: x + Math.cos(angle) * radius, y: y + Math.sin(angle) * radius });
-  }
-  return points;
-}
-
-/** Yellow at 0, red at 1. */
-function alertColor(level: number): number {
-  const green = Math.round(0xd2 * (1 - level) + 0x30 * level);
-  const blue = Math.round(0x3f * (1 - level) + 0x30 * level);
-  return (0xff << 16) | (green << 8) | blue;
-}
-
 export class StackStrikeScene extends Phaser.Scene {
   private sim: SimState;
   private accumulator = 0;
   private diedAt = 0;
+  /** When the card choice came up, so a thumb still down from the fight cannot pick one by accident. */
+  private offerShownAt = 0;
   private paused = false;
   private touch: boolean;
 
@@ -247,7 +226,7 @@ export class StackStrikeScene extends Phaser.Scene {
   private lightBrush!: Phaser.GameObjects.Graphics;
   /** Enemies, drawn over the dark in world coordinates (it is moved and scaled to match the camera). */
   private enemyGfx!: Phaser.GameObjects.Graphics;
-  /** Rings, meters and radio marks, drawn over the guards' sprites. */
+  /** Rings and marks, drawn over the zombies' sprites. */
   private enemyTop!: Phaser.GameObjects.Graphics;
   private playerSprite!: Phaser.GameObjects.Image;
   private playerGun!: Phaser.GameObjects.Image;
@@ -257,23 +236,20 @@ export class StackStrikeScene extends Phaser.Scene {
   private muted = false;
   private playerSteps = new StepCounter(PLAYER_STRIDE);
   private lastPlayerPos: Point | null = null;
-  private guardSteps = new Map<number, { last: Point; counter: StepCounter }>();
   private lastWeapon = 0;
   /** The names of the last sounds played, for tests. */
   private heard: string[] = [];
   private enemySprites = new Map<number, EnemySprite>();
-  private bodySprites = new Map<number, Corpse>();
   private tint!: Phaser.GameObjects.Graphics;
   private hud!: Phaser.GameObjects.Graphics;
   private healthText!: Phaser.GameObjects.Text;
   private statusText!: Phaser.GameObjects.Text;
   private weaponText!: Phaser.GameObjects.Text;
   private objectiveText!: Phaser.GameObjects.Text;
+  private levelText!: Phaser.GameObjects.Text;
+  private offerTexts!: { header: Phaser.GameObjects.Text; titles: Phaser.GameObjects.Text[]; blurbs: Phaser.GameObjects.Text[]; redraw: Phaser.GameObjects.Text; skip: Phaser.GameObjects.Text };
   private bannerText!: Phaser.GameObjects.Text;
   private buttonLabels!: Record<ButtonName, Phaser.GameObjects.Text>;
-
-  /** Each enemy's flashlight beam this frame, by enemy id. Shared by the dark and the enemy drawing. */
-  private beams = new Map<number, Point[]>();
 
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private reloadQueued = false;
@@ -285,8 +261,21 @@ export class StackStrikeScene extends Phaser.Scene {
   /** Seconds a tap on the aim pad still asks to fire. */
   private fireBuffer = 0;
   private hint = { text: "", left: 0 };
+  /** `?fps` in the address shows the frame rate, for checking a real phone. */
+  private showFps = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("fps");
 
   private particles: Particle[] = [];
+  /** Stains left where zombies fell and barrels went off. They fade. */
+  private splats: { x: number; y: number; r: number; life: number; max: number; color: number; alpha: number }[] = [];
+  /** A few text objects reused for the "+100" that floats up from a kill. */
+  private popups: { text: Phaser.GameObjects.Text; x: number; y: number; life: number }[] = [];
+  /** Who can be made out this frame, worked out once and shared by everything that draws zombies. */
+  private sensed: { enemy: EnemyState; strength: number }[] = [];
+  /** Lamp light shapes. The lamps and walls never move, so each is cut once. */
+  /** Set when frames have been slow for a while: the scene then draws cheaper (fewer lamp rings and particles) for the rest of the session. */
+  private lowQuality = false;
+  private slowFor = 0;
+  private lampCache = new Map<Light, { rings: Point[][]; edge: Point[]; core: Point[] }>();
   private banner: { text: string; left: number; size?: number } = { text: "", left: 0 };
   private progress: Progress;
   /** What the run that just ended earned. Null while playing. */
@@ -299,25 +288,17 @@ export class StackStrikeScene extends Phaser.Scene {
     this.sim = this.newRun();
   }
 
-  /** A fresh building: its own gold, valuables, guards and twist, with the guns this rank has earned. */
+  /** A fresh run in the compound, with the guns this rank has earned. */
   private newRun(): SimState {
     const seed = (Math.random() * 2 ** 31) >>> 0;
     const level = rankFor(this.progress.xp).level;
-    const contract = pickContract(seed, level);
-    const arena = buildArena(seed, this.options.difficulty, contract);
-    return createState(seed, "vanguard", arena, this.options.difficulty, loadoutFor(level));
-  }
-
-  /** The contract is the headline of the opening seconds. */
-  private announceContract(): void {
-    const contract = CONTRACTS[this.sim.arena.contract ?? "standard"];
-    this.banner = { text: `${contract.name.toUpperCase()}\n${contract.blurb}`, left: 3.4, size: 17 };
+    return createState(seed, "vanguard", ARENA, this.options.difficulty, loadoutFor(level));
   }
 
   preload(): void {
     this.load.image("operative", `${ART}/operative.png`);
-    this.load.image("guard", `${ART}/guard.png`);
-    for (const kind of ["operative", "guard"]) {
+    this.load.image("zombie", `${ART}/zombie.png`);
+    for (const kind of ["operative", "zombie"]) {
       for (const part of ["upper", "fore"]) this.load.image(`arm-${kind}-${part}`, `${ART}/arm-${kind}-${part}.png`);
     }
     for (const id of Object.keys(GUN_ART)) this.load.image(`gun-${id}`, `${ART}/gun-${id}.png`);
@@ -359,6 +340,15 @@ export class StackStrikeScene extends Phaser.Scene {
     this.weaponText = text().setOrigin(0.5, 1);
     this.objectiveText = text().setOrigin(1, 0).setAlign("right");
     this.bannerText = text().setOrigin(0.5).setAlign("center");
+    this.levelText = text().setOrigin(0.5, 0);
+    this.offerTexts = {
+      header: text().setOrigin(0.5),
+      titles: [0, 1, 2].map(() => text().setOrigin(0.5, 0).setAlign("center")),
+      blurbs: [0, 1, 2].map(() => text().setOrigin(0.5, 0).setAlign("center").setFontStyle("normal")),
+      redraw: text().setOrigin(0.5),
+      skip: text().setOrigin(0.5),
+    };
+    for (let n = 0; n < 10; n += 1) this.popups.push({ text: text().setOrigin(0.5).setVisible(false), x: 0, y: 0, life: 0 });
     this.buttonLabels = {
       reload: text().setOrigin(0.5).setText(""),
       swap: text().setOrigin(0.5),
@@ -374,6 +364,13 @@ export class StackStrikeScene extends Phaser.Scene {
       this.weaponText,
       this.objectiveText,
       this.bannerText,
+      this.levelText,
+      this.offerTexts.header,
+      ...this.offerTexts.titles,
+      ...this.offerTexts.blurbs,
+      this.offerTexts.redraw,
+      this.offerTexts.skip,
+      ...this.popups.map((popup) => popup.text),
       ...Object.values(this.buttonLabels),
     ]);
 
@@ -383,7 +380,6 @@ export class StackStrikeScene extends Phaser.Scene {
     this.cameras.main.ignore(this.hudLayer);
     this.hudCamera.ignore(this.worldLayer);
 
-    this.announceContract();
     this.setupInput();
     this.scale.on("resize", this.onResize, this);
     this.events.once("shutdown", () => this.scale.off("resize", this.onResize, this));
@@ -399,6 +395,7 @@ export class StackStrikeScene extends Phaser.Scene {
         scene: this,
         state: () => this.sim,
         heard: () => [...this.heard],
+        offerRects: () => this.offerRects(),
       };
     }
   }
@@ -436,23 +433,34 @@ export class StackStrikeScene extends Phaser.Scene {
   update(_time: number, deltaMs: number): void {
     if (this.paused) return;
     const frame = Math.min(deltaMs / 1000, MAX_FRAME_SECONDS);
+    // Frames slower than about 30 fps for two seconds' worth: draw cheaper.
+    this.slowFor = deltaMs > 34 ? this.slowFor + frame : Math.max(0, this.slowFor - frame * 2);
+    if (this.slowFor > 2) this.lowQuality = true;
     this.accumulator += frame;
     while (this.accumulator >= STEP_SECONDS) {
       this.accumulator -= STEP_SECONDS;
       const input = this.readInput();
       this.reloadQueued = false;
       this.selectQueued = null;
-      const wasPlaying = this.sim.status === "playing";
+      const before = this.sim.status;
       step(this.sim, input);
       for (const event of this.sim.events) {
         this.react(event);
         this.hear(this.cueContext(), event);
       }
-      if (wasPlaying && this.sim.status !== "playing") {
+      if (before !== "dead" && this.sim.status === "dead") {
         this.diedAt = this.time.now;
         this.result = applyRun(this.progress, this.sim);
         this.progress = this.result.progress;
         saveProgress(this.progress);
+      }
+      if (before === "playing" && this.sim.status === "perk") {
+        // Hands off the glass: whatever the thumbs were doing, the cards take over.
+        this.moveStick = null;
+        this.aimPad = null;
+        this.fireBuffer = 0;
+        this.offerShownAt = this.time.now;
+        break;
       }
     }
 
@@ -461,8 +469,9 @@ export class StackStrikeScene extends Phaser.Scene {
     if (this.hint.left > 0) this.hint.left -= frame;
     this.updateParticles(frame);
     this.updateCamera(frame);
+    this.sensed = sensedEnemies(this.sim.player.pos, this.sim.enemies);
+    this.updatePopups(frame);
     this.drawWorld();
-    this.updateBeams();
     this.drawDark();
     this.drawEnemies();
     this.syncEnemySprites();
@@ -501,33 +510,18 @@ export class StackStrikeScene extends Phaser.Scene {
 
     const moved = this.lastPlayerPos ? Math.hypot(player.pos.x - this.lastPlayerPos.x, player.pos.y - this.lastPlayerPos.y) : 0;
     this.lastPlayerPos = { x: player.pos.x, y: player.pos.y };
-    if (playing && player.moving && !player.hidden && this.playerSteps.advance(moved) > 0) this.playCues([playerStep(ctx.roll)]);
-
-    // A guard's boots can be heard through a wall, which is how you know where it is in the dark.
-    const alive = new Set<number>();
-    for (const enemy of enemies) {
-      alive.add(enemy.id);
-      const track = this.guardSteps.get(enemy.id);
-      if (!track) {
-        this.guardSteps.set(enemy.id, { last: { x: enemy.pos.x, y: enemy.pos.y }, counter: new StepCounter(GUARD_STRIDE) });
-        continue;
-      }
-      const walked = Math.hypot(enemy.pos.x - track.last.x, enemy.pos.y - track.last.y);
-      track.last = { x: enemy.pos.x, y: enemy.pos.y };
-      if (playing && track.counter.advance(walked) > 0) {
-        const cue = guardStep(enemy.pos, ctx);
-        if (cue) this.playCues([cue]);
-      }
-    }
-    for (const id of this.guardSteps.keys()) if (!alive.has(id)) this.guardSteps.delete(id);
+    if (playing && player.moving && this.playerSteps.advance(moved) > 0) this.playCues([playerStep(ctx.roll)]);
 
     if (player.weaponIndex !== this.lastWeapon) {
       this.lastWeapon = player.weaponIndex;
       if (playing) this.playCues([{ name: "swap", volume: 0.6, rate: 1, pan: 0, delay: 0 }]);
     }
 
-    const threat = readThreat(enemies, this.sim.caution);
-    this.audio.update(frame, { ...threat, ending: status === "playing" ? "none" : status });
+    this.audio.update(frame, {
+      hunted: enemies.length > 0,
+      strain: readStrain(player.health, player.maxHealth),
+      ending: status === "dead" ? "dead" : "none",
+    });
   }
 
   /* ----------------------------------------------------------------- input */
@@ -540,12 +534,20 @@ export class StackStrikeScene extends Phaser.Scene {
     if (keyboard) {
       this.keys = keyboard.addKeys("W,A,S,D,UP,DOWN,LEFT,RIGHT") as Record<string, Phaser.Input.Keyboard.Key>;
       keyboard.on("keydown-R", () => {
-        if (this.sim.status !== "playing") this.restart();
+        if (this.sim.status === "dead") this.restart();
+        else if (this.sim.status === "perk") redrawOffer(this.sim);
         else this.reloadQueued = true;
       });
-      keyboard.on("keydown-ONE", () => (this.selectQueued = 0));
-      keyboard.on("keydown-TWO", () => (this.selectQueued = 1));
-      keyboard.on("keydown-THREE", () => (this.selectQueued = 2));
+      keyboard.on("keydown-X", () => {
+        if (this.sim.status === "perk") skipOffer(this.sim);
+      });
+      const number = (index: number): void => {
+        if (this.sim.status === "perk") choosePerk(this.sim, index);
+        else this.selectQueued = index;
+      };
+      keyboard.on("keydown-ONE", () => number(0));
+      keyboard.on("keydown-TWO", () => number(1));
+      keyboard.on("keydown-THREE", () => number(2));
     }
 
     this.input.on("wheel", (_pointer: Phaser.Input.Pointer, _over: unknown, _dx: number, dy: number) => {
@@ -554,7 +556,11 @@ export class StackStrikeScene extends Phaser.Scene {
 
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
       if (this.paused) return;
-      if (this.sim.status !== "playing") {
+      if (this.sim.status === "perk") {
+        this.tapOffer(pointer.x, pointer.y);
+        return;
+      }
+      if (this.sim.status === "dead") {
         if (this.time.now - this.diedAt > RESTART_LOCKOUT_MS) this.restart();
         return;
       }
@@ -633,6 +639,36 @@ export class StackStrikeScene extends Phaser.Scene {
     };
     this.input.on("pointerup", release);
     this.input.on("pointerupoutside", release);
+  }
+
+  /** Where the three cards and the two buttons sit on screen. */
+  private offerRects(): { cards: { x: number; y: number; w: number; h: number }[]; redraw: { x: number; y: number; w: number; h: number }; skip: { x: number; y: number; w: number; h: number } } {
+    const { u, width, height } = this.layoutNow;
+    const gap = 12 * u;
+    const w = Math.min(190 * u, (width - 48 * u - gap * 2) / 3);
+    const h = 118 * u;
+    const left = (width - (w * 3 + gap * 2)) / 2;
+    const top = height / 2 - 78 * u;
+    const cards = [0, 1, 2].map((n) => ({ x: left + n * (w + gap), y: top, w, h }));
+    const bw = 130 * u;
+    const bh = 34 * u;
+    const by = top + h + 16 * u;
+    return {
+      cards,
+      redraw: { x: width / 2 - bw - gap / 2, y: by, w: bw, h: bh },
+      skip: { x: width / 2 + gap / 2, y: by, w: bw, h: bh },
+    };
+  }
+
+  /** A tap on the card screen: pick a card, redraw the hand, or skip. */
+  private tapOffer(x: number, y: number): void {
+    if (this.time.now - this.offerShownAt < 350) return;
+    const inside = (r: { x: number; y: number; w: number; h: number }): boolean => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+    const rects = this.offerRects();
+    const card = rects.cards.findIndex(inside);
+    if (card >= 0) choosePerk(this.sim, card);
+    else if (inside(rects.redraw)) redrawOffer(this.sim);
+    else if (inside(rects.skip)) skipOffer(this.sim);
   }
 
   /**
@@ -755,25 +791,22 @@ export class StackStrikeScene extends Phaser.Scene {
     for (const sprite of this.enemySprites.values()) {
       sprite.body.destroy();
       for (const arm of sprite.arms) arm.destroy();
-      sprite.gun.destroy();
     }
     this.enemySprites.clear();
-    for (const corpse of this.bodySprites.values()) {
-      corpse.body.destroy();
-      for (const arm of corpse.arms) arm.destroy();
-    }
-    this.bodySprites.clear();
     this.result = null;
     this.audio.reset();
     this.playerSteps.reset();
     this.lastPlayerPos = null;
-    this.guardSteps.clear();
     this.lastWeapon = this.sim.player.weaponIndex;
-    this.announceContract();
     this.aimAngle = 0;
     this.fireBuffer = 0;
     this.hint.left = 0;
     this.particles = [];
+    this.splats = [];
+    for (const entry of this.popups) {
+      entry.life = 0;
+      entry.text.setVisible(false);
+    }
     this.accumulator = 0;
     this.banner.left = 0;
     this.cam = { x: this.sim.player.pos.x, y: this.sim.player.pos.y };
@@ -821,41 +854,92 @@ export class StackStrikeScene extends Phaser.Scene {
   private react(event: SimEvent): void {
     switch (event.type) {
       case "shot":
-        if (event.from === "player") this.burst(event.pos.x, event.pos.y, 3, 0xffe066, 60, 0.08);
+        this.burst(event.pos.x, event.pos.y, 3, 0xffe066, 60, 0.08);
         break;
       case "hit":
-        this.burst(event.pos.x, event.pos.y, 5, event.target === "enemy" ? 0xffffff : 0xff4d4d, 120, 0.25);
+        this.burst(event.pos.x, event.pos.y, 5, event.target === "enemy" ? 0xc8ffb8 : 0xff4d4d, 120, 0.25);
         if (event.target === "player") this.cameras.main.shake(90, 0.004);
         break;
       case "wall":
         this.burst(event.pos.x, event.pos.y, 3, 0x9fb0c8, 80, 0.2);
         break;
-      case "kill":
-        this.burst(event.pos.x, event.pos.y, 14, ENEMY_COLORS[event.defId] ?? 0xffffff, 200, 0.5);
+      case "kill": {
+        const color = ENEMY_COLORS[event.defId] ?? 0x7fbf6a;
+        this.burst(event.pos.x, event.pos.y, 12, color, 200, 0.5);
+        const def = enemyDef(event.defId);
+        this.addSplat(event.pos.x, event.pos.y, def.radius * 1.2, color, 0.3, 7);
+        const mult = event.points / def.score;
+        this.popup(event.pos, `+${event.points}`, mult >= 3 ? "#ffd23f" : mult >= 2 ? "#ffe9a8" : "#d9ffcf", def.id === "brute" ? 22 : 14);
         break;
-      case "pickup":
-        this.burst(event.pos.x, event.pos.y, event.main ? 18 : 8, 0xffd23f, 150, 0.6);
-        this.banner = event.main ? { text: "GOLD SECURED\nGET OUT", left: 2.4 } : { text: `+${event.value}`, left: 1.1 };
+      }
+      case "barrel":
+        this.burst(event.pos.x, event.pos.y, 50, 0xff8a3d, 460, 0.65);
+        this.addSplat(event.pos.x, event.pos.y, BARRELS.blastRadius * 0.45, 0x0b0b0b, 0.55, 14);
+        this.cameras.main.shake(220, 0.008);
         break;
-      case "escaped":
+      case "burst":
+        this.burst(event.pos.x, event.pos.y, this.lowQuality ? 14 : 30, 0xb7e05a, 300, 0.55);
+        this.addSplat(event.pos.x, event.pos.y, event.radius * 0.5, 0x9fd13a, 0.32, 9);
+        this.cameras.main.shake(120, 0.005);
         break;
-      case "spotted":
-        this.cameras.main.shake(140, 0.003);
+      case "waveclear":
+        this.banner = { text: `WAVE ${event.number} CLEARED\n+${event.bonus}`, left: 2.4, size: 26 };
         break;
-      case "radio":
-        this.hint = { text: "THEY CALLED IT IN", left: 2.4 };
+      case "pickup": {
+        this.burst(event.pos.x, event.pos.y, 14, PICKUP_COLORS[event.kind], 150, 0.6);
+        const text = { health: "+HEALTH", bomb: "BOOM", frenzy: "ADRENALINE", double: "DOUBLE POINTS", shield: "SHIELD" }[event.kind];
+        this.hint = { text, left: 1.6 };
         break;
-      case "body":
-        this.hint = { text: "BODY FOUND", left: 2.4 };
-        this.cameras.main.shake(120, 0.002);
+      }
+      case "wave": {
+        const brute = event.number % 5 === 0;
+        this.banner = { text: brute ? `WAVE ${event.number}\nA BRUTE IS COMING` : `WAVE ${event.number}`, left: 2.2, size: 30 };
+        break;
+      }
+      case "levelup":
+        this.hint = { text: `LEVEL ${event.level}`, left: 1.6 };
+        break;
+      case "bomb":
+        this.burst(event.pos.x, event.pos.y, 60, 0xffb347, 520, 0.7);
+        this.cameras.main.shake(260, 0.01);
+        this.cameras.main.flash(180, 255, 220, 160);
         break;
       case "dead":
         this.cameras.main.shake(300, 0.012);
         break;
       case "reload":
-      case "hide":
         break;
     }
+  }
+
+  private addSplat(x: number, y: number, r: number, color: number, alpha: number, life: number): void {
+    this.splats.push({ x, y, r, life, max: life, color, alpha });
+    if (this.splats.length > 70) this.splats.splice(0, this.splats.length - 70);
+  }
+
+  /** A short "+100" that floats up from where something fell. */
+  private popup(at: Point, label: string, color: string, size: number): void {
+    const free = this.popups.find((entry) => entry.life <= 0) ?? this.popups.reduce((oldest, entry) => (entry.life < oldest.life ? entry : oldest));
+    free.x = at.x;
+    free.y = at.y;
+    free.life = 0.9;
+    free.text.setText(label).setColor(color).setFontSize(Math.round(size * this.layoutNow.u)).setVisible(true);
+  }
+
+  private updatePopups(frame: number): void {
+    for (const entry of this.popups) {
+      if (entry.life <= 0) continue;
+      entry.life -= frame;
+      if (entry.life <= 0) {
+        entry.text.setVisible(false);
+        continue;
+      }
+      entry.y -= 38 * frame;
+      const at = this.worldToScreen(entry.x, entry.y);
+      entry.text.setPosition(at.x, at.y).setAlpha(Math.min(1, entry.life * 3));
+    }
+    for (const splat of this.splats) splat.life -= frame;
+    this.splats = this.splats.filter((splat) => splat.life > 0);
   }
 
   private burst(x: number, y: number, count: number, color: number, speed: number, life: number): void {
@@ -874,7 +958,8 @@ export class StackStrikeScene extends Phaser.Scene {
       });
     }
     // The pool is capped so a long fight cannot grow it without bound.
-    if (this.particles.length > 400) this.particles.splice(0, this.particles.length - 400);
+    const cap = this.lowQuality ? 120 : 400;
+    if (this.particles.length > cap) this.particles.splice(0, this.particles.length - cap);
   }
 
   private updateParticles(dt: number): void {
@@ -929,6 +1014,16 @@ export class StackStrikeScene extends Phaser.Scene {
     this.statusText.setFontSize(Math.round(12 * u)).setPosition(left, insets.top + 76 * u);
     this.objectiveText.setFontSize(small).setPosition(width - insets.right - 16 * u, insets.top + 12 * u);
     this.bannerText.setPosition(width / 2, height * 0.3);
+    this.levelText.setFontSize(Math.round(11 * u)).setOrigin(0.5, 1).setPosition(width / 2, height - insets.bottom - 22 * u);
+    const rects = this.offerRects();
+    this.offerTexts.header.setFontSize(Math.round(16 * u)).setPosition(width / 2, rects.cards[0].y - 24 * u);
+    rects.cards.forEach((card, n) => {
+      const pad = 10 * u;
+      this.offerTexts.titles[n].setFontSize(Math.round(15 * u)).setPosition(card.x + card.w / 2, card.y + 14 * u).setWordWrapWidth(card.w - pad * 2);
+      this.offerTexts.blurbs[n].setFontSize(Math.round(12 * u)).setPosition(card.x + card.w / 2, card.y + 46 * u).setWordWrapWidth(card.w - pad * 2);
+    });
+    this.offerTexts.redraw.setFontSize(Math.round(13 * u)).setPosition(rects.redraw.x + rects.redraw.w / 2, rects.redraw.y + rects.redraw.h / 2);
+    this.offerTexts.skip.setFontSize(Math.round(13 * u)).setPosition(rects.skip.x + rects.skip.w / 2, rects.skip.y + rects.skip.h / 2);
     for (const name of BUTTON_NAMES) {
       this.buttonLabels[name].setFontSize(Math.round(9 * u)).setAlpha(0.6).setPosition(this.layoutNow.buttons[name].x, this.layoutNow.buttons[name].y);
     }
@@ -959,28 +1054,46 @@ export class StackStrikeScene extends Phaser.Scene {
       }
     }
 
-    // The way in and out, set into the outer wall.
-    const { x, y, w, h } = arena.exit.door;
-    g.fillStyle(0x1f4d36, 1);
-    g.fillRect(x, y, w, h);
-    g.lineStyle(2, 0x5ee0a0, 1);
-    g.strokeRect(x, y, w, h);
   }
 
   private drawWorld(): void {
     const g = this.world;
-    const { enemies, projectiles } = this.sim;
-    const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 180);
+    const { projectiles, player } = this.sim;
     g.clear();
 
-    this.drawBodies();
-    this.drawPlayerSprite();
-    this.drawDetectionRing(g, enemies, pulse);
+    for (const splat of this.splats) {
+      const fade = splat.life / splat.max;
+      g.fillStyle(splat.color, splat.alpha * Math.min(1, fade * 1.6));
+      g.fillCircle(splat.x, splat.y, splat.r);
+      g.fillCircle(splat.x + splat.r * 0.7, splat.y - splat.r * 0.3, splat.r * 0.45);
+      g.fillCircle(splat.x - splat.r * 0.5, splat.y + splat.r * 0.6, splat.r * 0.35);
+    }
+    for (const barrel of this.sim.barrels) {
+      const { x, y } = barrel.pos;
+      g.fillStyle(0x000000, 0.35);
+      g.fillCircle(x + 2, y + 3, BARRELS.radius);
+      g.fillStyle(0xc4532a, 1);
+      g.fillCircle(x, y, BARRELS.radius);
+      g.lineStyle(2, 0x3a1608, 1);
+      g.strokeCircle(x, y, BARRELS.radius);
+      g.fillStyle(0xe8793a, 1);
+      g.fillCircle(x, y, BARRELS.radius * 0.62);
+      g.fillStyle(0xffd23f, 1);
+      g.fillRect(x - 2, y - 6, 4, 8);
+      g.fillCircle(x, y + 6, 2);
+    }
 
-    // Bullets are bright whatever the light, so incoming fire can be read.
+    this.drawPlayerSprite();
+    // A faint ring round the player, in the frenzy colour while adrenaline lasts.
+    const shielded = this.sim.shieldLeft > 0;
+    const ringColor = shielded ? PICKUP_COLORS.shield : this.sim.frenzyLeft > 0 ? PICKUP_COLORS.frenzy : 0xffffff;
+    g.lineStyle(shielded ? 4 : 2, ringColor, shielded ? 0.55 + 0.4 * Math.sin(this.time.now / 90) ** 2 : this.sim.frenzyLeft > 0 ? 0.7 : 0.12);
+    g.strokeCircle(player.pos.x, player.pos.y, player.radius + (shielded ? 12 : 9));
+
+    // Bullets are bright whatever the light, so they can be followed.
     for (const shot of projectiles) {
       const tail = 0.025;
-      g.lineStyle(2.5, shot.from === "player" ? COLORS.playerShot : COLORS.enemyShot, 1);
+      g.lineStyle(2.5, COLORS.playerShot, 1);
       g.lineBetween(shot.pos.x - shot.vel.x * tail, shot.pos.y - shot.vel.y * tail, shot.pos.x, shot.pos.y);
     }
 
@@ -990,37 +1103,8 @@ export class StackStrikeScene extends Phaser.Scene {
     }
   }
 
-  /** Guards that were shot lie where they fell, arms hanging. Only the light that reaches them shows them. */
-  private drawBodies(): void {
-    const live = new Set<number>();
-    for (const body of this.sim.bodies) {
-      live.add(body.id);
-      let corpse = this.bodySprites.get(body.id);
-      if (!corpse) {
-        const image = this.add.image(body.pos.x, body.pos.y, "guard");
-        const arms = this.makeArms("guard");
-        this.worldLayer.addAt(image, 1);
-        arms.forEach((arm, index) => this.worldLayer.addAt(arm, 2 + index));
-        corpse = { body: image, arms };
-        this.bodySprites.set(body.id, corpse);
-      }
-      const angle = ((body.id * 37) % 11) * 0.57;
-      const scale = pixelScale(14);
-      const color = body.found ? 0xb05050 : 0x7a6a6a;
-      corpse.body.setPosition(body.pos.x, body.pos.y).setRotation(angle).setScale(scale).setTint(color);
-      this.poseArms(corpse.arms, body.pos, angle, angle, scale, REST_HANDS);
-      for (const arm of corpse.arms) arm.setTint(color);
-    }
-    for (const [id, corpse] of this.bodySprites) {
-      if (live.has(id)) continue;
-      corpse.body.destroy();
-      for (const arm of corpse.arms) arm.destroy();
-      this.bodySprites.delete(id);
-    }
-  }
-
   /** The four arm pieces for one character, hidden until posed. */
-  private makeArms(kind: "operative" | "guard"): ArmRig {
+  private makeArms(kind: "operative" | "zombie"): ArmRig {
     return [`${kind}-upper`, `${kind}-upper`, `${kind}-fore`, `${kind}-fore`].map((name) =>
       this.add.image(0, 0, `arm-${name}`).setOrigin(9 / ARM_TEXTURE_WIDTH, 0.5),
     );
@@ -1055,7 +1139,7 @@ export class StackStrikeScene extends Phaser.Scene {
     const gunId = this.currentGunId();
     const art = GUN_ART[gunId];
     const hands = handOffset(player.aim, player.radius, art.hold);
-    const alpha = player.hidden ? 0.6 : 1;
+    const alpha = 1;
     this.playerSprite.setPosition(player.pos.x, player.pos.y).setRotation(player.aim + sway).setScale(scale).setAlpha(alpha);
     this.poseArms(this.playerArms, player.pos, player.aim + sway, player.aim, scale, handsOnGun(art));
     for (const part of [this.playerSprite, ...this.playerArms]) {
@@ -1089,34 +1173,31 @@ export class StackStrikeScene extends Phaser.Scene {
   }
 
   /**
-   * One sprite per guard that can be made out: the drawing for the way it faces, a gun
-   * in its hands if it carries one, a little bob while it walks. They sit over the dark in
+   * One sprite per zombie that can be made out: the guard's drawing tinted green,
+   * arms out in front, shuffling a little as it walks. They sit over the dark in
    * screen space, like the glows beneath them.
    */
   private syncEnemySprites(): void {
     const zoom = this.zoom;
     const seconds = this.time.now / 1000;
     const visible = new Map<number, number>();
-    for (const { enemy, strength } of sensedEnemies(this.sim.player.pos, this.sim.enemies)) visible.set(enemy.id, strength);
+    for (const { enemy, strength } of this.sensed) visible.set(enemy.id, strength);
 
     for (const enemy of this.sim.enemies) {
       let sprite = this.enemySprites.get(enemy.id);
       if (!sprite) {
-        const body = this.add.image(0, 0, "guard");
-        const arms = this.makeArms("guard");
-        const gun = this.add.image(0, 0, "gun-pistol");
+        const body = this.add.image(0, 0, "zombie");
+        const arms = this.makeArms("zombie");
         const at = this.hudLayer.getIndex(this.enemyTop);
         this.hudLayer.addAt(body, at);
         arms.forEach((arm, index) => this.hudLayer.addAt(arm, at + 1 + index));
-        this.hudLayer.addAt(gun, at + 5);
-        sprite = { body, arms, gun, last: { ...enemy.pos }, moving: false };
+        sprite = { body, arms, last: { ...enemy.pos }, moving: false };
         this.enemySprites.set(enemy.id, sprite);
       }
       const fade = visible.get(enemy.id);
       if (fade === undefined) {
         sprite.body.setVisible(false);
         for (const arm of sprite.arms) arm.setVisible(false);
-        sprite.gun.setVisible(false);
         sprite.last = { ...enemy.pos };
         continue;
       }
@@ -1124,27 +1205,17 @@ export class StackStrikeScene extends Phaser.Scene {
       const moved = Math.hypot(enemy.pos.x - sprite.last.x, enemy.pos.y - sprite.last.y) > 0.05;
       sprite.moving = moved;
       sprite.last = { ...enemy.pos };
-      const sway = walkSway(seconds + enemy.id * 0.37, moved);
+      const sway = walkSway(seconds + enemy.id * 0.37, moved) * 1.6;
       const scale = pixelScale(def.radius) * zoom;
       const at = this.worldToScreen(enemy.pos.x, enemy.pos.y);
       const bodyAngle = enemy.facing + sway;
       sprite.body.setVisible(true).setPosition(at.x, at.y).setRotation(bodyAngle).setScale(scale).setAlpha(fade);
-      const armed = def.attack === "ranged";
-      this.poseArms(sprite.arms, at, bodyAngle, enemy.facing, scale, armed ? handsOnGun(GUN_ART.pistol) : FISTS);
-      const tint = ENEMY_TINT[enemy.defId];
+      this.poseArms(sprite.arms, at, bodyAngle, enemy.facing, scale, FISTS);
+      const tint = ENEMY_TINT[enemy.defId] ?? 0x9fd18a;
       for (const part of [sprite.body, ...sprite.arms]) {
         part.setAlpha(fade);
         if (enemy.hurt > 0) part.setTintFill(0xffffff);
-        else if (tint !== undefined) part.setTint(tint);
-        else part.clearTint();
-      }
-
-      if (armed) {
-        const hands = handOffset(enemy.facing, def.radius, GUN_ART.pistol.hold);
-        const grip = this.worldToScreen(enemy.pos.x + hands.x, enemy.pos.y + hands.y);
-        this.placeGun(sprite.gun, "pistol", grip, enemy.facing, scale, fade);
-      } else {
-        sprite.gun.setVisible(false);
+        else part.setTint(tint);
       }
     }
 
@@ -1153,20 +1224,18 @@ export class StackStrikeScene extends Phaser.Scene {
       if (alive.has(id)) continue;
       sprite.body.destroy();
       for (const arm of sprite.arms) arm.destroy();
-      sprite.gun.destroy();
       this.enemySprites.delete(id);
     }
   }
 
   /**
-   * Every enemy, all the time, glowing red over the dark so the player is never
-   * guessing where they are. Each carries a flashlight and the beam is its line
-   * of sight: stand in it and its spotted meter fills, stay out and it cannot
-   * see you. The beam goes from yellow toward red as that meter fills.
+   * Every zombie within sensing range glows green over the dark, and the pickups
+   * on the floor glow in their own colour, so the player is never guessing where
+   * things are. A brute carries a health bar, since it takes a lot of shooting.
    */
   private drawEnemies(): void {
     const g = this.enemyGfx;
-    const { enemies } = this.sim;
+    const { pickups, barrels, player } = this.sim;
     const { width, height } = this.layoutNow;
     const zoom = this.zoom;
     const top = this.enemyTop;
@@ -1175,153 +1244,79 @@ export class StackStrikeScene extends Phaser.Scene {
     top.clear();
     const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 220);
 
-    this.drawObjectives(g, pulse);
-
-    for (const { enemy, strength: fade } of sensedEnemies(this.sim.player.pos, enemies)) {
-      const def = enemyDef(enemy.defId);
-      const alert = enemy.mode === "chase" || enemy.mode === "attack";
-      const { x, y } = enemy.pos;
-
-      // Its flashlight: a wide soft beam with a brighter core near the lamp.
-      const beam = this.beams.get(enemy.id);
-      if (beam) {
-        const tint = alertColor(alert ? 1 : enemy.awareness);
-        g.fillStyle(tint, (0.1 + 0.14 * (alert ? 1 : enemy.awareness)) * fade);
-        g.fillPoints(beam, true);
-        g.fillStyle(tint, (0.1 + 0.1 * (alert ? 1 : enemy.awareness)) * fade);
-        g.fillPoints(
-          beam.map((p) => ({ x: x + (p.x - x) * 0.55, y: y + (p.y - y) * 0.55 })),
-          true,
-        );
+    for (const pickup of pickups) {
+      // Blinks over the last few seconds before it is gone.
+      if (pickup.left < 3 && Math.floor(pickup.left * 6) % 2 === 0) continue;
+      const color = PICKUP_COLORS[pickup.kind];
+      const { x, y } = pickup.pos;
+      g.fillStyle(color, 0.1 + 0.1 * pulse);
+      g.fillCircle(x, y, PICKUPS.radius * 2.2);
+      g.fillStyle(color, 0.95);
+      g.fillCircle(x, y, PICKUPS.radius * 0.55);
+      g.lineStyle(2, 0xffffff, 0.8);
+      g.strokeCircle(x, y, PICKUPS.radius * 0.55);
+      g.fillStyle(0x10141a, 1);
+      const r = PICKUPS.radius * 0.3;
+      if (pickup.kind === "health") {
+        g.fillRect(x - r, y - r * 0.3, r * 2, r * 0.6);
+        g.fillRect(x - r * 0.3, y - r, r * 0.6, r * 2);
+      } else if (pickup.kind === "bomb") {
+        g.fillCircle(x, y, r);
+      } else if (pickup.kind === "double") {
+        // Two stacked bars: x2.
+        g.fillRect(x - r, y - r * 0.9, r * 2, r * 0.6);
+        g.fillRect(x - r, y + r * 0.3, r * 2, r * 0.6);
+      } else if (pickup.kind === "shield") {
+        g.fillTriangle(x - r, y - r * 0.8, x + r, y - r * 0.8, x, y + r);
+      } else {
+        g.fillTriangle(x + r * 0.2, y - r, x - r * 0.8, y + r * 0.2, x + r * 0.1, y + r * 0.2);
+        g.fillTriangle(x - r * 0.2, y + r, x + r * 0.8, y - r * 0.2, x - r * 0.1, y - r * 0.2);
       }
+    }
 
-      // The glow: three soft rings, brighter when it is hunting.
-      const strength = alert ? 1.4 + 0.3 * pulse : 1;
+    // A barrel in the dark is easy to miss and easy to wreck, so it glows warning-orange when it is near.
+    for (const barrel of barrels) {
+      const away = Math.hypot(barrel.pos.x - player.pos.x, barrel.pos.y - player.pos.y);
+      if (away > SENSE.range) continue;
+      g.fillStyle(0xff8a3d, 0.08 + 0.06 * pulse);
+      g.fillCircle(barrel.pos.x, barrel.pos.y, BARRELS.radius * 2.6);
+      g.lineStyle(2, 0xffb36b, 0.55);
+      g.strokeCircle(barrel.pos.x, barrel.pos.y, BARRELS.radius + 4);
+    }
+
+    for (const { enemy, strength: fade } of this.sensed) {
+      const def = enemyDef(enemy.defId);
+      const { x, y } = enemy.pos;
       for (const [scale, alpha] of [
-        [3.4, 0.07],
-        [2.4, 0.12],
-        [1.65, 0.2],
+        [2.4, 0.1],
+        [1.5, 0.2],
       ] as const) {
-        g.fillStyle(ENEMY_GLOW, Math.min(1, alpha * strength) * fade);
+        g.fillStyle(ENEMY_GLOW, alpha * fade);
         g.fillCircle(x, y, def.radius * scale);
       }
-
-      // A thin ring round the guard: red rim, brighter when it is on to something.
-      g.lineStyle(2, ENEMY_GLOW, 0.9 * fade);
+      g.lineStyle(2, ENEMY_GLOW, 0.8 * fade);
       g.strokeCircle(x, y, def.radius + 1);
-      if (alert || enemy.mode === "search" || enemy.mode === "suspicious") {
-        g.lineStyle(3, alert ? 0xff3030 : 0xffd23f, fade);
-        g.strokeCircle(x, y, def.radius + 5);
+      if (def.burst && Math.hypot(x - player.pos.x, y - player.pos.y) < def.burst.radius * 3) {
+        // How far its burst reaches, drawn while it is near enough to matter.
+        g.lineStyle(2, 0xd2f06a, (0.25 + 0.2 * pulse) * fade);
+        g.strokeCircle(x, y, def.burst.radius);
       }
-
-      // The detection meter over its head: it fills as it works out you are there.
-      const meterWidth = def.radius * 2 + 6;
-      const meterLeft = x - meterWidth / 2;
-      const meterTop = y - def.radius - 20;
-      if (alert) {
-        top.fillStyle(0xff3030, 1);
-        top.fillRect(x - 1.5, meterTop - 6, 3, 7);
-        top.fillRect(x - 1.5, meterTop + 3, 3, 3);
-      } else if (enemy.awareness > 0.02) {
+      if (def.armor < 1) {
+        // Riot gear: a steel ring that says shots will not all count.
+        g.lineStyle(3, 0xa9c7e6, 0.95 * fade);
+        g.strokeCircle(x, y, def.radius + 4);
+      }
+      if (def.id === "brute" && enemy.health < enemy.maxHealth) {
+        const w = def.radius * 2;
         top.fillStyle(0x000000, 0.7);
-        top.fillRect(meterLeft - 1, meterTop - 1, meterWidth + 2, 6);
-        top.fillStyle(alertColor(enemy.awareness), 1);
-        top.fillRect(meterLeft, meterTop, meterWidth * enemy.awareness, 4);
-      }
-      if (enemy.radio) {
-        // Mid radio call: a ring closing in. Kill it before it ends and nobody else hears.
-        const left = enemy.radio.left / radioDelay(this.sim);
-        top.lineStyle(2, 0x63e6ff, 0.9);
-        top.strokeCircle(x, y, def.radius + 9 + 14 * left);
-        top.fillStyle(0x63e6ff, 1);
-        top.fillRect(x + def.radius * 0.5, y - def.radius - 12, 3, 8);
+        top.fillRect(x - w / 2 - 1, y - def.radius - 12, w + 2, 6);
+        top.fillStyle(0xff6b6b, 1);
+        top.fillRect(x - w / 2, y - def.radius - 11, w * (enemy.health / enemy.maxHealth), 4);
       }
     }
   }
 
-  /**
-   * The gold case and the other valuables glow gold over the dark so you can
-   * find them, and the way out glows green once the case is in your hands.
-   */
-  private drawObjectives(g: Phaser.GameObjects.Graphics, pulse: number): void {
-    const { loot, hasGold, arena } = this.sim;
-    for (const { spot, taken } of loot) {
-      if (taken) continue;
-      const main = spot.main;
-      const radius = main ? 11 : 6;
-      g.fillStyle(0xffd23f, (main ? 0.12 : 0.07) + 0.08 * pulse);
-      g.fillCircle(spot.pos.x, spot.pos.y, radius * 3);
-      g.fillStyle(0xffd23f, 1);
-      if (main) g.fillRect(spot.pos.x - radius, spot.pos.y - radius * 0.7, radius * 2, radius * 1.4);
-      else g.fillCircle(spot.pos.x, spot.pos.y, radius);
-      g.lineStyle(2, 0x6b4a00, 1);
-      if (main) g.strokeRect(spot.pos.x - radius, spot.pos.y - radius * 0.7, radius * 2, radius * 1.4);
-      else g.strokeCircle(spot.pos.x, spot.pos.y, radius);
-    }
-    const zone = arena.exit.zone;
-    g.fillStyle(0x5ee0a0, (hasGold ? 0.22 : 0.07) + (hasGold ? 0.14 * pulse : 0));
-    g.fillRect(zone.x, zone.y, zone.w, zone.h);
-    g.lineStyle(2, 0x5ee0a0, hasGold ? 0.9 : 0.35);
-    g.strokeRect(zone.x, zone.y, zone.w, zone.h);
-  }
-
-  /**
-   * The ring round the player is the stealth meter: it fills with the most
-   * suspicious enemy's awareness, and a marker on it points at that enemy,
-   * seen or not. Solid red means someone has spotted you.
-   */
-  private drawDetectionRing(g: Phaser.GameObjects.Graphics, enemies: EnemyState[], pulse: number): void {
-    const { player } = this.sim;
-    let level = 0;
-    let watcher: EnemyState | null = null;
-    let hunted = false;
-    for (const enemy of enemies) {
-      if (enemy.mode === "chase" || enemy.mode === "attack") hunted = true;
-      if (enemy.awareness > level) {
-        level = enemy.awareness;
-        watcher = enemy;
-      }
-    }
-    const radius = player.radius + 9;
-    g.lineStyle(2, 0xffffff, 0.12);
-    g.strokeCircle(player.pos.x, player.pos.y, radius);
-    if (!watcher || level < 0.02) return;
-
-    if (hunted) {
-      g.lineStyle(4, 0xff3030, 0.55 + 0.4 * pulse);
-      g.strokeCircle(player.pos.x, player.pos.y, radius);
-    } else {
-      g.lineStyle(4, alertColor(level), 0.95);
-      g.beginPath();
-      g.arc(player.pos.x, player.pos.y, radius, -Math.PI / 2, -Math.PI / 2 + level * Math.PI * 2, false);
-      g.strokePath();
-    }
-
-    const toward = Math.atan2(watcher.pos.y - player.pos.y, watcher.pos.x - player.pos.x);
-    const cx = player.pos.x + Math.cos(toward) * (radius + 8);
-    const cy = player.pos.y + Math.sin(toward) * (radius + 8);
-    const ux = Math.cos(toward);
-    const uy = Math.sin(toward);
-    g.fillStyle(hunted ? 0xff3030 : alertColor(level), 1);
-    g.fillTriangle(
-      cx + ux * 7,
-      cy + uy * 7,
-      cx - ux * 3 - uy * 6,
-      cy - uy * 3 + ux * 6,
-      cx - ux * 3 + uy * 6,
-      cy - uy * 3 - ux * 6,
-    );
-  }
-
-  private updateBeams(): void {
-    this.beams.clear();
-    for (const { enemy } of sensedEnemies(this.sim.player.pos, this.sim.enemies)) {
-      const def = enemyDef(enemy.defId);
-      this.beams.set(enemy.id, beamPolygon(enemy.pos, enemy.facing, this.sim.arena.walls, beamRange(this.sim, def), def.fieldOfView, 28));
-    }
-  }
-
-  /** Blacks the screen out, then erases the enemies' flashlight beams, the glow around the player and the lit doorways. */
+  /** Blacks the screen out, then erases the lamps, the room the player is in and the glow around them. */
   private drawDark(): void {
     const { player, arena } = this.sim;
     const dark = this.dark;
@@ -1358,19 +1353,6 @@ export class StackStrikeScene extends Phaser.Scene {
 
     this.drawLamps(erase);
 
-    // The way out is always faintly lit, so you can find your way back.
-    const door = arena.exit.door;
-    erase(circlePoints(door.x + door.w / 2 + 30, door.y + door.h / 2, 90), 0.4);
-
-    // Each guard's flashlight lights the floor it sweeps, brightest near the lamp. Only the ones you can make out.
-    for (const { enemy } of sensedEnemies(player.pos, this.sim.enemies)) {
-      const def = enemyDef(enemy.defId);
-      const poly = this.beams.get(enemy.id);
-      if (!poly) continue;
-      erase(poly, 0.3);
-      erase(beamPolygon(enemy.pos, enemy.facing, arena.walls, beamRange(this.sim, def) * 0.6, def.fieldOfView * 0.75, 20), 0.3);
-    }
-
     // The glow keeps the area right around the player readable.
     const glow = glowPolygon(player.pos, arena.walls);
     erase(glow, 0.85);
@@ -1388,13 +1370,26 @@ export class StackStrikeScene extends Phaser.Scene {
     const reach = Math.hypot(this.scale.width, this.scale.height) / (2 * this.zoom);
     for (const light of arena.lights) {
       if (Math.hypot(light.pos.x - this.cam.x, light.pos.y - this.cam.y) > reach + light.radius) continue;
-      for (const ring of LAMP_RINGS) erase(glowPolygon(light.pos, arena.walls, light.radius * ring, 40), LAMP_RING_ALPHA);
-      const edge = glowPolygon(light.pos, arena.walls, light.radius, 40).map((p) => this.worldToScreen(p.x, p.y));
+      let shapes = this.lampCache.get(light);
+      if (!shapes) {
+        shapes = {
+          rings: LAMP_RINGS.map((ring) => glowPolygon(light.pos, arena.walls, light.radius * ring, 40)),
+          edge: glowPolygon(light.pos, arena.walls, light.radius, 40),
+          core: glowPolygon(light.pos, arena.walls, light.radius * 0.45, 32),
+        };
+        this.lampCache.set(light, shapes);
+      }
+      if (this.lowQuality) {
+        // Half the rings, each twice as strong, and no colour wash: the pool looks much the same for far less work.
+        shapes.rings.forEach((ring, index) => {
+          if (index % 2 === 0) erase(ring, LAMP_RING_ALPHA * 2);
+        });
+        continue;
+      }
+      for (const ring of shapes.rings) erase(ring, LAMP_RING_ALPHA);
       this.tint.fillStyle(LAMP_TINT[light.tone], 0.07);
-      this.tint.fillPoints(edge, true);
-      const core = glowPolygon(light.pos, arena.walls, light.radius * 0.45, 32).map((p) => this.worldToScreen(p.x, p.y));
-      this.tint.fillStyle(LAMP_TINT[light.tone], 0.07);
-      this.tint.fillPoints(core, true);
+      this.tint.fillPoints(shapes.edge.map((p) => this.worldToScreen(p.x, p.y)), true);
+      this.tint.fillPoints(shapes.core.map((p) => this.worldToScreen(p.x, p.y)), true);
     }
   }
 
@@ -1405,7 +1400,7 @@ export class StackStrikeScene extends Phaser.Scene {
    */
   private drawLaser(): void {
     const { player, arena } = this.sim;
-    if (player.hidden || this.sim.status !== "playing") return;
+    if (this.sim.status !== "playing") return;
     const reach = Math.min(currentWeapon(this.sim).range, LASER_RANGE);
     const from = {
       x: player.pos.x + Math.cos(player.aim) * (player.radius + 4),
@@ -1436,7 +1431,7 @@ export class StackStrikeScene extends Phaser.Scene {
 
   private drawHud(): void {
     const g = this.hud;
-    const { player, status } = this.sim;
+    const { player, status, wave, combo, xp } = this.sim;
     const weapon = currentWeapon(this.sim);
     const { u, width, height, insets, buttons } = this.layoutNow;
     g.clear();
@@ -1448,14 +1443,12 @@ export class StackStrikeScene extends Phaser.Scene {
     g.fillStyle(0x000000, 0.6);
     g.fillRect(barX, barY, barWidth, 10 * u);
     g.fillStyle(player.health / player.maxHealth > 0.3 ? 0x7ee787 : 0xff6b6b, 1);
-    g.fillRect(barX, barY, barWidth * (player.health / player.maxHealth), 10 * u);
+    g.fillRect(barX, barY, barWidth * Math.max(0, player.health / player.maxHealth), 10 * u);
     this.healthText.setText(`HP ${Math.ceil(player.health)}`);
 
     // Weapon and ammo under the health bar, with the reload bar beneath when reloading.
     const ammo = player.ammo[player.weaponIndex];
-    this.weaponText.setText(
-      player.reloadLeft > 0 ? `${weapon.name}  RELOADING` : `${weapon.name}  ${ammo}/${weapon.magazineSize}`,
-    );
+    this.weaponText.setText(player.reloadLeft > 0 ? `${weapon.name}  RELOADING` : `${weapon.name}  ${ammo}/${magazineSize(this.sim, weapon)}`);
     if (player.reloadLeft > 0) {
       const progress = 1 - player.reloadLeft / weapon.reloadDuration;
       const reloadY = insets.top + 54 * u + 18 * u;
@@ -1465,45 +1458,40 @@ export class StackStrikeScene extends Phaser.Scene {
       g.fillRect(barX, reloadY, barWidth * progress, 5 * u);
     }
 
-    // Stealth state: the thing the player most wants to know in the dark.
-    const hunted = this.sim.enemies.some((enemy) => enemy.mode === "chase" || enemy.mode === "attack");
+    // Streak and power-ups, under the weapon.
     const parts: string[] = [];
-    if (hunted) parts.push("SPOTTED");
-    if (player.hidden) parts.push("HIDDEN");
+    if (combo.count >= 2) parts.push(`${combo.count} STREAK x${comboMultiplier(combo.count)}`);
+    if (this.sim.frenzyLeft > 0) parts.push(`ADRENALINE ${Math.ceil(this.sim.frenzyLeft)}s`);
+    if (this.sim.doubleLeft > 0) parts.push(`DOUBLE POINTS ${Math.ceil(this.sim.doubleLeft)}s`);
+    if (this.sim.shieldLeft > 0) parts.push(`SHIELD ${Math.ceil(this.sim.shieldLeft)}s`);
     if (this.hint.left > 0) parts.push(this.hint.text);
+    if (this.showFps) parts.push(`${Math.round(this.game.loop.actualFps)} fps${this.lowQuality ? " low" : ""}`);
     this.statusText.setText(parts.join("  ·  "));
-    this.statusText.setColor(hunted ? "#ff6b6b" : player.hidden ? "#4fd1a5" : "#ffd23f");
+    this.statusText.setColor(this.sim.shieldLeft > 0 ? "#63e6ff" : this.sim.doubleLeft > 0 ? "#d58cff" : this.sim.frenzyLeft > 0 ? "#ffe066" : "#9fe870");
 
-    // Objective and score, top right.
-    const remaining = this.sim.loot.filter((entry) => !entry.taken && !entry.spot.main).length;
-    const goal = this.sim.hasGold ? "Gold secured: get out the west door" : "Find the gold case";
-    const rank = rankFor(this.progress.xp);
-    this.objectiveText.setText(`${this.sim.score} pts\n${goal}\n${remaining} valuable${remaining === 1 ? "" : "s"} left\nRANK ${rank.level}`);
+    // Wave and score, top right.
+    const left = wave.queue.length + this.sim.enemies.length;
+    const next = left === 0 && wave.breakLeft > 0 ? `WAVE ${wave.number + 1} IN ${Math.ceil(wave.breakLeft)}` : `${left} zombie${left === 1 ? "" : "s"} left`;
+    this.objectiveText.setText(`WAVE ${Math.max(1, wave.number)}\n${this.sim.score} pts\n${next}`);
 
-    // How wound up the building is: a thin bar under the objective that fills as guards get edgy.
-    if (this.sim.caution > 0.02 && status === "playing") {
-      const w = 90 * u;
-      const x = width - insets.right - 16 * u - w;
-      const y = insets.top + 12 * u + 80 * u;
-      g.fillStyle(0x000000, 0.55);
-      g.fillRect(x, y, w, 4 * u);
-      g.fillStyle(alertColor(this.sim.caution), 0.95);
-      g.fillRect(x, y, w * this.sim.caution, 4 * u);
-    }
+    // XP bar along the bottom, between the two pads.
+    const bw = Math.min(260 * u, width * 0.3);
+    const bx = (width - bw) / 2;
+    const by = height - insets.bottom - 18 * u;
+    g.fillStyle(0x000000, 0.55);
+    g.fillRect(bx, by, bw, 8 * u);
+    g.fillStyle(0x63e6ff, 1);
+    g.fillRect(bx, by, bw * Math.min(1, xp.into / xp.needed), 8 * u);
+    this.levelText.setText(`LEVEL ${xp.level}`);
 
-    // Banner: the end screens say how it went; a pickup flashes briefly.
-    const ended = status !== "playing";
-    if (status === "dead") {
+    // Banner: wave starts flash briefly; the end screen says how it went.
+    const ended = status === "dead";
+    if (ended) {
       this.bannerText.setText(
-        `ELIMINATED\n${this.sim.score} pts  ·  ${Math.round(accuracy(this.sim) * 100)}% accuracy\n${this.rankLine()}\n${this.touch ? "Tap" : "Press R or click"} to try again`,
-      );
-    } else if (status === "escaped") {
-      const taken = this.sim.loot.filter((entry) => entry.taken).length;
-      this.bannerText.setText(
-        `${rating(this.sim)}\nGold escaped  ·  ${this.sim.score} pts\n${this.sim.kills} down  ·  spotted ${this.sim.timesSpotted}x  ·  ${taken}/${this.sim.loot.length} loot  ·  ${Math.round(this.sim.endedAt ?? this.sim.time)}s\n${this.rankLine()}\n${this.touch ? "Tap" : "Press R or click"} to go again`,
+        `OVERRUN\nWave ${wave.number}  ·  ${this.sim.score} pts  ·  ${this.sim.kills} down\nBest streak ${this.sim.best.combo}  ·  ${Math.round(accuracy(this.sim) * 100)}% accuracy\n${this.rankLine()}\n${this.touch ? "Tap" : "Press R or click"} to try again`,
       );
     } else {
-      this.bannerText.setText(this.banner.left > 0 ? this.banner.text : "");
+      this.bannerText.setText(this.banner.left > 0 && status === "playing" ? this.banner.text : "");
     }
     this.bannerText.setFontSize(Math.round((ended ? 22 : this.banner.size ?? 28) * u));
     if (ended) {
@@ -1512,6 +1500,8 @@ export class StackStrikeScene extends Phaser.Scene {
     }
     this.bannerText.setAlpha(ended ? 1 : Math.min(1, this.banner.left * 2));
 
+    this.drawVignette(g);
+    this.drawOffer(g);
     this.drawPointers(g);
 
     // Touch controls.
@@ -1553,7 +1543,70 @@ export class StackStrikeScene extends Phaser.Scene {
     g.fillTriangle(tx - 4 * u, ty - 3 * u, tx + 3 * u, ty - 4 * u, tx + 1 * u, ty + 4 * u);
   }
 
-  /** What the run earned, and anything it unlocked, for the end screen. */
+  /** A red edge that pulses when health is low and flashes when something bites, so a close call is felt without reading the bar. */
+  private drawVignette(g: Phaser.GameObjects.Graphics): void {
+    const { player, status } = this.sim;
+    if (status !== "playing") return;
+    const ratio = player.health / player.maxHealth;
+    const low = Math.max(0, 1 - ratio / 0.4);
+    const bite = player.hurt > 0 ? player.hurt / 0.15 : 0;
+    const strength = Math.max(low * (0.6 + 0.25 * Math.sin(this.time.now / 140)), bite * 0.55);
+    if (strength < 0.03) return;
+    const { u, width, height } = this.layoutNow;
+    for (let n = 0; n < 6; n += 1) {
+      const t = (8 + n * 12) * u;
+      g.fillStyle(0xff2020, strength * 0.1);
+      g.fillRect(0, 0, width, t);
+      g.fillRect(0, height - t, width, t);
+      g.fillRect(0, t, t, height - t * 2);
+      g.fillRect(width - t, t, t, height - t * 2);
+    }
+  }
+
+  /** The level-up card screen: a dimmed field, three cards, and redraw and skip. */
+  private drawOffer(g: Phaser.GameObjects.Graphics): void {
+    const { offer, status } = this.sim;
+    const show = status === "perk" && offer !== null;
+    const { header, titles, blurbs, redraw, skip } = this.offerTexts;
+    for (const text of [header, ...titles, ...blurbs, redraw, skip]) text.setVisible(show);
+    if (!show || !offer) return;
+    const { u, width, height } = this.layoutNow;
+    const rects = this.offerRects();
+    g.fillStyle(0x000000, 0.62);
+    g.fillRect(0, 0, width, height);
+    header.setText(`LEVEL ${this.sim.xp.level}  ·  PICK ONE`);
+    rects.cards.forEach((card, n) => {
+      const perk = PERKS[offer.cards[n]];
+      const present = perk !== undefined;
+      titles[n].setVisible(present);
+      blurbs[n].setVisible(present);
+      if (!perk) return;
+      const owned = this.sim.perks[perk.id] ?? 0;
+      g.fillStyle(0x1b2733, 0.95);
+      g.fillRoundedRect(card.x, card.y, card.w, card.h, 10 * u);
+      g.lineStyle(2 * u, perk.kind === "chaos" ? 0xffd23f : 0x63e6ff, 0.9);
+      g.strokeRoundedRect(card.x, card.y, card.w, card.h, 10 * u);
+      titles[n].setText(owned > 0 ? `${perk.name}\nLv ${owned + 1}` : perk.name);
+      blurbs[n].setText(perk.blurb).setY(card.y + (owned > 0 ? 64 : 46) * u);
+      if (this.touch === false) {
+        g.fillStyle(0x63e6ff, 0.9);
+        g.fillCircle(card.x + 14 * u, card.y + card.h - 14 * u, 8 * u);
+      }
+    });
+    const button = (rect: { x: number; y: number; w: number; h: number }, on: boolean): void => {
+      g.fillStyle(0x1b2733, on ? 0.95 : 0.5);
+      g.fillRoundedRect(rect.x, rect.y, rect.w, rect.h, 8 * u);
+      g.lineStyle(1.5 * u, 0xffffff, on ? 0.7 : 0.25);
+      g.strokeRoundedRect(rect.x, rect.y, rect.w, rect.h, 8 * u);
+    };
+    const canRedraw = this.sim.redraws > 0;
+    button(rects.redraw, canRedraw);
+    button(rects.skip, true);
+    redraw.setText(`REDRAW (${this.sim.redraws})`).setAlpha(canRedraw ? 1 : 0.4);
+    skip.setText("SKIP");
+  }
+
+  /** What the run earned, for the end screen. */
   private rankLine(): string {
     const result = this.result;
     if (!result) return "";
@@ -1562,10 +1615,7 @@ export class StackStrikeScene extends Phaser.Scene {
     return result.unlocked.length > 0 ? `${head}\nUNLOCKED: ${result.unlocked.join(", ")}` : head;
   }
 
-  /**
-   * Arrows on the screen edge for what is just out of view: guards close enough
-   * to make out, the gold case until it is taken, and the way out once it is.
-   */
+  /** Arrows on the screen edge for the zombies and pickups just out of view. */
   private drawPointers(g: Phaser.GameObjects.Graphics): void {
     if (this.sim.status !== "playing") return;
     const { u, width, height, insets } = this.layoutNow;
@@ -1599,16 +1649,8 @@ export class StackStrikeScene extends Phaser.Scene {
       );
     };
 
-    for (const { enemy, strength } of sensedEnemies(this.sim.player.pos, this.sim.enemies)) {
-      const alert = enemy.mode === "chase" || enemy.mode === "attack";
-      point(enemy.pos, alert ? 0xff3030 : ENEMY_GLOW, 0.9 * strength);
-    }
-    const main = this.sim.loot.find((entry) => entry.spot.main && !entry.taken);
-    if (main) point(main.spot.pos, 0xffd23f, 0.9);
-    if (this.sim.hasGold) {
-      const zone = this.sim.arena.exit.zone;
-      point({ x: zone.x + zone.w / 2, y: zone.y + zone.h / 2 }, 0x5ee0a0, 0.95);
-    }
+    for (const { enemy, strength } of this.sensed) point(enemy.pos, ENEMY_GLOW, 0.85 * strength);
+    for (const pickup of this.sim.pickups) point(pickup.pos, PICKUP_COLORS[pickup.kind], 0.9);
   }
 
   /**

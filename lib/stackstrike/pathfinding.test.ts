@@ -4,7 +4,7 @@ import { buildNavGrid, findPath } from "./pathfinding";
 import type { Arena } from "./types";
 
 function arena(walls: Arena["walls"]): Arena {
-  return { width: 800, height: 800, walls, rooms: [], lights: [], ambient: 1, corners: [], guards: [], loot: [], exit: { door: { x: 0, y: 0, w: 1, h: 1 }, zone: { x: 0, y: 0, w: 1, h: 1 } }, playerSpawn: { x: 400, y: 400 } };
+  return { width: 800, height: 800, walls, rooms: [], lights: [], ambient: 1, spawns: [], playerSpawn: { x: 400, y: 400 } };
 }
 
 describe("findPath", () => {

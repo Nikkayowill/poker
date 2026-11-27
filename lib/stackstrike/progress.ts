@@ -1,12 +1,10 @@
-import { CONTRACTS } from "./content";
-import { rating } from "./sim";
 import type { DifficultyId, SimState } from "./types";
 
 /**
- * Rank. Every run earns XP, escaping and staying unseen earns far more, and
- * harder jobs pay better, so rank is wins weighted by difficulty and not time
- * spent. Rank opens up guns and the stranger contracts. It lives in the
- * player's browser for now: there is no account or Gold behind it.
+ * Rank. Every run earns XP from its score and how many waves it lasted, and
+ * harder difficulties pay better, so rank is how well you fought and not time
+ * spent. Rank opens up guns. It lives in the player's browser for now: there
+ * is no account or Gold behind it.
  */
 
 export const MAX_LEVEL = 10;
@@ -21,20 +19,19 @@ export const WEAPON_UNLOCKS: readonly { id: string; level: number }[] = [
 ];
 
 const DIFFICULTY_XP: Record<DifficultyId, number> = { easy: 0.8, normal: 1, hard: 1.4 };
-const ESCAPE_XP = 60;
-const GHOST_XP = 80;
-const SHADOW_XP = 30;
+/** Every wave reached is worth this much, on top of a tenth of the score. */
+const WAVE_XP = 20;
 /** Dying still pays a little, so a bad run is never nothing. */
 const MIN_RUN_XP = 10;
 
 export interface Progress {
   xp: number;
   runs: number;
-  escapes: number;
+  bestWave: number;
   bestScore: number;
 }
 
-export const NEW_PROGRESS: Progress = { xp: 0, runs: 0, escapes: 0, bestScore: 0 };
+export const NEW_PROGRESS: Progress = { xp: 0, runs: 0, bestWave: 0, bestScore: 0 };
 
 /** Total XP needed to be at `level`. */
 export function xpToReach(level: number): number {
@@ -67,13 +64,7 @@ export function loadoutFor(level: number): string[] {
 
 /** What a run was worth, once it has ended. */
 export function runXp(state: SimState): number {
-  let xp = Math.round(state.score / 10);
-  if (state.status === "escaped") {
-    xp += ESCAPE_XP;
-    const grade = rating(state);
-    if (grade === "GHOST") xp += GHOST_XP;
-    else if (grade === "SHADOW") xp += SHADOW_XP;
-  }
+  const xp = Math.round(state.score / 10) + WAVE_XP * state.wave.number;
   return Math.max(MIN_RUN_XP, Math.round(xp * DIFFICULTY_XP[state.difficulty]));
 }
 
@@ -82,9 +73,6 @@ export function unlocksBetween(from: number, to: number): string[] {
   const names: string[] = [];
   for (const unlock of WEAPON_UNLOCKS) {
     if (unlock.level > from && unlock.level <= to) names.push(unlock.id === "smg" ? "SMG" : unlock.id[0].toUpperCase() + unlock.id.slice(1));
-  }
-  for (const contract of Object.values(CONTRACTS)) {
-    if (contract.unlockLevel > from && contract.unlockLevel <= to) names.push(`${contract.name} job`);
   }
   return names;
 }
@@ -102,7 +90,7 @@ export function applyRun(progress: Progress, state: SimState): RunResult {
   const next: Progress = {
     xp: progress.xp + xp,
     runs: progress.runs + 1,
-    escapes: progress.escapes + (state.status === "escaped" ? 1 : 0),
+    bestWave: Math.max(progress.bestWave, state.wave.number),
     bestScore: Math.max(progress.bestScore, state.score),
   };
   const from = rankFor(progress.xp).level;
@@ -124,7 +112,7 @@ export function loadProgress(storage: Pick<Storage, "getItem"> | null = safeStor
     const data: unknown = JSON.parse(raw);
     if (typeof data !== "object" || data === null) return { ...NEW_PROGRESS };
     const record = data as Record<string, unknown>;
-    return { xp: count(record.xp), runs: count(record.runs), escapes: count(record.escapes), bestScore: count(record.bestScore) };
+    return { xp: count(record.xp), runs: count(record.runs), bestWave: count(record.bestWave), bestScore: count(record.bestScore) };
   } catch {
     return { ...NEW_PROGRESS };
   }

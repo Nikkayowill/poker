@@ -72,6 +72,23 @@ export const NPC_STATIONS: Record<string, Station> = {
     spots: [spot(690, 370, "down", "idle", 6000), spot(760, 392, "left", "water", 5200), spot(724, 414, "up", "harvest", 4200)],
   },
   "ivy-rest": { area: "homestead", spots: [spot(690, 370, "down", "idle", 60_000)] },
+
+  // The Town Square's shopkeepers (lib/stackacres/town-buyers.ts, seed-seller.ts). Each keeps a stall or a
+  // doorstep through the day, breaks for an hour at midday, and goes in at their own door at night, when
+  // the shop is shut. The spots are open ground in the City's own area.json.
+  "cora-stall": { area: "city", spots: [spot(328, 504, "up", "harvest", 4200), spot(360, 504, "down", "idle", 8000)] },
+  "cora-lunch": { area: "city", spots: [spot(296, 440, "right", "idle", 60_000)] },
+  "cora-home": { area: "city", spots: [{ ...spot(408, 664, "up", "idle", 60_000), indoors: true }] },
+  "hank-stall": { area: "city", spots: [spot(616, 424, "down", "idle", 9000), spot(600, 424, "right", "idle", 5000)] },
+  "hank-lunch": { area: "city", spots: [spot(392, 440, "left", "idle", 60_000)] },
+  "hank-inn": { area: "city", spots: [spot(232, 376, "right", "idle", 60_000)] },
+  "hank-home": { area: "city", spots: [{ ...spot(472, 184, "up", "idle", 60_000), indoors: true }] },
+  "iris-store": { area: "city", spots: [spot(472, 392, "down", "idle", 9000), spot(440, 392, "right", "idle", 5000)] },
+  "iris-lunch": { area: "city", spots: [spot(632, 404, "up", "idle", 60_000)] },
+  "iris-home": { area: "city", spots: [{ ...spot(440, 664, "up", "idle", 60_000), indoors: true }] },
+  "gus-quay": { area: "city", spots: [spot(746, 568, "left", "idle", 9000), spot(746, 590, "up", "harvest", 4000)] },
+  "gus-lunch": { area: "city", spots: [spot(232, 376, "right", "idle", 60_000)] },
+  "gus-home": { area: "city", spots: [{ ...spot(280, 184, "up", "idle", 60_000), indoors: true }] },
 };
 
 export const NPC_ROUTINES: Record<string, Routine> = {
@@ -123,6 +140,46 @@ export const NPC_ROUTINES: Record<string, Routine> = {
       { hour: 21, station: "ivy-rest" },
     ],
   },
+  // The Town Square. Shops open about six and shut about half past seven; whoever is not behind a stall
+  // is at their lunch or at the inn, or indoors for the night. Lunches are staggered so the square is
+  // never without a buyer.
+  cora: {
+    speed: 42,
+    steps: [
+      { hour: 6, station: "cora-stall" },
+      { hour: 12, station: "cora-lunch" },
+      { hour: 13, station: "cora-stall" },
+      { hour: 19.5, station: "cora-home" },
+    ],
+  },
+  hank: {
+    speed: 40,
+    steps: [
+      { hour: 6.5, station: "hank-stall" },
+      { hour: 13, station: "hank-lunch" },
+      { hour: 14, station: "hank-stall" },
+      { hour: 19.5, station: "hank-inn" },
+      { hour: 22, station: "hank-home" },
+    ],
+  },
+  iris: {
+    speed: 42,
+    steps: [
+      { hour: 6, station: "iris-store" },
+      { hour: 12.5, station: "iris-lunch" },
+      { hour: 13.5, station: "iris-store" },
+      { hour: 19, station: "iris-home" },
+    ],
+  },
+  gus: {
+    speed: 38,
+    steps: [
+      { hour: 6, station: "gus-quay" },
+      { hour: 12, station: "gus-lunch" },
+      { hour: 13, station: "gus-quay" },
+      { hour: 19, station: "gus-home" },
+    ],
+  },
 };
 
 /**
@@ -137,4 +194,12 @@ export const NPC_TEMPERAMENTS: Record<string, Temperament> = {
   pierre: { react: [200, 380], attention: [3500, 6500], fidget: [2200, 5000], chatty: 0.7, tempo: 1.08 },
   // Shy: notices you quickly, looks away soon, then keeps sneaking glances.
   ivy: { react: [220, 420], attention: [2000, 3800], fidget: [3000, 6500], chatty: 0.55, tempo: 1 },
+  // Warm and talkative: always has a word for whoever comes to the stall.
+  cora: { react: [220, 420], attention: [5000, 9000], fidget: [3000, 6500], chatty: 0.8, tempo: 1 },
+  // Brisk and a little gruff about business, but he likes a chat once the stall is quiet.
+  hank: { react: [260, 480], attention: [3500, 6500], fidget: [3500, 7500], chatty: 0.6, tempo: 1.02 },
+  // Quick to look up, easy with strangers.
+  iris: { react: [200, 360], attention: [4000, 7500], fidget: [2800, 6000], chatty: 0.7, tempo: 1.05 },
+  // Slow and weathered, says little: the quay has taught him to wait.
+  gus: { react: [340, 640], attention: [3000, 5500], fidget: [4500, 9000], chatty: 0.35, tempo: 0.9 },
 };

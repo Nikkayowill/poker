@@ -34,6 +34,8 @@ export interface Spot extends Point {
   chore: Chore;
   /** How long they stay at this spot before moving to the next, in real ms. */
   ms: number;
+  /** They have gone in at a door here and are not seen until they come out again. */
+  indoors?: boolean;
 }
 
 export interface Station {
@@ -85,6 +87,8 @@ export interface Pose extends Point {
   doing: Doing;
   /** How fast they are walking right now, in map px per real second: 0 unless `doing` is "walk". */
   speed: number;
+  /** Indoors: placed, but not shown. */
+  indoors?: boolean;
 }
 
 /** One stretch of walking inside one area. `points[0]` is where it starts. */
@@ -296,19 +300,23 @@ function travelPose(legs: Leg[], distance: number, speed: number): Pose | null {
   return null;
 }
 
+function standingAt(area: string, spot: Spot): Pose {
+  return { area, x: spot.x, y: spot.y, facing: spot.facing, doing: spot.chore, speed: 0, ...(spot.indoors ? { indoors: true } : {}) };
+}
+
 function loopPose(step: StepPlan, elapsedMs: number): Pose {
   const { loop, loopMs, station } = step;
   const first = station.spots[0];
-  if (loopMs <= 0) return { area: station.area, x: first.x, y: first.y, facing: first.facing, doing: first.chore, speed: 0 };
+  if (loopMs <= 0) return standingAt(station.area, first);
   let t = elapsedMs % loopMs;
   for (const part of loop) {
     if (t < part.ms) {
-      if (part.kind === "work") return { area: part.area, x: part.spot.x, y: part.spot.y, facing: part.spot.facing, doing: part.spot.chore, speed: 0 };
+      if (part.kind === "work") return standingAt(part.area, part.spot);
       return alongLeg(part.leg, (t / part.ms) * part.leg.length, step.speed);
     }
     t -= part.ms;
   }
-  return { area: station.area, x: first.x, y: first.y, facing: first.facing, doing: first.chore, speed: 0 };
+  return standingAt(station.area, first);
 }
 
 function stepPose(step: StepPlan, ms: number): Pose {
@@ -375,7 +383,7 @@ function stepAt(plan: DayPlan, ms: number): StepPlan {
 
 function rest(step: StepPlan): Pose {
   const first = step.station.spots[0];
-  return { area: step.station.area, x: first.x, y: first.y, facing: first.facing, doing: "idle", speed: 0 };
+  return { ...standingAt(step.station.area, first), doing: "idle" };
 }
 
 /** Where they are and what they're doing at `hour` (0-24, fractions allowed). */

@@ -541,7 +541,7 @@ function candidateCues(input: JournalInput, chapters: readonly JournalChapter[])
   if (toSell.length > 0) {
     const kinds = [...new Set(toSell.map((unit) => STACKACRES_CATALOGUE[unit.stock].label.toLowerCase()))];
     const what = toSell.length === 1 ? `Your ${kinds[0]} is` : `Your ${kinds.join("s and ")}s are`;
-    cues.push(cue("ship", `${what} ready to sell. Take ${toSell.length === 1 ? "it" : "them"} to Hank at the sale barn.`, "The City"));
+    cues.push(cue("ship", `${what} ready to sell. Take ${toSell.length === 1 ? "it" : "them"} to Hank at the sale barn.`, "Town Square"));
   }
 
   const ready = input.units.filter((unit) => unit.state === "ready" && !isMarketLivestock(unit.stock)).length;
@@ -570,7 +570,7 @@ function candidateCues(input: JournalInput, chapters: readonly JournalChapter[])
     if (seedCount > 0) {
       cues.push(cue("sow", "The empty bed is waiting. Your seed pouch, the hoe and the well should make a good first experiment."));
     } else if (!wheatToMill) {
-      cues.push(cue("seeds", `You're out of seed. Cora sells it at ${SEED_SELLER_WHERE}.`, "The City"));
+      cues.push(cue("seeds", `You're out of seed. Cora sells it at ${SEED_SELLER_WHERE}.`, "Town Square"));
     }
   }
 

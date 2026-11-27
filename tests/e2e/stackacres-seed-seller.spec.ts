@@ -1,4 +1,5 @@
 import { expect, test, type BrowserContext, type Page } from "./fixtures";
+import { tapTownPerson } from "./town-people";
 
 /**
  * The first loop is grounded in the world: Ray hands over a pouch of carrot
@@ -64,13 +65,7 @@ test("Cora sells seed at the city market", async ({ context, page }) => {
   await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.setClock(11));
 
   // Over the west bridge, then to the stalls where Cora stands.
-  await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("city", { x: 330, y: 540 }));
-  await expect
-    .poll(() => page.evaluate(() => (window as unknown as Handle).__stackacres.scene.travelling), { timeout: 10_000 })
-    .toBe(false);
-  await page.waitForTimeout(400);
-  const at = await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.clientPointFor(330, 494));
-  await page.mouse.click(at.x, at.y);
+  await tapTownPerson(page, "cora");
 
   const sheet = page.getByRole("dialog", { name: "Seed seller" });
   await expect(sheet).toBeVisible();

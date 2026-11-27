@@ -1,7 +1,8 @@
 import { expect, test, type BrowserContext, type Page } from "./fixtures";
+import { tapTownPerson } from "./town-people";
 
 /**
- * Selling happens in town, to the person who buys that good: Dale at the grain elevator, Iris at the
+ * Selling happens in town, to the person who buys that good: Gus at the grain elevator, Iris at the
  * general store and Hank at the sale barn (lib/stackacres/town-buyers.ts). Ray's barn no longer buys.
  */
 
@@ -43,28 +44,6 @@ async function start(page: Page) {
   await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.setClock(11));
 }
 
-/** Stands the farmer just below someone in the City and taps them. */
-async function tapPerson(page: Page, at: { x: number; y: number }) {
-  await page.evaluate(
-    (spot) => (window as unknown as Handle).__stackacres.scene.placeFarmer("city", spot),
-    { x: at.x, y: at.y + 34 },
-  );
-  await expect
-    .poll(() => page.evaluate(() => (window as unknown as Handle).__stackacres.scene.travelling), { timeout: 10_000 })
-    .toBe(false);
-  await page.waitForTimeout(400);
-  const point = await page.evaluate(
-    (spot) => (window as unknown as Handle).__stackacres.scene.clientPointFor(spot.x, spot.y),
-    { x: at.x, y: at.y - 12 },
-  );
-  await page.mouse.click(point.x, point.y);
-}
-
-// Where public/stackacres-td/areas/city/area.json stands them.
-const IRIS = { x: 467, y: 389 };
-const DALE = { x: 728, y: 573 };
-const HANK = { x: 614, y: 422 };
-
 test("nobody in town buys Stone, so the farm keeps it for building", async ({ context, page }) => {
   const profileId = await admit(context);
   const granted = await context.request.post("/api/admin/stackacres-items", { data: { profileId, item: "stone", delta: 3 } });
@@ -81,14 +60,14 @@ test("nobody in town buys Stone, so the farm keeps it for building", async ({ co
 
   await start(page);
 
-  await tapPerson(page, DALE);
+  await tapTownPerson(page, "gus");
   const elevator = page.getByRole("dialog", { name: "Grain Elevator" });
   await expect(elevator).toBeVisible();
-  await expect(elevator).toContainText("Nothing on hand that Dale buys.");
+  await expect(elevator).toContainText("Nothing on hand that Gus buys.");
   await elevator.getByRole("button", { name: "Close" }).click();
   await expect(elevator).toHaveCount(0);
 
-  await tapPerson(page, IRIS);
+  await tapTownPerson(page, "iris");
   const store = page.getByRole("dialog", { name: "General Store" });
   await expect(store).toBeVisible();
   await expect(store).toContainText("Nothing on hand that Iris buys.");
@@ -98,7 +77,7 @@ test("nobody in town buys Stone, so the farm keeps it for building", async ({ co
 test("Hank at the sale barn sells young stock and buys it back", async ({ context, page }) => {
   await admit(context);
   await start(page);
-  await tapPerson(page, HANK);
+  await tapTownPerson(page, "hank");
   const saleBarn = page.getByRole("dialog", { name: "Sale Barn" });
   await expect(saleBarn).toBeVisible();
   await expect(saleBarn).toContainText("Raise them fat and I'll buy them back by weight.");

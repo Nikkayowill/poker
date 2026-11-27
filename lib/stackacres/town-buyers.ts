@@ -1,8 +1,8 @@
 /**
  * Who in town buys what. The barn no longer buys anything.
  *
- * Three of the City's standing townsfolk (art/stackacres-td/areas/rig/city.py) stand in for the places a
- * Midwest farm sold through: Dale down by the quay is the grain elevator, Iris outside the grocery is the
+ * Three of the City's townsfolk (art/stackacres-td/areas/rig/city.py) stand in for the places a
+ * Midwest farm sold through: Gus down by the quay is the grain elevator, Iris outside the grocery is the
  * general store, and Hank on the market square is the sale barn. Real buildings come with a later redraw of
  * the City; for now the person is the place.
  *
@@ -31,14 +31,14 @@ export interface TownBuyerDef {
   readonly title: string;
   /** What they say when the sheet opens. */
   readonly greeting: string;
-  /** What they buy, for a line like "Dale buys grain." */
+  /** What they buy, for a line like "Gus buys grain." */
   readonly buys: string;
 }
 
 export const TOWN_BUYERS: Readonly<Record<TownBuyerId, TownBuyerDef>> = {
   "grain-elevator": {
-    npc: "dale",
-    name: "Dale",
+    npc: "gus",
+    name: "Gus",
     place: "the grain elevator",
     title: "Grain Elevator",
     greeting: "I buy grain by the load. Wheat, corn, flour and feed.",
@@ -144,7 +144,7 @@ export function townBuyerOfNpc(name: string): TownBuyerId | null {
   return TOWN_BUYER_IDS.find((id) => TOWN_BUYERS[id].npc === name) ?? null;
 }
 
-/** "Dale buys this at the grain elevator.", or what to do with something nobody buys. */
+/** "Gus buys this at the grain elevator.", or what to do with something nobody buys. */
 export function whoBuysLine(item: MachineItemId): string {
   const buyer = townBuyerFor(item);
   if (buyer === null) return "Nobody in town buys this. Keep it for building.";

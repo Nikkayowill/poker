@@ -27,14 +27,6 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
-
-        <!-- Required by the Google Mobile Ads SDK (@capacitor-community/admob) --
-             AdMob.initialize() in lib/ads/admob-native.ts crashes without this.
-             @string/admob_app_id is a placeholder (see strings.xml) until an
-             AdMob account exists; see docs/native-app-admob-setup.md. -->
-        <meta-data
-            android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="@string/admob_app_id" />
     </application>
 
     <!-- Permissions -->

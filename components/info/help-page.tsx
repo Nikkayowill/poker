@@ -12,9 +12,8 @@ const FAQ: Array<{ q: string; a: React.ReactNode }> = [
         A few ways, all reachable from the lobby: daily and weekly{" "}
         <Link href="/challenges">Challenges</Link> credit Gold automatically on
         completion, the player menu offers a daily Gold grant (bigger the more
-        days in a row you claim it) and a short rewarded-ad option a few times
-        a day, and if your balance drops below the cheapest table&rsquo;s buy-in the
-        lobby offers a one-time recovery top-up. Buying Gold directly is also
+        days in a row you claim it), and if your balance drops below the
+        cheapest table&rsquo;s buy-in the lobby offers a one-time recovery top-up. Buying Gold directly is also
         always optional, never required to play.
       </>
     ),

@@ -88,8 +88,6 @@ export function Lobby({
   dailyGold,
   claimingGold,
   onClaimDailyGold,
-  freeGoldEligible,
-  onGetFreeGold,
   onEditProfile,
   pushPermission,
   pushSubscribed,
@@ -135,8 +133,6 @@ export function Lobby({
   dailyGold: DailyGoldState | null;
   claimingGold: boolean;
   onClaimDailyGold: () => void;
-  freeGoldEligible: boolean;
-  onGetFreeGold: () => void;
   onEditProfile: () => void;
   /* Same push state poker-app.tsx's own player menu already tracks -- the
    * phone shell has no equivalent dropdown, so the third pane is the only
@@ -286,8 +282,6 @@ export function Lobby({
             dailyGold={dailyGold}
             claimingGold={claimingGold}
             onClaimDailyGold={onClaimDailyGold}
-            freeGoldEligible={freeGoldEligible}
-            onGetFreeGold={onGetFreeGold}
             onEditProfile={onEditProfile}
           />
         </section>

@@ -7,17 +7,16 @@ import type { PlayerProfile } from "@/lib/profile/types";
 import { dailyGoldState } from "@/lib/profile/daily-gold";
 import { backstopState, BACKSTOP_GRANT } from "@/lib/profile/backstop";
 import { streakMultiplier, STREAK_CAP_DAYS } from "@/lib/progression/streak";
-import { REWARDED_AD_GOLD, REWARDED_AD_DAILY_LIMIT, REWARDED_AD_DURATION_LABEL } from "@/lib/rewards/config";
 import { CHEAPEST_TIER, TIER_CONFIG } from "@/lib/game/tiers";
 import { tapSound } from "@/lib/audio/ui-sounds";
 
 /**
  * "Ways to earn Gold", on one page: the PlayPokerGO-style promotions/VIP
  * tab StackChips didn't have. Every source it lists (missions, the daily
- * grant, rewarded ads, the recovery top-up, buying Gold) already exists and
+ * grant, the recovery top-up, buying Gold) already exists and
  * is claimed elsewhere, in the lobby's player menu, the lobby's own banner,
  * /challenges, /store/gold. This page is wayfinding and honest state, not a
- * second claim surface: duplicating claimDailyGold/rewarded-ad-service's
+ * second claim surface: duplicating claimDailyGold's
  * money-moving calls here would be a second place for the money-ordering
  * rules in CLAUDE.md to be gotten right, for no reader benefit over "open
  * the lobby."
@@ -103,15 +102,6 @@ export function RewardsHub() {
               {maxMultiplier}× at a {STREAK_CAP_DAYS}-day streak. Break the streak and it resets.
             </small>
             <small className="floor-card-stake">{rewardStatusLabel(daily)}</small>
-            <Link className="floor-play" href="/" onClick={tapSound}>Open the lobby</Link>
-          </article>
-
-          <article className="floor-card">
-            <strong>Watch &amp; earn</strong>
-            <small>
-              A {REWARDED_AD_DURATION_LABEL} rewarded ad from the lobby&rsquo;s player menu pays{" "}
-              {REWARDED_AD_GOLD.toLocaleString()} Gold, up to {REWARDED_AD_DAILY_LIMIT} times a day.
-            </small>
             <Link className="floor-play" href="/" onClick={tapSound}>Open the lobby</Link>
           </article>
 

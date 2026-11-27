@@ -60,7 +60,6 @@ import {
   Music2,
   Sparkles,
   Users,
-  Video,
   Volume2,
   VolumeX,
   X,
@@ -165,8 +164,6 @@ export function MobileShell({
   dailyGold,
   claimingGold,
   onClaimDailyGold,
-  freeGoldEligible,
-  onGetFreeGold,
   onEditProfile,
   pushPermission,
   pushSubscribed,
@@ -199,8 +196,6 @@ export function MobileShell({
   dailyGold: DailyGoldState | null;
   claimingGold: boolean;
   onClaimDailyGold: () => void;
-  freeGoldEligible: boolean;
-  onGetFreeGold: () => void;
   onEditProfile: () => void;
   pushPermission: NotificationPermission | "unsupported";
   pushSubscribed: boolean;
@@ -431,8 +426,6 @@ export function MobileShell({
               dailyGold={dailyGold}
               claimingGold={claimingGold}
               onClaimDailyGold={onClaimDailyGold}
-              freeGoldEligible={freeGoldEligible}
-              onGetFreeGold={onGetFreeGold}
               pushPermission={pushPermission}
               pushSubscribed={pushSubscribed}
               onTogglePushNotifications={onTogglePushNotifications}
@@ -596,8 +589,6 @@ function YouPane({
   dailyGold,
   claimingGold,
   onClaimDailyGold,
-  freeGoldEligible,
-  onGetFreeGold,
   soundEnabled,
   onToggleSound,
   musicEnabled,
@@ -614,8 +605,6 @@ function YouPane({
   dailyGold: DailyGoldState | null;
   claimingGold: boolean;
   onClaimDailyGold: () => void;
-  freeGoldEligible: boolean;
-  onGetFreeGold: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
   musicEnabled: boolean;
@@ -649,21 +638,8 @@ function YouPane({
         </button>
       </div>
 
-      {(dailyReady || dailyClaimed || freeGoldEligible) && (
+      {(dailyReady || dailyClaimed) && (
         <div className="mshell-card">
-          {freeGoldEligible && (
-            <>
-              <button type="button" className="mshell-row" onClick={() => { selectSound(); onGetFreeGold(); }}>
-                <Video size={19} strokeWidth={1.8} aria-hidden="true" />
-                <span className="mshell-row-body">
-                  <strong>Watch an ad for Gold</strong>
-                  <small>Tops you up when you are running low</small>
-                </span>
-                <ChevronRight size={18} aria-hidden="true" />
-              </button>
-              {(dailyReady || dailyClaimed) && <div className="mshell-rule" />}
-            </>
-          )}
           {(dailyReady || dailyClaimed) && (
             <button
               type="button"

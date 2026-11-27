@@ -7,13 +7,12 @@ import { useEffect, useRef, type MouseEvent } from "react";
  * focus the close button on mount (so a keyboard user lands somewhere
  * useful), close on Escape, and close on a raw mousedown of the backdrop
  * itself (not a bubbled event from inside the panel). Extracted from
- * room-created-modal.tsx, hand-history-drawer.tsx, rewarded-ad-modal.tsx and
- * friends-drawer.tsx, which all carried this block near-verbatim.
+ * room-created-modal.tsx, hand-history-drawer.tsx and friends-drawer.tsx,
+ * which all carried this block near-verbatim.
  *
- * `canDismiss` gates both the Escape listener and the backdrop click --
- * rewarded-ad-modal.tsx is the one caller that needs this, refusing to lose
- * a completed ad wait to a stray keypress or misplaced click while a claim
- * is in flight. Defaults to always-dismissible for every other caller.
+ * `canDismiss` gates both the Escape listener and the backdrop click, for a
+ * caller that must not lose work in flight to a stray keypress or misplaced
+ * click. Defaults to always-dismissible.
  *
  * Returns the ref for the close button (`ref={closeButtonRef}`) and a ready
  * handler for the overlay's own `onMouseDown`. A caller that needs more than

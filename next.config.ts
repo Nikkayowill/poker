@@ -7,19 +7,8 @@ import type { NextConfig } from "next";
 // eval(); that never ships in a production bundle, so it's only relaxed here.
 const isDev = process.env.NODE_ENV !== "production";
 
-// The Adsterra ad unit (components/ads/adsterra-slot.tsx, mounted by the
-// rewarded-ad modal). Adsterra serves creative from sibling subdomains of the
-// loader's host rather than a fixed host, so each entry is wildcarded on the
-// subdomain -- and it moves publishers between *registrable domains* without
-// notice, which is why there are now three.
-const adsterraOrigins = [
-  "https://*.effectivecpmnetwork.com",
-  "https://*.profitabledisplaynetwork.com",
-  "https://*.effectivecreativeformat.com",
-].join(" ");
-
 // The Turnstile bot-check widget on the sign-in/sign-up form
-// (components/auth/turnstile-widget.tsx). Fixed host, unlike Adsterra.
+// (components/auth/turnstile-widget.tsx). Fixed host.
 const turnstileOrigin = "https://challenges.cloudflare.com";
 
 // Browser Sentry events used to be tunnelled through this app's own
@@ -34,14 +23,14 @@ const siteOrigin = "https://www.stackchips.app";
 const csp = [
   "default-src 'self'",
   // 'wasm-unsafe-eval' is for the 3D table room's Meshopt decoder
-  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' ${adsterraOrigins} ${turnstileOrigin}${isDev ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' ${turnstileOrigin}${isDev ? " 'unsafe-eval'" : ""}`,
   // 'unsafe-inline' above stays so pages can keep being served statically
   // (nonces would force a server render per visit). This still blocks inline
   // event-handler attributes like <img onerror=...>, the usual shape of an
   // injected-HTML attack. React never renders those.
   "script-src-attr 'none'",
   "style-src 'self' 'unsafe-inline'",
-  `img-src 'self' data: blob: https://*.supabase.co ${adsterraOrigins}`,
+  `img-src 'self' data: blob: https://*.supabase.co`,
   "font-src 'self' data:",
   // Sentry's session-replay integration compresses events in a Worker
   "worker-src 'self' blob:",
@@ -49,8 +38,8 @@ const csp = [
   // websocket -- the bare scheme (any host) rather than a specific LAN IP,
   // so this doesn't leak a developer's home network address into source
   // control and still works from any device on the LAN, not just one.
-  `connect-src 'self' blob: https://*.supabase.co wss://*.supabase.co ${sentryIngestOrigin} ${adsterraOrigins} ${turnstileOrigin}${isDev ? " ws:" : ""}`,
-  `frame-src 'self' ${adsterraOrigins} ${turnstileOrigin}`,
+  `connect-src 'self' blob: https://*.supabase.co wss://*.supabase.co ${sentryIngestOrigin} ${turnstileOrigin}${isDev ? " ws:" : ""}`,
+  `frame-src 'self' ${turnstileOrigin}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

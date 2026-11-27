@@ -9,10 +9,9 @@ import { useModalDismiss } from "@/components/use-modal-dismiss";
  * The rules overlay every Ante Up game (and the arcade floor's own generic
  * explainer) opens from its header. Reuses the same `.profile-overlay` /
  * `.profile-modal` / `.profile-modal-header` / `.modal-close` shell
- * buy-in-modal.tsx and rewarded-ad-modal.tsx already use, rather than a
- * fourth bespoke modal chrome -- see those two files for the pattern this
- * copies. `useModalDismiss` gives it the same focus/Escape/backdrop-click
- * behaviour rewarded-ad-modal.tsx has, with nothing that needs `canDismiss`
+ * buy-in-modal.tsx already uses, rather than a bespoke modal chrome -- see
+ * that file for the pattern this copies. `useModalDismiss` gives it the same
+ * focus/Escape/backdrop-click behaviour, with nothing that needs `canDismiss`
  * gated off (there's no in-flight request here to protect).
  *
  * Body content is plain prose, not another data-driven form: each caller

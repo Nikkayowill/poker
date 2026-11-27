@@ -11,15 +11,15 @@ from stackstrike_art import Canvas, both, union
 
 OUT = "public/stackstrike/art"
 METAL = ((176, 184, 198), (58, 64, 78))
-DARK = ((104, 112, 128), (28, 30, 38))
-POLY = ((72, 76, 88), (20, 22, 28))
+DARK = ((128, 136, 152), (40, 44, 56))
+POLY = ((104, 110, 126), (36, 40, 52))
 WOOD = ((196, 130, 72), (96, 56, 28))
 
 
 def glove(cv, cx, cy, r=12):
     hand = cv.ellipse(cx, cy, r + 2, r)
-    cv.paint(hand, (84, 88, 100), (14, 15, 20))
-    cv.paint(cv.capsule((cx + 2, cy - r * 0.55), (cx + r + 3, cy - r * 0.45), 5), (110, 114, 128), (30, 32, 40), edge=0.5)  # fingers
+    cv.paint(hand, (226, 230, 238), (112, 120, 140))
+    cv.paint(cv.capsule((cx + 2, cy - r * 0.55), (cx + r + 3, cy - r * 0.45), 5), (240, 244, 250), (150, 158, 176), edge=0.5)  # fingers
     cv.gloss(cx - 3, cy - 4, 6, 3, 0.35, within=hand)
 
 

@@ -1,6 +1,6 @@
 import { AIM_ASSIST, PLAYER_GLOW, SENSE, SHADOW } from "./content";
-import { distance, lineOfSight, segmentRectHit } from "./geometry";
-import type { Arena, EnemyState, Rect, Room, Vec } from "./types";
+import { distance, lineOfSight, segmentWallHit } from "./geometry";
+import type { Arena, EnemyState, Room, Vec, Wall } from "./types";
 
 /**
  * Light and sight shapes. The scene draws the dark and the enemies' flashlight
@@ -16,11 +16,11 @@ export function angleDiff(from: number, to: number): number {
   return diff;
 }
 
-function castRay(origin: Vec, angle: number, range: number, walls: readonly Rect[]): Vec {
+function castRay(origin: Vec, angle: number, range: number, walls: readonly Wall[]): Vec {
   const end = { x: origin.x + Math.cos(angle) * range, y: origin.y + Math.sin(angle) * range };
   let nearest = 1;
   for (const wall of walls) {
-    const t = segmentRectHit(origin, end, wall);
+    const t = segmentWallHit(origin, end, wall);
     if (t !== null && t < nearest) nearest = t;
   }
   return { x: origin.x + (end.x - origin.x) * nearest, y: origin.y + (end.y - origin.y) * nearest };
@@ -30,7 +30,7 @@ function castRay(origin: Vec, angle: number, range: number, walls: readonly Rect
 export function beamPolygon(
   origin: Vec,
   aim: number,
-  walls: readonly Rect[],
+  walls: readonly Wall[],
   range: number,
   halfAngle: number,
   rays = 60,
@@ -44,7 +44,7 @@ export function beamPolygon(
 }
 
 /** A full circle of sight around the origin, cut short by walls. */
-export function glowPolygon(origin: Vec, walls: readonly Rect[], radius: number = PLAYER_GLOW.radius, rays = 32): Vec[] {
+export function glowPolygon(origin: Vec, walls: readonly Wall[], radius: number = PLAYER_GLOW.radius, rays = 32): Vec[] {
   const points: Vec[] = [];
   for (let n = 0; n < rays; n += 1) {
     points.push(castRay(origin, (n / rays) * Math.PI * 2, radius, walls));
@@ -53,19 +53,22 @@ export function glowPolygon(origin: Vec, walls: readonly Rect[], radius: number 
 }
 
 /**
- * How boxed in a point is: rays are cast all round it and the share that hit a
- * wall within `reach` is returned. A corner or an alcove scores high, a flat
- * wall about a third, open floor zero. This is what "hugging a dark corner"
- * means to the sim.
+ * How much light falls on a point from the fixed lights, 0 to 1. Each lamp is
+ * brightest at its own spot and fades to nothing at its radius, and only counts
+ * where nothing stands between it and the point, so a crate throws a shadow.
+ * This is what "dark" means to the sim: it decides where you can hide.
  */
-export function coverAt(point: Vec, walls: readonly Rect[], reach: number = SHADOW.reach, rays = 8): number {
-  let blocked = 0;
-  for (let n = 0; n < rays; n += 1) {
-    const angle = (n / rays) * Math.PI * 2;
-    const end = { x: point.x + Math.cos(angle) * reach, y: point.y + Math.sin(angle) * reach };
-    if (walls.some((wall) => segmentRectHit(point, end, wall) !== null)) blocked += 1;
+export function lightAt(point: Vec, arena: Pick<Arena, "lights" | "ambient" | "walls">): number {
+  let level = arena.ambient;
+  for (const light of arena.lights) {
+    const dist = distance(light.pos, point);
+    if (dist >= light.radius) continue;
+    const strength = (1 - dist / light.radius) ** SHADOW.falloff;
+    if (strength <= level) continue;
+    if (!lineOfSight(light.pos, point, arena.walls)) continue;
+    level = strength;
   }
-  return blocked / rays;
+  return Math.min(1, level);
 }
 
 /** The room a point is in, or the nearest one when it stands in a doorway. */
@@ -94,7 +97,7 @@ export function assistAim(
   aim: number,
   from: Vec,
   targets: readonly { pos: Vec; radius: number }[],
-  walls: readonly Rect[],
+  walls: readonly Wall[],
   range: number,
 ): number {
   let best = aim;

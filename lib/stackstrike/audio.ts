@@ -18,8 +18,8 @@ export const SOUND_GROUPS = {
   "hit-player": ["hit-player-1", "hit-player-2"],
   kill: ["kill-1", "kill-2"],
   ricochet: ["ricochet-1", "ricochet-2", "ricochet-3"],
-  "step-soft": ["step-soft-1", "step-soft-2", "step-soft-3"],
-  "step-boot": ["step-boot-1", "step-boot-2", "step-boot-3"],
+  "step-soft": ["step-soft-1", "step-soft-2", "step-soft-3", "step-soft-4"],
+  "step-boot": ["step-boot-1", "step-boot-2", "step-boot-3", "step-boot-4"],
 } as const;
 
 export type SoundGroup = keyof typeof SOUND_GROUPS;
@@ -148,7 +148,7 @@ export function cuesFor(event: SimEvent, ctx: CueContext): Cue[] {
     case "hide":
       return [event.on ? cue("hide", 0.6) : cue("hide", 0.45, { rate: 1.25 })];
     case "pickup":
-      return [event.main ? cue("pickup-main", 0.9) : cue("pickup-small", 0.7)];
+      return [event.main ? cue("pickup-main", 0.8) : cue("pickup-small", 0.6)];
     case "body":
       return [cue("body-found", 0.8)];
     case "escaped":
@@ -179,19 +179,19 @@ export class StepCounter {
   }
 }
 
-export const PLAYER_STRIDE = 40;
-export const GUARD_STRIDE = 48;
+export const PLAYER_STRIDE = 58;
+export const GUARD_STRIDE = 66;
 
 /** The player's own footfall: soft, quiet, always heard. */
 export function playerStep(roll: () => number): Cue {
-  return cue(pick("step-soft", roll()), 0.45, { rate: 0.92 + roll() * 0.16 });
+  return cue(pick("step-soft", roll()), 0.5, { rate: 0.95 + roll() * 0.1 });
 }
 
 /** A guard's footfall, heard through walls if it is close enough: it is how you tell where they are in the dark. */
 export function guardStep(at: Vec, ctx: Pick<CueContext, "listener" | "blocked" | "roll">): Cue | null {
   const h = hearing(ctx.listener, at, ctx.blocked(at));
   if (h.gain * 0.7 < AUDIBLE) return null;
-  return cue(pick("step-boot", ctx.roll()), 0.7 * h.gain, { rate: 0.9 + ctx.roll() * 0.16, pan: h.pan });
+  return cue(pick("step-boot", ctx.roll()), 0.7 * h.gain, { rate: 0.95 + ctx.roll() * 0.1, pan: h.pan });
 }
 
 /* --------------------------------------------------------------------- music */

@@ -15,10 +15,10 @@ import {
 import {
   distance,
   lineOfSight,
-  resolveCircleAgainstRects,
+  resolveCircleAgainstWalls,
   segmentCircleHit,
   segmentClear,
-  segmentRectHit,
+  segmentWallHit,
 } from "./geometry";
 import { findPath, navGridFor } from "./pathfinding";
 import type {
@@ -33,7 +33,7 @@ import type {
   Vec,
   WeaponDefinition,
 } from "./types";
-import { angleDiff, coverAt } from "./vision";
+import { angleDiff, lightAt } from "./vision";
 
 /**
  * The whole fight, with no Phaser in it, so it can be tested and later
@@ -98,7 +98,7 @@ export function createState(
       cooldown: 0,
       hurt: 0,
       hidden: false,
-      cover: 0,
+      light: 0,
       exposedLeft: 0,
       moving: false,
     },
@@ -203,7 +203,7 @@ function updatePlayer(state: SimState, input: PlayerInput, dt: number): void {
   player.moving = Math.hypot(mx, my) > MOVING_THRESHOLD;
   player.pos.x += mx * player.moveSpeed * dt;
   player.pos.y += my * player.moveSpeed * dt;
-  resolveCircleAgainstRects(player.pos, radius, state.arena.walls);
+  resolveCircleAgainstWalls(player.pos, radius, state.arena.walls);
   updateShadow(state);
 
   const weapon = currentWeapon(state);
@@ -232,11 +232,24 @@ function updatePlayer(state: SimState, input: PlayerInput, dt: number): void {
   }
 }
 
-/** Hidden means pressed into a dark corner and not just fired a shot. */
+/** True when a guard's flashlight is on this point: in range, inside the cone, nothing in the way. */
+function inGuardBeam(state: SimState, point: Vec): boolean {
+  for (const enemy of state.enemies) {
+    const def = enemyDef(enemy.defId);
+    if (distance(enemy.pos, point) > beamRange(state, def)) continue;
+    const toPoint = Math.atan2(point.y - enemy.pos.y, point.x - enemy.pos.x);
+    if (Math.abs(angleDiff(enemy.facing, toPoint)) > def.fieldOfView) continue;
+    if (lineOfSight(enemy.pos, point, state.arena.walls)) return true;
+  }
+  return false;
+}
+
+/** Hidden means standing in real darkness, out of every flashlight, and not just fired a shot. */
 function updateShadow(state: SimState): void {
   const player = state.player;
-  player.cover = coverAt(player.pos, state.arena.walls);
-  const hidden = player.exposedLeft <= 0 && player.cover >= SHADOW.hiddenAt;
+  player.light = lightAt(player.pos, state.arena);
+  const dark = player.light < SHADOW.darkBelow && !inGuardBeam(state, player.pos);
+  const hidden = player.exposedLeft <= 0 && dark;
   if (hidden !== player.hidden) {
     player.hidden = hidden;
     state.events.push({ type: "hide", on: hidden });
@@ -533,7 +546,7 @@ function updateEnemies(state: SimState, dt: number): void {
       enemy.pos.y += Math.sin(angle) * speed * dt;
       if (!facingSet) turnToward(enemy, angle, STEALTH.turnRate, dt);
     }
-    resolveCircleAgainstRects(enemy.pos, def.radius, walls);
+    resolveCircleAgainstWalls(enemy.pos, def.radius, walls);
   }
 
   separateEnemies(state);
@@ -653,7 +666,7 @@ function separateEnemies(state: SimState): void {
     }
   }
   for (const enemy of enemies) {
-    resolveCircleAgainstRects(enemy.pos, enemyDef(enemy.defId).radius, state.arena.walls);
+    resolveCircleAgainstWalls(enemy.pos, enemyDef(enemy.defId).radius, state.arena.walls);
   }
 }
 
@@ -720,7 +733,7 @@ function updateProjectiles(state: SimState, dt: number): void {
     // The nearest thing along this step wins, so a wall shields what is behind it.
     let wallT = Infinity;
     for (const wall of state.arena.walls) {
-      const t = segmentRectHit(from, to, wall);
+      const t = segmentWallHit(from, to, wall);
       if (t !== null && t < wallT) wallT = t;
     }
 

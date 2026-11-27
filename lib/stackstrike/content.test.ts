@@ -1,18 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { ARENA, DIFFICULTIES, ENEMIES, OPERATORS, SHADOW, WEAPONS } from "./content";
-import { lineOfSight } from "./geometry";
+import { distanceToWall, lineOfSight } from "./geometry";
 import { buildNavGrid, findPath } from "./pathfinding";
-import type { Rect, Vec } from "./types";
-import { coverAt } from "./vision";
+import type { Vec } from "./types";
+import { lightAt } from "./vision";
 
 function touchesWall(point: Vec, radius: number): boolean {
-  return ARENA.walls.some(
-    (wall: Rect) =>
-      point.x > wall.x - radius &&
-      point.x < wall.x + wall.w + radius &&
-      point.y > wall.y - radius &&
-      point.y < wall.y + wall.h + radius,
-  );
+  return ARENA.walls.some((wall) => distanceToWall(point.x, point.y, wall) < radius);
 }
 
 describe("arena", () => {
@@ -111,13 +105,30 @@ describe("arena", () => {
       const inside = ARENA.corners.filter(
         (corner) => corner.x > rect.x && corner.x < rect.x + rect.w && corner.y > rect.y && corner.y < rect.y + rect.h,
       );
-      const hides = inside.filter((corner) => coverAt(corner, ARENA.walls) >= SHADOW.hiddenAt);
+      const hides = inside.filter((corner) => lightAt(corner, ARENA) < SHADOW.darkBelow);
       expect(hides.length, id).toBeGreaterThanOrEqual(1);
     }
   });
 
-  it("the open middle of the player's own room hides nobody", () => {
-    expect(coverAt(ARENA.playerSpawn, ARENA.walls)).toBeLessThan(SHADOW.hiddenAt);
+  it("lights the player's own start, and leaves most of the building dark", () => {
+    expect(lightAt(ARENA.playerSpawn, ARENA)).toBeGreaterThanOrEqual(SHADOW.darkBelow);
+    let dark = 0;
+    let total = 0;
+    for (let x = 60; x < ARENA.width - 60; x += 40) {
+      for (let y = 60; y < ARENA.height - 60; y += 40) {
+        total += 1;
+        if (lightAt({ x, y }, ARENA) < SHADOW.darkBelow) dark += 1;
+      }
+    }
+    expect(dark / total).toBeGreaterThan(0.35);
+    expect(dark / total).toBeLessThan(0.85);
+  });
+
+  it("keeps every light on open floor", () => {
+    for (const light of ARENA.lights) {
+      const inside = ARENA.walls.some((wall) => distanceToWall(light.pos.x, light.pos.y, wall) === 0);
+      expect(inside, `${light.pos.x},${light.pos.y}`).toBe(false);
+    }
   });
 });
 

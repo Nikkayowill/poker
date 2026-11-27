@@ -5,6 +5,7 @@ import { findPath, navGridFor } from "./pathfinding";
 import { buildArena, GUARD_POOL, pickContract } from "./run";
 import { createState } from "./sim";
 import type { ContractId, DifficultyId } from "./types";
+import { distanceToWall } from "./geometry";
 import { roomAt } from "./vision";
 
 const DIFFICULTY_IDS = Object.keys(DIFFICULTIES) as DifficultyId[];
@@ -12,11 +13,7 @@ const CONTRACT_IDS = Object.keys(CONTRACTS) as ContractId[];
 const SEEDS = Array.from({ length: 60 }, (_, index) => index * 7919 + 3);
 
 function onOpenFloor(point: { x: number; y: number }, margin: number): boolean {
-  return !ARENA.walls.some((wall) => {
-    const dx = Math.max(wall.x - point.x, 0, point.x - (wall.x + wall.w));
-    const dy = Math.max(wall.y - point.y, 0, point.y - (wall.y + wall.h));
-    return Math.hypot(dx, dy) < margin;
-  });
+  return !ARENA.walls.some((wall) => distanceToWall(point.x, point.y, wall) < margin);
 }
 
 describe("a generated run", () => {

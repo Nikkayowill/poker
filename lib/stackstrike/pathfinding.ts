@@ -1,5 +1,5 @@
-import { segmentClear } from "./geometry";
-import type { Arena, Rect, Vec } from "./types";
+import { distanceToWall, segmentClear } from "./geometry";
+import type { Arena, Vec, Wall } from "./types";
 
 /**
  * Grid A* for enemies. The arena is cut into square cells; a cell is blocked
@@ -26,12 +26,6 @@ const NEIGHBOURS: [number, number, number][] = [
   [-1, -1, Math.SQRT2],
 ];
 
-function distanceToRect(x: number, y: number, rect: Rect): number {
-  const nx = Math.max(rect.x, Math.min(x, rect.x + rect.w));
-  const ny = Math.max(rect.y, Math.min(y, rect.y + rect.h));
-  return Math.hypot(x - nx, y - ny);
-}
-
 export function buildNavGrid(arena: Arena, cell = 20, clearance = 18): NavGrid {
   const cols = Math.ceil(arena.width / cell);
   const rows = Math.ceil(arena.height / cell);
@@ -40,7 +34,7 @@ export function buildNavGrid(arena: Arena, cell = 20, clearance = 18): NavGrid {
     for (let col = 0; col < cols; col += 1) {
       const cx = (col + 0.5) * cell;
       const cy = (row + 0.5) * cell;
-      if (arena.walls.some((wall) => distanceToRect(cx, cy, wall) < clearance)) blocked[row * cols + col] = 1;
+      if (arena.walls.some((wall) => distanceToWall(cx, cy, wall) < clearance)) blocked[row * cols + col] = 1;
     }
   }
   return { cell, cols, rows, blocked };
@@ -134,7 +128,7 @@ class Heap {
  * body size used to pull corners straight, so a smoothed path never grazes a
  * wall the enemy would catch on.
  */
-export function findPath(grid: NavGrid, walls: readonly Rect[], from: Vec, to: Vec, radius: number): Vec[] | null {
+export function findPath(grid: NavGrid, walls: readonly Wall[], from: Vec, to: Vec, radius: number): Vec[] | null {
   const start = nearestOpen(grid, cellOf(grid, from));
   const goal = nearestOpen(grid, cellOf(grid, to));
   if (start === null || goal === null) return null;

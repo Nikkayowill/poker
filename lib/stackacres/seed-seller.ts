@@ -10,4 +10,4 @@ export const SEED_SELLER = "cora";
 export const SEED_SELLER_NAME = "Cora";
 
 /** Where Ray points a player who needs more seed. */
-export const SEED_SELLER_WHERE = "the market in town, over the west bridge";
+export const SEED_SELLER_WHERE = "the market in town, over the west bridge, in the daytime";

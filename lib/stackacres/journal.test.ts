@@ -98,7 +98,7 @@ describe("the one line", () => {
     const cue = journalView(farm({ units: [], seedStock: {} })).now;
     expect(cue.kind).toBe("seeds");
     expect(cue.line).toContain("Cora");
-    expect(cue.where).toBe("The City");
+    expect(cue.where).toBe("Town Square");
   });
 
   it("points at the next building rather than at Cora while there is wheat to mill", () => {
@@ -182,7 +182,7 @@ describe("the one line", () => {
     const cue = journalView(farm({ units: [unit("working"), unit("ready", "hog")] })).now;
     expect(cue.kind).toBe("ship");
     expect(cue.line).toBe("Your hog is ready to sell. Take it to Hank at the sale barn.");
-    expect(cue.where).toBe("The City");
+    expect(cue.where).toBe("Town Square");
   });
 
   it("stays quiet about an order that cannot be filled yet", () => {

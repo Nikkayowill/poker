@@ -269,8 +269,10 @@ export const AREA_NAMES: Record<TopdownArea, string> = {
   // item 4 leaves the empire layer's own name an open question.
   empire: "The Far Field",
   grocery: "The Grocery",
-  city: "The City",
+  city: "Town Square",
 };
+/** What a stall says when nobody is minding it. */
+const STALL_CLOSED = "Closed. Back at 6 in the morning";
 /** Walking through a door or a gate: the old view pushes in (or pulls back on the way out) and dissolves. */
 const TRAVEL_MS = 320;
 /** How far off, in world pixels, someone else's footsteps can still be heard, and how loud the nearest are next to the farmer's own. */
@@ -1410,6 +1412,8 @@ export class TopdownScene extends Phaser.Scene {
     };
     for (const npc of this.area.npcs) if (!keepsRoutine(npc.name)) spawnNpc(npc.name, npc.x, npc.y, false);
     for (const name of this.walkers.names()) {
+      // The Town Square's people have no picture until the player has been there.
+      if (!this.textures.exists(name)) continue;
       const pose = this.walkers.pose(name, this.routineDay(), this.routineHour(), this.reducedMotion);
       if (pose) spawnNpc(name, pose.x, pose.y, true);
     }
@@ -2252,9 +2256,9 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   /** The ways out of the Homestead a new farmer is told about, by name. */
-  private static readonly GATE_LABELS: Readonly<Record<string, string>> = { city: "The City", empire: "The Far Field" };
+  private static readonly GATE_LABELS: Readonly<Record<string, string>> = { city: "Town Square", empire: "The Far Field" };
 
-  /** Points at the City bridge and the Far Field gate from wherever on the Homestead they are off screen. */
+  /** Labels the Town Square bridge and the Far Field gate as the farmer comes near them. */
   private updateGatePointers(): void {
     const free = this.booted && this.areaName === "homestead" && !this.travelling && !this.opening && !this.buildMode;
     const targets: GateTarget[] = [];
@@ -2262,11 +2266,32 @@ export class TopdownScene extends Phaser.Scene {
       for (const exit of this.area.exits) {
         const label = TopdownScene.GATE_LABELS[exit.to];
         if (label && this.canEnter(exit.to as TopdownArea)) {
-          targets.push({ to: exit.to, label, at: { x: exit.x + exit.w / 2, y: exit.y + exit.h / 2 } });
+          const at = { x: exit.x + exit.w / 2, y: exit.y + exit.h / 2 };
+          targets.push({ to: exit.to, label, at, out: this.outwardOf(at) });
         }
       }
     }
     this.gates.update(targets, free);
+  }
+
+  /** A tap on a market stall: when its keeper is not there, say when the market opens. */
+  private stallTap(stall: string | undefined): void {
+    const keeper = Number(stall) >= 5 ? "hank" : SEED_SELLER;
+    if (this.npcSprites.get(keeper)?.sprite.visible) return;
+    this.floatAt(this.mapToCss({ x: this.pos.x, y: this.pos.y - 40 }), STALL_CLOSED, "deny");
+  }
+
+  /** The way through a gate on the edge of the map: out, away from the middle. */
+  private outwardOf(at: Point): Point {
+    const width = this.area.width * this.area.tile;
+    const height = this.area.height * this.area.tile;
+    const fromEdge = [
+      { gap: at.x, out: { x: -1, y: 0 } },
+      { gap: width - at.x, out: { x: 1, y: 0 } },
+      { gap: at.y, out: { x: 0, y: -1 } },
+      { gap: height - at.y, out: { x: 0, y: 1 } },
+    ];
+    return fromEdge.reduce((a, b) => (b.gap < a.gap ? b : a)).out;
   }
 
   /** A gate pointer was tapped: walk to that gate the way a tap on a door does, and through it. */
@@ -2315,7 +2340,7 @@ export class TopdownScene extends Phaser.Scene {
     for (const [name, node] of this.npcSprites) {
       if (!node.sprite.visible) continue;
       const box = new Phaser.Geom.Rectangle(node.sprite.x - 9, node.sprite.y - 30, 18, 32);
-      // Someone who trades (Cora, the town's buyers) wins over a prop drawn in front of them, so Dale is
+      // Someone who trades (Cora, the town's buyers) wins over a prop drawn in front of them, so Gus is
       // still tappable behind the quay's crane.
       const trades = name === SEED_SELLER || townBuyerOfNpc(name) !== null;
       if (box.contains(map.x, map.y)) consider({ kind: "npc", name, anchor: { x: node.sprite.x, y: node.sprite.y + 10 }, face: { x: node.sprite.x, y: node.sprite.y } }, node.sprite.depth + (trades ? 1000 : 0));
@@ -2915,6 +2940,8 @@ export class TopdownScene extends Phaser.Scene {
       case "land":
         if (!this.swingAt(target.tag, at)) return;
         return cb.onLandTap(detail ?? "", at);
+      case "stall":
+        return this.stallTap(detail);
       case "greenhouse":
         return cb.onGreenhouseTap();
       case "farmhouse":

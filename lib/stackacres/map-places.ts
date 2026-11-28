@@ -42,7 +42,7 @@ export const MAP_ROWS = 2;
  *  gate, so they sit either side of the Homestead; the Crop Fields are the wild
  *  land south of its yard. The gaps are just grass. */
 export const MAP_PLACES: readonly MapPlace[] = [
-  { id: "city", label: "The City", col: 0, row: 0 },
+  { id: "city", label: "Town Square", col: 0, row: 0 },
   { id: "farmstead", label: "The Homestead", col: 1, row: 0 },
   { id: "farfield", label: "The Far Field", col: 2, row: 0 },
   { id: "cropfields", label: "Crop Fields", col: 1, row: 1 },

@@ -1,4 +1,5 @@
 import { expect, test, type BrowserContext, type Page } from "./fixtures";
+import { tapTownPerson } from "./town-people";
 
 /**
  * Hank at the sale barn (lib/stackacres/sale-barn.ts) sells feeder pigs and calves, and ships the farm's
@@ -43,26 +44,6 @@ async function start(page: Page) {
   await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.setClock(11));
 }
 
-/** Stands the farmer just below someone in the City and taps them. */
-async function tapPerson(page: Page, at: { x: number; y: number }) {
-  await page.evaluate(
-    (spot) => (window as unknown as Handle).__stackacres.scene.placeFarmer("city", spot),
-    { x: at.x, y: at.y + 34 },
-  );
-  await expect
-    .poll(() => page.evaluate(() => (window as unknown as Handle).__stackacres.scene.travelling), { timeout: 10_000 })
-    .toBe(false);
-  await page.waitForTimeout(400);
-  const point = await page.evaluate(
-    (spot) => (window as unknown as Handle).__stackacres.scene.clientPointFor(spot.x, spot.y),
-    { x: at.x, y: at.y - 12 },
-  );
-  await page.mouse.click(point.x, point.y);
-}
-
-// Where public/stackacres-td/areas/city/area.json stands him.
-const HANK = { x: 614, y: 422 };
-
 test("Hank sells a feeder pig, and has nothing to ship until it's grown", async ({ context, page }) => {
   await admit(context);
   const before = await farm(context);
@@ -76,7 +57,7 @@ test("Hank sells a feeder pig, and has nothing to ship until it's grown", async 
   expect(early.status()).toBe(409);
 
   await start(page);
-  await tapPerson(page, HANK);
+  await tapTownPerson(page, "hank");
   const saleBarn = page.getByRole("dialog", { name: "Sale Barn" });
   await expect(saleBarn).toBeVisible();
   await expect(saleBarn.getByRole("button", { name: "Ship to market" })).toBeDisabled();

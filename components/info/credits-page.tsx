@@ -55,7 +55,7 @@ export function CreditsPage() {
           <ul>
             <li>
               <strong>The land of StackAcres</strong> — the ground, water,
-              rocks, bushes, the Homestead&rsquo;s hill and the City&rsquo;s
+              rocks, bushes, the Homestead&rsquo;s hill and the Town Square&rsquo;s
               headstones, water lilies and birdbath are from the
               Liberated Pixel Cup terrain set on OpenGameArt, drawn by Lanea
               Zimmerman (Sharm), Daniel Eddeland, Casper Nilsson, Johann
@@ -100,8 +100,8 @@ export function CreditsPage() {
               <a href="/stackacres-td/characters/CREDITS.md">CREDITS.md</a>.
             </li>
             <li>
-              <strong>Inside the house, the barn and the workshop, and the City&rsquo;s streets</strong> — the
-              walls, floors, windows, rugs and furniture, and the City&rsquo;s street lamps, planters, barrels and
+              <strong>Inside the house, the barn and the workshop, and the Town Square&rsquo;s streets</strong> — the
+              walls, floors, windows, rugs and furniture, and the Town Square&rsquo;s street lamps, planters, barrels and
               shop goods, are{" "}
               <a href="https://github.com/ElizaWy/LPC">LPC Revised</a>, drawn by
               Eliza Wyatt (ElizaWy), Lanea Zimmerman (Sharm), bluecarrot16,

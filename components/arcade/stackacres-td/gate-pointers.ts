@@ -3,8 +3,10 @@ import type { Point } from "@/lib/stackacres-td/movement";
 const SEEN_KEY = "stackacres.gates-seen";
 /** How far in from the edge of the view a pointer sits. The left clears the tool rail, the top the HUD, the bottom the stick. */
 const INSET = { left: 62, right: 10, top: 72, bottom: 112 } as const;
-/** A gate this close to the view's edge, or inside it, is already on screen and needs no pointer. */
-const ON_SCREEN_MARGIN = 28;
+/** How far past the edge of the view a gate can be and still get a pointer, as a share of the view's longer side. */
+const NEAR_VIEW = 0.15;
+/** When the gate is in view the pointer sits this far above it, off the doorway. */
+const LIFT = 30;
 
 export interface GateTarget {
   /** The area it leads to: the exit's `to`. */
@@ -12,6 +14,8 @@ export interface GateTarget {
   label: string;
   /** The middle of the gate, in map units. */
   at: Point;
+  /** The way through it, as a unit step: (-1, 0) for a gate on the west edge. */
+  out: Point;
 }
 
 interface Pointer {
@@ -31,9 +35,10 @@ function readSeen(): Set<string> {
 }
 
 /**
- * An arrow on the edge of the view for each way out of the Homestead the farmer has not been through yet, saying
- * what it leads to and which way. The gates are a screen or more apart and the view is a few tiles wide, so
- * without these nothing on screen says the City and the Far Field exist. Tapping one walks him to its gate.
+ * A label for each way out of the Homestead the farmer has not been through yet, saying what it leads to and
+ * which way. It shows up as he nears the gate: over the gate once it is in view, and held on the edge of the view,
+ * turned toward it, just before that. Far from every gate there is nothing, so nothing hangs in the middle of
+ * the field. Tapping one walks him to its gate.
  *
  * Each goes away for good once he has been through that gate. What he has seen is the player's own convenience, so
  * it lives in this browser rather than on the farm. DOM in the host, like the speech bubbles, so it stays crisp.
@@ -70,11 +75,11 @@ export class GatePointers {
     const width = this.host.clientWidth;
     const height = this.host.clientHeight;
     if (width === 0 || height === 0) return;
+    const reach = Math.max(width, height) * NEAR_VIEW;
     for (const target of wanted) {
       const at = this.toCss(target.at);
-      const onScreen =
-        at.x > ON_SCREEN_MARGIN && at.x < width - ON_SCREEN_MARGIN && at.y > ON_SCREEN_MARGIN && at.y < height - ON_SCREEN_MARGIN;
-      if (onScreen) {
+      const outside = Math.hypot(Math.max(0, -at.x, at.x - width), Math.max(0, -at.y, at.y - height));
+      if (outside > reach) {
         this.drop(target.to);
         continue;
       }
@@ -89,9 +94,12 @@ export class GatePointers {
       const roomX = Math.max(1, (dx < 0 ? cx - INSET.left : width - INSET.right - cx) - halfW);
       const roomY = Math.max(1, (dy < 0 ? cy - INSET.top : height - INSET.bottom - cy) - halfH);
       const t = Math.min(roomX / Math.max(1, Math.abs(dx)), roomY / Math.max(1, Math.abs(dy)), 1);
+      // Whole, so the gate is inside the box: the label stands over it, pointing the way through.
+      const over = t === 1;
       pointer.el.style.left = `${Math.round(cx + dx * t)}px`;
-      pointer.el.style.top = `${Math.round(cy + dy * t)}px`;
-      pointer.arrow.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+      pointer.el.style.top = `${Math.round(cy + dy * t - (over ? LIFT : 0))}px`;
+      const angle = over ? Math.atan2(target.out.y, target.out.x) : Math.atan2(dy, dx);
+      pointer.arrow.style.transform = `rotate(${angle}rad)`;
     }
   }
 

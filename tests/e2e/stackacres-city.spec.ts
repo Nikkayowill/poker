@@ -78,7 +78,7 @@ test("the Homestead's west bridge leads to the City, and the road east leads bac
   await place(page, "homestead", { x: 56, y: 464 });
   await tapMap(page, 4, 464);
   await arrived(page, "city");
-  await expect(page.locator(".sa-place-tag")).toHaveText("The City");
+  await expect(page.locator(".sa-place-tag")).toHaveText("Town Square");
   expect(await cityLoaded(page)).toBe(true);
 
   await tapMap(page, 956, 456);

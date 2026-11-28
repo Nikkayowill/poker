@@ -243,7 +243,8 @@ export class NpcWalkers {
       if (this.held.has(name)) continue;
       const mind = this.mind(name, day);
       const at = (lagMs: number) => this.scheduled(name, gameHours - lagMs / (this.clockMsPerHour ?? this.msPerHour), reducedMotion);
-      const here = at(mind.behind()).area === area && allowed(name);
+      const seen = at(mind.behind());
+      const here = seen.area === area && !seen.indoors && allowed(name);
       node.sprite.setVisible(here);
       node.shadow.setVisible(here);
       if (!here) {
